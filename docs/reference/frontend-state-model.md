@@ -100,6 +100,7 @@ Priority order is fixed:
   - `historyOpen`
 - watch handoff state:
   - `pendingWatchJobId`
+  - `pendingWatchJobStatus`
 - cancellation control:
   - `cancelInFlight`
   - `activeCancelController`

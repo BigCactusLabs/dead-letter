@@ -650,9 +650,12 @@ Common error codes:
 
 Converts one `.eml` file or a directory of `.eml` files.
 
-Flags (all `store_true`, default `false`):
+Options:
 
 - `--output PATH` — output file or directory
+
+Flags (all `store_true`, default `false`):
+
 - `--strip-signatures`
 - `--strip-disclaimers`
 - `--strip-quoted-headers`

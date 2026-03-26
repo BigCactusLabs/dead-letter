@@ -35,7 +35,7 @@ This summary is intended for operator review. It is not the raw internal convers
 - `warnings`: list of `code`, `message`, `severity`
 - `stripped_images`: list of `{category, reason, reference}` objects (present when `strip_signature_images` or `strip_tracking_pixels` is enabled and images were removed)
   - `category`: `signature_image | tracking_pixel`
-  - `reason`: detection layer that matched (e.g., `gmail_signature_wrapper`, `thunderbird_signature_wrapper`, `gmail_mail_sig_url`, `filename_pattern:logo`, `structural_boundary_extension`, `dimension_heuristic`, `hidden_image`)
+  - `reason`: detection layer that matched (e.g., `gmail_signature_wrapper`, `thunderbird_signature_wrapper`, `apple_mail_signature_wrapper`, `gmail_mail_sig_url`, `filename_pattern:logo`, `structural_boundary_extension`, `dimension_heuristic`, `hidden_image`)
   - `reference`: the image `src` or CID that was stripped
 
 ## State Meanings
@@ -63,11 +63,11 @@ This summary is intended for operator review. It is not the raw internal convers
 
 ## Warning Categories
 
-Common warning classes include:
+Warning codes emitted by the pipeline:
 
-- MIME or body-selection defects recovered during parsing
-- HTML or reply-segmentation degradation
-- ambiguous cleanup decisions where content was preserved rather than stripped
+- `mime_defect` — structural MIME parsing defects (e.g., malformed headers, encoding issues) recovered during parsing
+- `html_markdown_failed` — HTML-to-Markdown conversion panicked; plain-text fallback was used
+- `html_markdown_repaired` — HTML-to-Markdown conversion initially panicked, then succeeded on the explicit repair retry path
 
 Warnings are additive. The pipeline prefers preserving extra content over deleting potentially authored content.
 
