@@ -2,7 +2,7 @@
 title: dead-letter v4 Frontend State Model
 doc_type: reference
 status: canonical
-last_updated: 2026-03-24
+last_updated: 2026-03-26
 audience:
   - maintainers
   - frontend contributors
@@ -37,6 +37,11 @@ Priority order is fixed:
   - `settingsForm`: `{inbox_path, cabinet_path}`
   - `settingsErrors`
   - `settingsOpen`
+  - `needsSetup`
+  - `showSetupModal`
+  - `setupInboxPath`
+  - `setupCabinetPath`
+  - `setupErrors`
 - input state:
   - `mode`: `file | directory`
   - `inputPath`
@@ -52,6 +57,7 @@ Priority order is fixed:
   - `dragDepth`
   - `dragItemCount`
   - `batchConfirm`: `{show, emlFiles, skipped, totalBytes}`
+  - `setupBannerDismissed`
   - `errorsExpanded`
   - `liveAnnouncement`
 - watch state:
@@ -135,9 +141,15 @@ Removed browser state:
 ### First-Run Setup
 
 - `init()` calls `loadSettings()`, `pollWatch()`, and `history.load()`.
-- `GET /api/settings` with `configured=false` keeps workflow actions disabled and resets suggested defaults.
-- Suggested defaults are `~/Documents/dead-letter/Inbox` and `~/Documents/dead-letter/Cabinet` until saved settings replace them.
-- `PUT /api/settings` persists folders, creates missing directories, and enables manual/watch workflows.
+- `GET /api/settings` with `configured=false` triggers the first-run setup flow.
+- A full-page setup modal appears on first launch when unconfigured. The modal pre-fills `~/letters/Inbox` and `~/letters/Cabinet` as suggested defaults.
+- "Create & Get Started" calls `PUT /api/settings`, creates missing directories, dismisses the modal, and enables workflows.
+- "Skip for now" or the close button dismisses the modal and persists `dead-letter:setup-dismissed` to localStorage. The modal does not reappear on subsequent launches.
+- When the user skips setup, the UI enters a degraded state:
+  - Watch card is disabled with a tooltip ("Configure inbox & cabinet to enable watch mode").
+  - Import and manual job actions are gated by `ensureSettingsConfigured()`.
+  - An unconfigured banner appears between the header and status strip: "Workspace not configured — Set up now". The banner's "Set up now" link re-opens the setup modal.
+  - The banner is dismissable per session (`setupBannerDismissed` resets on page reload).
 - Saving folders while default Inbox watch is active shows a restart-watch notice only when the saved Inbox path differs from the currently watched path.
 
 ### Start Manual Job
@@ -167,7 +179,7 @@ Removed browser state:
   - leave manual `inputPath` untouched
   - apply started job payload with `jobOrigin="import"` and begins polling
 - Workspace drop handling is ignored while in `converting` or `settings` states.
-- Escape dismisses the batch confirmation overlay before it closes Settings.
+- Escape dismissal priority: setup modal > batch confirmation overlay > settings takeover.
 
 ### Watch Inbox
 
@@ -251,8 +263,14 @@ Terminal statuses:
   - settings takeover replaces other workspace content
   - two-column layout for paths/watch and options/manual job controls
   - Escape closes takeover
+- Setup modal overlay (outside `<main>`):
+  - full-page overlay with onboarding blurb, editable path fields, and error display
+  - shown once per install; dismissal persisted to localStorage
+- Unconfigured banner (between header and status strip):
+  - shown when `needsSetup && !setupBannerDismissed`
+  - "Set up now" link re-opens setup modal; dismiss button hides banner for session
 - Status strip:
-  - Watch card is interactive and remains visible outside Settings
+  - Watch card is interactive and remains visible outside Settings; disabled with tooltip when unconfigured
   - active Watch state uses an accent edge plus animated perimeter trace
 
 `liveAnnouncement` is updated on workspace transitions and in-progress polling updates to support aria-live feedback.
