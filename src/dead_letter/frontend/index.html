@@ -66,6 +66,18 @@
         </div>
       </header>
 
+      <!-- Unconfigured Banner -->
+      <div class="setup-banner"
+           x-show="$store.settings.needsSetup && !setupBannerDismissed"
+           x-cloak>
+        <span>Workspace not configured</span>
+        <button class="setup-banner-action"
+                @click="$store.settings.showSetupModal = true">Set up now</button>
+        <button class="setup-banner-close"
+                @click="setupBannerDismissed = true"
+                aria-label="Dismiss banner">&times;</button>
+      </div>
+
       <!-- Zone 2: Status Strip -->
       <div class="status-strip">
         <div class="stat-card">

@@ -1752,3 +1752,46 @@ input[type="checkbox"]:checked {
 .setup-skip:hover {
   color: var(--muted);
 }
+
+/* ===== Unconfigured Banner ===== */
+
+.setup-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-size: var(--font-size-xs);
+  color: var(--muted);
+}
+
+.setup-banner-action {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-family: var(--sans);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.setup-banner-action:hover {
+  text-decoration: underline;
+}
+
+.setup-banner-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--faint);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.setup-banner-close:hover {
+  color: var(--muted);
+}

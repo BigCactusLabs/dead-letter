@@ -103,6 +103,13 @@ test("done panel has report path element", () => {
   assert.doesNotMatch(html, /\.dead-letter-report\.json/);
 });
 
+test("unconfigured banner is present in template", () => {
+  const html = fs.readFileSync(INDEX_PATH, "utf8");
+  assert.match(html, /class="setup-banner"/);
+  assert.match(html, /Workspace not configured/);
+  assert.match(html, /Set up now/);
+});
+
 test("setup modal markup is present with required elements", () => {
   const html = fs.readFileSync(INDEX_PATH, "utf8");
 

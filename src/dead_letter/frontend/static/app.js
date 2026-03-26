@@ -39,6 +39,7 @@ Alpine.data("deadLetterApp", () => ({
   formErrors: [],
   dropFeedback: "",
   batchConfirm: { show: false, emlFiles: [], skipped: [], totalBytes: 0 },
+  setupBannerDismissed: false,
 
   init() {
     this.applyDryRunSafety();
