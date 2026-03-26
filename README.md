@@ -4,7 +4,7 @@
 
 # dead-letter
 
-[![PyPI](https://img.shields.io/pypi/v/dead-letter)](https://pypi.org/project/dead-letter/)
+[![PyPI](https://img.shields.io/pypi/v/dead-letter?cache=bust)](https://pypi.org/project/dead-letter/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **Your `.eml` files deserve a second life.**
