@@ -9,7 +9,3 @@
 - [Quality Diagnostics](reference/quality-diagnostics.md) — conversion grading and warning semantics
 - [Brand Handoff](brand/handoff.md) — public brand system and asset guidance
 - [Brand Style Guide](brand/style-guide.md) — canonical visual language and production integration notes
-
-## Internal Docs
-
-Internal maintainer material lives under `docs/internal/` and is not part of the public release-facing docs surface.
