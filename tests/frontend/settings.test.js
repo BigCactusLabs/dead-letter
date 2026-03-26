@@ -175,3 +175,95 @@ test("load() clears needsSetup when configured", async () => {
   assert.equal(settings.needsSetup, false);
   assert.equal(settings.showSetupModal, false);
 });
+
+test("submitSetup() calls PUT /api/settings and clears modal on success", async () => {
+  globalThis.localStorage = createMockLocalStorage();
+  const requests = [];
+  const { settings } = await createSettingsStore((url, options = {}) => {
+    requests.push({ url, options });
+    if (options.method === "PUT") {
+      return Promise.resolve(
+        makeResponse({
+          jsonData: {
+            configured: true,
+            inbox_path: "/home/user/letters/Inbox",
+            cabinet_path: "/home/user/letters/Cabinet",
+          },
+        })
+      );
+    }
+    return Promise.resolve(
+      makeResponse({
+        jsonData: { configured: false, inbox_path: null, cabinet_path: null },
+      })
+    );
+  });
+
+  settings.setupInboxPath = "/home/user/letters/Inbox";
+  settings.setupCabinetPath = "/home/user/letters/Cabinet";
+  settings.showSetupModal = true;
+  settings.needsSetup = true;
+
+  await settings.submitSetup();
+
+  assert.equal(settings.configured, true);
+  assert.equal(settings.showSetupModal, false);
+  assert.equal(settings.needsSetup, false);
+  const putReq = requests.find((r) => r.options.method === "PUT");
+  assert.ok(putReq);
+  assert.deepEqual(JSON.parse(putReq.options.body), {
+    inbox_path: "/home/user/letters/Inbox",
+    cabinet_path: "/home/user/letters/Cabinet",
+  });
+});
+
+test("submitSetup() keeps modal open on API error", async () => {
+  globalThis.localStorage = createMockLocalStorage();
+  const { settings } = await createSettingsStore((url, options = {}) => {
+    if (options.method === "PUT") {
+      return Promise.resolve(
+        makeResponse({
+          ok: false,
+          status: 400,
+          jsonData: { detail: { errors: [{ message: "Paths overlap" }] } },
+        })
+      );
+    }
+    return Promise.resolve(
+      makeResponse({
+        jsonData: { configured: false, inbox_path: null, cabinet_path: null },
+      })
+    );
+  });
+
+  settings.showSetupModal = true;
+  settings.needsSetup = true;
+
+  await settings.submitSetup();
+
+  assert.equal(settings.showSetupModal, true);
+  assert.equal(settings.needsSetup, true);
+  assert.equal(settings.setupErrors.length > 0, true);
+});
+
+test("dismissSetup() hides modal and persists to localStorage", async () => {
+  const storage = createMockLocalStorage();
+  globalThis.localStorage = storage;
+
+  const { settings } = await createSettingsStore(() =>
+    Promise.resolve(
+      makeResponse({
+        jsonData: { configured: false, inbox_path: null, cabinet_path: null },
+      })
+    )
+  );
+
+  settings.showSetupModal = true;
+  settings.needsSetup = true;
+
+  settings.dismissSetup();
+
+  assert.equal(settings.showSetupModal, false);
+  assert.equal(settings.needsSetup, true);
+  assert.equal(storage.getItem("dead-letter:setup-dismissed"), "1");
+});

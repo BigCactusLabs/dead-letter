@@ -23,6 +23,7 @@ export function registerSettingsStore(Alpine) {
     showSetupModal: false,
     setupInboxPath: DEFAULT_SETTINGS.inbox_path,
     setupCabinetPath: DEFAULT_SETTINGS.cabinet_path,
+    setupErrors: [],
 
     applyResponse(payload) {
       if (
@@ -80,6 +81,42 @@ export function registerSettingsStore(Alpine) {
       const dismissed = typeof localStorage !== "undefined"
         && localStorage.getItem("dead-letter:setup-dismissed") === "1";
       this.showSetupModal = !dismissed;
+    },
+
+    async submitSetup() {
+      this.setupErrors = [];
+      try {
+        const response = await fetch("/api/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            inbox_path: this.setupInboxPath.trim(),
+            cabinet_path: this.setupCabinetPath.trim(),
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          const errors = normalizeErrors(payload);
+          this.setupErrors = errors.length
+            ? errors.map((item) => item.message)
+            : [firstErrorMessage(payload, "Unable to save workflow settings.")];
+          return;
+        }
+
+        this.applyResponse(payload);
+        this.needsSetup = false;
+        this.showSetupModal = false;
+      } catch (_err) {
+        this.setupErrors = ["Network error while saving settings."];
+      }
+    },
+
+    dismissSetup() {
+      this.showSetupModal = false;
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("dead-letter:setup-dismissed", "1");
+      }
     },
 
     async save() {
