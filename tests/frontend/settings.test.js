@@ -11,6 +11,15 @@ function makeResponse({ ok = true, status = 200, jsonData = {} } = {}) {
   };
 }
 
+function createMockLocalStorage(initial = {}) {
+  const store = { ...initial };
+  return {
+    getItem(key) { return store[key] ?? null; },
+    setItem(key, value) { store[key] = String(value); },
+    removeItem(key) { delete store[key]; },
+  };
+}
+
 async function createSettingsStore(fetchImpl) {
   const { registerSettingsStore } = await import(
     "../../src/dead_letter/frontend/static/stores/settings.js"
@@ -39,6 +48,8 @@ async function createSettingsStore(fetchImpl) {
 }
 
 test("load() seeds defaults when unconfigured", async () => {
+  globalThis.localStorage = createMockLocalStorage();
+
   const { settings } = await createSettingsStore(() =>
     Promise.resolve(
       makeResponse({
@@ -55,8 +66,8 @@ test("load() seeds defaults when unconfigured", async () => {
 
   assert.equal(settings.configured, false);
   assert.deepEqual(settings.form, {
-    inbox_path: "~/Documents/dead-letter/Inbox",
-    cabinet_path: "~/Documents/dead-letter/Cabinet",
+    inbox_path: "~/letters/Inbox",
+    cabinet_path: "~/letters/Cabinet",
   });
 });
 
@@ -102,7 +113,65 @@ test("applyResponse() rejects payloads missing required fields", async () => {
 
   assert.equal(settings.configured, false);
   assert.deepEqual(settings.form, {
-    inbox_path: "~/Documents/dead-letter/Inbox",
-    cabinet_path: "~/Documents/dead-letter/Cabinet",
+    inbox_path: "~/letters/Inbox",
+    cabinet_path: "~/letters/Cabinet",
   });
+});
+
+test("load() sets needsSetup and showSetupModal when unconfigured and not dismissed", async () => {
+  // Clear any localStorage mock state
+  globalThis.localStorage = createMockLocalStorage();
+
+  const { settings } = await createSettingsStore(() =>
+    Promise.resolve(
+      makeResponse({
+        jsonData: { configured: false, inbox_path: null, cabinet_path: null },
+      })
+    )
+  );
+
+  await settings.load();
+
+  assert.equal(settings.needsSetup, true);
+  assert.equal(settings.showSetupModal, true);
+});
+
+test("load() sets needsSetup but not showSetupModal when dismissed in localStorage", async () => {
+  globalThis.localStorage = createMockLocalStorage({
+    "dead-letter:setup-dismissed": "1",
+  });
+
+  const { settings } = await createSettingsStore(() =>
+    Promise.resolve(
+      makeResponse({
+        jsonData: { configured: false, inbox_path: null, cabinet_path: null },
+      })
+    )
+  );
+
+  await settings.load();
+
+  assert.equal(settings.needsSetup, true);
+  assert.equal(settings.showSetupModal, false);
+});
+
+test("load() clears needsSetup when configured", async () => {
+  globalThis.localStorage = createMockLocalStorage();
+
+  const { settings } = await createSettingsStore(() =>
+    Promise.resolve(
+      makeResponse({
+        jsonData: {
+          configured: true,
+          inbox_path: "/home/user/letters/Inbox",
+          cabinet_path: "/home/user/letters/Cabinet",
+        },
+      })
+    )
+  );
+
+  await settings.load();
+
+  assert.equal(settings.needsSetup, false);
+  assert.equal(settings.showSetupModal, false);
 });

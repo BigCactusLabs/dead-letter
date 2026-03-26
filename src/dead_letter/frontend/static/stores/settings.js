@@ -1,8 +1,8 @@
 import { firstErrorMessage, normalizeErrors } from "../lib/helpers.js";
 
 const DEFAULT_SETTINGS = Object.freeze({
-  inbox_path: "~/Documents/dead-letter/Inbox",
-  cabinet_path: "~/Documents/dead-letter/Cabinet",
+  inbox_path: "~/letters/Inbox",
+  cabinet_path: "~/letters/Cabinet",
 });
 
 function cloneDefaults() {
@@ -19,6 +19,10 @@ export function registerSettingsStore(Alpine) {
     saving: false,
     form: cloneDefaults(),
     errors: [],
+    needsSetup: false,
+    showSetupModal: false,
+    setupInboxPath: DEFAULT_SETTINGS.inbox_path,
+    setupCabinetPath: DEFAULT_SETTINGS.cabinet_path,
 
     applyResponse(payload) {
       if (
@@ -50,17 +54,32 @@ export function registerSettingsStore(Alpine) {
           const payload = await response.json().catch(() => ({}));
           this.errors = [firstErrorMessage(payload, "Unable to load workflow settings.")];
           this.configured = false;
+          this._updateSetupState();
           return;
         }
 
         const payload = await response.json();
         this.applyResponse(payload);
+        this._updateSetupState();
       } catch (_err) {
         this.errors = ["Network error while loading workflow settings."];
         this.configured = false;
+        this._updateSetupState();
       } finally {
         this.loading = false;
       }
+    },
+
+    _updateSetupState() {
+      if (this.configured) {
+        this.needsSetup = false;
+        this.showSetupModal = false;
+        return;
+      }
+      this.needsSetup = true;
+      const dismissed = typeof localStorage !== "undefined"
+        && localStorage.getItem("dead-letter:setup-dismissed") === "1";
+      this.showSetupModal = !dismissed;
     },
 
     async save() {
