@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>dead-letter</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="icon" href="/static/favicon.ico" sizes="any">
+    <link rel="icon" href="/static/favicon-32x32.png" sizes="32x32" type="image/png">
+    <link rel="apple-touch-icon" href="/static/favicon-192x192.png">
+    <script type="module" src="/static/app.js"></script>
+  </head>
+  <body>
+    <main class="shell" x-data="deadLetterApp" x-init="init()" @keydown.escape.window="handleEscape()">
+
+      <!-- Zone 1: Header Bar -->
+      <header class="header-bar">
+        <div class="header-brand">
+          <img class="header-icon" src="/static/favicon-32x32.png" width="18" height="18" alt="">
+          <span class="header-logo">dead-letter</span>
+          <span class="header-version">v4</span>
+        </div>
+        <div class="header-actions">
+          <span class="header-watcher" x-show="$store.watch.active" x-cloak>WATCHING</span>
+          <button class="gear-btn" @click="toggleSettings()"
+                  :aria-label="settingsOpen ? 'Close settings' : 'Open settings'">&#9881;</button>
+        </div>
+      </header>
+
+      <!-- Zone 2: Status Strip -->
+      <div class="status-strip">
+        <div class="stat-card">
+          <div class="stat-label">Inbox</div>
+          <div class="stat-value" x-text="inboxStatLabel"></div>
+        </div>
+        <button type="button"
+                class="stat-card stat-card-button"
+                @click="openCabinet()"
+                aria-label="Open Cabinet folder">
+          <div class="stat-label">Cabinet</div>
+          <div class="stat-value" x-text="cabinetStatLabel"></div>
+        </button>
+        <button type="button"
+                class="stat-card stat-card-button watch-card"
+                :class="{ active: $store.watch.active, 'is-busy': $store.watch.actionInFlight }"
+                @click="handleWatchToggle()"
+                :aria-label="watchCardAriaLabel"
+                :aria-pressed="$store.watch.active.toString()"
+                :disabled="$store.watch.actionInFlight">
+          <div class="watch-card-content">
+            <div class="stat-label">Watch</div>
+            <div class="stat-value" x-text="$store.watch.active ? 'ON' : 'OFF'"></div>
+          </div>
+        </button>
+      </div>
+
+      <!-- Zone 3: Workspace (Morphing) -->
+      <div class="workspace"
+           @drop="handleDrop($event)"
+           @dragover="handleDragOver($event)"
+           @dragenter="handleDragEnter($event)"
+           @dragleave="handleDragLeave($event)">
+
+        <!-- Aria live region for state announcements -->
+        <div class="sr-live" aria-live="polite" x-text="liveAnnouncement"></div>
+
+        <div class="batch-confirm workspace-panel"
+             :class="{ active: batchConfirm.show }"
+             :inert="!batchConfirm.show"
+             x-show="batchConfirm.show" x-cloak>
+          <div class="batch-confirm-header"
+               x-text="(batchConfirm.totalBytes > 104857600 && batchConfirm.skipped.length)
+                 ? 'Large batch · Mixed files'
+                 : (batchConfirm.totalBytes > 104857600 ? 'Large batch' : 'Mixed files detected')">
+          </div>
+          <div class="batch-confirm-count">
+            <span class="batch-confirm-eml" x-text="`${batchConfirm.emlFiles.length} .eml files`"></span>
+            <template x-if="batchConfirm.totalBytes > 0">
+              <span x-text="` · ${(batchConfirm.totalBytes / (1024 * 1024)).toFixed(0)} MB`"></span>
+            </template>
+          </div>
+          <template x-if="batchConfirm.skipped.length > 0">
+            <div>
+              <div class="batch-confirm-skip-label"
+                   x-text="`Skipping ${batchConfirm.skipped.length} non-.eml file${batchConfirm.skipped.length === 1 ? '' : 's'}:`"></div>
+              <div class="batch-confirm-skipped"
+                   x-text="batchConfirm.skipped.slice(0, 3).join(', ') + (batchConfirm.skipped.length > 3 ? ` + ${batchConfirm.skipped.length - 3} more` : '')"></div>
+            </div>
+          </template>
+          <template x-if="batchConfirm.totalBytes > 104857600">
+            <div class="batch-confirm-size-warn">Large batches may take a while to process.</div>
+          </template>
+          <div class="batch-confirm-actions">
+            <button class="batch-confirm-cancel" @click="cancelBatch()">Cancel</button>
+            <button class="batch-confirm-btn" @click="confirmBatch()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="square" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="14" />
+                <polyline points="3,5 12,13 21,5" />
+              </svg>
+              <span x-text="`Convert ${batchConfirm.emlFiles.length} files`"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- State: Idle (Drop Zone) -->
+        <div class="drop-zone workspace-panel"
+             :class="{ active: workspaceState === 'idle', 'drag-active': dragActive,
+                       accepted: dropFeedback === 'accepted', rejected: dropFeedback === 'rejected' }"
+             :inert="workspaceState !== 'idle'"
+             :aria-hidden="(workspaceState !== 'idle').toString()">
+          <svg class="drop-zone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="square" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="14" />
+            <polyline points="3,5 12,13 21,5" />
+          </svg>
+          <span class="drop-zone-title"
+                x-text="dragActive
+                  ? (dragItemCount > 1 ? `Release to convert ${dragItemCount} files` : 'Release to convert')
+                  : 'Drop .eml files to convert'"></span>
+          <label class="drop-zone-subtitle" x-show="!dragActive">
+            or click to browse
+            <input type="file" class="visually-hidden" accept=".eml" multiple
+                   @change="handleFileInput($event)"
+                   :disabled="!$store.settings.configured || $store.settings.loading || $store.job.isSubmitting" />
+          </label>
+          <span class="drop-zone-error"
+                x-show="$store.job.opErrors.length"
+                x-text="$store.job.opErrors[0]"
+                x-cloak></span>
+        </div>
+
+        <!-- State: Converting -->
+        <div class="converting-panel workspace-panel"
+             :class="{ active: workspaceState === 'converting' }"
+             :inert="workspaceState !== 'converting'"
+             :aria-hidden="(workspaceState !== 'converting').toString()">
+          <div class="converting-header">
+            <div class="title-chip-row">
+              <span class="converting-title">Converting</span>
+            </div>
+            <span class="counter-badge" x-text="progressCountLabel"></span>
+          </div>
+          <div class="progress-track" role="progressbar"
+               aria-label="Conversion progress"
+               :aria-valuenow="$store.job.progress.completed + $store.job.progress.failed"
+               :aria-valuemin="0" :aria-valuemax="$store.job.progress.total || 1">
+            <div class="progress-fill"
+                 :class="{ active: workspaceState === 'converting', complete: progressPercent >= 1 }"
+                 :style="{ transform: 'scaleX(' + progressPercent + ')' }"></div>
+          </div>
+          <div class="converting-current">
+            now: <span class="filename" x-text="$store.job.progress.current || '\u2014'"></span>
+          </div>
+          <div class="converting-footer">
+            <div class="result-counts">
+              <span class="count-ok" x-text="`${$store.job.summary.written} written`"></span>
+              <span class="count-skip" x-text="`${$store.job.summary.skipped} skip`"></span>
+              <span class="count-err" x-text="`${$store.job.summary.errors} err`"></span>
+            </div>
+            <button class="btn-cancel" @click="$store.job.cancel()"
+                    :disabled="!$store.job.id || $store.job.isSubmitting || $store.job.cancelInFlight || $store.job.cancelRequested || isTerminalStatus($store.job.status)">Cancel</button>
+          </div>
+        </div>
+
+        <!-- State: Done -->
+        <div class="done-panel workspace-panel"
+             :class="{ active: workspaceState === 'done' }"
+             :inert="workspaceState !== 'done'"
+             :aria-hidden="(workspaceState !== 'done').toString()">
+          <div class="done-header">
+            <span class="done-title" :class="doneStateClass" x-text="doneTitle"></span>
+            <span class="done-meta">
+              <span class="done-duration" x-text="doneDuration"></span>
+              <span class="grade-badge" :class="gradeClass"
+                    x-show="conversionGrade && isCurrentFileJob" x-cloak>
+                <svg class="grade-icon" aria-hidden="true" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <polyline x-show="conversionGrade === 'pass'" points="2,6 5,9 10,3" />
+                  <polygon x-show="conversionGrade === 'review'" points="6,2 1,10 11,10" fill="none" />
+                  <g x-show="conversionGrade === 'fail'">
+                    <line x1="3" y1="3" x2="9" y2="9" />
+                    <line x1="9" y1="3" x2="3" y2="9" />
+                  </g>
+                </svg>
+                <span x-text="gradeLabel"></span>
+              </span>
+            </span>
+          </div>
+
+          <p class="grade-message"
+             x-show="conversionGrade && conversionGrade !== 'pass' && isCurrentFileJob"
+             x-text="diagnosticsStateMessage" x-cloak></p>
+
+          <div class="done-counts">
+            <div class="done-count">
+              <span class="done-count-value count-ok" x-text="doneWrittenCount"></span>
+              <span class="done-count-label">written</span>
+            </div>
+            <div class="done-count">
+              <span class="done-count-value count-skip" x-text="doneSkippedCount"></span>
+              <span class="done-count-label">skipped</span>
+            </div>
+            <div class="done-count">
+              <span class="done-count-value count-err count-clickable"
+                    @click="errorsExpanded = !errorsExpanded"
+                    x-text="doneErrorsCount"></span>
+              <span class="done-count-label">errors</span>
+            </div>
+          </div>
+
+          <p class="stripped-images-summary"
+             x-show="strippedImagesSummary && isCurrentFileJob"
+             @click="$store.job.diagnosticsOpen = true"
+             x-text="strippedImagesSummary" x-cloak></p>
+
+          <div class="recovery-actions" x-show="$store.job.recoveryActions.length" x-cloak>
+            <template x-for="action in $store.job.recoveryActions" :key="action.kind">
+              <div class="recovery-action">
+                <p class="recovery-message" x-text="action.message"></p>
+                <button class="btn-primary recovery-button"
+                        @click="$store.job.retry(action.kind)"
+                        :disabled="$store.job.isSubmitting"
+                        x-text="action.label"></button>
+              </div>
+            </template>
+          </div>
+
+          <!-- Error Detail (inline expansion) -->
+          <div class="error-detail"
+               x-show="errorsExpanded && ($store.job.errors.length || $store.job.opErrors.length || $store.job.opInfo.length)"
+               x-cloak>
+            <template x-for="(error, idx) in $store.job.errors" :key="idx">
+              <div class="error-row">
+                <span class="error-code" x-text="error.code"></span>
+                <span class="error-message" x-text="error.message"></span>
+                <span class="error-path" x-show="error.path" x-text="error.path"></span>
+              </div>
+            </template>
+            <div class="op-error-list" x-show="$store.job.opErrors.length">
+              <template x-for="(msg, idx) in $store.job.opErrors" :key="`operr-${idx}`">
+                <div class="op-error-item" x-text="msg"></div>
+              </template>
+            </div>
+            <div class="op-notice-list" x-show="$store.job.opInfo.length">
+              <template x-for="(msg, idx) in $store.job.opInfo" :key="`opinfo-${idx}`">
+                <div class="op-notice-item" x-text="msg"></div>
+              </template>
+            </div>
+          </div>
+
+          <div class="done-info-pair">
+            <div class="done-info-row">
+              <span class="done-info-label">Last Job</span>
+              <span class="done-info-value"
+                    :class="'count-' + lastJobColor"
+                    x-text="lastJobName"></span>
+            </div>
+            <div class="done-info-row">
+              <span class="done-info-label">Output</span>
+              <span class="done-info-value path" x-text="outputCabinetPath"></span>
+            </div>
+          </div>
+          <div class="done-info-row" x-show="$store.job.reportPath" x-cloak>
+            <span class="done-info-label">Report</span>
+            <span class="done-info-value path" x-text="$store.job.reportPath"></span>
+          </div>
+
+          <!-- Diagnostics Disclosure Bar -->
+          <div class="diag-bar" x-show="showJobDiagnostics" x-cloak>
+            <button class="diag-trigger"
+                    @click="$store.job.diagnosticsOpen = !$store.job.diagnosticsOpen">
+              <span class="diag-bar-label">Diagnostics</span>
+              <span class="diag-chevron" :class="{ open: $store.job.diagnosticsOpen }">&#9656;</span>
+            </button>
+            <div class="diag-detail" x-show="$store.job.diagnosticsOpen && $store.job.diagnostics" x-cloak>
+              <div class="diag-grid">
+                <template x-if="diagnosticsOrigin">
+                  <span class="diag-label">Origin</span>
+                </template>
+                <template x-if="diagnosticsOrigin">
+                  <span class="diag-value diag-value-origin" x-text="diagnosticsOrigin"></span>
+                </template>
+
+                <span class="diag-label">State</span>
+                <span class="diag-value" :class="'state-' + diagnosticsStateClass"
+                      x-text="diagnosticsStateLabel"></span>
+
+                <span class="diag-label">Selected Body</span>
+                <span class="diag-value" x-text="$store.job.diagnostics?.selected_body || '\u2014'"></span>
+
+                <span class="diag-label">Segmentation Path</span>
+                <span class="diag-value" x-text="$store.job.diagnostics?.segmentation_path || '\u2014'"></span>
+
+                <span class="diag-label">Confidence</span>
+                <span class="diag-value" x-text="$store.job.diagnostics?.confidence || '\u2014'"></span>
+
+                <span class="diag-label">Client Hint</span>
+                <span class="diag-value" x-text="$store.job.diagnostics?.client_hint || 'generic'"></span>
+
+                <span class="diag-label">Fallback Used</span>
+                <span class="diag-value" x-text="$store.job.diagnostics?.fallback_used || 'none'"></span>
+              </div>
+
+              <div class="diag-warnings" x-show="$store.job.diagnostics?.warnings?.length">
+                <template x-for="(warning, idx) in $store.job.diagnostics?.warnings || []" :key="`diagw-${idx}`">
+                  <div class="diag-warning-row">
+                    <span class="diag-warning-code" x-text="warning.code"></span>
+                    <span class="diag-warning-message" x-text="warning.message"></span>
+                  </div>
+                </template>
+              </div>
+
+              <div class="diag-stripped-images" x-show="$store.job.diagnostics?.stripped_images?.length">
+                <template x-for="(img, idx) in $store.job.diagnostics?.stripped_images || []" :key="`stripped-${idx}`">
+                  <div class="diag-stripped-row">
+                    <span class="diag-stripped-category" x-text="img.category.replace(/_/g, ' ')"></span>
+                    <span class="diag-stripped-reason" x-text="img.reason"></span>
+                    <span class="diag-stripped-ref" x-text="img.reference"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <!-- History Disclosure Bar -->
+          <div class="diag-bar"
+               x-show="$store.history.totals.jobs_completed > 0" x-cloak>
+            <button class="diag-trigger"
+                    @click="$store.history.open = !$store.history.open">
+              <span style="display:flex;align-items:center;gap:var(--space-3)">
+                <span class="diag-bar-label">History</span>
+                <span style="font-family:var(--mono);font-size:var(--font-size-2xs);color:var(--faint)"
+                      x-text="`${$store.history.totals.jobs_completed} jobs · ${$store.history.totals.total_errors} errors`"></span>
+              </span>
+              <span class="diag-chevron" :class="{ open: $store.history.open }">&#9656;</span>
+            </button>
+            <div class="history-detail brume-scroll"
+                 x-show="$store.history.open" x-cloak>
+              <template x-for="(hjob, idx) in $store.history.jobs" :key="hjob.id">
+                <div class="job-row" @click="hjob._expanded = !hjob._expanded">
+                  <span class="job-status-dot"
+                        :class="hjob.status === 'succeeded' ? 'ok' : hjob.status === 'completed_with_errors' ? 'warn' : 'err'"></span>
+                  <span class="job-name" x-text="jobDisplayName(hjob.output_location)"></span>
+                  <span class="job-err-badge" x-text="hjob.summary.errors > 0 ? hjob.summary.errors + 'e' : ''"></span>
+                  <span class="job-time" x-text="relativeTime(hjob.finished_at)"></span>
+                  <template x-if="hjob._expanded">
+                    <div class="job-expanded">
+                      <div class="job-expanded-output">
+                        <span class="je-label">Output</span>
+                        <span x-text="hjob.output_location?.bundle_path || hjob.output_location?.cabinet_path || '\u2014'"></span>
+                      </div>
+                      <template x-for="(err, eidx) in hjob.errors || []" :key="eidx">
+                        <div class="job-expanded-error">
+                          <span class="je-code" x-text="err.code"></span>
+                          <span class="je-msg" x-text="err.message"></span>
+                        </div>
+                      </template>
+                      <template x-if="hjob.diagnostics">
+                        <div class="job-expanded-diag">
+                          <span class="je-diag-label">State</span>
+                          <span class="je-diag-value"
+                                :class="hjob.diagnostics.state === 'normal' ? 'state-ok' : hjob.diagnostics.state === 'degraded' ? 'state-warn' : 'state-err'"
+                                x-text="hjob.diagnostics.state"></span>
+                          <span class="je-diag-label">Fallback</span>
+                          <span class="je-diag-value" x-text="hjob.diagnostics.fallback_used || 'none'"></span>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Drop hint for next batch -->
+          <label class="drop-hint"
+                 :class="{ 'drag-active': dragActive && workspaceState === 'done',
+                           'accepted': dropFeedback === 'accepted' && workspaceState === 'done',
+                           'rejected': dropFeedback === 'rejected' && workspaceState === 'done' }">
+            Drop more files to start another job
+            <input type="file" class="visually-hidden" accept=".eml" multiple
+                   @change="handleFileInput($event)"
+                   :disabled="!$store.settings.configured || $store.settings.loading || $store.job.isSubmitting" />
+          </label>
+        </div>
+
+        <!-- State: Settings (Workspace Takeover) -->
+        <div class="settings-panel workspace-panel"
+             :class="{ active: workspaceState === 'settings' }"
+             :inert="workspaceState !== 'settings'"
+             :aria-hidden="(workspaceState !== 'settings').toString()">
+          <div class="settings-header">
+            <span class="settings-title">Settings</span>
+            <button class="settings-close" @click="settingsOpen = false">&#10005;</button>
+          </div>
+
+          <div class="settings-grid">
+            <!-- Left Column: Paths + Watch + Manual Job -->
+            <div>
+              <p class="settings-section-title">Workflow Paths</p>
+              <div class="field">
+                <label class="field-label">Inbox Path</label>
+                <input type="text" x-model="$store.settings.form.inbox_path"
+                       placeholder="~/Documents/dead-letter/Inbox" />
+              </div>
+              <div class="field">
+                <label class="field-label">Cabinet Path</label>
+                <input type="text" x-model="$store.settings.form.cabinet_path"
+                       placeholder="~/Documents/dead-letter/Cabinet" />
+              </div>
+
+              <p class="settings-section-title settings-section-title--spaced">Watch</p>
+              <div class="toggle-wrap">
+                <div class="toggle" :class="{ active: $store.watch.active }"
+                     @click="handleWatchToggle()" role="switch"
+                     :aria-checked="$store.watch.active.toString()"
+                     tabindex="0"
+                     @keydown.enter="handleWatchToggle()"
+                     @keydown.space.prevent="handleWatchToggle()">
+                  <div class="toggle-thumb"></div>
+                </div>
+                <span class="toggle-label"
+                      x-text="$store.watch.active ? 'Watching' : 'Off'"></span>
+              </div>
+              <div class="field field--spaced">
+                <label class="field-label">Watch Path Override</label>
+                <input type="text" x-model="$store.watch.pathOverride"
+                       placeholder="/path/to/folder (leave blank for Inbox)" />
+              </div>
+
+              <!-- Manual Job Section -->
+              <div class="manual-job-section">
+                <p class="settings-section-title settings-section-title--spaced">Manual Job</p>
+                <div class="field">
+                  <input type="text" x-model="inputPath"
+                         placeholder="/path/to/file.eml or /path/to/folder" />
+                </div>
+                <div class="mode-toggle">
+                  <button class="mode-btn" :class="{ active: mode === 'file' }"
+                          @click="mode = 'file'">FILE</button>
+                  <button class="mode-btn" :class="{ active: mode === 'directory' }"
+                          @click="mode = 'directory'">DIR</button>
+                </div>
+                <div class="field--spaced">
+                  <button class="btn-primary" @click="submitJob()"
+                          :disabled="!$store.settings.configured || $store.settings.loading || $store.job.isSubmitting">
+                    Start Manual Job
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Column: Conversion Options -->
+            <div>
+              <p class="settings-section-title">Conversion Options</p>
+
+              <!-- Meta Toggle Cards -->
+              <div class="meta-toggle-row">
+                <div class="meta-card"
+                     :class="{
+                       active: stripJunkState === 'all',
+                       indeterminate: stripJunkState === 'some'
+                     }"
+                     @click="toggleStripJunk()"
+                     @keydown.enter="toggleStripJunk()"
+                     @keydown.space.prevent="toggleStripJunk()"
+                     tabindex="0"
+                     role="checkbox"
+                     :aria-checked="stripJunkState === 'all' ? 'true' : stripJunkState === 'some' ? 'mixed' : 'false'"
+                     aria-label="Strip junk">
+                  <span class="meta-card__icon"
+                        x-text="stripJunkState === 'all' ? '✓' : stripJunkState === 'some' ? '–' : ''"></span>
+                  <span class="meta-card__label">Strip junk</span>
+                </div>
+                <div class="meta-card"
+                     :class="{
+                       'active active--accent-2': verboseOutputState === 'all',
+                       'indeterminate indeterminate--accent-2': verboseOutputState === 'some'
+                     }"
+                     @click="toggleVerboseOutput()"
+                     @keydown.enter="toggleVerboseOutput()"
+                     @keydown.space.prevent="toggleVerboseOutput()"
+                     tabindex="0"
+                     role="checkbox"
+                     :aria-checked="verboseOutputState === 'all' ? 'true' : verboseOutputState === 'some' ? 'mixed' : 'false'"
+                     aria-label="Verbose output">
+                  <span class="meta-card__icon"
+                        x-text="verboseOutputState === 'all' ? '✓' : verboseOutputState === 'some' ? '–' : ''"></span>
+                  <span class="meta-card__label">Verbose output</span>
+                </div>
+              </div>
+
+              <!-- Content -->
+              <div class="option-grid">
+                <p class="option-section-title">Content</p>
+                <label :class="{ 'opt--strip-active': options.strip_signatures }">
+                  <input type="checkbox" x-model="options.strip_signatures" /> Strip signatures</label>
+                <label :class="{ 'opt--strip-active': options.strip_disclaimers }">
+                  <input type="checkbox" x-model="options.strip_disclaimers" /> Strip disclaimers</label>
+                <label :class="{ 'opt--strip-active': options.strip_quoted_headers }">
+                  <input type="checkbox" x-model="options.strip_quoted_headers" /> Strip quoted headers</label>
+
+                <!-- Images -->
+                <p class="option-section-title option-section-title--spaced">Images</p>
+                <label :class="{ 'opt--strip-active': options.strip_signature_images }">
+                  <input type="checkbox" x-model="options.strip_signature_images" /> Strip signature images</label>
+                <label :class="{ 'opt--strip-active': options.strip_tracking_pixels }">
+                  <input type="checkbox" x-model="options.strip_tracking_pixels" /> Strip tracking pixels</label>
+                <label :class="{ 'opt--verbose-active': options.embed_inline_images }">
+                  <input type="checkbox" x-model="options.embed_inline_images" /> Embed inline images</label>
+
+                <!-- Output -->
+                <p class="option-section-title option-section-title--spaced">Output</p>
+                <label :class="{ 'opt--verbose-active': options.include_all_headers }">
+                  <input type="checkbox" x-model="options.include_all_headers" /> Include all headers</label>
+                <label :class="{ 'opt--verbose-active': options.include_raw_html }">
+                  <input type="checkbox" x-model="options.include_raw_html" /> Include raw HTML</label>
+                <label><input type="checkbox" x-model="options.no_calendar_summary" /> Disable calendar summary</label>
+
+                <!-- Behavior -->
+                <p class="option-section-title option-section-title--spaced">Behavior</p>
+                <label>
+                  <input type="checkbox" x-model="options.allow_fallback_on_html_error" />
+                  Allow plain-text fallback if HTML conversion fails
+                </label>
+                <label>
+                  <input type="checkbox" x-model="options.delete_eml" :disabled="options.dry_run" />
+                  Delete original .eml
+                </label>
+                <label><input type="checkbox" x-model="options.dry_run" @change="applyDryRunSafety" /> Dry run</label>
+                <label><input type="checkbox" x-model="options.report" /> Generate conversion report</label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Settings errors -->
+          <div class="form-errors" x-show="$store.settings.errors.length" x-transition>
+            <template x-for="err in $store.settings.errors" :key="err">
+              <p x-text="err"></p>
+            </template>
+          </div>
+          <div class="form-errors" x-show="formErrors.length" x-transition>
+            <template x-for="err in formErrors" :key="err">
+              <p x-text="err"></p>
+            </template>
+          </div>
+
+          <div class="settings-footer">
+            <button class="btn-ghost" @click="settingsOpen = false">Cancel</button>
+            <button class="btn-primary" @click="$store.settings.save()"
+                    :disabled="$store.settings.saving || $store.settings.loading">
+              <span x-text="$store.settings.saving ? 'Saving...' : 'Save'"></span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Read-only workflow paths -->
+      <section class="paths-readout" aria-label="Workflow paths">
+        <div class="path-readout-item">
+          <span class="path-readout-label">Inbox Path</span>
+          <span class="path-readout-value" :title="inboxPathLabel" x-text="inboxPathLabel"></span>
+        </div>
+        <div class="path-readout-item">
+          <span class="path-readout-label">Cabinet Path</span>
+          <span class="path-readout-value" :title="cabinetPathLabel" x-text="cabinetPathLabel"></span>
+        </div>
+      </section>
+
+    </main>
+  </body>
+</html>

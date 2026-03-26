@@ -1,0 +1,15 @@
+From: Carol <carol@example.com>
+To: Team <team@example.com>
+Subject: Re: Project Update
+Date: Thu, 05 Mar 2026 10:00:00 +0000
+Message-ID: <reply-chain-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Reply level 2.
+
+On Thu, Mar 5, 2026 at 9:55 AM Bob <bob@example.com> wrote:
+> Reply level 1.
+>
+> On Thu, Mar 5, 2026 at 9:50 AM Alice <alice@example.com> wrote:
+> > Original thread start.

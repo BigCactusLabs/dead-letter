@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>dead-letter Exploratory Style Guide</title>
+    <link rel="stylesheet" href="static/styles.css" />
+    <style>
+      /* ============================================
+         EXPLORATORY DESIGN VARIANT
+         Legacy preview only. Not canonical and not production CSS.
+         ============================================ */
+      :root {
+        /* Cool neutral base */
+        --bg: #f4f5f7;
+        --ink: #1a1d23;
+        --panel: #ffffff;
+        --line: #d1d5db;
+
+        /* Slate blue + muted violet accents */
+        --accent: #4A6FA5;
+        --accent-2: #7c5cbf;
+
+        /* Status — cooled down slightly */
+        --ok: #1a7f48;
+        --warn: #a36200;
+        --err: #c03030;
+
+        /* Typography — Geist for headings, Inter for body */
+        --heading: "Geist", "Inter", "SF Pro Display", system-ui, sans-serif;
+        --sans: "Inter", "SF Pro Text", system-ui, sans-serif;
+        --mono: "IBM Plex Mono", "SF Mono", "Fira Code", Menlo, monospace;
+      }
+
+      /* Override body background — kill the warm gradients */
+      body {
+        background: var(--bg) !important;
+        font-family: var(--sans);
+      }
+
+      /* Kill warm orbs */
+      .bg-orb { display: none !important; }
+
+      /* Sharpen all radii */
+      .panel, .component-box, .type-specimen, .swatch, .surface-chip,
+      .layout-preview, .file-list, .selection-card, .options, .manual-paths,
+      .drop-zone-note, .meter { border-radius: 0.3rem !important; }
+      .btn, .btn-inline { border-radius: 0.25rem !important; }
+      input[type="text"] { border-radius: 0.2rem !important; }
+      .chip { border-radius: 0.25rem !important; }
+      .file-kind { border-radius: 0.2rem !important; }
+      .crumb, .crumb.active { border-radius: 0.2rem !important; }
+
+      /* Flat progress meter — no gradient */
+      .meter-fill {
+        background: var(--accent) !important;
+      }
+      .meter {
+        background: #e5e7eb !important;
+      }
+
+      /* Updated surface tints — cool versions */
+      .file-row.selected { background: #eef1f8 !important; }
+      .crumb.active { background: #e8ecf4 !important; }
+      .selection-card { background: #f8f9fb !important; }
+      .drop-zone-note { background: #f8f9fb !important; border-color: #c0c5ce !important; }
+      .drop-zone-note.active { background: #edf0f8 !important; border-color: var(--accent) !important; }
+      .form-errors, .error-list, .watch-error, .browser-error { background: #fef2f2 !important; }
+
+      /* Updated button colors */
+      .btn-primary { background: var(--accent) !important; }
+      .btn-ghost { border-color: var(--line) !important; }
+      .btn-inline { border-color: var(--line) !important; }
+      .btn-subtle { color: var(--accent-2) !important; }
+
+      /* Section kicker uses accent-2 (violet) */
+      .section-kicker { color: var(--accent-2) !important; }
+
+      /* Breadcrumb interactive uses accent */
+      .crumb { color: var(--accent) !important; }
+      .crumb.active { color: var(--ink) !important; }
+
+      /* Focus ring — cool blue */
+      *:focus-visible { outline-color: #a3b8d8 !important; }
+      input[type="text"]:focus { border-color: var(--accent) !important; outline-color: #a3b8d8 !important; }
+
+      /* File kind badges — cool tints */
+      .fk-dir { border-color: #b3c4e6 !important; color: var(--accent) !important; }
+      .fk-eml { border-color: #c9b3e6 !important; color: var(--accent-2) !important; }
+
+      /* Watch stats use accent */
+      .ws-accent { color: var(--accent) !important; }
+
+      /* Heading font override */
+      .guide h1, .guide h2 { font-family: var(--heading); }
+      .heading-font { font-family: var(--heading); }
+
+      /* Hero/header bar preview — cool gradient */
+      .header-preview {
+        padding: 0.85rem 1.2rem;
+        background: linear-gradient(130deg, #f0f2f8, #f5f3fa);
+        border: 1px solid var(--line);
+        border-radius: 0.3rem;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+
+      /* ============================================
+         Guide-only layout styles
+         ============================================ */
+      .guide {
+        width: min(1100px, 92vw);
+        margin: 2rem auto 4rem;
+        display: grid;
+        gap: 2rem;
+      }
+      .guide h1 { margin: 0; font-size: clamp(1.7rem, 4vw, 2.5rem); letter-spacing: -0.02em; }
+      .guide h2 { margin: 0 0 0.5rem; font-size: 1.15rem; border-bottom: 1px solid var(--line); padding-bottom: 0.4rem; }
+      .guide h3 { margin: 0.8rem 0 0.3rem; font-size: 0.95rem; color: #6b7280; }
+      .guide-section { display: grid; gap: 1rem; }
+      .guide-intro { color: #6b7280; font-size: 0.9rem; margin: 0.2rem 0 0; max-width: 60ch; }
+
+      .swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 0.65rem; }
+      .swatch { border: 1px solid var(--line); overflow: hidden; }
+      .swatch-color { height: 3.2rem; }
+      .swatch-info { padding: 0.45rem 0.55rem; background: var(--panel); font-family: var(--mono); font-size: 0.76rem; }
+      .swatch-info strong { display: block; font-family: var(--sans); font-size: 0.82rem; margin-bottom: 0.1rem; }
+
+      .surface-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(135px, 1fr)); gap: 0.5rem; }
+      .surface-chip { border: 1px solid var(--line); padding: 0.6rem; font-family: var(--mono); font-size: 0.76rem; text-align: center; }
+
+      .type-specimen { display: grid; gap: 0.45rem; border: 1px solid var(--line); padding: 0.85rem; background: var(--panel); }
+      .type-label { font-family: var(--mono); font-size: 0.73rem; color: #6b7280; }
+
+      .component-row { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
+      .component-box { border: 1px solid var(--line); padding: 0.85rem; background: var(--panel); }
+
+      .layout-preview {
+        border: 2px dashed var(--line);
+        padding: 0.5rem;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+        grid-template-areas: "header header" "left right" "footer footer";
+        gap: 0.5rem;
+        min-height: 18rem;
+      }
+      .layout-preview > div {
+        border: 1px solid var(--accent);
+        padding: 0.55rem;
+        font-family: var(--mono);
+        font-size: 0.76rem;
+        color: var(--accent);
+        background: #f0f3f9;
+      }
+      .lp-header { grid-area: header; }
+      .lp-left { grid-area: left; }
+      .lp-right { grid-area: right; }
+      .lp-footer { grid-area: footer; }
+
+      .history-row-preview {
+        display: grid;
+        grid-template-columns: 1.8rem minmax(0, 1fr) auto auto auto;
+        gap: 0.5rem;
+        align-items: center;
+        padding: 0.5rem 0.65rem;
+        border-bottom: 1px solid #e5e7eb;
+        font-family: var(--mono);
+        font-size: 0.82rem;
+      }
+      .history-row-preview:last-child { border-bottom: none; }
+      .hr-icon { font-weight: 700; text-align: center; }
+      .hr-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .hr-meta { color: #6b7280; }
+
+      /* Side-by-side comparison */
+      .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+      .compare-label { font-family: var(--mono); font-size: 0.73rem; color: #6b7280; margin: 0 0 0.4rem; text-transform: uppercase; letter-spacing: 0.08em; }
+      @media (max-width: 700px) { .compare { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div class="guide">
+
+      <!-- Header -->
+      <div>
+        <p style="margin:0; text-transform:uppercase; font-size:0.72rem; letter-spacing:0.14em; color:var(--accent-2);">Exploratory Artifact</p>
+        <h1 class="heading-font">dead-letter</h1>
+        <p class="guide-intro">Legacy style exploration only. The canonical Brume design system lives in <code>docs/brand/style-guide.md</code> and <code>src/dead_letter/frontend/static/styles.css</code>.</p>
+      </div>
+
+      <!-- 1. Color Palette -->
+      <div class="guide-section">
+        <h2>1. Color Palette</h2>
+
+        <h3>Core Tokens</h3>
+        <div class="swatch-grid">
+          <div class="swatch">
+            <div class="swatch-color" style="background:#f4f5f7;"></div>
+            <div class="swatch-info"><strong>--bg</strong>#f4f5f7<br>Page background</div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-color" style="background:#ffffff; border-bottom:1px solid #e5e7eb;"></div>
+            <div class="swatch-info"><strong>--panel</strong>#ffffff<br>Card/panel fill</div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-color" style="background:#1a1d23;"></div>
+            <div class="swatch-info"><strong>--ink</strong>#1a1d23<br>Body text</div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-color" style="background:#d1d5db;"></div>
+            <div class="swatch-info"><strong>--line</strong>#d1d5db<br>Borders</div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-color" style="background:#4A6FA5;"></div>
+            <div class="swatch-info"><strong>--accent</strong>#4A6FA5<br>Slate blue</div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-color" style="background:#7c5cbf;"></div>
+            <div class="swatch-info"><strong>--accent-2</strong>#7c5cbf<br>Muted violet</div>
+          </div>
+        </div>
+
+        <h3>Status Colors</h3>
+        <div class="swatch-grid">
+          <div class="swatch">
+            <div class="swatch-color" style="background:#1a7f48;"></div>
+            <div class="swatch-info"><strong>--ok</strong>#1a7f48<br>Success</div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-color" style="background:#a36200;"></div>
+            <div class="swatch-info"><strong>--warn</strong>#a36200<br>Warning</div>
+          </div>
+          <div class="swatch">
+            <div class="swatch-color" style="background:#c03030;"></div>
+            <div class="swatch-info"><strong>--err</strong>#c03030<br>Error</div>
+          </div>
+        </div>
+
+        <h3>Surface Tints (Cool)</h3>
+        <div class="surface-grid">
+          <div class="surface-chip" style="background:#f8f9fb;">#f8f9fb<br>Subtle emphasis</div>
+          <div class="surface-chip" style="background:#f8f9fb; border-style:dashed;">#f8f9fb<br>Drop zone</div>
+          <div class="surface-chip" style="background:#edf0f8;">#edf0f8<br>Drop active</div>
+          <div class="surface-chip" style="background:#eef1f8;">#eef1f8<br>Selected row</div>
+          <div class="surface-chip" style="background:#e8ecf4;">#e8ecf4<br>Active crumb</div>
+          <div class="surface-chip" style="background:#fef2f2;">#fef2f2<br>Error bg</div>
+        </div>
+      </div>
+
+      <!-- 2. Typography -->
+      <div class="guide-section">
+        <h2>2. Typography</h2>
+
+        <div class="type-specimen">
+          <div class="type-label">Heading — Geist · h1 · clamp(1.7rem, 4vw, 2.5rem) · Bold · -0.02em tracking</div>
+          <div class="heading-font" style="font-size:clamp(1.7rem, 4vw, 2.5rem); font-weight:700; letter-spacing:-0.02em;">dead-letter</div>
+        </div>
+
+        <div class="type-specimen">
+          <div class="type-label">Heading — Geist · h2 · 1.15rem · Semibold</div>
+          <div class="heading-font" style="font-size:1.15rem; font-weight:600;">Active Job</div>
+        </div>
+
+        <div class="type-specimen">
+          <div class="type-label">Kicker · 0.72rem · Uppercase · --accent-2 · letter-spacing 0.14em</div>
+          <p style="margin:0; text-transform:uppercase; font-size:0.72rem; letter-spacing:0.14em; color:var(--accent-2);">Workflow Setup</p>
+        </div>
+
+        <div class="type-specimen">
+          <div class="type-label">Body — Inter · 1rem · Regular</div>
+          <p style="margin:0; max-width:60ch;">Import local .eml files into Inbox and write Cabinet bundles with tracked job status.</p>
+        </div>
+
+        <div class="type-specimen">
+          <div class="type-label">Field label — Inter · weight 600</div>
+          <span style="font-weight:600;">Cabinet Destination</span>
+        </div>
+
+        <div class="type-specimen">
+          <div class="type-label">Mono — IBM Plex Mono · File path · 0.8rem · #6b7280</div>
+          <span style="font-family:var(--mono); font-size:0.8rem; color:#6b7280;">/Users/quinn/inbox/2026-03-05-meeting-notes.eml</span>
+        </div>
+
+        <div class="type-specimen">
+          <div class="type-label">Mono — Timestamps · 0.82rem</div>
+          <span style="font-family:var(--mono); font-size:0.82rem;">Created 14:32:01 · Started 14:32:01 · Finished 14:32:04</span>
+        </div>
+
+        <div class="type-specimen">
+          <div class="type-label">Mono — Watch stats · 0.82rem · --accent</div>
+          <span style="font-family:var(--mono); font-size:0.82rem; color:var(--accent);">files 12 &nbsp; jobs 8 &nbsp; errors 0</span>
+        </div>
+      </div>
+
+      <!-- 3. Header Bar Preview -->
+      <div class="guide-section">
+        <h2>3. Header Bar (New)</h2>
+        <div class="header-preview">
+          <div>
+            <p style="margin:0; text-transform:uppercase; font-size:0.72rem; letter-spacing:0.14em; color:var(--accent-2);">Inbox to Cabinet Workflow</p>
+            <h1 class="heading-font" style="margin:0.1rem 0 0; font-size:clamp(1.2rem, 3vw, 1.5rem); letter-spacing:-0.02em;">dead-letter</h1>
+          </div>
+          <div style="text-align:right;">
+            <button class="btn btn-ghost" style="margin-bottom:0.35rem;">Watch Inbox</button>
+            <p style="margin:0; font-family:var(--mono); font-size:0.82rem; color:var(--accent);">files 3 &nbsp; jobs 2 &nbsp; errors 0</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Buttons -->
+      <div class="guide-section">
+        <h2>4. Buttons</h2>
+        <div class="component-row">
+          <button class="btn btn-primary">Start Job</button>
+          <button class="btn btn-ghost">Cancel Job</button>
+          <button class="btn btn-ghost">Resume Polling</button>
+          <button class="btn btn-primary" disabled>Disabled</button>
+          <button class="btn btn-ghost" disabled>Disabled</button>
+        </div>
+        <div class="component-row">
+          <button class="btn btn-inline">Use</button>
+          <button class="btn btn-inline">Use Folder</button>
+          <button class="btn btn-inline btn-subtle">Open</button>
+        </div>
+      </div>
+
+      <!-- 5. Chips & Badges -->
+      <div class="guide-section">
+        <h2>5. Chips & Badges</h2>
+
+        <h3>Mode Toggle</h3>
+        <div class="component-row">
+          <label class="chip"><input type="radio" name="demo-mode" value="file" checked /><span>Single File</span></label>
+          <label class="chip"><input type="radio" name="demo-mode" value="directory" /><span>Directory</span></label>
+        </div>
+
+        <h3>File Kind Badges</h3>
+        <div class="component-row">
+          <span class="file-kind">FILE</span>
+          <span class="file-kind fk-dir">DIR</span>
+          <span class="file-kind fk-eml">EML</span>
+        </div>
+      </div>
+
+      <!-- 6. Form Elements -->
+      <div class="guide-section">
+        <h2>6. Form Elements</h2>
+
+        <div class="component-box">
+          <div class="field-grid">
+            <div class="selection-card">
+              <span>Cabinet Destination</span>
+              <code>/Users/quinn/Documents/dead-letter/Cabinet/meeting-notes</code>
+              <small>Backend-owned bundle destination shown after job creation.</small>
+            </div>
+            <label class="field">
+              <span>Manual Input Path</span>
+              <input type="text" placeholder="/path/to/mail.eml" />
+            </label>
+          </div>
+        </div>
+
+        <h3>Selection Card</h3>
+        <div class="selection-card" style="max-width:400px;">
+          <span>Selected Input</span>
+          <code>/Users/quinn/inbox/meeting-notes.eml</code>
+          <small>inbox/meeting-notes.eml</small>
+        </div>
+
+        <h3>Options Disclosure</h3>
+        <details class="options" open>
+          <summary>Conversion Options</summary>
+          <div class="option-grid">
+            <label><input type="checkbox" checked /> Strip signatures</label>
+            <label><input type="checkbox" /> Strip disclaimers</label>
+            <label><input type="checkbox" checked /> Strip quoted headers</label>
+            <label><input type="checkbox" /> Embed inline images</label>
+          </div>
+        </details>
+      </div>
+
+      <!-- 7. File Browser Rows -->
+      <div class="guide-section">
+        <h2>7. File Browser Rows</h2>
+
+        <div class="component-box" style="padding:0;">
+          <div class="file-list" style="max-height:none; margin:0; border:none;">
+            <article class="file-row dir">
+              <button type="button" class="file-main">
+                <span class="file-kind fk-dir">DIR</span>
+                <span class="file-name">archive</span>
+                <span class="file-meta">Folder</span>
+              </button>
+              <div class="file-actions">
+                <button class="btn btn-inline">Use Folder</button>
+                <button class="btn btn-inline btn-subtle">Open</button>
+              </div>
+            </article>
+            <article class="file-row eml selected">
+              <button type="button" class="file-main">
+                <span class="file-kind fk-eml">EML</span>
+                <span class="file-name">2026-03-05-meeting-notes.eml</span>
+                <span class="file-meta">24.3 KB</span>
+              </button>
+              <div class="file-actions">
+                <button class="btn btn-inline">Use</button>
+              </div>
+            </article>
+            <article class="file-row eml">
+              <button type="button" class="file-main">
+                <span class="file-kind fk-eml">EML</span>
+                <span class="file-name">newsletter-weekly-digest.eml</span>
+                <span class="file-meta">8.1 KB</span>
+              </button>
+              <div class="file-actions">
+                <button class="btn btn-inline">Use</button>
+              </div>
+            </article>
+            <article class="file-row">
+              <button type="button" class="file-main">
+                <span class="file-kind">FILE</span>
+                <span class="file-name">readme.txt</span>
+                <span class="file-meta">1.2 KB</span>
+              </button>
+              <div class="file-actions">
+                <button class="btn btn-inline">Use</button>
+              </div>
+            </article>
+          </div>
+        </div>
+      </div>
+
+      <!-- 8. Breadcrumbs -->
+      <div class="guide-section">
+        <h2>8. Breadcrumbs</h2>
+        <div class="component-box">
+          <nav class="breadcrumbs" aria-label="Filesystem path">
+            <span class="crumb-wrap"><button class="crumb">Root</button><span class="crumb-sep">/</span></span>
+            <span class="crumb-wrap"><button class="crumb">inbox</button><span class="crumb-sep">/</span></span>
+            <span class="crumb-wrap"><button class="crumb active">2026-03</button></span>
+          </nav>
+        </div>
+      </div>
+
+      <!-- 9. Progress Meter -->
+      <div class="guide-section">
+        <h2>9. Progress Meter (Flat)</h2>
+
+        <div class="component-box">
+          <p style="margin:0 0 0.4rem; font-family:var(--mono); font-size:0.82rem;"><strong>0%</strong></p>
+          <div class="meter"><div class="meter-fill" style="width:0%;"></div></div>
+        </div>
+        <div class="component-box">
+          <p style="margin:0 0 0.4rem; font-family:var(--mono); font-size:0.82rem;"><strong>33%</strong> &mdash; 4 of 12</p>
+          <div class="meter"><div class="meter-fill" style="width:33%;"></div></div>
+        </div>
+        <div class="component-box">
+          <p style="margin:0 0 0.4rem; font-family:var(--mono); font-size:0.82rem;"><strong>67%</strong> &mdash; 8 of 12</p>
+          <div class="meter"><div class="meter-fill" style="width:67%;"></div></div>
+        </div>
+        <div class="component-box">
+          <p style="margin:0 0 0.4rem; font-family:var(--mono); font-size:0.82rem;"><strong>100%</strong> &mdash; Complete</p>
+          <div class="meter"><div class="meter-fill" style="width:100%;"></div></div>
+        </div>
+      </div>
+
+      <!-- 10. Status States -->
+      <div class="guide-section">
+        <h2>10. Status States</h2>
+        <div class="component-box">
+          <p class="state ok" style="margin:0.3rem 0;">Conversion finished successfully.</p>
+          <p class="state warn" style="margin:0.3rem 0;">Conversion completed with errors.</p>
+          <p class="state err" style="margin:0.3rem 0;">Job failed before completion.</p>
+          <p class="state neutral" style="margin:0.3rem 0;">Job cancelled.</p>
+        </div>
+      </div>
+
+      <!-- 11. Error Callouts -->
+      <div class="guide-section">
+        <h2>11. Error Callouts</h2>
+
+        <div class="form-errors">
+          <p>Input path is required.</p>
+        </div>
+
+        <div class="error-list">
+          <h3 style="margin:0 0 0.3rem; font-size:0.9rem;">Error Items</h3>
+          <ul style="margin:0; padding-left:1.2rem;">
+            <li>
+              <code>PARSE_ERROR</code>
+              <span>Failed to decode MIME structure</span>
+              <small>inbox/corrupt-message.eml</small>
+            </li>
+            <li>
+              <code>IO_ERROR</code>
+              <span>Permission denied writing output</span>
+              <small>archive/locked-file.eml</small>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- 12. Drop Zone -->
+      <div class="guide-section">
+        <h2>12. Drop Zone</h2>
+
+        <h3>Default</h3>
+        <div class="drop-zone-note">
+          <strong>Drop one .eml file to import into Inbox</strong>
+          <span>The backend copies it into Inbox and builds a Cabinet bundle.</span>
+        </div>
+
+        <h3>Active (drag hover)</h3>
+        <div class="drop-zone-note active">
+          <strong>Drop one .eml file to import into Inbox</strong>
+          <span>The backend copies it into Inbox and builds a Cabinet bundle.</span>
+        </div>
+      </div>
+
+      <!-- 13. History Rows -->
+      <div class="guide-section">
+        <h2>13. History Rows (New)</h2>
+
+        <div class="panel" style="padding:0;">
+          <p style="margin:0; padding:0.65rem 0.65rem 0; text-transform:uppercase; font-size:0.72rem; letter-spacing:0.14em; color:var(--accent-2);">History</p>
+          <div class="history-row-preview">
+            <span class="hr-icon" style="color:var(--ok);">&#10003;</span>
+            <span class="hr-path">inbox/</span>
+            <span class="hr-meta">12 written</span>
+            <span class="hr-meta">0 err</span>
+            <span class="hr-meta">2 minutes ago</span>
+          </div>
+          <div class="history-row-preview">
+            <span class="hr-icon" style="color:var(--ok);">&#10003;</span>
+            <span class="hr-path">meeting-notes.eml</span>
+            <span class="hr-meta">1 written</span>
+            <span class="hr-meta">0 err</span>
+            <span class="hr-meta">5 minutes ago</span>
+          </div>
+          <div class="history-row-preview">
+            <span class="hr-icon" style="color:var(--err);">&#10007;</span>
+            <span class="hr-path">corrupt-message.eml</span>
+            <span class="hr-meta">0 written</span>
+            <span class="hr-meta">1 err</span>
+            <span class="hr-meta">8 minutes ago</span>
+          </div>
+          <div class="history-row-preview">
+            <span class="hr-icon" style="color:var(--warn);">~</span>
+            <span class="hr-path">archive/2025/</span>
+            <span class="hr-meta">47 written</span>
+            <span class="hr-meta">3 err</span>
+            <span class="hr-meta">12 minutes ago</span>
+          </div>
+          <div class="history-row-preview">
+            <span class="hr-icon" style="color:#6b7280;">&mdash;</span>
+            <span class="hr-path">large-export/</span>
+            <span class="hr-meta">6 written</span>
+            <span class="hr-meta">0 err</span>
+            <span class="hr-meta">1 hour ago</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 14. Layout Preview -->
+      <div class="guide-section">
+        <h2>14. Two-Column Layout</h2>
+        <div class="layout-preview">
+          <div class="lp-header">header-bar &mdash; title + watch controls</div>
+          <div class="lp-left">
+            col-left<br><br>
+            Workflow Setup (inline)<br>
+            Drop Zone<br>
+            Mode Toggle<br>
+            Selection Card<br>
+            Options<br>
+            [Start Job]
+          </div>
+          <div class="lp-right">
+            col-right<br><br>
+            Active Job<br>
+            &bull; status, meter, summary<br>
+            &bull; cancel / resume<br>
+            &bull; error &amp; notice disclosures<br><br>
+            History<br>
+            &bull; compact rows
+          </div>
+          <div class="lp-footer">footer-row &mdash; Advanced Path Entry</div>
+        </div>
+      </div>
+
+      <!-- 15. Focus States -->
+      <div class="guide-section">
+        <h2>15. Focus States</h2>
+        <div class="component-box">
+          <p style="margin:0 0 0.5rem; font-size:0.88rem;">Tab through: <code style="font-family:var(--mono); font-size:0.8rem;">2px solid #a3b8d8, offset 2px</code></p>
+          <div class="component-row">
+            <button class="btn btn-primary">Focusable Primary</button>
+            <button class="btn btn-ghost">Focusable Ghost</button>
+            <button class="crumb">Crumb</button>
+            <input type="text" placeholder="Text input" style="max-width:200px;" />
+          </div>
+        </div>
+      </div>
+
+      <!-- 16. Design System Summary -->
+      <div class="guide-section">
+        <h2>16. System Summary</h2>
+        <div class="component-box" style="font-family:var(--mono); font-size:0.8rem; line-height:1.7;">
+          <strong style="font-family:var(--sans);">Key Changes from v1</strong><br>
+          bg: #f6f3ec &rarr; #f4f5f7 (cool gray)<br>
+          panel: #fffdf8 &rarr; #ffffff (clean white)<br>
+          accent: #d9572b &rarr; #4A6FA5 (slate blue)<br>
+          accent-2: #2f7f8b &rarr; #7c5cbf (muted violet)<br>
+          heading: Avenir Next &rarr; Geist<br>
+          body: Avenir Next &rarr; Inter<br>
+          radius: 1rem &rarr; 0.3rem (panels), 0.25rem (buttons)<br>
+          meter: gradient &rarr; flat --accent fill<br>
+          orbs/gradients: removed (clean flat bg)<br>
+          surfaces: warm tints &rarr; cool slate tints
+        </div>
+      </div>
+
+    </div>
+  </body>
+</html>

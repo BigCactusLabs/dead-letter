@@ -1,0 +1,13 @@
+From: Bob <bob@example.com>
+To: Alice <alice@example.com>
+Subject: Re: Threaded Fixture
+Date: Thu, 05 Mar 2026 09:10:00 +0000
+Message-ID: <threaded-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Thanks Alice.
+
+On Thu, Mar 5, 2026 at 9:00 AM Alice <alice@example.com> wrote:
+> Hello Bob,
+> This is a plain text fixture.

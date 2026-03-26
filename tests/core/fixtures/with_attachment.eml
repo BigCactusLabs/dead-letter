@@ -1,0 +1,19 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Fixture With Attachment
+Date: Thu, 05 Mar 2026 10:30:00 +0000
+Message-ID: <attachment-1@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mix-1"
+
+--mix-1
+Content-Type: text/plain; charset=utf-8
+
+See attached.
+--mix-1
+Content-Type: text/plain; name="agenda.txt"
+Content-Disposition: attachment; filename="agenda.txt"
+Content-Transfer-Encoding: base64
+
+VGVhbSBhZ2VuZGEKLSBJdGVtIDEKLSBJdGVtIDIK
+--mix-1--

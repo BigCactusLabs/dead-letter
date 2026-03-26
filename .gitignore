@@ -1,0 +1,21 @@
+.DS_Store
+.vscode/
+
+__pycache__/
+.pytest_cache/
+.venv/
+dist/
+build/
+
+.coverage
+htmlcov/
+
+.worktrees/
+.superpowers/
+.uv-cache/
+docs/superpowers/
+*.egg-info/
+
+# Keep committed vendor assets for frontend runtime.
+!src/frontend/static/vendor/
+!src/frontend/static/vendor/**

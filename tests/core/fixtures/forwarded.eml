@@ -1,0 +1,15 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Fwd: Vendor Note
+Date: Thu, 05 Mar 2026 10:10:00 +0000
+Message-ID: <forwarded-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+---------- Forwarded message ----------
+From: Vendor <vendor@example.net>
+Date: Thu, Mar 5, 2026 at 8:00 AM
+Subject: Vendor Note
+To: Alice <alice@example.com>
+
+Please review the attached quote.

@@ -1,0 +1,27 @@
+From: Organizer <organizer@example.com>
+To: Attendee <attendee@example.com>
+Subject: Calendar Invite Fixture
+Date: Thu, 05 Mar 2026 10:40:00 +0000
+Message-ID: <calendar-1@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="cal-1"
+
+--cal-1
+Content-Type: text/plain; charset=utf-8
+
+Meeting invite attached.
+--cal-1
+Content-Type: text/calendar; method=REQUEST; name="invite.ics"
+Content-Disposition: attachment; filename="invite.ics"
+
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//dead-letter//fixtures//EN
+BEGIN:VEVENT
+UID:fixture-event-1
+DTSTART:20260306T140000Z
+DTEND:20260306T143000Z
+SUMMARY:Fixture Meeting
+END:VEVENT
+END:VCALENDAR
+--cal-1--

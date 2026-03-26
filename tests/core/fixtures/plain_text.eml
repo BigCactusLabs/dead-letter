@@ -1,0 +1,14 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Plain Text Fixture
+Date: Thu, 05 Mar 2026 09:00:00 +0000
+Message-ID: <plain-text-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Hello Bob,
+
+This is a plain text fixture.
+
+Regards,
+Alice

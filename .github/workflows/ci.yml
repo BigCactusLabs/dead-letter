@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feat/**
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Sync workspace
+        run: uv sync --extra dev --locked
+
+      - name: Core tests
+        run: uv run pytest -q tests/core
+
+      - name: Backend tests
+        run: uv run pytest -q tests/backend
+
+      - name: Frontend tests
+        run: node --test tests/frontend/app.test.js
+
+      - name: Frontend syntax
+        run: node --check src/dead_letter/frontend/static/app.js
