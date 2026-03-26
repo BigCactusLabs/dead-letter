@@ -600,7 +600,9 @@
 
           <div class="settings-footer">
             <button class="btn-ghost" @click="settingsOpen = false">Cancel</button>
-            <button class="btn-primary" @click="$store.settings.save()"
+            <button class="btn-primary"
+                    :class="{ 'btn-primary--dirty': settingsDirty }"
+                    @click="$store.settings.save().then(() => { if (!$store.settings.errors.length) _savedOptions = { ...options } })"
                     :disabled="$store.settings.saving || $store.settings.loading">
               <span x-text="$store.settings.saving ? 'Saving...' : 'Save'"></span>
             </button>

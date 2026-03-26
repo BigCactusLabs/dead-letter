@@ -18,6 +18,7 @@ export function registerSettingsStore(Alpine) {
     loading: false,
     saving: false,
     form: cloneDefaults(),
+    _savedForm: cloneDefaults(),
     errors: [],
     needsSetup: false,
     showSetupModal: false,
@@ -34,6 +35,10 @@ export function registerSettingsStore(Alpine) {
       ) {
         this.configured = true;
         this.form = {
+          inbox_path: payload.inbox_path,
+          cabinet_path: payload.cabinet_path,
+        };
+        this._savedForm = {
           inbox_path: payload.inbox_path,
           cabinet_path: payload.cabinet_path,
         };
@@ -110,6 +115,11 @@ export function registerSettingsStore(Alpine) {
       } catch (_err) {
         this.setupErrors = ["Network error while saving settings."];
       }
+    },
+
+    hasDirtyPaths() {
+      return this.form.inbox_path !== this._savedForm.inbox_path
+        || this.form.cabinet_path !== this._savedForm.cabinet_path;
     },
 
     dismissSetup() {

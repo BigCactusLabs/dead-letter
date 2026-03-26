@@ -40,6 +40,7 @@ Alpine.data("deadLetterApp", () => ({
   dropFeedback: "",
   batchConfirm: { show: false, emlFiles: [], skipped: [], totalBytes: 0 },
   setupBannerDismissed: false,
+  _savedOptions: null,
 
   init() {
     this.applyDryRunSafety();
@@ -540,7 +541,18 @@ Alpine.data("deadLetterApp", () => ({
   },
 
   toggleSettings() {
+    if (!this.settingsOpen) {
+      this._savedOptions = { ...this.options };
+    }
     this.settingsOpen = !this.settingsOpen;
+  },
+
+  get settingsDirty() {
+    if (this.$store.settings.hasDirtyPaths()) return true;
+    if (!this._savedOptions) return false;
+    return Object.keys(this.options).some(
+      (key) => this.options[key] !== this._savedOptions[key]
+    );
   },
 
   handleEscape() {

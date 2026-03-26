@@ -1438,6 +1438,12 @@ input[type="checkbox"]:checked {
   opacity: 0.9;
 }
 
+.btn-primary.btn-primary--dirty {
+  background: #9bb0e8;
+  color: #0d1117;
+  box-shadow: 0 0 12px rgba(155, 176, 232, 0.6);
+}
+
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: default;
