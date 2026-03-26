@@ -110,6 +110,16 @@ test("unconfigured banner is present in template", () => {
   assert.match(html, /Set up now/);
 });
 
+test("watch card and import buttons have unconfigured disabled states", () => {
+  const html = fs.readFileSync(INDEX_PATH, "utf8");
+
+  // Watch card has disabled-when-unconfigured tooltip
+  assert.match(html, /watch-card[\s\S]*?Configure inbox/);
+
+  // File input disabled when unconfigured (already exists - verify it stays)
+  assert.match(html, /:disabled="!\$store\.settings\.configured/);
+});
+
 test("setup modal markup is present with required elements", () => {
   const html = fs.readFileSync(INDEX_PATH, "utf8");
 

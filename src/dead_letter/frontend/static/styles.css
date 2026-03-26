@@ -1795,3 +1795,10 @@ input[type="checkbox"]:checked {
 .setup-banner-close:hover {
   color: var(--muted);
 }
+
+/* ===== Disabled (Unconfigured) States ===== */
+
+.stat-card-button.is-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

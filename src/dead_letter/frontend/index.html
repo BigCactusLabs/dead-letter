@@ -93,11 +93,12 @@
         </button>
         <button type="button"
                 class="stat-card stat-card-button watch-card"
-                :class="{ active: $store.watch.active, 'is-busy': $store.watch.actionInFlight }"
-                @click="handleWatchToggle()"
-                :aria-label="watchCardAriaLabel"
+                :class="{ active: $store.watch.active, 'is-busy': $store.watch.actionInFlight, 'is-disabled': !$store.settings.configured }"
+                @click="$store.settings.configured ? handleWatchToggle() : null"
+                :aria-label="$store.settings.configured ? watchCardAriaLabel : 'Configure inbox & cabinet to enable watch mode'"
                 :aria-pressed="$store.watch.active.toString()"
-                :disabled="$store.watch.actionInFlight">
+                :disabled="$store.watch.actionInFlight || !$store.settings.configured"
+                :title="!$store.settings.configured ? 'Configure inbox & cabinet to enable watch mode' : ''">
           <div class="watch-card-content">
             <div class="stat-label">Watch</div>
             <div class="stat-value" x-text="$store.watch.active ? 'ON' : 'OFF'"></div>
