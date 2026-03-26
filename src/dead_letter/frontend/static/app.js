@@ -543,6 +543,10 @@ Alpine.data("deadLetterApp", () => ({
   },
 
   handleEscape() {
+    if (this.$store.settings.showSetupModal) {
+      this.$store.settings.dismissSetup();
+      return;
+    }
     if (this.batchConfirm.show) {
       this.cancelBatch();
       return;

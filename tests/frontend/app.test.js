@@ -102,3 +102,24 @@ test("done panel has report path element", () => {
   assert.match(html, /reportPath/);
   assert.doesNotMatch(html, /\.dead-letter-report\.json/);
 });
+
+test("setup modal markup is present with required elements", () => {
+  const html = fs.readFileSync(INDEX_PATH, "utf8");
+
+  // Modal container
+  assert.match(html, /class="setup-modal-overlay"/);
+  assert.match(html, /\$store\.settings\.showSetupModal/);
+
+  // Onboarding blurb
+  assert.match(html, /class="setup-blurb"/);
+
+  // Path fields
+  assert.match(html, /x-model="\$store\.settings\.setupInboxPath"/);
+  assert.match(html, /x-model="\$store\.settings\.setupCabinetPath"/);
+
+  // Actions
+  assert.match(html, /submitSetup\(\)/);
+  assert.match(html, /dismissSetup\(\)/);
+  assert.match(html, /Create & Get Started/);
+  assert.match(html, /Skip for now/);
+});

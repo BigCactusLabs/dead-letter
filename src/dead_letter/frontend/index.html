@@ -11,6 +11,45 @@
     <script type="module" src="/static/app.js"></script>
   </head>
   <body>
+    <!-- First-Run Setup Modal -->
+    <div class="setup-modal-overlay"
+         x-data
+         x-show="$store.settings.showSetupModal"
+         x-cloak>
+      <div class="setup-modal" @click.outside="$store.settings.dismissSetup()">
+        <button class="setup-modal-close" @click="$store.settings.dismissSetup()" aria-label="Close">&times;</button>
+
+        <div class="setup-blurb">
+          <p>dead-letter converts <strong>.eml</strong> files into clean Markdown.</p>
+          <p>To get started, set up two folders: an <strong>Inbox</strong> where you drop email files for processing, and a <strong>Cabinet</strong> where converted results are saved.</p>
+        </div>
+
+        <div class="setup-fields">
+          <div class="field">
+            <label class="field-label">Inbox</label>
+            <input type="text" x-model="$store.settings.setupInboxPath"
+                   placeholder="~/letters/Inbox" />
+          </div>
+          <div class="field">
+            <label class="field-label">Cabinet</label>
+            <input type="text" x-model="$store.settings.setupCabinetPath"
+                   placeholder="~/letters/Cabinet" />
+          </div>
+        </div>
+
+        <div class="setup-errors" x-show="$store.settings.setupErrors.length" x-cloak>
+          <template x-for="err in $store.settings.setupErrors" :key="err">
+            <p x-text="err"></p>
+          </template>
+        </div>
+
+        <div class="setup-actions">
+          <button class="btn-primary" @click="$store.settings.submitSetup()">Create & Get Started</button>
+          <button class="setup-skip" @click="$store.settings.dismissSetup()">Skip for now</button>
+        </div>
+      </div>
+    </div>
+
     <main class="shell" x-data="deadLetterApp" x-init="init()" @keydown.escape.window="handleEscape()">
 
       <!-- Zone 1: Header Bar -->
