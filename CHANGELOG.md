@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-03-26
+
+### Added
+
+- First-run setup modal prompts users to configure Inbox and Cabinet folders
+  on first launch, with `~/letters/Inbox` and `~/letters/Cabinet` as defaults.
+- Degraded UI state when unconfigured: watch card disabled with tooltip,
+  persistent "Workspace not configured" banner with setup link.
+- localStorage-backed modal dismissal — modal shows once per install, banner
+  handles re-engagement.
+- Save button in Settings highlights when paths or conversion options have
+  unsaved changes.
+
+### Changed
+
+- Default suggested paths changed from `~/Documents/dead-letter/` to
+  `~/letters/`.
+- License changed from MIT to PolyForm Noncommercial 1.0.0 — free for
+  personal, educational, and nonprofit use; commercial use requires a
+  separate license.
+
 ## [0.1.0] - 2026-03-25
 
 ### Added

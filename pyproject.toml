@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dead-letter"
-version = "0.1.0"
+version = "0.1.1"
 description = "Convert .eml email exports to Markdown with YAML front matter"
 readme = "README.md"
 license = "PolyForm-Noncommercial-1.0.0"
