@@ -5,7 +5,7 @@
 # dead-letter
 
 [![PyPI](https://img.shields.io/pypi/v/dead-letter?cache=bust)](https://pypi.org/project/dead-letter/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-purple.svg)](LICENSE)
 
 **Your `.eml` files deserve a second life.**
 
@@ -194,4 +194,4 @@ CI runs all three on every push and PR.
 
 ## License
 
-[MIT](LICENSE)
+[PolyForm Noncommercial 1.0.0](LICENSE) — free for personal, educational, and nonprofit use. Commercial use requires a separate license from [Big Cactus Labs](https://github.com/BigCactusLabs).

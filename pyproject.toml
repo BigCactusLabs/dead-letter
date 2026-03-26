@@ -7,7 +7,7 @@ name = "dead-letter"
 version = "0.1.0"
 description = "Convert .eml email exports to Markdown with YAML front matter"
 readme = "README.md"
-license = "MIT"
+license = "PolyForm-Noncommercial-1.0.0"
 requires-python = ">=3.12"
 authors = [{ name = "Big Cactus Labs" }]
 keywords = ["eml", "email", "markdown", "converter", "archive"]
