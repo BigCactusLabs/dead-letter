@@ -495,7 +495,8 @@
                 </div>
                 <div class="field--spaced">
                   <button class="btn-primary" @click="submitJob()"
-                          :disabled="!$store.settings.configured || $store.settings.loading || $store.job.isSubmitting">
+                          :disabled="!$store.settings.configured || $store.settings.loading || $store.job.isSubmitting"
+                          :title="!$store.settings.configured ? 'Configure inbox & cabinet to enable imports' : ''">
                     Start Manual Job
                   </button>
                 </div>
