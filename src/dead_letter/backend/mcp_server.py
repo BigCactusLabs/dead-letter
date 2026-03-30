@@ -219,6 +219,57 @@ def convert_directory(
     return json.dumps(summary, indent=2)
 
 
+@mcp.tool()
+def get_diagnostics(
+    eml_path: str,
+    preset: Literal["default", "clean", "verbose", "raw"] = "default",
+    strip_signatures: bool | None = None,
+    strip_disclaimers: bool | None = None,
+    strip_tracking_pixels: bool | None = None,
+    strip_signature_images: bool | None = None,
+    strip_quoted_headers: bool | None = None,
+    embed_inline_images: bool | None = None,
+    include_all_headers: bool | None = None,
+    include_raw_html: bool | None = None,
+    no_calendar_summary: bool | None = None,
+) -> str:
+    """Inspect email quality and structure without writing permanent files.
+
+    Returns JSON with diagnostic state, body selection, segmentation path,
+    client detection, confidence, warnings, and stripped image details.
+    """
+    source = Path(eml_path)
+    if not source.exists():
+        raise FileNotFoundError(f"File not found: {eml_path}")
+
+    options = _resolve_options(
+        preset,
+        strip_signatures=strip_signatures,
+        strip_disclaimers=strip_disclaimers,
+        strip_tracking_pixels=strip_tracking_pixels,
+        strip_signature_images=strip_signature_images,
+        strip_quoted_headers=strip_quoted_headers,
+        embed_inline_images=embed_inline_images,
+        include_all_headers=include_all_headers,
+        include_raw_html=include_raw_html,
+        no_calendar_summary=no_calendar_summary,
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        result, diagnostics = convert_to_bundle_with_diagnostics(
+            source,
+            bundle_root=Path(tmp) / "bundle",
+            options=options,
+            source_handling="copy",
+        )
+        _raise_on_failure(result)
+
+    if diagnostics is None:
+        raise RuntimeError("Diagnostics unavailable for successful conversion.")
+
+    return json.dumps(diagnostics, indent=2, default=str)
+
+
 def main() -> None:
     """Entry point for the dead-letter-mcp console script."""
     mcp.run()

@@ -268,3 +268,52 @@ def test_convert_directory_with_preset(tmp_path: Path):
     )
     result = json.loads(result_str)
     assert result["successes"] == 1
+
+
+def test_get_diagnostics_returns_json():
+    from dead_letter.backend.mcp_server import get_diagnostics
+
+    result_str = get_diagnostics(eml_path=str(FIXTURES / "plain_text.eml"))
+    result = json.loads(result_str)
+    assert "state" in result
+    assert result["state"] in ("normal", "degraded", "review_recommended")
+    assert result["selected_body"] in ("html", "plain")
+    assert result["segmentation_path"] in ("html", "plain_fallback")
+    assert result["confidence"] in ("high", "medium", "low")
+    assert isinstance(result["warnings"], list)
+
+
+def test_get_diagnostics_html_email():
+    from dead_letter.backend.mcp_server import get_diagnostics
+
+    result_str = get_diagnostics(eml_path=str(FIXTURES / "html_only.eml"))
+    result = json.loads(result_str)
+    assert "selected_body" in result
+    assert "warnings" in result
+    assert isinstance(result["warnings"], list)
+
+
+def test_get_diagnostics_default_preset_reports_stripped_images(tmp_path: Path):
+    from dead_letter.backend.mcp_server import get_diagnostics
+
+    eml_path = tmp_path / "pixel.eml"
+    eml_path.write_text(
+        "From: test@example.com\n"
+        "Subject: Pixel Test\n"
+        "MIME-Version: 1.0\n"
+        "Content-Type: text/html; charset=utf-8\n"
+        "\n"
+        '<html><body><p>Hello</p><img src="https://t.example.com/open.gif" width="1" height="1" /></body></html>',
+        encoding="utf-8",
+    )
+
+    result = json.loads(get_diagnostics(eml_path=str(eml_path)))
+    assert result["stripped_images"][0]["category"] == "tracking_pixel"
+
+
+def test_get_diagnostics_file_not_found():
+    import pytest
+    from dead_letter.backend.mcp_server import get_diagnostics
+
+    with pytest.raises(FileNotFoundError):
+        get_diagnostics(eml_path="/tmp/not_real.eml")
