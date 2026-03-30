@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `dead-letter[mcp]`, launch with `dead-letter-mcp`. Provides 4 tools:
   `convert_eml`, `convert_eml_to_bundle`, `convert_directory`, `get_diagnostics`.
 
+### Fixed
+
+- `strip_signature_images` now recognizes Front signature wrappers, including
+  generated `...Signature` containers in quoted content.
+- Stripped or otherwise unreferenced inline signature/tracking assets are no
+  longer surfaced in bundle attachment output or attachment front matter.
+
 ## [0.1.1] - 2026-03-26
 
 ### Added

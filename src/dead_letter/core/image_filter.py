@@ -27,6 +27,10 @@ _SIGNATURE_WRAPPER_SELECTORS = {
     "apple_mail_signature_wrapper": [
         ".Apple-string-attachment",
     ],
+    "front_signature_wrapper": [
+        ".front-signature",
+        '[id$="Signature"]',
+    ],
 }
 
 _GMAIL_MAIL_SIG_PATTERN = "googleusercontent.com/mail-sig/"

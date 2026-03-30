@@ -28,7 +28,7 @@ Raw `.eml` files are noisy input for downstream LLM and retrieval pipelines — 
 
 dead-letter normalizes that into Markdown with YAML front matter, so message text and metadata are ready for chunking or indexing without MIME parsing or base64 cleanup. Default `convert()` and `convert_dir()` runs write a single `.md` per message and keep attachment names in front matter.
 
-If you want the filesystem artifacts separated too, bundle and Cabinet workflows write `message.md` plus decoded files under `attachments/`. The Markdown is ready for text ingestion, while PDFs, spreadsheets, calendar files, and other binary attachments stay cleanly split out for whatever downstream parser you already use.
+If you want the filesystem artifacts separated too, bundle and Cabinet workflows write `message.md` plus retained decoded files under `attachments/`. The Markdown is ready for text ingestion, while PDFs, spreadsheets, calendar files, and other retained binary attachments stay cleanly split out for whatever downstream parser you already use.
 
 For direct LLM integration, the MCP server lets Claude Desktop and Claude Code call dead-letter's conversion tools without shelling out.
 
@@ -136,6 +136,9 @@ result = convert("message.eml", options=ConvertOptions(
 ))
 ```
 
+When enabled, these filters remove matched images from rendered Markdown and omit
+stripped inline signature/tracking assets from bundle attachment output.
+
 Bundle conversion (Markdown + attachments + source in one directory):
 
 ```python
@@ -143,11 +146,11 @@ from dead_letter import convert_to_bundle
 
 bundle = convert_to_bundle("message.eml", bundle_root="cabinet/")
 print(bundle.markdown)     # cabinet/message/message.md
-print(bundle.attachments)  # [cabinet/message/attachments/logo.png, ...]
+print(bundle.attachments)  # retained extracted files under cabinet/message/attachments/
 ```
 
-Extracted attachment filenames are normalized to safe basenames before they are
-written under `attachments/`.
+Retained extracted attachment filenames are normalized to safe basenames before
+they are written under `attachments/`.
 
 Batch:
 

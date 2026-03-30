@@ -176,6 +176,44 @@ class TestSignatureLayer1AppleMailWrapper:
         assert stripped[0].reason == "apple_mail_signature_wrapper"
 
 
+class TestSignatureLayer1FrontWrapper:
+    """Layer 1: Front structural wrappers."""
+
+    def test_front_signature_wrapper(self) -> None:
+        html = (
+            "<div>Body content</div>"
+            '<div class="front-signature">'
+            '<a href="https://rjwgroup.com/"><img src="cid:logo.png" /></a>'
+            '<a href="https://survey.frontapp.com/v2/example">'
+            '<img src="https://survey.frontapp.com/assets/star.png" alt="Survey" />'
+            "</a>"
+            "</div>"
+        )
+        result, stripped = filter_images(html, strip_signature_images=True, strip_tracking_pixels=False)
+        assert "Body content" in result
+        assert 'src="cid:logo.png"' not in result
+        assert "survey.frontapp.com/assets/star.png" not in result
+        assert len(stripped) == 2
+        assert {item.reason for item in stripped} == {"front_signature_wrapper"}
+
+    def test_front_generated_signature_id_wrapper(self) -> None:
+        html = (
+            "<div>Body content</div>"
+            '<div id="m_12345Signature">'
+            '<img src="cid:legacy-logo.png" />'
+            '<a href="https://survey.frontapp.com/v2/example">'
+            '<img src="https://survey.frontapp.com/assets/star.png" alt="Survey" />'
+            "</a>"
+            "</div>"
+        )
+        result, stripped = filter_images(html, strip_signature_images=True, strip_tracking_pixels=False)
+        assert "Body content" in result
+        assert 'src="cid:legacy-logo.png"' not in result
+        assert "survey.frontapp.com/assets/star.png" not in result
+        assert len(stripped) == 2
+        assert {item.reason for item in stripped} == {"front_signature_wrapper"}
+
+
 class TestSignatureLayer2GmailProxyUrl:
     """Layer 2: Gmail mail-sig proxy URL."""
 

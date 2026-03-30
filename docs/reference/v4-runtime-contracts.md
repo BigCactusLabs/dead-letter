@@ -52,9 +52,9 @@ Rules:
 - `path` must exist and have `.eml` suffix.
 - Bundle directories are created under `<bundle_root>/<source-stem>` with collision-safe numeric suffixes when needed.
 - `message.md` is always the bundle markdown filename.
-- Extracted attachments, inline assets, and calendar files are written under `attachments/` when present.
+- Retained extracted attachments and calendar files are written under `attachments/` when present. Inline signature/tracking assets stripped from the rendered output, or inline CID assets no longer referenced by the retained output, are omitted.
 - Attachment filenames are normalized to safe basenames before writing; directory segments from MIME-provided names are stripped.
-- When attachments are written, markdown front matter includes relative `attachment_files` entries such as `attachments/logo.png`.
+- When retained attachments are written, markdown front matter includes relative `attachment_files` entries such as `attachments/logo.png`.
 - `source_handling="move"` moves the original `.eml` into the bundle root.
 - `source_handling="copy"` copies the original `.eml` into the bundle root and leaves the source in place.
 - `source_handling="delete"` removes the source after successful bundle creation and leaves no `.eml` artifact in the bundle.
@@ -116,6 +116,7 @@ html_repair_available: bool | None
 
 Notes:
 
+- `ConvertResult.attachments` and `BundleResult.attachments` reflect retained attachment output after conversion-time stripping; stripped or unreferenced inline signature/tracking assets are omitted.
 - On success, `bundle` points to the bundle directory and `markdown` points to `bundle/message.md`.
 - On success with `source_handling in {"move", "copy"}`, `source_artifact` points to the retained `.eml` inside the bundle.
 - On success with `source_handling="delete"`, `source_artifact=None`.
@@ -325,6 +326,7 @@ Diagnostics semantics:
 - `state="degraded"` means conversion succeeded with recoverable quality warnings.
 - `state="review_recommended"` means conversion succeeded, but the operator should inspect the Markdown before relying on it.
 - `diagnostics` is an operator-safe summary, not the raw internal conversion trace.
+- `diagnostics.stripped_images[].reason` is a detector label such as `gmail_signature_wrapper`, `front_signature_wrapper`, `dimension_heuristic`, or `hidden_image`.
 
 `404` means unknown job id or a previously terminal job that has been evicted from retention.
 
@@ -332,7 +334,7 @@ Cabinet bundle layout for successful conversions:
 
 - `message.md`
 - `<original filename>.eml` when the source was retained
-- `attachments/` when extracted files were written
+- `attachments/` when retained extracted files were written
 
 Failure behavior:
 

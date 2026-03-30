@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import shutil
+from collections import Counter
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
@@ -121,6 +122,93 @@ def _rewrite_inline_image_refs(
     for cid in _stripped:
         updated = re.sub(rf"!\[[^\]]*\]\(cid:{re.escape(cid)}\)\s*", "", updated)
     return updated
+
+
+def _exclude_stripped_inline_attachments(
+    parsed: ParsedEmail,
+    *,
+    stripped_cids: set[str],
+) -> ParsedEmail:
+    if not stripped_cids:
+        return parsed
+
+    stripped_name_counts: Counter[str] = Counter()
+    for cid in stripped_cids:
+        filename = parsed.inline_cid_to_filename.get(cid)
+        if filename:
+            stripped_name_counts[filename] += 1
+
+    filtered_attachments: list[str] = []
+    remaining_name_counts = stripped_name_counts.copy()
+    for name in parsed.attachments:
+        if remaining_name_counts.get(name, 0) > 0:
+            remaining_name_counts[name] -= 1
+            continue
+        filtered_attachments.append(name)
+
+    return replace(
+        parsed,
+        attachments=filtered_attachments,
+        attachment_parts=[
+            part
+            for part in parsed.attachment_parts
+            if not (part.content_id and part.content_id in stripped_cids)
+        ],
+        inline_cid_to_filename={
+            cid: filename
+            for cid, filename in parsed.inline_cid_to_filename.items()
+            if cid not in stripped_cids
+        },
+        inline_cid_to_data_uri={
+            cid: data_uri
+            for cid, data_uri in parsed.inline_cid_to_data_uri.items()
+            if cid not in stripped_cids
+        },
+    )
+
+
+def _retain_referenced_inline_attachments(
+    parsed: ParsedEmail,
+    *,
+    reference_text: str,
+) -> ParsedEmail:
+    if not reference_text:
+        return parsed
+
+    removed_name_counts: Counter[str] = Counter()
+    filtered_parts: list[AttachmentPart] = []
+    for part in parsed.attachment_parts:
+        if part.content_id and f"cid:{part.content_id}" not in reference_text:
+            removed_name_counts[part.filename] += 1
+            continue
+        filtered_parts.append(part)
+
+    if not removed_name_counts:
+        return parsed
+
+    filtered_attachments: list[str] = []
+    remaining_name_counts = removed_name_counts.copy()
+    for name in parsed.attachments:
+        if remaining_name_counts.get(name, 0) > 0:
+            remaining_name_counts[name] -= 1
+            continue
+        filtered_attachments.append(name)
+
+    return replace(
+        parsed,
+        attachments=filtered_attachments,
+        attachment_parts=filtered_parts,
+        inline_cid_to_filename={
+            cid: filename
+            for cid, filename in parsed.inline_cid_to_filename.items()
+            if f"cid:{cid}" in reference_text
+        },
+        inline_cid_to_data_uri={
+            cid: data_uri
+            for cid, data_uri in parsed.inline_cid_to_data_uri.items()
+            if f"cid:{cid}" in reference_text
+        },
+    )
 
 
 def _threaded_content_from_conversation(
@@ -282,6 +370,8 @@ def _build_rendered_markdown(
         for s in stripped_images
         if s.reference.startswith("cid:")
     }
+    if stripped_cids:
+        parsed = _exclude_stripped_inline_attachments(parsed, stripped_cids=stripped_cids)
 
     raw_html: str | None = None
     threaded: ThreadedContent | None = None
@@ -397,6 +487,15 @@ def _build_rendered_markdown(
         include_raw_html=options.include_raw_html,
         raw_html=raw_html,
     )
+    if options.strip_signature_images or options.strip_tracking_pixels:
+        attachment_reference_text = rendered.body
+        if options.include_raw_html and raw_html is not None:
+            attachment_reference_text = f"{attachment_reference_text}\n{raw_html}"
+        parsed = _retain_referenced_inline_attachments(
+            parsed,
+            reference_text=attachment_reference_text,
+        )
+        rendered.front_matter["attachments"] = list(parsed.attachments)
 
     result = ConvertResult(
         source=source,

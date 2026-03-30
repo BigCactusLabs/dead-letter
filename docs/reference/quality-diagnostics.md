@@ -35,7 +35,7 @@ This summary is intended for operator review. It is not the raw internal convers
 - `warnings`: list of `code`, `message`, `severity`
 - `stripped_images`: list of `{category, reason, reference}` objects (present when `strip_signature_images` or `strip_tracking_pixels` is enabled and images were removed)
   - `category`: `signature_image | tracking_pixel`
-  - `reason`: detection layer that matched (e.g., `gmail_signature_wrapper`, `thunderbird_signature_wrapper`, `apple_mail_signature_wrapper`, `gmail_mail_sig_url`, `filename_pattern:logo`, `structural_boundary_extension`, `dimension_heuristic`, `hidden_image`)
+  - `reason`: detection layer that matched (e.g., `gmail_signature_wrapper`, `front_signature_wrapper`, `thunderbird_signature_wrapper`, `apple_mail_signature_wrapper`, `gmail_mail_sig_url`, `filename_pattern:logo`, `structural_boundary_extension`, `dimension_heuristic`, `hidden_image`)
   - `reference`: the image `src` or CID that was stripped
 
 ## State Meanings
@@ -185,6 +185,8 @@ The frontend computes a categorical grade from `state` for glanceable trust sign
 The grade badge renders inline in the done workspace header with an SVG icon. Diagnostics auto-expand when grade is Review.
 
 `stripped_images` does not affect grade — stripping is expected behavior when enabled. Stripped images are surfaced as a clickable summary below the done counts.
+Those entries correspond to assets removed from the retained output, so the same
+images may be absent from rendered Markdown and bundle attachment artifacts.
 
 ## UI Scope
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from dead_letter.core import BundleResult, convert_to_bundle
+from dead_letter.core import BundleResult, ConvertOptions, convert_to_bundle
 
 
 def _front_matter(path: Path) -> dict[str, object]:
@@ -80,6 +80,27 @@ def test_convert_to_bundle_extracts_inline_and_calendar_attachments(
     assert result.markdown is not None
     front = _front_matter(result.markdown)
     assert front["attachment_files"] == [f"attachments/{attachment_name}"]
+
+
+def test_convert_to_bundle_omits_stripped_inline_signature_attachments(
+    copy_fixture, tmp_path: Path
+) -> None:
+    source = copy_fixture("with_inline_cid.eml")
+
+    result = convert_to_bundle(
+        source,
+        bundle_root=tmp_path / "cabinet",
+        source_handling="copy",
+        options=ConvertOptions(strip_signature_images=True),
+    )
+
+    assert result.success is True
+    assert result.attachments == []
+    assert result.markdown is not None
+    front = _front_matter(result.markdown)
+    assert front["attachments"] == []
+    assert "attachment_files" not in front
+    assert "cid:logo.png" not in result.markdown.read_text(encoding="utf-8")
 
 
 def test_convert_to_bundle_cleans_partial_bundle_after_write_failure(
