@@ -35,6 +35,7 @@ If you want the filesystem artifacts separated too, bundle and Cabinet workflows
 pip install dead-letter            # core + CLI
 pip install dead-letter[cli]       # + watch mode (watchfiles)
 pip install dead-letter[ui]        # + web UI, API server, and watch mode
+pip install dead-letter[mcp]       # + MCP server
 ```
 
 Or use [pipx](https://pipx.pypa.io/) for an isolated install:
@@ -48,7 +49,8 @@ From source:
 ```bash
 git clone https://github.com/BigCactusLabs/dead-letter.git
 cd dead-letter
-uv sync --extra dev
+uv sync --extra dev     # all extras
+uv sync --extra mcp     # MCP only
 ```
 
 ## 🚀 Quick Start
@@ -151,6 +153,42 @@ from dead_letter import convert_dir
 
 for r in convert_dir("inbox/", output="out/"):
     print(f"{'✓' if r.success else '✗'} {r.source.name}")
+```
+
+## 🔌 MCP Server
+
+dead-letter ships an [MCP](https://modelcontextprotocol.io/) server so LLM clients can convert `.eml` files directly without shelling out.
+
+Install and launch:
+
+```bash
+pip install dead-letter[mcp]
+dead-letter-mcp
+```
+
+From a source checkout:
+
+```bash
+uv run --extra mcp dead-letter-mcp
+```
+
+**Claude Desktop** — add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "dead-letter": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/dead-letter", "run", "--extra", "mcp", "dead-letter-mcp"]
+    }
+  }
+}
+```
+
+**Claude Code:**
+
+```bash
+claude mcp add dead-letter -- uv run --extra mcp dead-letter-mcp
 ```
 
 ## 🗂 Project Structure
