@@ -32,6 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 cli = ["watchfiles>=1.0.0"]
+mcp = ["mcp>=1.20.0"]
 ui = [
   "dead-letter[cli]",
   "fastapi>=0.111.0",
@@ -40,7 +41,7 @@ ui = [
   "uvicorn[standard]>=0.30.0",
 ]
 dev = [
-  "dead-letter[ui]",
+  "dead-letter[ui,mcp]",
   "anyio>=4.0.0",
   "pytest>=9.0.0",
   "pytest-cov>=5.0.0",
@@ -53,6 +54,7 @@ Issues = "https://github.com/BigCactusLabs/dead-letter/issues"
 
 [project.scripts]
 dead-letter = "dead_letter.backend.cli:main"
+dead-letter-mcp = "dead_letter.backend.mcp_server:main"
 dead-letter-ui = "dead_letter.backend.ui_server:main"
 
 [tool.setuptools]
