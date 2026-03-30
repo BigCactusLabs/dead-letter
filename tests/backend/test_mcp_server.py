@@ -317,3 +317,47 @@ def test_get_diagnostics_file_not_found():
 
     with pytest.raises(FileNotFoundError):
         get_diagnostics(eml_path="/tmp/not_real.eml")
+
+
+# ---------------------------------------------------------------------------
+# Smoke tests: tool registration and entry point
+# ---------------------------------------------------------------------------
+
+
+def test_server_has_all_tools():
+    from dead_letter.backend.mcp_server import mcp
+
+    # _tool_manager.list_tools() is synchronous and returns Tool objects
+    tool_names = {t.name for t in mcp._tool_manager.list_tools()}
+    assert "convert_eml" in tool_names
+    assert "convert_eml_to_bundle" in tool_names
+    assert "convert_directory" in tool_names
+    assert "get_diagnostics" in tool_names
+
+
+def test_main_entry_point_is_callable():
+    from dead_letter.backend.mcp_server import main
+
+    assert callable(main)
+
+
+# ---------------------------------------------------------------------------
+# MCP round-trip integration test
+# ---------------------------------------------------------------------------
+
+
+import pytest
+
+
+@pytest.mark.anyio
+async def test_mcp_client_convert_eml_round_trip():
+    """Invoke convert_eml through the MCP protocol layer via FastMCP.call_tool."""
+    from dead_letter.backend.mcp_server import mcp
+
+    content_blocks, _raw = await mcp.call_tool(
+        "convert_eml",
+        {"eml_path": str(FIXTURES / "plain_text.eml")},
+    )
+    assert content_blocks, "Expected at least one content block"
+    text = content_blocks[0].text
+    assert text.startswith("---"), "Expected YAML front matter"
