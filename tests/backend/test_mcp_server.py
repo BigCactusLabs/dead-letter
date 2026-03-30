@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import shutil
+
 from dead_letter.core.types import ConvertOptions
 
 
@@ -121,3 +124,81 @@ def test_convert_eml_file_not_found():
 
     with pytest.raises(FileNotFoundError, match="not_real.eml"):
         convert_eml(eml_path="/tmp/not_real.eml")
+
+
+def test_convert_eml_to_bundle_returns_json(tmp_path: Path):
+    from dead_letter.backend.mcp_server import convert_eml_to_bundle
+
+    source = tmp_path / "input" / "plain_text.eml"
+    source.parent.mkdir()
+    shutil.copy2(FIXTURES / "plain_text.eml", source)
+
+    cabinet = tmp_path / "cabinet"
+    result_str = convert_eml_to_bundle(
+        eml_path=str(source),
+        bundle_root=str(cabinet),
+    )
+    result = json.loads(result_str)
+    assert "bundle_path" in result
+    assert "markdown_path" in result
+    assert "attachment_paths" in result
+    assert Path(result["markdown_path"]).exists()
+
+
+def test_convert_eml_to_bundle_with_attachments(tmp_path: Path):
+    from dead_letter.backend.mcp_server import convert_eml_to_bundle
+
+    source = tmp_path / "input" / "with_attachment.eml"
+    source.parent.mkdir()
+    shutil.copy2(FIXTURES / "with_attachment.eml", source)
+
+    cabinet = tmp_path / "cabinet"
+    result_str = convert_eml_to_bundle(
+        eml_path=str(source),
+        bundle_root=str(cabinet),
+    )
+    result = json.loads(result_str)
+    assert len(result["attachment_paths"]) > 0
+
+
+def test_convert_eml_to_bundle_default_source_handling_is_copy(tmp_path: Path):
+    from dead_letter.backend.mcp_server import convert_eml_to_bundle
+
+    source = tmp_path / "input" / "plain_text.eml"
+    source.parent.mkdir()
+    shutil.copy2(FIXTURES / "plain_text.eml", source)
+
+    cabinet = tmp_path / "cabinet"
+    convert_eml_to_bundle(
+        eml_path=str(source),
+        bundle_root=str(cabinet),
+    )
+    # MCP wrapper defaults to copy; source must remain in place.
+    assert source.exists()
+
+
+def test_convert_eml_to_bundle_source_handling_delete(tmp_path: Path):
+    from dead_letter.backend.mcp_server import convert_eml_to_bundle
+
+    source = tmp_path / "input" / "plain_text.eml"
+    source.parent.mkdir()
+    shutil.copy2(FIXTURES / "plain_text.eml", source)
+
+    cabinet = tmp_path / "cabinet"
+    convert_eml_to_bundle(
+        eml_path=str(source),
+        bundle_root=str(cabinet),
+        source_handling="delete",
+    )
+    assert source.exists() is False
+
+
+def test_convert_eml_to_bundle_file_not_found():
+    import pytest
+    from dead_letter.backend.mcp_server import convert_eml_to_bundle
+
+    with pytest.raises(FileNotFoundError):
+        convert_eml_to_bundle(
+            eml_path="/tmp/not_real.eml",
+            bundle_root="/tmp/cabinet",
+        )
