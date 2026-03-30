@@ -19,6 +19,7 @@ dead-letter converts email exports into clean Markdown with YAML front matter �
 - **Inbox/Cabinet workflow** — drop `.eml` files into an Inbox, let dead-letter organize the Markdown bundles into a Cabinet
 - **Install validation** — `dead-letter doctor` checks your runtime environment
 - **Conversion report** — opt-in JSON report with per-file diagnostics for automation and audit
+- **MCP server** — integrate with Claude Desktop, Claude Code, and other MCP clients
 - **Python API** — `from dead_letter import convert` and you're off
 
 ## 🧠 Built for LLM Pipelines
@@ -28,6 +29,8 @@ Raw `.eml` files are noisy input for downstream LLM and retrieval pipelines — 
 dead-letter normalizes that into Markdown with YAML front matter, so message text and metadata are ready for chunking or indexing without MIME parsing or base64 cleanup. Default `convert()` and `convert_dir()` runs write a single `.md` per message and keep attachment names in front matter.
 
 If you want the filesystem artifacts separated too, bundle and Cabinet workflows write `message.md` plus decoded files under `attachments/`. The Markdown is ready for text ingestion, while PDFs, spreadsheets, calendar files, and other binary attachments stay cleanly split out for whatever downstream parser you already use.
+
+For direct LLM integration, the MCP server lets Claude Desktop and Claude Code call dead-letter's conversion tools without shelling out.
 
 ## 📦 Install
 
@@ -196,7 +199,7 @@ claude mcp add dead-letter -- uv run --extra mcp dead-letter-mcp
 ```
 src/dead_letter/
 ├── core/           # conversion pipeline (MIME, HTML, threads, rendering)
-├── backend/        # CLI, API server, job runner, watch mode
+├── backend/        # CLI, API server, job runner, watch mode, MCP server
 └── frontend/       # static web UI (htmx + Alpine.js)
 tests/
 ├── core/           # conversion pipeline tests with .eml fixtures

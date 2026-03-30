@@ -99,6 +99,14 @@ def convert_eml(
 
     Returns the full Markdown content (front matter + body). When output_path
     is provided, also writes the file to disk.
+
+    Presets bundle common flag combinations:
+    - default: strips signatures, tracking pixels, signature images
+    - clean: default + strips disclaimers and quoted headers
+    - verbose: includes all headers and raw HTML
+    - raw: no stripping, preserves everything
+
+    Individual flags override the preset when provided.
     """
     options = _build_options(locals())
     source = Path(eml_path)
@@ -135,7 +143,15 @@ def convert_eml_to_bundle(
     """Convert a .eml file to a self-contained bundle with markdown and attachments.
 
     Creates a directory containing the converted markdown, extracted attachments,
-    and optionally the original .eml source. Returns JSON with paths and diagnostics.
+    and optionally the original .eml source.
+
+    source_handling controls the original .eml:
+    - copy (default): copy into bundle, leave original untouched
+    - move: move original into bundle
+    - delete: remove original after successful conversion
+
+    Returns JSON with bundle_path, markdown_path, attachment_paths, and
+    optional diagnostics.
     """
     options = _build_options(locals())
     source = Path(eml_path)
@@ -181,8 +197,10 @@ def convert_directory(
 ) -> str:
     """Batch convert all .eml files in a directory to Markdown.
 
-    Returns a JSON summary with counts and file paths. Use convert_eml
-    to retrieve the content of individual converted files.
+    Recursively finds all .eml files and converts them. Returns a JSON
+    summary with total, successes, failures, output_paths, and errors.
+
+    Use convert_eml to retrieve individual converted file content.
     """
     options = _build_options(locals())
     dir_path = Path(directory)
@@ -221,8 +239,12 @@ def get_diagnostics(
 ) -> str:
     """Inspect email quality and structure without writing permanent files.
 
-    Returns JSON with diagnostic state, body selection, segmentation path,
-    client detection, confidence, warnings, and stripped image details.
+    Use this to assess conversion quality before committing, or to
+    troubleshoot problematic .eml files.
+
+    Returns JSON with: state (normal/degraded/review_recommended),
+    selected_body, segmentation_path, client_hint, confidence,
+    warnings, and stripped_images.
     """
     source = Path(eml_path)
     if not source.exists():

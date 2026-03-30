@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- MCP server for Claude Desktop and Claude Code integration. Install with
+  `dead-letter[mcp]`, launch with `dead-letter-mcp`. Provides 4 tools:
+  `convert_eml`, `convert_eml_to_bundle`, `convert_directory`, `get_diagnostics`.
+
 ## [0.1.1] - 2026-03-26
 
 ### Added
