@@ -19,7 +19,7 @@ dead-letter converts email exports into clean Markdown with YAML front matter �
 - **Inbox/Cabinet workflow** — drop `.eml` files into an Inbox, let dead-letter organize the Markdown bundles into a Cabinet
 - **Install validation** — `dead-letter doctor` checks your runtime environment
 - **Conversion report** — opt-in JSON report with per-file diagnostics for automation and audit
-- **MCP server** — integrate with Claude Desktop, Claude Code, and other MCP clients
+- **MCP server** — integrate with Claude Desktop, Claude Code, Codex, and other MCP clients
 - **Python API** — `from dead_letter import convert` and you're off
 
 ## 🧠 Built for LLM Pipelines
@@ -30,7 +30,7 @@ dead-letter normalizes that into Markdown with YAML front matter, so message tex
 
 If you want the filesystem artifacts separated too, bundle and Cabinet workflows write `message.md` plus retained decoded files under `attachments/`. The Markdown is ready for text ingestion, while PDFs, spreadsheets, calendar files, and other retained binary attachments stay cleanly split out for whatever downstream parser you already use.
 
-For direct LLM integration, the MCP server lets Claude Desktop and Claude Code call dead-letter's conversion tools without shelling out.
+For direct LLM integration, the MCP server lets Claude Desktop, Claude Code, Codex, and other MCP clients call dead-letter's conversion tools without shelling out.
 
 ## 📦 Install
 
@@ -196,6 +196,15 @@ uv run --extra mcp dead-letter-mcp
 ```bash
 claude mcp add dead-letter -- uv run --extra mcp dead-letter-mcp
 ```
+
+**Codex:**
+
+```bash
+codex mcp add dead-letter -- uv run --extra mcp dead-letter-mcp
+codex mcp list
+```
+
+The `codex mcp add` command registers the local `dead-letter` MCP server, and `codex mcp list` verifies that it's available.
 
 ## 🗂 Project Structure
 
