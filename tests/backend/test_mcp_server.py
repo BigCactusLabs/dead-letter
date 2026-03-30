@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import shutil
+from pathlib import Path
+
+import pytest
 
 from dead_letter.core.types import ConvertOptions
 
@@ -69,8 +72,6 @@ def test_resolve_options_none_override_ignored():
     assert opts.strip_signatures is True  # Preset value preserved
 
 
-from pathlib import Path
-
 FIXTURES = Path(__file__).resolve().parent.parent / "core" / "fixtures"
 
 
@@ -119,7 +120,6 @@ def test_convert_eml_with_flag_override():
 
 
 def test_convert_eml_file_not_found():
-    import pytest
     from dead_letter.backend.mcp_server import convert_eml
 
     with pytest.raises(FileNotFoundError, match="not_real.eml"):
@@ -194,7 +194,6 @@ def test_convert_eml_to_bundle_source_handling_delete(tmp_path: Path):
 
 
 def test_convert_eml_to_bundle_file_not_found():
-    import pytest
     from dead_letter.backend.mcp_server import convert_eml_to_bundle
 
     with pytest.raises(FileNotFoundError):
@@ -247,7 +246,6 @@ def test_convert_directory_dry_run(tmp_path: Path):
 
 
 def test_convert_directory_not_found():
-    import pytest
     from dead_letter.backend.mcp_server import convert_directory
 
     with pytest.raises(FileNotFoundError, match="not_a_real_dir"):
@@ -312,7 +310,6 @@ def test_get_diagnostics_default_preset_reports_stripped_images(tmp_path: Path):
 
 
 def test_get_diagnostics_file_not_found():
-    import pytest
     from dead_letter.backend.mcp_server import get_diagnostics
 
     with pytest.raises(FileNotFoundError):
@@ -327,7 +324,8 @@ def test_get_diagnostics_file_not_found():
 def test_server_has_all_tools():
     from dead_letter.backend.mcp_server import mcp
 
-    # _tool_manager.list_tools() is synchronous and returns Tool objects
+    # NOTE: _tool_manager is a private FastMCP internal. If this breaks on
+    # upgrade, fall back to checking module-level function attributes instead.
     tool_names = {t.name for t in mcp._tool_manager.list_tools()}
     assert "convert_eml" in tool_names
     assert "convert_eml_to_bundle" in tool_names
@@ -344,9 +342,6 @@ def test_main_entry_point_is_callable():
 # ---------------------------------------------------------------------------
 # MCP round-trip integration test
 # ---------------------------------------------------------------------------
-
-
-import pytest
 
 
 @pytest.mark.anyio

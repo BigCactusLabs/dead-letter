@@ -36,6 +36,14 @@ PRESETS: dict[str, dict[str, bool]] = {
 }
 
 
+_CONVERSION_FLAGS = frozenset({
+    "strip_signatures", "strip_disclaimers", "strip_tracking_pixels",
+    "strip_signature_images", "strip_quoted_headers", "embed_inline_images",
+    "include_all_headers", "include_raw_html", "no_calendar_summary",
+    "dry_run",
+})
+
+
 def _resolve_options(preset: str = "default", **overrides: bool | None) -> ConvertOptions:
     """Build ConvertOptions from a preset name with optional flag overrides."""
     base = dict(PRESETS.get(preset, PRESETS["default"]))
@@ -46,6 +54,18 @@ def _resolve_options(preset: str = "default", **overrides: bool | None) -> Conve
     base["allow_fallback_on_html_error"] = True
     base["allow_html_repair_on_panic"] = True
     return ConvertOptions(**base)
+
+
+def _build_options(local_vars: dict) -> ConvertOptions:
+    """Build ConvertOptions from a tool function's local variables.
+
+    Extracts ``preset`` and any recognized conversion flags from the dict
+    (typically ``locals()``), ignoring unrelated tool parameters.
+    """
+    return _resolve_options(
+        local_vars.get("preset", "default"),
+        **{k: local_vars[k] for k in _CONVERSION_FLAGS if k in local_vars},
+    )
 
 
 def _raise_on_failure(result: object) -> None:
@@ -80,18 +100,7 @@ def convert_eml(
     Returns the full Markdown content (front matter + body). When output_path
     is provided, also writes the file to disk.
     """
-    options = _resolve_options(
-        preset,
-        strip_signatures=strip_signatures,
-        strip_disclaimers=strip_disclaimers,
-        strip_tracking_pixels=strip_tracking_pixels,
-        strip_signature_images=strip_signature_images,
-        strip_quoted_headers=strip_quoted_headers,
-        embed_inline_images=embed_inline_images,
-        include_all_headers=include_all_headers,
-        include_raw_html=include_raw_html,
-        no_calendar_summary=no_calendar_summary,
-    )
+    options = _build_options(locals())
     source = Path(eml_path)
     if not source.exists():
         raise FileNotFoundError(f"File not found: {eml_path}")
@@ -128,18 +137,7 @@ def convert_eml_to_bundle(
     Creates a directory containing the converted markdown, extracted attachments,
     and optionally the original .eml source. Returns JSON with paths and diagnostics.
     """
-    options = _resolve_options(
-        preset,
-        strip_signatures=strip_signatures,
-        strip_disclaimers=strip_disclaimers,
-        strip_tracking_pixels=strip_tracking_pixels,
-        strip_signature_images=strip_signature_images,
-        strip_quoted_headers=strip_quoted_headers,
-        embed_inline_images=embed_inline_images,
-        include_all_headers=include_all_headers,
-        include_raw_html=include_raw_html,
-        no_calendar_summary=no_calendar_summary,
-    )
+    options = _build_options(locals())
     source = Path(eml_path)
     if not source.exists():
         raise FileNotFoundError(f"File not found: {eml_path}")
@@ -186,19 +184,7 @@ def convert_directory(
     Returns a JSON summary with counts and file paths. Use convert_eml
     to retrieve the content of individual converted files.
     """
-    options = _resolve_options(
-        preset,
-        strip_signatures=strip_signatures,
-        strip_disclaimers=strip_disclaimers,
-        strip_tracking_pixels=strip_tracking_pixels,
-        strip_signature_images=strip_signature_images,
-        strip_quoted_headers=strip_quoted_headers,
-        embed_inline_images=embed_inline_images,
-        include_all_headers=include_all_headers,
-        include_raw_html=include_raw_html,
-        no_calendar_summary=no_calendar_summary,
-        dry_run=dry_run,
-    )
+    options = _build_options(locals())
     dir_path = Path(directory)
     if not dir_path.is_dir():
         raise FileNotFoundError(f"Directory not found: {directory}")
@@ -242,18 +228,7 @@ def get_diagnostics(
     if not source.exists():
         raise FileNotFoundError(f"File not found: {eml_path}")
 
-    options = _resolve_options(
-        preset,
-        strip_signatures=strip_signatures,
-        strip_disclaimers=strip_disclaimers,
-        strip_tracking_pixels=strip_tracking_pixels,
-        strip_signature_images=strip_signature_images,
-        strip_quoted_headers=strip_quoted_headers,
-        embed_inline_images=embed_inline_images,
-        include_all_headers=include_all_headers,
-        include_raw_html=include_raw_html,
-        no_calendar_summary=no_calendar_summary,
-    )
+    options = _build_options(locals())
 
     with tempfile.TemporaryDirectory() as tmp:
         result, diagnostics = convert_to_bundle_with_diagnostics(
