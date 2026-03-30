@@ -345,6 +345,33 @@ def test_html_repair_retry_still_runs_when_conversation_segmentation_panics_firs
     assert diagnostics["fallback_used"] == "html_markdown_panic_repaired"
 
 
+def test_strip_signatures_works_on_html_conversation_path(tmp_path: Path) -> None:
+    """Regression: strip_signatures must work on HTML emails going through the HTML conversation path.
+
+    Previously cleanup_zones ran plaintext regexes on raw HTML content before the
+    HTML-to-markdown conversion, so the patterns never matched HTML tags.
+    """
+    html = (
+        "<div>Thanks for the update.</div>"
+        "<div>-- </div>"
+        "<div>Alice Smith</div>"
+        "<div>Senior Engineer</div>"
+        '<div class="gmail_quote">'
+        "<div>On Mon, Mar 30, 2026 at 10:00 AM Bob wrote:</div>"
+        "<div>Here is the latest report.</div>"
+        "</div>"
+    )
+    source = _write_html_email(tmp_path / "sig.eml", html)
+    result, _parsed, rendered, _diag = _build_rendered_markdown(
+        source, ConvertOptions(strip_signatures=True)
+    )
+    assert result.success
+    body = serialize_markdown(rendered)
+    assert "Thanks for the update" in body
+    assert "Alice Smith" not in body
+    assert "Senior Engineer" not in body
+
+
 def test_empty_html_body_preserves_plain_text_without_html_quote_patterns(tmp_path: Path) -> None:
     """Regression: when HTML body is empty, plain text body must be used without HTML quote patterns."""
     plain_text = "Hello team\n\nThis is the plain text body.\n"

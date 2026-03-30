@@ -20,6 +20,7 @@ from dead_letter.core.threads import build_zones
 from dead_letter.core.types import (
     AttachmentPart,
     BundleResult,
+    ConversationZone,
     ConvertOptions,
     ConvertResult,
     ParsedEmail,
@@ -137,23 +138,38 @@ def _threaded_content_from_conversation(
     if not conversation.rules_triggered:
         return None, None, None
 
-    cleaned = cleanup_zones(conversation.zones, options)
-    zones: list[Zone] = []
-    for zone in cleaned:
-        rendered = zone.content.strip()
+    # Convert HTML zones to markdown text before cleanup so that
+    # plaintext-based strip patterns (signatures, disclaimers, etc.) can match.
+    text_zones: list[ConversationZone] = []
+    for zone in conversation.zones:
+        content = zone.content
         if zone.source_kind == "html":
-            rendered = html_to_markdown(zone.content, include_raw_html=False).markdown
-            rendered = _rewrite_inline_image_refs(
-                rendered,
+            content = html_to_markdown(zone.content, include_raw_html=False).markdown
+            content = _rewrite_inline_image_refs(
+                content,
                 parsed,
                 embed_inline_images=options.embed_inline_images,
                 stripped_cids=stripped_cids,
             )
+        content = content.strip()
+        if not content:
+            continue
+        text_zones.append(ConversationZone(
+            kind=zone.kind,
+            content=content,
+            source_kind=zone.source_kind,
+            client_hint=zone.client_hint,
+            confidence=zone.confidence,
+            metadata=zone.metadata,
+        ))
 
-        rendered = rendered.strip()
+    cleaned = cleanup_zones(text_zones, options)
+
+    zones: list[Zone] = []
+    for zone in cleaned:
+        rendered = zone.content.strip()
         if not rendered:
             continue
-
         metadata = dict(zone.metadata)
         if zone.client_hint:
             metadata["client_hint"] = zone.client_hint
