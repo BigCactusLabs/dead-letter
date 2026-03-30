@@ -9,7 +9,7 @@ from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 
-from dead_letter.core import convert
+from dead_letter.core import convert, convert_dir
 from dead_letter.core._pipeline import convert_to_bundle_with_diagnostics
 from dead_letter.core.types import ConvertOptions
 
@@ -163,6 +163,60 @@ def convert_eml_to_bundle(
     if diagnostics is not None:
         response["diagnostics"] = diagnostics
     return json.dumps(response, indent=2)
+
+
+@mcp.tool()
+def convert_directory(
+    directory: str,
+    output_directory: str | None = None,
+    dry_run: bool = False,
+    preset: Literal["default", "clean", "verbose", "raw"] = "default",
+    strip_signatures: bool | None = None,
+    strip_disclaimers: bool | None = None,
+    strip_tracking_pixels: bool | None = None,
+    strip_signature_images: bool | None = None,
+    strip_quoted_headers: bool | None = None,
+    embed_inline_images: bool | None = None,
+    include_all_headers: bool | None = None,
+    include_raw_html: bool | None = None,
+    no_calendar_summary: bool | None = None,
+) -> str:
+    """Batch convert all .eml files in a directory to Markdown.
+
+    Returns a JSON summary with counts and file paths. Use convert_eml
+    to retrieve the content of individual converted files.
+    """
+    options = _resolve_options(
+        preset,
+        strip_signatures=strip_signatures,
+        strip_disclaimers=strip_disclaimers,
+        strip_tracking_pixels=strip_tracking_pixels,
+        strip_signature_images=strip_signature_images,
+        strip_quoted_headers=strip_quoted_headers,
+        embed_inline_images=embed_inline_images,
+        include_all_headers=include_all_headers,
+        include_raw_html=include_raw_html,
+        no_calendar_summary=no_calendar_summary,
+        dry_run=dry_run,
+    )
+    dir_path = Path(directory)
+    if not dir_path.is_dir():
+        raise FileNotFoundError(f"Directory not found: {directory}")
+
+    out = Path(output_directory) if output_directory else None
+    results = convert_dir(dir_path, output=out, options=options)
+
+    successes = [r for r in results if r.success]
+    failures = [r for r in results if not r.success]
+
+    summary = {
+        "total": len(results),
+        "successes": len(successes),
+        "failures": len(failures),
+        "output_paths": [str(r.output) for r in successes if r.output],
+        "errors": [{"file": str(r.source), "error": r.error} for r in failures],
+    }
+    return json.dumps(summary, indent=2)
 
 
 def main() -> None:

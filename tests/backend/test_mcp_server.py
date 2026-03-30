@@ -202,3 +202,69 @@ def test_convert_eml_to_bundle_file_not_found():
             eml_path="/tmp/not_real.eml",
             bundle_root="/tmp/cabinet",
         )
+
+
+def _make_eml_dir(tmp_path: Path, count: int = 2) -> Path:
+    """Copy fixture .eml files into a temp directory for batch testing."""
+    eml_dir = tmp_path / "emails"
+    eml_dir.mkdir()
+    fixtures = ["plain_text.eml", "html_only.eml", "multipart_alternative.eml"]
+    for name in fixtures[:count]:
+        shutil.copy2(FIXTURES / name, eml_dir / name)
+    return eml_dir
+
+
+def test_convert_directory_returns_summary(tmp_path: Path):
+    from dead_letter.backend.mcp_server import convert_directory
+
+    eml_dir = _make_eml_dir(tmp_path, count=2)
+    out_dir = tmp_path / "output"
+    out_dir.mkdir()
+
+    result_str = convert_directory(
+        directory=str(eml_dir),
+        output_directory=str(out_dir),
+    )
+    result = json.loads(result_str)
+    assert result["total"] == 2
+    assert result["successes"] == 2
+    assert result["failures"] == 0
+    assert len(result["output_paths"]) == 2
+    assert result["errors"] == []
+
+
+def test_convert_directory_dry_run(tmp_path: Path):
+    from dead_letter.backend.mcp_server import convert_directory
+
+    eml_dir = _make_eml_dir(tmp_path, count=1)
+
+    result_str = convert_directory(
+        directory=str(eml_dir),
+        dry_run=True,
+    )
+    result = json.loads(result_str)
+    assert result["total"] == 1
+
+
+def test_convert_directory_not_found():
+    import pytest
+    from dead_letter.backend.mcp_server import convert_directory
+
+    with pytest.raises(FileNotFoundError, match="not_a_real_dir"):
+        convert_directory(directory="/tmp/not_a_real_dir")
+
+
+def test_convert_directory_with_preset(tmp_path: Path):
+    from dead_letter.backend.mcp_server import convert_directory
+
+    eml_dir = _make_eml_dir(tmp_path, count=1)
+    out_dir = tmp_path / "output"
+    out_dir.mkdir()
+
+    result_str = convert_directory(
+        directory=str(eml_dir),
+        output_directory=str(out_dir),
+        preset="clean",
+    )
+    result = json.loads(result_str)
+    assert result["successes"] == 1
