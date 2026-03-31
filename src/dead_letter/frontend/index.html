@@ -16,7 +16,13 @@
          x-data
          x-show="$store.settings.showSetupModal"
          x-cloak>
-      <div class="setup-modal" @click.outside="$store.settings.dismissSetup()">
+      <div class="setup-modal" @click.outside="$store.settings.dismissSetup()"
+           @keydown.tab="
+             const focusable = $el.querySelectorAll('input:not([disabled]), button:not([disabled])');
+             const first = focusable[0], last = focusable[focusable.length - 1];
+             if ($event.shiftKey && document.activeElement === first) { last.focus(); $event.preventDefault(); }
+             else if (!$event.shiftKey && document.activeElement === last) { first.focus(); $event.preventDefault(); }
+           ">
         <button class="setup-modal-close" @click="$store.settings.dismissSetup()" aria-label="Close">&times;</button>
 
         <div class="setup-blurb">
@@ -26,13 +32,13 @@
 
         <div class="setup-fields">
           <div class="field">
-            <label class="field-label">Inbox</label>
-            <input type="text" x-model="$store.settings.setupInboxPath"
+            <label class="field-label" for="setup-inbox">Inbox</label>
+            <input id="setup-inbox" type="text" x-model="$store.settings.setupInboxPath"
                    placeholder="~/letters/Inbox" />
           </div>
           <div class="field">
-            <label class="field-label">Cabinet</label>
-            <input type="text" x-model="$store.settings.setupCabinetPath"
+            <label class="field-label" for="setup-cabinet">Cabinet</label>
+            <input id="setup-cabinet" type="text" x-model="$store.settings.setupCabinetPath"
                    placeholder="~/letters/Cabinet" />
           </div>
         </div>
@@ -50,7 +56,8 @@
       </div>
     </div>
 
-    <main class="shell" x-data="deadLetterApp" x-init="init()" @keydown.escape.window="handleEscape()">
+    <main class="shell" x-data="deadLetterApp" x-init="init()" @keydown.escape.window="handleEscape()"
+          :inert="$store.settings.showSetupModal">
 
       <!-- Zone 1: Header Bar -->
       <header class="header-bar">
@@ -159,7 +166,7 @@
         <div class="drop-zone workspace-panel"
              :class="{ active: workspaceState === 'idle', 'drag-active': dragActive,
                        accepted: dropFeedback === 'accepted', rejected: dropFeedback === 'rejected' }"
-             :inert="workspaceState !== 'idle'"
+             :inert="workspaceState !== 'idle' || batchConfirm.show"
              :aria-hidden="(workspaceState !== 'idle').toString()">
           <svg class="drop-zone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                stroke-width="1.5" stroke-linecap="square" aria-hidden="true">
@@ -396,7 +403,7 @@
                   <span class="job-err-badge" x-text="hjob.summary.errors > 0 ? hjob.summary.errors + 'e' : ''"></span>
                   <span class="job-time" x-text="relativeTime(hjob.finished_at)"></span>
                   <template x-if="hjob._expanded">
-                    <div class="job-expanded">
+                    <div class="job-expanded" @click.stop>
                       <div class="job-expanded-output">
                         <span class="je-label">Output</span>
                         <span x-text="hjob.output_location?.bundle_path || hjob.output_location?.cabinet_path || '\u2014'"></span>
@@ -451,13 +458,13 @@
             <div>
               <p class="settings-section-title">Workflow Paths</p>
               <div class="field">
-                <label class="field-label">Inbox Path</label>
-                <input type="text" x-model="$store.settings.form.inbox_path"
+                <label class="field-label" for="settings-inbox">Inbox Path</label>
+                <input id="settings-inbox" type="text" x-model="$store.settings.form.inbox_path"
                        placeholder="~/letters/Inbox" />
               </div>
               <div class="field">
-                <label class="field-label">Cabinet Path</label>
-                <input type="text" x-model="$store.settings.form.cabinet_path"
+                <label class="field-label" for="settings-cabinet">Cabinet Path</label>
+                <input id="settings-cabinet" type="text" x-model="$store.settings.form.cabinet_path"
                        placeholder="~/letters/Cabinet" />
               </div>
 
@@ -475,8 +482,8 @@
                       x-text="$store.watch.active ? 'Watching' : 'Off'"></span>
               </div>
               <div class="field field--spaced">
-                <label class="field-label">Watch Path Override</label>
-                <input type="text" x-model="$store.watch.pathOverride"
+                <label class="field-label" for="settings-watch-path">Watch Path Override</label>
+                <input id="settings-watch-path" type="text" x-model="$store.watch.pathOverride"
                        placeholder="/path/to/folder (leave blank for Inbox)" />
               </div>
 
@@ -484,7 +491,8 @@
               <div class="manual-job-section">
                 <p class="settings-section-title settings-section-title--spaced">Manual Job</p>
                 <div class="field">
-                  <input type="text" x-model="inputPath"
+                  <label class="field-label" for="settings-manual-path">Input Path</label>
+                  <input id="settings-manual-path" type="text" x-model="inputPath"
                          placeholder="/path/to/file.eml or /path/to/folder" />
                 </div>
                 <div class="mode-toggle">
@@ -599,10 +607,10 @@
           </div>
 
           <div class="settings-footer">
-            <button class="btn-ghost" @click="settingsOpen = false">Cancel</button>
+            <button class="btn-ghost" @click="if (_savedOptions) options = { ..._savedOptions }; settingsOpen = false">Cancel</button>
             <button class="btn-primary"
                     :class="{ 'btn-primary--dirty': settingsDirty }"
-                    @click="$store.settings.save().then(() => { if (!$store.settings.errors.length) _savedOptions = { ...options } })"
+                    @click="$store.settings.save().then(() => { if (!$store.settings.errors.length) { _savedOptions = { ...options }; _saveOptions() } })"
                     :disabled="$store.settings.saving || $store.settings.loading">
               <span x-text="$store.settings.saving ? 'Saving...' : 'Save'"></span>
             </button>

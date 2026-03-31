@@ -43,6 +43,7 @@ Alpine.data("deadLetterApp", () => ({
   _savedOptions: null,
 
   init() {
+    this._loadOptions();
     this.applyDryRunSafety();
     this.$store.settings.load();
     this.$store.watch.poll();
@@ -332,6 +333,29 @@ Alpine.data("deadLetterApp", () => ({
     }
   },
 
+  _loadOptions() {
+    if (typeof localStorage === "undefined") return;
+    try {
+      const raw = localStorage.getItem("dead-letter:options");
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (saved && typeof saved === "object") {
+        for (const key of Object.keys(this.options)) {
+          if (typeof saved[key] === "boolean") {
+            this.options[key] = saved[key];
+          }
+        }
+      }
+    } catch (_e) { /* corrupted storage */ }
+  },
+
+  _saveOptions() {
+    if (typeof localStorage === "undefined") return;
+    try {
+      localStorage.setItem("dead-letter:options", JSON.stringify(this.options));
+    } catch (_e) { /* quota exceeded */ }
+  },
+
   get stripJunkState() {
     const keys = ["strip_signatures", "strip_disclaimers", "strip_quoted_headers", "strip_signature_images", "strip_tracking_pixels"];
     const count = keys.filter((k) => this.options[k]).length;
@@ -391,6 +415,7 @@ Alpine.data("deadLetterApp", () => ({
       return;
     }
     this.applyDryRunSafety();
+    this._saveOptions();
     const payload = buildPayload(this.mode, this.inputPath, { ...this.options, ...(overrides || {}) });
     this.settingsOpen = false;
     const result = await this.$store.job.start(payload);
@@ -407,6 +432,7 @@ Alpine.data("deadLetterApp", () => ({
       return;
     }
     this.applyDryRunSafety();
+    this._saveOptions();
     const options = { ...this.options, delete_eml: Boolean(this.options.delete_eml && !this.options.dry_run) };
     const result = await this.$store.job.importFile(file, options);
     if (result && result.imported_path !== undefined) {
@@ -419,6 +445,7 @@ Alpine.data("deadLetterApp", () => ({
     this.$store.job.clearOpMessages();
     if (!this.ensureSettingsConfigured("Save Inbox and Cabinet before importing mail.")) return;
     this.applyDryRunSafety();
+    this._saveOptions();
     const options = { ...this.options, delete_eml: Boolean(this.options.delete_eml && !this.options.dry_run) };
     await this.$store.job.importBatch(files, options);
   },
@@ -523,6 +550,7 @@ Alpine.data("deadLetterApp", () => ({
     this.$store.job.clearOpMessages();
     if (!this.ensureSettingsConfigured("Save Inbox and Cabinet before starting watch.")) return;
     this.applyDryRunSafety();
+    this._saveOptions();
     const options = { ...this.options, delete_eml: Boolean(this.options.delete_eml && !this.options.dry_run) };
     await this.$store.watch.start(options);
   },
@@ -565,6 +593,7 @@ Alpine.data("deadLetterApp", () => ({
       return;
     }
     if (this.settingsOpen) {
+      if (this._savedOptions) this.options = { ...this._savedOptions };
       this.settingsOpen = false;
     }
   },

@@ -2,7 +2,7 @@
 title: dead-letter v4 Frontend State Model
 doc_type: reference
 status: canonical
-last_updated: 2026-03-26
+last_updated: 2026-03-31
 audience:
   - maintainers
   - frontend contributors
@@ -45,13 +45,14 @@ Priority order is fixed:
 - input state:
   - `mode`: `file | directory`
   - `inputPath`
-  - `options`: conversion option booleans, organized in the UI into four domain sections (Content, Images, Output, Behavior) with two meta toggle cards ("Strip junk", "Verbose output") that bulk-control related options:
+  - `options`: conversion option booleans, persisted to `dead-letter:options` in localStorage. Organized in the UI into four domain sections (Content, Images, Output, Behavior) with two meta toggle cards ("Strip junk", "Verbose output") that bulk-control related options:
     - Content (Strip junk): `strip_signatures`, `strip_disclaimers`, `strip_quoted_headers`
     - Images (Strip junk): `strip_signature_images`, `strip_tracking_pixels`
     - Images (Verbose output): `embed_inline_images`
     - Output (Verbose output): `include_all_headers`, `include_raw_html`
     - Output: `no_calendar_summary`
     - Behavior: `allow_fallback_on_html_error`, `delete_eml`, `dry_run`, `report`
+  - `_savedOptions`: snapshot of `options` captured when settings panel opens; restored on Cancel or Escape
 - workspace interaction state:
   - `dragActive`
   - `dragDepth`
@@ -142,7 +143,7 @@ Removed browser state:
 
 - `init()` calls `loadSettings()`, `pollWatch()`, and `history.load()`.
 - `GET /api/settings` with `configured=false` triggers the first-run setup flow.
-- A full-page setup modal appears on first launch when unconfigured. The modal pre-fills `~/letters/Inbox` and `~/letters/Cabinet` as suggested defaults.
+- A full-page setup modal appears on first launch when unconfigured. The modal pre-fills `~/letters/Inbox` and `~/letters/Cabinet` as suggested defaults. The modal traps keyboard focus via `@keydown.tab` cycling and applies `inert` to `<main>` while visible.
 - "Create & Get Started" calls `PUT /api/settings`, creates missing directories, dismisses the modal, and enables workflows.
 - "Skip for now" or the close button dismisses the modal and persists `dead-letter:setup-dismissed` to localStorage. The modal does not reappear on subsequent launches.
 - When the user skips setup, the UI enters a degraded state:
@@ -170,7 +171,7 @@ Removed browser state:
 - Sends the current `options` object as a JSON `options` multipart field.
 - Partitions `.eml` files from non-`.eml` files before submitting anything.
 - If zero `.eml` files remain after filtering, the frontend surfaces an actionable error and rejects the drop.
-- If skipped non-`.eml` files are present, or the total `.eml` payload exceeds 100 MB, the frontend shows a confirmation overlay before submitting.
+- If skipped non-`.eml` files are present, or the total `.eml` payload exceeds 100 MB, the frontend shows a confirmation overlay before submitting. The overlay inerts the idle drop zone behind it.
 - Confirmed single-file imports:
   - sets `inputPath` from `imported_path`
   - sets `mode="file"`
@@ -262,6 +263,7 @@ Terminal statuses:
 - `settings`:
   - settings takeover replaces other workspace content
   - two-column layout for paths/watch and options/manual job controls
+  - Cancel button and Escape key revert conversion options to the snapshot captured on open
   - Escape closes takeover
 - Setup modal overlay (outside `<main>`):
   - full-page overlay with onboarding blurb, editable path fields, and error display
@@ -281,6 +283,15 @@ Terminal statuses:
 - Missing required poll fields stops polling and surfaces operation error.
 - Drop imports reject when no `.eml` files are present.
 - Batch confirmation is required before submitting mixed drops or `.eml` payloads larger than 100 MB.
+
+## localStorage Persistence
+
+| Key | Purpose |
+|---|---|
+| `dead-letter:setup-dismissed` | Suppresses setup modal on subsequent launches |
+| `dead-letter:options` | Persists conversion option booleans across page reloads |
+
+Options are saved to localStorage when used (job submit, import, batch import, watch start, settings save) and restored during `init()` before `applyDryRunSafety()`. Only boolean values matching current option keys are restored; unknown keys are ignored for forward compatibility.
 
 ## Contract Dependencies
 

@@ -2,7 +2,7 @@
 title: dead-letter Style Guide
 doc_type: style_guide
 status: current
-last_updated: 2026-03-16
+last_updated: 2026-03-31
 audience:
   - maintainers
   - frontend contributors
@@ -171,6 +171,9 @@ Removed from the design system:
   - `outline-offset: 2px`
 - Toggle controls must remain keyboard operable with Enter/Space.
 - Settings panel must close on Escape.
+- Setup modal traps focus with tab-cycling and applies `inert` to background content.
+- Batch confirmation overlay inerts the idle drop zone behind it.
+- Form inputs use explicit `for`/`id` label associations for screen reader support.
 
 ---
 

@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MCP server for Claude Desktop and Claude Code integration. Install with
   `dead-letter[mcp]`, launch with `dead-letter-mcp`. Provides 4 tools:
   `convert_eml`, `convert_eml_to_bundle`, `convert_directory`, `get_diagnostics`.
+- Conversion options (strip signatures, dry run, etc.) now persist to
+  localStorage and restore on page reload.
 
 ### Fixed
 
@@ -19,6 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   generated `...Signature` containers in quoted content.
 - Stripped or otherwise unreferenced inline signature/tracking assets are no
   longer surfaced in bundle attachment output or attachment front matter.
+- Settings Cancel and Escape now revert unsaved conversion option changes
+  instead of preserving them in memory.
+- Form labels in setup modal and settings panel are now properly associated
+  with their inputs via `for`/`id` attributes for screen reader support.
+  Manual Job input field now has a visible label.
+- Setup modal traps keyboard focus and marks background content as `inert`,
+  preventing tab navigation to elements behind the overlay.
+- Batch confirmation overlay now marks the idle drop zone as `inert`,
+  preventing keyboard interaction with the file input behind the dialog.
+- History row expansion no longer collapses when clicking on expanded
+  detail content (output paths, error messages, diagnostics).
+- `relativeTime` helper now tolerates up to 30 seconds of server-ahead
+  clock skew instead of showing blank timestamps.
 
 ## [0.1.1] - 2026-03-26
 

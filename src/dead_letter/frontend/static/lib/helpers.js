@@ -93,8 +93,9 @@ export function relativeTime(isoString) {
   const then = new Date(isoString);
   const now = Date.now();
   const diffMs = now - then.getTime();
-  if (Number.isNaN(diffMs) || diffMs < 0) return "";
-  const seconds = Math.floor(diffMs / 1000);
+  if (Number.isNaN(diffMs)) return "";
+  if (diffMs < -30000) return "";
+  const seconds = Math.max(0, Math.floor(diffMs / 1000));
   if (seconds < 10) return "just now";
   if (seconds < 60) return `${seconds}s ago`;
   const minutes = Math.floor(seconds / 60);
