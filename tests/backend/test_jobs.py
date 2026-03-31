@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from pathlib import Path
 
@@ -100,6 +101,39 @@ async def test_job_manager_runs_directory_job_and_updates_summary(tmp_path: Path
     assert terminal.summary.errors == 1
     assert len(terminal.errors) == 1
     assert terminal.diagnostics is None
+
+
+@pytest.mark.anyio
+async def test_job_manager_directory_job_succeeds_for_same_stem_files(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root = tmp_path / "in"
+    (root / "a").mkdir(parents=True, exist_ok=True)
+    (root / "b").mkdir(parents=True, exist_ok=True)
+    (root / "a" / "same.eml").write_text("From: a@b\nSubject: hi\n\nAlpha\n", encoding="utf-8")
+    (root / "b" / "same.eml").write_text("From: c@d\nSubject: hi\n\nBeta\n", encoding="utf-8")
+
+    import dead_letter.core._pipeline as pipeline
+
+    barrier = threading.Barrier(2)
+    original = pipeline._collision_safe_bundle_dir
+
+    def synchronized_bundle_dir(target: Path) -> Path:
+        barrier.wait(timeout=1)
+        return original(target)
+
+    monkeypatch.setattr(pipeline, "_collision_safe_bundle_dir", synchronized_bundle_dir)
+
+    manager = _manager(tmp_path, worker_count=2)
+    created = await manager.create_job(JobCreateRequest(mode="directory", input_path=str(root)))
+
+    terminal = await manager.wait_for_terminal(created.id, timeout=2.0)
+
+    assert terminal.status == "succeeded"
+    assert terminal.summary.written == 2
+    assert terminal.summary.errors == 0
+    assert terminal.errors == []
+    assert sorted(path.name for path in (tmp_path / "Cabinet").iterdir()) == ["same", "same-2"]
 
 
 @pytest.mark.anyio

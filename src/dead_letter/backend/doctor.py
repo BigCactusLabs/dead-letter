@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -96,9 +98,13 @@ def check_inbox_path(path: Path | None) -> CheckResult:
         return CheckResult("inbox_path", "err", f"Inbox path: {path} (does not exist)", fix=f"mkdir -p {path}")
     if not path.is_dir():
         return CheckResult("inbox_path", "err", f"Inbox path: {path} (not a directory)", fix="provide a directory path")
-    import os
-    if not os.access(path, os.R_OK):
-        return CheckResult("inbox_path", "err", f"Inbox path: {path} (not readable)", fix=f"check permissions with `ls -la {path}`")
+    if not os.access(path, os.R_OK | os.X_OK):
+        return CheckResult(
+            "inbox_path",
+            "err",
+            f"Inbox path: {path} (not readable or traversable)",
+            fix=f"check permissions with `ls -la {path}`",
+        )
     return CheckResult("inbox_path", "ok", f"Inbox path: {path} (readable)")
 
 
@@ -109,9 +115,27 @@ def check_cabinet_path(path: Path | None) -> CheckResult:
         return CheckResult("cabinet_path", "err", f"Cabinet path: {path} (does not exist)", fix=f"mkdir -p {path}")
     if not path.is_dir():
         return CheckResult("cabinet_path", "err", f"Cabinet path: {path} (not a directory)", fix="provide a directory path")
-    import os
-    if not os.access(path, os.W_OK):
+    if not os.access(path, os.W_OK | os.X_OK):
         return CheckResult("cabinet_path", "err", f"Cabinet path: {path} (not writable)", fix=f"check permissions with `ls -la {path}`")
+    fd: int | None = None
+    probe_path: str | None = None
+    try:
+        fd, probe_path = tempfile.mkstemp(dir=str(path), prefix=".dead-letter-doctor-", suffix=".tmp")
+    except OSError:
+        return CheckResult(
+            "cabinet_path",
+            "err",
+            f"Cabinet path: {path} (not writable)",
+            fix=f"check permissions with `ls -la {path}`",
+        )
+    finally:
+        if fd is not None:
+            os.close(fd)
+        if probe_path is not None:
+            try:
+                os.unlink(probe_path)
+            except OSError:
+                pass
     return CheckResult("cabinet_path", "ok", f"Cabinet path: {path} (writable)")
 
 

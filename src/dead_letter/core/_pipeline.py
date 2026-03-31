@@ -93,7 +93,24 @@ def _collision_safe_target(target: Path) -> Path:
     return candidate
 
 
-def _collision_safe_bundle_dir(target: Path) -> Path:
+def _open_collision_safe_output(target: Path):
+    target.parent.mkdir(parents=True, exist_ok=True)
+    candidate = target
+    stem = target.stem
+    suffix = target.suffix
+    index = 2
+
+    while True:
+        try:
+            return candidate.open("x", encoding="utf-8"), candidate
+        except FileExistsError:
+            if index > _MAX_COLLISION_INDEX:
+                raise RuntimeError(f"collision-safe output naming exhausted for {target}")
+            candidate = target.with_name(f"{stem}-{index}{suffix}")
+            index += 1
+
+
+def _planned_collision_safe_bundle_dir(target: Path) -> Path:
     candidate = target
     index = 2
 
@@ -104,6 +121,22 @@ def _collision_safe_bundle_dir(target: Path) -> Path:
         index += 1
 
     return candidate
+
+
+def _collision_safe_bundle_dir(target: Path) -> Path:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    candidate = target
+    index = 2
+
+    while True:
+        try:
+            candidate.mkdir(parents=False, exist_ok=False)
+            return candidate
+        except FileExistsError:
+            if index > _MAX_COLLISION_INDEX:
+                raise RuntimeError(f"collision-safe output naming exhausted for {target}")
+            candidate = target.with_name(f"{target.name}-{index}")
+            index += 1
 
 
 def _rewrite_inline_image_refs(
@@ -572,11 +605,11 @@ def convert(
         result, markdown_document = _run_pipeline(source, opts)
 
         target = _resolve_output_target(source, result.subject, output)
-        target = _collision_safe_target(target)
 
         if not opts.dry_run:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(markdown_document, encoding="utf-8")
+            handle, target = _open_collision_safe_output(target)
+            with handle:
+                handle.write(markdown_document)
             if opts.delete_eml:
                 source.unlink()
             result.output = target
@@ -646,11 +679,13 @@ def convert_to_bundle_with_diagnostics(
         result, parsed, rendered, diagnostics = _build_rendered_markdown(source, opts)
 
         root = Path(bundle_root).expanduser()
-        bundle_dir = _collision_safe_bundle_dir(root / _bundle_slug(source))
+        if opts.dry_run:
+            bundle_dir = _planned_collision_safe_bundle_dir(root / _bundle_slug(source))
+        else:
+            bundle_dir = _collision_safe_bundle_dir(root / _bundle_slug(source))
         markdown_target = bundle_dir / "message.md"
 
         if not opts.dry_run:
-            bundle_dir.mkdir(parents=True, exist_ok=False)
             attachment_paths = _write_attachment_parts(parsed.attachment_parts, bundle_dir / "attachments")
             if attachment_paths:
                 rendered.front_matter["attachment_files"] = [

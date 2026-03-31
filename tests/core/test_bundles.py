@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -61,6 +62,48 @@ def test_convert_to_bundle_respects_source_handling_modes(copy_fixture, tmp_path
     deleted_result = convert_to_bundle(deleted, bundle_root=cabinet, source_handling="delete")
     assert deleted.exists() is False
     assert deleted_result.source_artifact is None
+
+
+def test_convert_to_bundle_concurrent_same_stem_uses_distinct_bundles(
+    copy_fixture, tmp_path: Path, monkeypatch
+) -> None:
+    cabinet = tmp_path / "cabinet"
+    source_one = copy_fixture("plain_text.eml", "a/same.eml")
+    source_two = copy_fixture("plain_text.eml", "b/same.eml")
+
+    import dead_letter.core._pipeline as pipeline
+
+    barrier = threading.Barrier(2)
+    original = pipeline._collision_safe_bundle_dir
+
+    def synchronized_bundle_dir(target: Path) -> Path:
+        barrier.wait(timeout=1)
+        return original(target)
+
+    monkeypatch.setattr(pipeline, "_collision_safe_bundle_dir", synchronized_bundle_dir)
+
+    results: list[BundleResult] = []
+    failures: list[BaseException] = []
+
+    def worker(source: Path) -> None:
+        try:
+            results.append(convert_to_bundle(source, bundle_root=cabinet, source_handling="copy"))
+        except BaseException as exc:  # pragma: no cover - defensive worker capture
+            failures.append(exc)
+
+    threads = [
+        threading.Thread(target=worker, args=(source_one,)),
+        threading.Thread(target=worker, args=(source_two,)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert failures == []
+    assert len(results) == 2
+    assert all(result.success for result in results)
+    assert sorted(path.name for path in cabinet.iterdir()) == ["same", "same-2"]
 
 
 @pytest.mark.parametrize(

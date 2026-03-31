@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 from pathlib import Path
 
 import pytest
 
+import dead_letter.backend.doctor as doctor_mod
 from dead_letter.backend.doctor import (
     CheckResult,
     check_cabinet_path,
@@ -65,6 +67,29 @@ def test_check_inbox_path_not_readable(tmp_path: Path) -> None:
     assert result.fix is not None
 
 
+def test_check_inbox_path_requires_directory_execute_permission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    original_access = os.access
+
+    def fake_access(path: os.PathLike[str] | str, mode: int, *args: object, **kwargs: object) -> bool:
+        if Path(path) == inbox:
+            if mode & os.X_OK:
+                return False
+            if mode & os.R_OK:
+                return True
+        return original_access(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(os, "access", fake_access)
+
+    result = check_inbox_path(inbox)
+
+    assert result.status == "err"
+    assert result.fix is not None
+
+
 def test_check_cabinet_path_ok(tmp_path: Path) -> None:
     cabinet = tmp_path / "cabinet"
     cabinet.mkdir()
@@ -76,6 +101,23 @@ def test_check_cabinet_path_ok(tmp_path: Path) -> None:
 def test_check_cabinet_path_not_writable(tmp_path: Path) -> None:
     missing = tmp_path / "does-not-exist"
     result = check_cabinet_path(missing)
+    assert result.status == "err"
+    assert result.fix is not None
+
+
+def test_check_cabinet_path_uses_real_write_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cabinet = tmp_path / "cabinet"
+    cabinet.mkdir()
+
+    def fail_mkstemp(*args: object, **kwargs: object) -> tuple[int, str]:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(doctor_mod.tempfile, "mkstemp", fail_mkstemp)
+
+    result = check_cabinet_path(cabinet)
+
     assert result.status == "err"
     assert result.fix is not None
 

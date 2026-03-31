@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -47,6 +48,53 @@ def test_convert_uses_collision_safe_suffix(copy_fixture, tmp_path: Path) -> Non
 
     assert result.output == output_dir / "plain-text-fixture-2.md"
     assert result.output.exists()
+
+
+def test_convert_concurrent_same_slug_uses_distinct_outputs(tmp_path: Path, monkeypatch) -> None:
+    source_one = tmp_path / "one.eml"
+    source_two = tmp_path / "two.eml"
+    output_dir = tmp_path / "out"
+    source_one.write_text("From: a@b\nSubject: same\n\nAlpha body\n", encoding="utf-8")
+    source_two.write_text("From: c@d\nSubject: same\n\nBeta body\n", encoding="utf-8")
+
+    import dead_letter.core._pipeline as pipeline
+
+    barrier = threading.Barrier(2)
+    original = pipeline._collision_safe_target
+
+    def synchronized_target(target: Path) -> Path:
+        candidate = original(target)
+        barrier.wait(timeout=1)
+        return candidate
+
+    monkeypatch.setattr(pipeline, "_collision_safe_target", synchronized_target)
+
+    results: list[ConvertResult] = []
+    failures: list[BaseException] = []
+
+    def worker(source: Path) -> None:
+        try:
+            results.append(convert(source, output=output_dir))
+        except BaseException as exc:  # pragma: no cover - defensive worker capture
+            failures.append(exc)
+
+    threads = [
+        threading.Thread(target=worker, args=(source_one,)),
+        threading.Thread(target=worker, args=(source_two,)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert failures == []
+    assert len(results) == 2
+    assert sorted(path.name for path in output_dir.iterdir()) == ["same-2.md", "same.md"]
+    assert {result.output.name for result in results if result.output is not None} == {"same.md", "same-2.md"}
+
+    contents = [path.read_text(encoding="utf-8") for path in output_dir.iterdir()]
+    assert sum("Alpha body" in content for content in contents) == 1
+    assert sum("Beta body" in content for content in contents) == 1
 
 
 def test_convert_dir_mirrors_structure_under_output_root(copy_fixture, tmp_path: Path) -> None:

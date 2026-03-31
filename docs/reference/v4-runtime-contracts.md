@@ -687,8 +687,8 @@ Validates runtime environment. Checks:
 2. Core dependencies importable (mail-parser, nh3, html-to-markdown, selectolax, icalendar, pyyaml, mail-parser-reply)
 3. CLI extras (watchfiles)
 4. UI extras (FastAPI, uvicorn, httpx)
-5. Inbox path readable (from saved settings)
-6. Cabinet path writable (from saved settings)
+5. Inbox path readable and traversable (from saved settings)
+6. Cabinet path writable and traversable, confirmed by a temp-file write probe (from saved settings)
 
 Exit codes:
 
