@@ -239,6 +239,11 @@ CI runs all three on every push and PR.
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 
+## 🔧 Tools We Love
+
+- **[MarkEdit](https://github.com/MarkEdit-app/MarkEdit)** — TextEdit for Markdown, native macOS, ~4 MB. Opens dead-letter output like it was always meant to live there.
+- **[mo](https://github.com/k1LoW/mo)** — local Markdown viewer that renders files in the browser with live reload. Point it at your Cabinet and read converted mail like a feed.
+
 ## ⚠️ Known Limitations (v0.1)
 
 - Local-only — no remote server, no auth
