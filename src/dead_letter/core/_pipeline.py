@@ -33,6 +33,12 @@ from dead_letter.core.types import (
 from dead_letter.core.zone_cleanup import cleanup_zones
 
 _MAX_COLLISION_INDEX = 10_000
+_MISSING_ATTACHMENT_REFERENCE_PHRASES = (
+    "please find attached",
+    "see attached",
+    "attached is",
+    "attached are",
+)
 
 
 class HtmlMarkdownFailure(RuntimeError):
@@ -378,6 +384,19 @@ def _html_repair_warning(message: str) -> dict[str, str]:
     }
 
 
+def _attachment_reference_without_attachments_warning(body: str) -> dict[str, str] | None:
+    lowered_body = body.lower()
+    if not lowered_body:
+        return None
+    if not any(phrase in lowered_body for phrase in _MISSING_ATTACHMENT_REFERENCE_PHRASES):
+        return None
+    return {
+        "code": "attachment_reference_without_attachments",
+        "message": "message references attached files but no retained attachments were extracted",
+        "severity": "warning",
+    }
+
+
 def _convert_error_metadata(exc: Exception) -> tuple[str | None, bool | None, bool | None]:
     if isinstance(exc, HtmlMarkdownFailure):
         return "html_markdown_failed", exc.plain_text_fallback_available, exc.html_repair_available
@@ -529,6 +548,18 @@ def _build_rendered_markdown(
             reference_text=attachment_reference_text,
         )
         rendered.front_matter["attachments"] = list(parsed.attachments)
+
+    attachment_reference_warning: dict[str, str] | None = None
+    if not parsed.attachments:
+        attachment_reference_warning = _attachment_reference_without_attachments_warning(rendered.body)
+    if diagnostics is not None and attachment_reference_warning is not None:
+        summary_warnings = list(diagnostics.get("warnings") or [])
+        summary_warnings.append(attachment_reference_warning)
+        diagnostics["warnings"] = summary_warnings
+        diagnostics["state"] = _quality_state(
+            confidence=str(diagnostics.get("confidence") or "medium"),
+            warnings=summary_warnings,
+        )
 
     result = ConvertResult(
         source=source,

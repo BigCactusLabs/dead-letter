@@ -14,9 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `convert_eml`, `convert_eml_to_bundle`, `convert_directory`, `get_diagnostics`.
 - Conversion options (strip signatures, dry run, etc.) now persist to
   localStorage and restore on page reload.
+- Added a canonical migration guide for upgrading from `html-to-markdown` 2.x
+  to 3.x in `docs/reference/html-to-markdown-v3-migration.md`.
+
+### Changed
+
+- Dependency floors raised for backend/dev runtime packages:
+  `fastapi>=0.136.0`, `mcp>=1.27.0`, `python-multipart>=0.0.26`,
+  `uvicorn[standard]>=0.45.0`, and `pytest>=9.0.3`.
+- Added a temporary safety guardrail `html-to-markdown>=2.9.1,<3.0` to prevent
+  accidental 3.x upgrades until migration is complete.
 
 ### Fixed
 
+- Attachment extraction now falls back to stdlib MIME parsing when
+  `mail-parser` yields fewer named attachments, and records
+  `attachment_parser_disagreement` diagnostics warnings.
+- Conversion now emits `attachment_reference_without_attachments` when the
+  rendered message body references attached files but none were retained.
 - `strip_signature_images` now recognizes Front signature wrappers, including
   generated `...Signature` containers in quoted content.
 - Stripped or otherwise unreferenced inline signature/tracking assets are no

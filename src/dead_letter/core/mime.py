@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+from email import policy
+from email.parser import BytesParser
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +66,67 @@ def _extract_part_defects(parsed: mailparser.MailParser) -> list[PartDefect]:
     return defects
 
 
+def _attachment_parser_disagreement_defect(
+    *,
+    mailparser_count: int,
+    stdlib_count: int,
+) -> PartDefect:
+    return PartDefect(
+        part_id="root",
+        code="attachment_parser_disagreement",
+        message=(
+            "mailparser extracted fewer named attachments than stdlib parser "
+            f"(mailparser={mailparser_count}, stdlib={stdlib_count}); using stdlib attachments"
+        ),
+        severity="warning",
+    )
+
+
+def _extract_raw_attachments_from_stdlib(raw: bytes) -> list[dict[str, Any]]:
+    message = BytesParser(policy=policy.default).parsebytes(raw)
+    extracted: list[dict[str, Any]] = []
+
+    for part in message.walk():
+        if part.is_multipart():
+            continue
+
+        filename = str(part.get_filename() or "").strip()
+        content_id = str(part.get("Content-ID") or "").strip().strip("<>")
+        disposition = str(part.get_content_disposition() or "").strip().lower()
+
+        if disposition != "attachment" and not filename and not content_id:
+            continue
+
+        charset = str(part.get_content_charset() or "utf-8").strip() or "utf-8"
+        payload = part.get_payload(decode=True)
+        if payload is None:
+            raw_payload = part.get_payload()
+            if isinstance(raw_payload, bytes):
+                payload = raw_payload
+            elif isinstance(raw_payload, str):
+                payload = raw_payload.encode(charset, errors="replace")
+            else:
+                payload = b""
+
+        encoded_payload = base64.b64encode(payload).decode("ascii") if payload else ""
+        if not encoded_payload:
+            continue
+
+        extracted.append(
+            {
+                "filename": filename,
+                "content-id": content_id,
+                "mail_content_type": str(part.get_content_type() or "").strip().lower(),
+                "content_transfer_encoding": "base64",
+                "payload": encoded_payload,
+                "content-disposition": str(part.get("Content-Disposition") or disposition).strip(),
+                "charset": charset,
+            }
+        )
+
+    return extracted
+
+
 def parse_eml(path: str | Path) -> ParsedEmail:
     """Parse a single .eml file into the pipeline ParsedEmail contract."""
     source = Path(path).resolve()
@@ -88,7 +152,24 @@ def parse_eml(path: str | Path) -> ParsedEmail:
     html_body = selected_candidate.content if selected_candidate is not None and selected_candidate.kind == "html" else None
     selected_body_kind = selected_candidate.kind if selected_candidate is not None else None
 
-    raw_attachments = list(parsed.attachments or [])
+    mailparser_attachments = list(parsed.attachments or [])
+    stdlib_attachments = _extract_raw_attachments_from_stdlib(raw)
+
+    mailparser_attachment_names = collect_attachment_names(mailparser_attachments)
+    stdlib_attachment_names = collect_attachment_names(stdlib_attachments)
+    mailparser_attachment_count = len(mailparser_attachment_names)
+    stdlib_attachment_count = len(stdlib_attachment_names)
+
+    if stdlib_attachment_count > mailparser_attachment_count:
+        raw_attachments = stdlib_attachments
+        defects.append(
+            _attachment_parser_disagreement_defect(
+                mailparser_count=mailparser_attachment_count,
+                stdlib_count=stdlib_attachment_count,
+            )
+        )
+    else:
+        raw_attachments = mailparser_attachments
 
     return ParsedEmail(
         source=source,

@@ -30,6 +30,25 @@ def _write_html_email(path: Path, html: str) -> Path:
     return path
 
 
+def _write_plain_email(path: Path, plain: str) -> Path:
+    path.write_text(
+        "\n".join(
+            [
+                "From: Test <test@example.com>",
+                "To: Example <example@example.com>",
+                "Subject: Plain Fixture",
+                "Date: Thu, 05 Mar 2026 10:20:00 +0000",
+                "MIME-Version: 1.0",
+                "Content-Type: text/plain; charset=utf-8",
+                "",
+                plain,
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 def _write_multipart_email(path: Path, plain: str, html: str) -> Path:
     boundary = "dead-letter-boundary"
     path.write_text(
@@ -162,6 +181,35 @@ def test_plain_text_path_reports_plain_text_reply_fallback() -> None:
     assert diagnostics is not None
     assert diagnostics["segmentation_path"] == "plain_fallback"
     assert diagnostics["fallback_used"] == "plain_text_reply_parser"
+
+
+def test_attachment_reference_without_attachments_emits_warning(tmp_path: Path) -> None:
+    source = _write_plain_email(
+        tmp_path / "missing_attachments.eml",
+        "Please find attached the signed agreement.",
+    )
+
+    _result, _parsed, _rendered, diagnostics = _build_rendered_markdown(source, ConvertOptions())
+
+    assert diagnostics is not None
+    assert diagnostics["state"] == "degraded"
+    assert any(
+        warning["code"] == "attachment_reference_without_attachments"
+        for warning in diagnostics["warnings"]
+    )
+
+
+def test_attachment_reference_without_attachments_does_not_warn_when_attachment_present() -> None:
+    _result, _parsed, _rendered, diagnostics = _build_rendered_markdown(
+        FIXTURES / "with_attachment.eml",
+        ConvertOptions(),
+    )
+
+    assert diagnostics is not None
+    assert not any(
+        warning["code"] == "attachment_reference_without_attachments"
+        for warning in diagnostics["warnings"]
+    )
 
 
 def test_html_quote_pattern_fallback_marks_review_recommended(tmp_path: Path) -> None:

@@ -7,6 +7,7 @@
 - [Runtime Contracts](reference/v4-runtime-contracts.md) — canonical backend and core runtime behavior
 - [Frontend State Model](reference/frontend-state-model.md) — frontend state and interaction contract
 - [Quality Diagnostics](reference/quality-diagnostics.md) — conversion grading and warning semantics
+- [html-to-markdown v3 Migration Plan](reference/html-to-markdown-v3-migration.md) — staged upgrade path from 2.x visitor APIs
 - [Brand Handoff](brand/handoff.md) — public brand system and asset guidance
 - [Brand Style Guide](brand/style-guide.md) — canonical visual language and production integration notes
 

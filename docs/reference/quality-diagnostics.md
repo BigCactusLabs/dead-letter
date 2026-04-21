@@ -2,7 +2,7 @@
 title: Quality Diagnostics
 doc_type: reference
 status: canonical
-last_updated: 2026-03-19
+last_updated: 2026-04-21
 audience:
   - operators
   - maintainers
@@ -66,6 +66,8 @@ This summary is intended for operator review. It is not the raw internal convers
 Warning codes emitted by the pipeline:
 
 - `mime_defect` — structural MIME parsing defects (e.g., malformed headers, encoding issues) recovered during parsing
+- `attachment_parser_disagreement` — stdlib MIME parsing found more named attachments than `mailparser`; stdlib extraction was used
+- `attachment_reference_without_attachments` — rendered message body references attached files, but no retained attachments were extracted
 - `html_markdown_failed` — HTML-to-Markdown conversion panicked; plain-text fallback was used
 - `html_markdown_repaired` — HTML-to-Markdown conversion initially panicked, then succeeded on the explicit repair retry path
 
