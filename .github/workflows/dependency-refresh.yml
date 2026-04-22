@@ -43,7 +43,7 @@ jobs:
         run: uv run pytest -q tests/backend
 
       - name: Frontend tests
-        run: node --test tests/frontend/app.test.js
+        run: node --test tests/frontend/*.test.js
 
       - name: Frontend syntax
         run: node --check src/dead_letter/frontend/static/app.js

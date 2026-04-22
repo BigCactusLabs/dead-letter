@@ -717,9 +717,12 @@ async def test_list_terminal_jobs_excludes_running(tmp_path: Path, monkeypatch) 
     """A running job should not appear in history."""
     import dead_letter.backend.jobs as jobs_mod
 
+    started = threading.Event()
+    release = threading.Event()
+
     def slow_bundle(path: str | Path, **_kwargs: object) -> BundleResult:
-        import time
-        time.sleep(5)
+        started.set()
+        assert release.wait(timeout=1.0)
         return BundleResult(
             source=Path(path), bundle=None, markdown=None, source_artifact=None,
             attachments=[], success=True, error=None, dry_run=False,
@@ -733,10 +736,16 @@ async def test_list_terminal_jobs_excludes_running(tmp_path: Path, monkeypatch) 
     job = await manager.create_job(
         JobCreateRequest(mode="file", input_path=str(source))
     )
-    await asyncio.sleep(0.05)
 
-    jobs, totals = await manager.list_terminal_jobs()
-    assert len(jobs) == 0
-    assert totals.jobs_completed == 0
+    try:
+        assert await asyncio.to_thread(started.wait, 1.0)
+        jobs, totals = await manager.list_terminal_jobs()
+        assert len(jobs) == 0
+        assert totals.jobs_completed == 0
+    finally:
+        release.set()
+
+    terminal = await manager.wait_for_terminal(job.id, timeout=2.0)
+    assert terminal.status == "succeeded"
 
     await manager.cancel_job(job.id)

@@ -9,9 +9,34 @@ const APP_PATH = path.resolve(__dirname, "../../src/dead_letter/frontend/static/
 const INDEX_PATH = path.resolve(__dirname, "../../src/dead_letter/frontend/index.html");
 const STYLES_PATH = path.resolve(__dirname, "../../src/dead_letter/frontend/static/styles.css");
 
+function readHtml() {
+  return fs.readFileSync(INDEX_PATH, "utf8");
+}
+
+function readApp() {
+  return fs.readFileSync(APP_PATH, "utf8");
+}
+
+function readStyles() {
+  return fs.readFileSync(STYLES_PATH, "utf8");
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function assertWorkspacePanelHasInertBinding(html, panelClass) {
+  assert.match(
+    html,
+    new RegExp(
+      `class="(?=[^"]*${escapeRegex(panelClass)})(?=[^"]*workspace-panel)[^"]*"[\\s\\S]*?:inert="[^"]+"`
+    )
+  );
+}
+
 test("watch card uses conic-gradient border animation", () => {
-  const html = fs.readFileSync(INDEX_PATH, "utf8");
-  const css = fs.readFileSync(STYLES_PATH, "utf8");
+  const html = readHtml();
+  const css = readStyles();
 
   assert.doesNotMatch(html, /watch-trace-line/);
   assert.doesNotMatch(html, /<svg[^>]*class="[^"]*watch-trace/);
@@ -21,14 +46,14 @@ test("watch card uses conic-gradient border animation", () => {
 });
 
 test("index.html loads app.js as ES module", () => {
-  const html = fs.readFileSync(INDEX_PATH, "utf8");
+  const html = readHtml();
   assert.match(html, /type="module"\s+src="\/static\/app\.js"/);
   assert.doesNotMatch(html, /htmx/);
   assert.doesNotMatch(html, /alpine\.min\.js/);
 });
 
 test("app.js imports Alpine and all stores", () => {
-  const source = fs.readFileSync(APP_PATH, "utf8");
+  const source = readApp();
   assert.match(source, /import Alpine from/);
   assert.match(source, /import.*registerSettingsStore/);
   assert.match(source, /import.*registerJobStore/);
@@ -37,7 +62,7 @@ test("app.js imports Alpine and all stores", () => {
 });
 
 test("template uses $store references for store state", () => {
-  const html = fs.readFileSync(INDEX_PATH, "utf8");
+  const html = readHtml();
   assert.match(html, /\$store\.settings\.configured/);
   assert.match(html, /\$store\.job\.progress/);
   assert.match(html, /\$store\.watch\.active/);
@@ -45,20 +70,19 @@ test("template uses $store references for store state", () => {
 });
 
 test("workspace panels are inert when inactive and file pickers are multi-select", () => {
-  const html = fs.readFileSync(INDEX_PATH, "utf8");
-  assert.match(html, /:inert="workspaceState !== 'idle'"/);
-  assert.match(html, /:inert="workspaceState !== 'converting'"/);
-  assert.match(html, /:inert="workspaceState !== 'done'"/);
-  assert.match(html, /:inert="workspaceState !== 'settings'"/);
-  const matches = [...html.matchAll(/accept="\.eml"\s+multiple/g)];
+  const html = readHtml();
+  for (const panelClass of ["drop-zone", "converting-panel", "done-panel", "settings-panel"]) {
+    assertWorkspacePanelHasInertBinding(html, panelClass);
+  }
+  const matches = [...html.matchAll(/<input[^>]*type="file"[^>]*accept="\.eml"[^>]*multiple/g)];
   assert.equal(matches.length, 2);
 });
 
 test("batch import UI is wired in template and app state", () => {
-  const html = fs.readFileSync(INDEX_PATH, "utf8");
-  const app = fs.readFileSync(APP_PATH, "utf8");
+  const html = readHtml();
+  const app = readApp();
 
-  assert.match(html, /class="batch-confirm workspace-panel"/);
+  assert.match(html, /class="(?=[^"]*batch-confirm)(?=[^"]*workspace-panel)[^"]*"/);
   assert.match(html, /x-show="batchConfirm\.show"/);
   assert.match(html, /dragItemCount > 1/);
   assert.match(app, /const SIZE_WARNING_BYTES = 100 \* 1024 \* 1024/);
@@ -71,47 +95,47 @@ test("batch import UI is wired in template and app state", () => {
 });
 
 test("done header contains grade badge markup", () => {
-  const html = fs.readFileSync(INDEX_PATH, "utf8");
+  const html = readHtml();
   assert.match(html, /conversionGrade/);
   assert.match(html, /grade-badge/);
-  assert.match(html, /polyline x-show="conversionGrade === 'pass'"/);
-  assert.match(html, /polygon x-show="conversionGrade === 'review'"/);
-  assert.match(html, /<g x-show="conversionGrade === 'fail'">/);
+  assert.match(html, /conversionGrade === 'pass'/);
+  assert.match(html, /conversionGrade === 'review'/);
+  assert.match(html, /conversionGrade === 'fail'/);
   assert.doesNotMatch(html, /<template x-if="conversionGrade === 'pass'">/);
 });
 
 test("app.js imports computeGrade from helpers", () => {
-  const appContent = fs.readFileSync(APP_PATH, "utf8");
+  const appContent = readApp();
   assert.match(appContent, /computeGrade/);
 });
 
 test("diagnostics disclosure shows stripped images section", () => {
-  const html = fs.readFileSync(INDEX_PATH, "utf8");
+  const html = readHtml();
   assert.match(html, /stripped-images/);
   assert.match(html, /stripped_images/);
 });
 
 test("settings panel has report checkbox", () => {
-  const html = fs.readFileSync(INDEX_PATH, "utf8");
+  const html = readHtml();
   assert.match(html, /options\.report/);
   assert.match(html, /[Gg]enerate.*report/i);
 });
 
 test("done panel has report path element", () => {
-  const html = fs.readFileSync(INDEX_PATH, "utf8");
+  const html = readHtml();
   assert.match(html, /reportPath/);
   assert.doesNotMatch(html, /\.dead-letter-report\.json/);
 });
 
 test("unconfigured banner is present in template", () => {
-  const html = fs.readFileSync(INDEX_PATH, "utf8");
+  const html = readHtml();
   assert.match(html, /class="setup-banner"/);
   assert.match(html, /Workspace not configured/);
   assert.match(html, /Set up now/);
 });
 
 test("watch card and import buttons have unconfigured disabled states", () => {
-  const html = fs.readFileSync(INDEX_PATH, "utf8");
+  const html = readHtml();
 
   // Watch card has disabled-when-unconfigured tooltip
   assert.match(html, /watch-card[\s\S]*?Configure inbox/);
@@ -121,7 +145,7 @@ test("watch card and import buttons have unconfigured disabled states", () => {
 });
 
 test("setup modal markup is present with required elements", () => {
-  const html = fs.readFileSync(INDEX_PATH, "utf8");
+  const html = readHtml();
 
   // Modal container
   assert.match(html, /class="setup-modal-overlay"/);

@@ -222,12 +222,12 @@ tests/
 ## 🧪 Testing
 
 ```bash
-uv run pytest tests/core           # conversion pipeline
-uv run pytest tests/backend        # API and job runner
+uv run pytest -q tests/core        # conversion pipeline
+uv run pytest -q tests/backend     # API and job runner
 node --test tests/frontend/*.test.js     # frontend
 ```
 
-CI runs all three on every push and PR.
+CI runs all three on every push and PR with the same commands.
 
 ## 📚 Docs
 
