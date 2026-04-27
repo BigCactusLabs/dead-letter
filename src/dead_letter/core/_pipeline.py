@@ -406,8 +406,14 @@ def _convert_error_metadata(exc: Exception) -> tuple[str | None, bool | None, bo
 def _build_rendered_markdown(
     source: Path,
     options: ConvertOptions,
+    *,
+    include_attachment_payloads: bool = True,
 ) -> tuple[ConvertResult, ParsedEmail, RenderedMarkdown, dict[str, Any] | None]:
-    parsed = parse_eml(source)
+    parsed = parse_eml(
+        source,
+        include_attachment_payloads=include_attachment_payloads,
+        include_inline_data_uris=options.embed_inline_images,
+    )
 
     stripped_images: list[StrippedImage] = []
     filtered_html_body = parsed.html_body
@@ -582,7 +588,11 @@ def _build_rendered_markdown(
 
 
 def _run_pipeline(source: Path, options: ConvertOptions) -> tuple[ConvertResult, str]:
-    result, _parsed, rendered, _diagnostics = _build_rendered_markdown(source, options)
+    result, _parsed, rendered, _diagnostics = _build_rendered_markdown(
+        source,
+        options,
+        include_attachment_payloads=False,
+    )
     return result, serialize_markdown(rendered)
 
 

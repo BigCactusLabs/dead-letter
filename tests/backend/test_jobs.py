@@ -564,6 +564,50 @@ async def test_job_manager_directory_mode_is_case_insensitive_and_skips_escaping
 
 
 @pytest.mark.anyio
+async def test_job_manager_directory_mode_skips_cabinet_descendants(
+    tmp_path: Path, monkeypatch
+) -> None:
+    inbox_source = tmp_path / "Inbox" / "new.eml"
+    cabinet_source = tmp_path / "Cabinet" / "old.eml"
+    inbox_source.parent.mkdir(parents=True, exist_ok=True)
+    cabinet_source.parent.mkdir(parents=True, exist_ok=True)
+    inbox_source.write_text("x", encoding="utf-8")
+    cabinet_source.write_text("x", encoding="utf-8")
+
+    converted: list[str] = []
+
+    def fake_bundle(path: str | Path, **_kwargs: object) -> BundleResult:
+        src = Path(path)
+        converted.append(src.relative_to(tmp_path).as_posix())
+        bundle = tmp_path / "Cabinet" / src.stem
+        bundle.mkdir(parents=True, exist_ok=True)
+        markdown = bundle / "message.md"
+        markdown.write_text("ok", encoding="utf-8")
+        return BundleResult(
+            source=src,
+            bundle=bundle,
+            markdown=markdown,
+            source_artifact=bundle / src.name,
+            attachments=[],
+            success=True,
+            error=None,
+            dry_run=False,
+        )
+
+    import dead_letter.backend.jobs as jobs_mod
+
+    monkeypatch.setattr(jobs_mod, "core_convert_to_bundle", fake_bundle)
+
+    manager = _manager(tmp_path)
+    created = await manager.create_job(JobCreateRequest(mode="directory", input_path=str(tmp_path)))
+
+    terminal = await manager.wait_for_terminal(created.id, timeout=2.0)
+
+    assert terminal.status == "succeeded"
+    assert converted == ["Inbox/new.eml"]
+
+
+@pytest.mark.anyio
 async def test_create_job_stores_origin(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "Inbox" / "test.eml"
     source.parent.mkdir(parents=True, exist_ok=True)

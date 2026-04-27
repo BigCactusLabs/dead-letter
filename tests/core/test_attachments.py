@@ -75,3 +75,21 @@ def test_attachment_filename_helpers_strip_directory_segments() -> None:
     assert names == ["agenda.pdf", "logo.png", "report.txt"]
     assert cid_map == {"image1": "logo.png"}
     assert [part.filename for part in parts] == ["report.txt"]
+
+
+def test_collect_attachment_parts_falls_back_for_unknown_charset() -> None:
+    raw = [
+        {
+            "filename": "note.txt",
+            "payload": "hello",
+            "content_transfer_encoding": "7bit",
+            "charset": "x-unknown",
+            "mail_content_type": "text/plain",
+        },
+    ]
+
+    parts = collect_attachment_parts(raw)
+
+    assert len(parts) == 1
+    assert parts[0].filename == "note.txt"
+    assert parts[0].payload == b"hello"

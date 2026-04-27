@@ -287,7 +287,7 @@ def test_html_conversion_error_override_still_fails_without_plain_text(tmp_path:
     monkeypatch.setattr("dead_letter.core._pipeline.html_to_markdown", raising_html_to_markdown)
     monkeypatch.setattr(
         "dead_letter.core._pipeline.parse_eml",
-        lambda _source: ParsedEmail(
+        lambda _source, **_kwargs: ParsedEmail(
             source=source,
             subject="HTML only",
             sender="test@example.com",

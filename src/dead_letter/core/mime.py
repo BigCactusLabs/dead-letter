@@ -104,7 +104,10 @@ def _extract_raw_attachments_from_stdlib(raw: bytes) -> list[dict[str, Any]]:
             if isinstance(raw_payload, bytes):
                 payload = raw_payload
             elif isinstance(raw_payload, str):
-                payload = raw_payload.encode(charset, errors="replace")
+                try:
+                    payload = raw_payload.encode(charset, errors="replace")
+                except LookupError:
+                    payload = raw_payload.encode("utf-8", errors="replace")
             else:
                 payload = b""
 
@@ -127,7 +130,12 @@ def _extract_raw_attachments_from_stdlib(raw: bytes) -> list[dict[str, Any]]:
     return extracted
 
 
-def parse_eml(path: str | Path) -> ParsedEmail:
+def parse_eml(
+    path: str | Path,
+    *,
+    include_attachment_payloads: bool = True,
+    include_inline_data_uris: bool = True,
+) -> ParsedEmail:
     """Parse a single .eml file into the pipeline ParsedEmail contract."""
     source = Path(path).resolve()
     raw = source.read_bytes()
@@ -180,9 +188,13 @@ def parse_eml(path: str | Path) -> ParsedEmail:
         html_body=html_body,
         headers=_normalize_headers(parsed.headers or {}),
         attachments=collect_attachment_names(raw_attachments),
-        attachment_parts=collect_attachment_parts(raw_attachments),
+        attachment_parts=collect_attachment_parts(raw_attachments)
+        if include_attachment_payloads
+        else [],
         inline_cid_to_filename=collect_inline_cid_map(raw_attachments),
-        inline_cid_to_data_uri=collect_inline_cid_data_uris(raw_attachments),
+        inline_cid_to_data_uri=collect_inline_cid_data_uris(raw_attachments)
+        if include_inline_data_uris
+        else {},
         calendar_parts=extract_calendar_parts(raw_attachments),
         body_candidates=mime_model.body_candidates,
         selected_body_kind=selected_body_kind,

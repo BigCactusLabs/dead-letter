@@ -40,7 +40,7 @@ def test_convert_handles_internal_errors_without_raise(copy_fixture, monkeypatch
 
     import dead_letter.core._pipeline as pipeline
 
-    def boom(_path: Path) -> object:
+    def boom(_path: Path, **_kwargs: object) -> object:
         raise RuntimeError("boom")
 
     monkeypatch.setattr(pipeline, "parse_eml", boom)
@@ -56,7 +56,7 @@ def test_convert_propagates_programming_errors(copy_fixture, monkeypatch) -> Non
 
     import dead_letter.core._pipeline as pipeline
 
-    def boom(_path: Path) -> object:
+    def boom(_path: Path, **_kwargs: object) -> object:
         raise TypeError("unexpected type bug")
 
     monkeypatch.setattr(pipeline, "parse_eml", boom)
@@ -99,3 +99,20 @@ def test_convert_embed_inline_images_rewrites_cid_to_data_uri(copy_fixture) -> N
     document = result.output.read_text(encoding="utf-8")
     assert "(cid:image1)" not in document
     assert "data:image/png;base64," in document
+
+
+def test_convert_does_not_decode_attachment_payloads_by_default(
+    copy_fixture, monkeypatch
+) -> None:
+    source = copy_fixture("with_attachment.eml")
+
+    import dead_letter.core.mime as mime_module
+
+    def fail_if_payloads_requested(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("plain convert should not decode attachment payloads")
+
+    monkeypatch.setattr(mime_module, "collect_attachment_parts", fail_if_payloads_requested)
+
+    result = convert(source)
+
+    assert result.success is True

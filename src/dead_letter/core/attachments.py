@@ -60,6 +60,13 @@ def collect_inline_cid_data_uris(raw_attachments: list[dict[str, Any]]) -> dict[
     return mapping
 
 
+def _encode_payload_with_fallback(payload: str, charset: str) -> bytes:
+    try:
+        return payload.encode(charset, errors="replace")
+    except LookupError:
+        return payload.encode("utf-8", errors="replace")
+
+
 def collect_attachment_parts(raw_attachments: list[dict[str, Any]]) -> list[AttachmentPart]:
     """Decode raw attachment payloads for bundle-writing workflows."""
     parts: list[AttachmentPart] = []
@@ -79,7 +86,7 @@ def collect_attachment_parts(raw_attachments: list[dict[str, Any]]) -> list[Atta
             except Exception:
                 continue
         else:
-            decoded = payload.encode(charset, errors="replace")
+            decoded = _encode_payload_with_fallback(payload, charset)
 
         parts.append(
             AttachmentPart(

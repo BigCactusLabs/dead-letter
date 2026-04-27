@@ -278,11 +278,14 @@ class JobManager:
             if candidate.suffix.lower() != ".eml" or not candidate.is_file():
                 continue
             try:
-                if not candidate.resolve().is_relative_to(input_path):
+                resolved_candidate = candidate.resolve()
+                if not resolved_candidate.is_relative_to(input_path):
+                    continue
+                if resolved_candidate.is_relative_to(self._cabinet_root):
                     continue
             except OSError:
                 continue
-            files.append(candidate)
+            files.append(resolved_candidate)
         return sorted(files)
 
     def _output_location_for_request(
