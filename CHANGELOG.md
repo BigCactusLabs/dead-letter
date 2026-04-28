@@ -22,8 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency floors raised for backend/dev runtime packages:
   `fastapi>=0.136.0`, `mcp>=1.27.0`, `python-multipart>=0.0.26`,
   `uvicorn[standard]>=0.45.0`, and `pytest>=9.0.3`.
-- Added a temporary safety guardrail `html-to-markdown>=2.9.1,<3.0` to prevent
-  accidental 3.x upgrades until migration is complete.
 
 ### Fixed
 
@@ -59,6 +57,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   detail content (output paths, error messages, diagnostics).
 - `relativeTime` helper now tolerates up to 30 seconds of server-ahead
   clock skew instead of showing blank timestamps.
+
+## [0.1.2] - 2026-04-28
+
+### Fixed
+
+- Pinned `html-to-markdown` to `>=2.9.1,<3.0` to prevent import-time crashes
+  caused by upstream v3 removal of `convert_with_visitor`.
+- Long-term v3 migration is tracked in issue [#11](https://github.com/BigCactusLabs/dead-letter/issues/11).
 
 ## [0.1.1] - 2026-03-26
 
