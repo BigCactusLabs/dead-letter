@@ -131,6 +131,12 @@ def segment_html_conversation(html: str, *, client_hint: str | None = None) -> C
             quote_node = outlook_quote
             resolved_hint = "outlook"
             rules_triggered.append("outlook_divRplyFwdMsg")
+        else:
+            front_quote = tree.css_first("blockquote.front-blockquote")
+            if front_quote is not None:
+                quote_node = front_quote
+                resolved_hint = "generic"
+                rules_triggered.append("front_blockquote")
 
     body_content = _body_html(tree)
     quoted_content = None
@@ -144,7 +150,10 @@ def segment_html_conversation(html: str, *, client_hint: str | None = None) -> C
                 quoted_content = _extract_quote_html(quote_node, include_following_siblings=True)
                 body_content = _body_html(tree)
         else:
-            quoted_content = _extract_quote_html(quote_node)
+            quoted_content = _extract_quote_html(
+                quote_node,
+                include_following_siblings="front_blockquote" in rules_triggered,
+            )
             body_content = _body_html(tree)
 
     if body_content:

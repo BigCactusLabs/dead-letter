@@ -226,6 +226,27 @@ def test_html_quote_pattern_fallback_marks_review_recommended(tmp_path: Path) ->
     assert diagnostics["fallback_used"] == "plain_text_reply_parser"
 
 
+def test_front_blockquote_uses_high_confidence_html_segmentation(tmp_path: Path) -> None:
+    source = _write_html_email(
+        tmp_path / "front_quote.eml",
+        (
+            "<div>Latest Front response</div>"
+            '<blockquote type="cite" class="front-blockquote">Older Front message</blockquote>'
+        ),
+    )
+
+    _result, _parsed, rendered, diagnostics = _build_rendered_markdown(source, ConvertOptions())
+
+    assert diagnostics is not None
+    assert diagnostics["state"] == "normal"
+    assert diagnostics["segmentation_path"] == "html"
+    assert diagnostics["confidence"] == "high"
+    assert diagnostics["fallback_used"] is None
+    body = serialize_markdown(rendered)
+    assert "Latest Front response" in body
+    assert "Older Front message" not in body
+
+
 def test_html_conversion_error_hard_fails_by_default(tmp_path: Path, monkeypatch) -> None:
     source = _write_multipart_email(
         tmp_path / "html_failure.eml",

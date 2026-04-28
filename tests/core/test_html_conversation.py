@@ -30,6 +30,28 @@ def test_segment_html_conversation_extracts_outlook_reply_before_divrplyfwdmsg()
     )
 
 
+def test_segment_html_conversation_extracts_front_reply_before_blockquote() -> None:
+    html = (
+        "<html><body>"
+        "<div>Latest Front response</div>"
+        '<blockquote type="cite" class="front-blockquote">Older Front message</blockquote>'
+        "</body></html>"
+    )
+
+    result = segment_html_conversation(html)
+
+    assert result.rules_triggered == ["front_blockquote"]
+    assert result.zones[0].kind is ZoneKind.BODY
+    assert "Latest Front response" in result.zones[0].content
+    assert "Older Front message" not in result.zones[0].content
+    assert any(
+        zone.kind is ZoneKind.QUOTED
+        and 'class="front-blockquote"' in zone.content
+        and "Older Front message" in zone.content
+        for zone in result.zones
+    )
+
+
 def test_segment_html_conversation_removes_outlook_trailing_quoted_siblings() -> None:
     html = (
         "<html><body>"

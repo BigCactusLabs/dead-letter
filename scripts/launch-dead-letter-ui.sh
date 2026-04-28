@@ -8,9 +8,42 @@ READY_TIMEOUT_SECONDS=20
 SYNC_PROMPT="Dependencies are missing or stale. Run 'uv sync --all-extras' now? [y/N] "
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ "${DEAD_LETTER_PATH_PREFIX+x}" = "x" ]; then
+	path_prefix="$DEAD_LETTER_PATH_PREFIX"
+else
+	path_prefix="/opt/homebrew/bin:/usr/local/bin"
+fi
+
+if [ -n "$path_prefix" ]; then
+	PATH="${path_prefix}:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+else
+	PATH="${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+fi
+export PATH
+
+ui_binary() {
+	if [ "${DEAD_LETTER_UI_BIN+x}" = "x" ]; then
+		printf "%s" "$DEAD_LETTER_UI_BIN"
+	else
+		printf "%s" "${repo_root}/.venv/bin/dead-letter-ui"
+	fi
+}
+
+has_ui_binary() {
+	local ui_path
+	ui_path="$(ui_binary)"
+	[ -n "$ui_path" ] && [ -x "$ui_path" ]
+}
 
 print_manual_command() {
-	printf "Manual launch command:\n  UV_NO_CACHE=1 uv run dead-letter-ui --host %s --port %s\n" "$HOST" "$PORT"
+	local ui_path
+	ui_path="$(ui_binary)"
+
+	if [ -n "$ui_path" ] && [ -x "$ui_path" ]; then
+		printf "Manual launch command:\n  \"%s\" --host %s --port %s\n" "$ui_path" "$HOST" "$PORT"
+	else
+		printf "Manual launch command:\n  UV_NO_CACHE=1 uv run dead-letter-ui --host %s --port %s\n" "$HOST" "$PORT"
+	fi
 }
 
 print_repo_error() {
@@ -138,17 +171,30 @@ forward_signal() {
 	fi
 }
 
+start_server() {
+	local ui_path
+	ui_path="$(ui_binary)"
+
+	if [ -n "$ui_path" ] && [ -x "$ui_path" ]; then
+		"$ui_path" --host "$HOST" --port "$PORT" &
+	else
+		run_uv run --no-sync dead-letter-ui --host "$HOST" --port "$PORT" &
+	fi
+	server_pid="$!"
+}
+
 main() {
 	require_repo_root
 	cd "$repo_root"
 
 	probe_existing_server || true
-	require_uv
-	ensure_synced
+	if ! has_ui_binary; then
+		require_uv
+		ensure_synced
+	fi
 
 	printf "Starting dead-letter-ui at %s...\n" "$URL"
-	run_uv run --no-sync dead-letter-ui --host "$HOST" --port "$PORT" &
-	server_pid="$!"
+	start_server
 
 	trap 'forward_signal TERM' TERM
 	trap 'forward_signal INT' INT
