@@ -10,7 +10,7 @@ SYNC_PROMPT="Dependencies are missing or stale. Run 'uv sync --all-extras' now? 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 print_manual_command() {
-	printf "Manual launch command:\n  uv run dead-letter-ui --host %s --port %s\n" "$HOST" "$PORT"
+	printf "Manual launch command:\n  UV_NO_CACHE=1 uv run dead-letter-ui --host %s --port %s\n" "$HOST" "$PORT"
 }
 
 print_repo_error() {
@@ -56,10 +56,25 @@ require_uv() {
 	exit 1
 }
 
+run_uv() {
+	# Avoid hard failures from a corrupted or unreadable global uv cache.
+	UV_NO_CACHE="${UV_NO_CACHE:-1}" uv "$@"
+}
+
 ensure_synced() {
 	local answer
 
-	if uv sync --check --all-extras >/dev/null 2>&1; then
+	if run_uv sync --check --all-extras >/dev/null 2>&1; then
+		return 0
+	fi
+
+	if [ ! -t 0 ]; then
+		printf "Dependencies are missing or stale. Running 'uv sync --all-extras' (non-interactive launch)...\n"
+		if ! run_uv sync --all-extras; then
+			printf "Dependency sync failed.\n"
+			print_manual_command
+			exit 1
+		fi
 		return 0
 	fi
 
@@ -71,7 +86,7 @@ ensure_synced() {
 
 	case "$answer" in
 	y | Y | yes | YES)
-		if ! uv sync --all-extras; then
+		if ! run_uv sync --all-extras; then
 			printf "Dependency sync failed.\n"
 			print_manual_command
 			exit 1
@@ -132,7 +147,7 @@ main() {
 	ensure_synced
 
 	printf "Starting dead-letter-ui at %s...\n" "$URL"
-	uv run dead-letter-ui --host "$HOST" --port "$PORT" &
+	run_uv run --no-sync dead-letter-ui --host "$HOST" --port "$PORT" &
 	server_pid="$!"
 
 	trap 'forward_signal TERM' TERM
