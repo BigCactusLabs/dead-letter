@@ -27,6 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Core conversion no longer aborts batch runs when a discovered source file
+  disappears before processing; missing sources now return per-file failure
+  results.
+- Directory `.eml` scans now deduplicate in-tree symlink aliases that resolve
+  to the same source file, preventing duplicate conversions and move/delete
+  collisions.
+- Import endpoints now enforce a backend 100 MB per-file upload limit and
+  return `413` for oversized files.
+- GitHub Actions workflows are now pinned to immutable action commit SHAs
+  instead of mutable version tags.
 - Attachment extraction now falls back to stdlib MIME parsing when
   `mail-parser` yields fewer named attachments, and records
   `attachment_parser_disagreement` diagnostics warnings.

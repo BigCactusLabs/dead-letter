@@ -274,6 +274,7 @@ class JobManager:
             raise ValueError(f"Input directory does not exist: {input_path}")
 
         files: list[Path] = []
+        seen_resolved: set[Path] = set()
         for candidate in input_path.rglob("*"):
             if candidate.suffix.lower() != ".eml" or not candidate.is_file():
                 continue
@@ -283,8 +284,11 @@ class JobManager:
                     continue
                 if resolved_candidate.is_relative_to(self._cabinet_root):
                     continue
+                if resolved_candidate in seen_resolved:
+                    continue
             except OSError:
                 continue
+            seen_resolved.add(resolved_candidate)
             files.append(resolved_candidate)
         return sorted(files)
 

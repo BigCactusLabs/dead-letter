@@ -166,3 +166,11 @@ def test_convert_to_bundle_cleans_partial_bundle_after_write_failure(
     assert result.bundle is None
     assert source.exists() is True
     assert list((tmp_path / "cabinet").glob("*")) == []
+
+
+def test_convert_to_bundle_returns_failure_for_missing_input(tmp_path: Path) -> None:
+    result = convert_to_bundle(tmp_path / "missing.eml", bundle_root=tmp_path / "cabinet")
+
+    assert result.success is False
+    assert result.error is not None
+    assert "missing.eml" in result.error

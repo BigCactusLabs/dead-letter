@@ -45,11 +45,17 @@ ERROR_RESPONSES = {
     403: {"description": "Forbidden"},
     404: {"description": "Not found"},
     409: {"description": "Conflict"},
+    413: {"description": "Payload too large"},
     500: {"description": "Internal server error"},
 }
 
 _MAX_IMPORT_COLLISION_INDEX = 10_000
 _IMPORT_STREAM_CHUNK_SIZE = 1024 * 1024
+_MAX_IMPORT_FILE_BYTES = 100 * 1024 * 1024
+
+
+class UploadTooLargeError(RuntimeError):
+    """Raised when an upload exceeds the backend file-size limit."""
 
 
 class _UploadReader(Protocol):
@@ -71,11 +77,17 @@ def _batch_import_target_path(batch_dir: Path, filename: str, *, index: int = 1)
 
 
 async def _stream_upload_to_file(candidate: Path, upload: _UploadReader) -> None:
+    written = 0
     with candidate.open("xb") as handle:
         while True:
             chunk = await upload.read(_IMPORT_STREAM_CHUNK_SIZE)
             if not chunk:
                 return
+            written += len(chunk)
+            if written > _MAX_IMPORT_FILE_BYTES:
+                raise UploadTooLargeError(
+                    f"uploaded file exceeds 100 MB limit ({_MAX_IMPORT_FILE_BYTES} bytes)"
+                )
             handle.write(chunk)
 
 
@@ -415,7 +427,12 @@ def create_app(
         "/api/import",
         response_model=ImportStartResponse,
         status_code=202,
-        responses={400: ERROR_RESPONSES[400], 409: ERROR_RESPONSES[409], 500: ERROR_RESPONSES[500]},
+        responses={
+            400: ERROR_RESPONSES[400],
+            409: ERROR_RESPONSES[409],
+            413: ERROR_RESPONSES[413],
+            500: ERROR_RESPONSES[500],
+        },
     )
     async def import_file(
         file: UploadFile = File(...),
@@ -449,6 +466,19 @@ def create_app(
             job = await app.state.job_manager.create_job(
                 JobCreateRequest(mode="file", input_path=str(imported_path), options=parsed_options),
                 origin="import",
+            )
+        except UploadTooLargeError as exc:
+            if imported_path is not None:
+                try:
+                    imported_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            return _error_response(
+                413,
+                code="invalid_request",
+                message=str(exc),
+                path=filename,
+                stage="validation",
             )
         except (OSError, RuntimeError) as exc:
             if imported_path is not None:
@@ -484,6 +514,7 @@ def create_app(
         responses={
             400: ERROR_RESPONSES[400],
             409: ERROR_RESPONSES[409],
+            413: ERROR_RESPONSES[413],
             422: {"description": "Unprocessable Entity"},
             500: ERROR_RESPONSES[500],
         },
@@ -543,6 +574,15 @@ def create_app(
                     options=parsed_options,
                 ),
                 origin="import",
+            )
+        except UploadTooLargeError as exc:
+            shutil.rmtree(batch_dir, ignore_errors=True)
+            return _error_response(
+                413,
+                code="invalid_request",
+                message=str(exc),
+                path="files",
+                stage="validation",
             )
         except (OSError, RuntimeError) as exc:
             shutil.rmtree(batch_dir, ignore_errors=True)

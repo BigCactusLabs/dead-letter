@@ -2,7 +2,7 @@
 title: dead-letter v4 Runtime Contracts
 doc_type: reference
 status: canonical
-last_updated: 2026-03-24
+last_updated: 2026-04-28
 audience:
   - maintainers
   - contributors
@@ -23,13 +23,14 @@ Converts one `.eml` file.
 
 Rules:
 
-- `path` must exist and have `.eml` suffix.
+- `path` must have `.eml` suffix.
 - Writes markdown output unless `dry_run=True`.
 - If `output` is omitted, writes next to source using a slugified subject filename.
 - If output path collides, appends incrementing suffix (`-2`, `-3`, ...).
 - If `delete_eml=True`, source deletion occurs only after successful write.
 - If source deletion fails after writing markdown, the written markdown file is removed and conversion returns failure.
 - `delete_eml` is disabled when `dry_run=True`.
+- If the source file is missing at conversion time, conversion returns a failed `ConvertResult` instead of raising.
 
 ### `convert_dir(directory, *, output=None, options=None) -> list[ConvertResult]`
 
@@ -40,6 +41,7 @@ Rules:
 - Processes files in sorted order.
 - Matches `.eml` suffixes case-insensitively.
 - Skips symlinked files whose resolved paths escape the requested directory tree.
+- Deduplicates in-tree alias paths that resolve to the same source file.
 - Returns one `ConvertResult` per file.
 - In directory mode with `output` set, source-relative subdirectories are mirrored under output root.
 
@@ -49,7 +51,7 @@ Converts one `.eml` file into a self-contained bundle directory.
 
 Rules:
 
-- `path` must exist and have `.eml` suffix.
+- `path` must have `.eml` suffix.
 - Bundle directories are created under `<bundle_root>/<source-stem>` with collision-safe numeric suffixes when needed.
 - `message.md` is always the bundle markdown filename.
 - Retained extracted attachments and calendar files are written under `attachments/` when present. Inline signature/tracking assets stripped from the rendered output, or inline CID assets no longer referenced by the retained output, are omitted.
@@ -61,6 +63,7 @@ Rules:
 - `source_handling` is the only retained-source control for this API; `ConvertOptions.delete_eml` does not change bundle behavior.
 - In `dry_run=True`, planned bundle paths are returned but no bundle directory, attachments, markdown, or source moves/copies/deletes are performed.
 - If bundle creation fails after filesystem work has started, any partial bundle directory is removed.
+- If the source file is missing at conversion time, conversion returns a failed `BundleResult` instead of raising.
 
 ### `ConvertOptions`
 
@@ -491,6 +494,7 @@ Rules:
 - Workflow folders must already be configured, otherwise the endpoint returns `409`.
 - Only `.eml` filenames are accepted.
 - Invalid `options` payloads return `400` with the standard error envelope and `path="options"`.
+- Uploaded files larger than 100 MB are rejected with `413`.
 - The uploaded file is copied into Inbox using a collision-safe filename (`name.eml`, `name-2.eml`, ...), capped at 10,000 attempts. Exceeding the cap returns `500` with `backend_error`.
 - Import immediately creates a file-mode job using the imported Inbox path and the provided options.
 - If an active watcher already covers the imported path and supports suppression, that path is suppressed only after the import job has been accepted, to avoid a duplicate watch-created job.
@@ -532,6 +536,7 @@ Rules:
 - Workflow folders must already be configured, otherwise the endpoint returns `409`.
 - At least one uploaded file is required.
 - Every uploaded filename must end with `.eml`; any non-`.eml` filename is rejected with `422`.
+- Uploaded files larger than 100 MB are rejected with `413`.
 - Uploaded files are copied into `Inbox/_batch-<uuid>/` using collision-safe filenames (`name.eml`, `name-2.eml`, ...), capped at 10,000 attempts. Exceeding the cap returns `500` with `backend_error`.
 - Import immediately creates one directory-mode job using the reserved batch directory and the provided options.
 - Active watch sessions ignore `_batch-*` directories, so batch imports do not create duplicate watch-origin jobs.
@@ -717,4 +722,5 @@ Exit codes:
 - `403`: filesystem/watch path escapes configured browser root
 - `404`: unknown or evicted job id, or missing browse/watch target
 - `409`: workflow settings missing, or invalid lifecycle/watch conflict
+- `413`: import payload exceeds the 100 MB per-file backend limit
 - `500`: unexpected backend failure

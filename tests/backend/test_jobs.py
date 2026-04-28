@@ -137,6 +137,52 @@ async def test_job_manager_directory_job_succeeds_for_same_stem_files(
 
 
 @pytest.mark.anyio
+async def test_job_manager_directory_mode_deduplicates_symlink_aliases(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root = tmp_path / "in"
+    root.mkdir(parents=True, exist_ok=True)
+    source = root / "inside.eml"
+    source.write_text("From: a@b\nSubject: hi\n\nHello\n", encoding="utf-8")
+    (root / "alias.eml").symlink_to(source)
+
+    calls: list[Path] = []
+
+    def fake_bundle(path: str | Path, **_kwargs: object) -> BundleResult:
+        src = Path(path).resolve()
+        calls.append(src)
+        bundle = tmp_path / "Cabinet" / src.stem
+        bundle.mkdir(parents=True, exist_ok=True)
+        markdown = bundle / "message.md"
+        markdown.write_text("ok", encoding="utf-8")
+        artifact = bundle / src.name
+        artifact.write_text("x", encoding="utf-8")
+        return BundleResult(
+            source=src,
+            bundle=bundle,
+            markdown=markdown,
+            source_artifact=artifact,
+            attachments=[],
+            success=True,
+            error=None,
+            dry_run=False,
+        )
+
+    import dead_letter.backend.jobs as jobs_mod
+
+    monkeypatch.setattr(jobs_mod, "core_convert_to_bundle", fake_bundle)
+
+    manager = _manager(tmp_path, worker_count=1)
+    created = await manager.create_job(JobCreateRequest(mode="directory", input_path=str(root)))
+    terminal = await manager.wait_for_terminal(created.id, timeout=2.0)
+
+    assert terminal.status == "succeeded"
+    assert terminal.summary.written == 1
+    assert terminal.summary.errors == 0
+    assert calls == [source.resolve()]
+
+
+@pytest.mark.anyio
 async def test_job_manager_file_mode_projects_diagnostics_summary(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "mail.eml"
     source.write_text("x", encoding="utf-8")

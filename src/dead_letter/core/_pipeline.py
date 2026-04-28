@@ -65,6 +65,13 @@ def _validate_source(path: str | Path) -> Path:
     return source
 
 
+def _source_hint(path: str | Path) -> Path:
+    try:
+        return Path(path).expanduser().resolve()
+    except OSError:
+        return Path(path).expanduser()
+
+
 def _slug_for_output(subject: str, source: Path) -> str:
     # Prefer normalized subject; fall back to source stem for empty subjects.
     if subject.strip():
@@ -615,15 +622,20 @@ def _write_attachment_parts(parts: list[AttachmentPart], target_dir: Path) -> li
 
 def _iter_source_eml_files(source_dir: Path) -> list[Path]:
     files: list[Path] = []
+    seen_resolved: set[Path] = set()
 
     for candidate in source_dir.rglob("*"):
         if candidate.suffix.lower() != ".eml" or not candidate.is_file():
             continue
         try:
-            if not candidate.resolve().is_relative_to(source_dir):
+            resolved_candidate = candidate.resolve()
+            if not resolved_candidate.is_relative_to(source_dir):
+                continue
+            if resolved_candidate in seen_resolved:
                 continue
         except OSError:
             continue
+        seen_resolved.add(resolved_candidate)
         files.append(candidate)
 
     return sorted(files)
@@ -636,7 +648,21 @@ def convert(
     options: ConvertOptions | None = None,
 ) -> ConvertResult:
     """Convert one .eml file into markdown according to the v4 contract."""
-    source = _validate_source(path)
+    source_hint = _source_hint(path)
+    try:
+        source = _validate_source(path)
+    except FileNotFoundError as exc:
+        return ConvertResult(
+            source=source_hint,
+            output=None,
+            subject="",
+            sender="unknown",
+            date=None,
+            attachments=[],
+            success=False,
+            error=str(exc),
+            dry_run=(options or ConvertOptions()).dry_run,
+        )
     opts = options or ConvertOptions()
     if opts.dry_run and opts.delete_eml:
         opts = replace(opts, delete_eml=False)
@@ -703,8 +729,24 @@ def convert_to_bundle_with_diagnostics(
     source_handling: Literal["move", "copy", "delete"] = "move",
 ) -> tuple[BundleResult, dict[str, Any] | None]:
     """Convert one .eml file into a self-contained bundle directory."""
-    source = _validate_source(path)
+    source_hint = _source_hint(path)
     opts = options or ConvertOptions()
+    try:
+        source = _validate_source(path)
+    except FileNotFoundError as exc:
+        return (
+            BundleResult(
+                source=source_hint,
+                bundle=None,
+                markdown=None,
+                source_artifact=None,
+                attachments=[],
+                success=False,
+                error=str(exc),
+                dry_run=opts.dry_run,
+            ),
+            None,
+        )
     if opts.dry_run and opts.delete_eml:
         opts = replace(opts, delete_eml=False)
     if source_handling not in {"move", "copy", "delete"}:

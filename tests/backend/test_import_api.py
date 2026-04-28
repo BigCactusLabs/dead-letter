@@ -146,6 +146,21 @@ async def test_write_batch_import_file_removes_partial_file_when_stream_fails(tm
 
 
 @pytest.mark.anyio
+async def test_write_import_file_removes_partial_file_when_upload_exceeds_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(api_mod, "_MAX_IMPORT_FILE_BYTES", 5)
+    inbox = tmp_path / "Inbox"
+    settings = WorkflowSettings(inbox_path=inbox, cabinet_path=tmp_path / "Cabinet")
+    upload = _ChunkedUploadFile([b"1234", b"56", b""])
+
+    with pytest.raises(api_mod.UploadTooLargeError, match="100 MB limit"):
+        await api_mod._write_import_file(settings, "hello.eml", upload)
+
+    assert sorted(inbox.iterdir()) == []
+
+
+@pytest.mark.anyio
 async def test_import_requires_configured_settings(tmp_path: Path) -> None:
     app = create_app(
         browser=FilesystemBrowser(root=tmp_path),
@@ -297,6 +312,34 @@ async def test_import_rejects_non_eml_with_error_envelope(tmp_path: Path) -> Non
     payload = response.json()
     assert "errors" in payload
     assert payload["errors"][0]["path"] == "bad.txt"
+
+
+@pytest.mark.anyio
+async def test_import_rejects_oversized_file_with_413(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(api_mod, "_MAX_IMPORT_FILE_BYTES", 5)
+    app = create_app(
+        browser=FilesystemBrowser(root=tmp_path),
+        settings_path=tmp_path / "settings.json",
+        manager=_StubJobManager(),
+        worker_count=1,
+    )
+    inbox = tmp_path / "Inbox"
+    cabinet = tmp_path / "Cabinet"
+    app.state.settings.save(inbox_path=inbox, cabinet_path=cabinet)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/import",
+            files={"file": ("hello.eml", b"123456", "message/rfc822")},
+        )
+
+    assert response.status_code == 413
+    payload = response.json()
+    assert payload["errors"][0]["code"] == "invalid_request"
+    assert "100 MB limit" in payload["errors"][0]["message"]
+    assert sorted(inbox.iterdir()) == []
 
 
 @pytest.mark.anyio

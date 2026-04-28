@@ -25,10 +25,14 @@ def test_convert_success_returns_contract(copy_fixture) -> None:
     assert result.output.exists()
 
 
-def test_convert_raises_for_missing_or_non_eml(tmp_path: Path) -> None:
-    with pytest.raises(FileNotFoundError):
-        convert(tmp_path / "missing.eml")
+def test_convert_returns_failure_for_missing_input(tmp_path: Path) -> None:
+    result = convert(tmp_path / "missing.eml")
+    assert result.success is False
+    assert result.error is not None
+    assert "missing.eml" in result.error
 
+
+def test_convert_raises_for_non_eml(tmp_path: Path) -> None:
     not_eml = tmp_path / "note.txt"
     not_eml.write_text("x", encoding="utf-8")
     with pytest.raises(ValueError):

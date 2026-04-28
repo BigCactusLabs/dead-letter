@@ -88,8 +88,9 @@ dead-letter doctor
 ```
 
 Directory conversion scans recursively for `.eml` files, matches the suffix
-case-insensitively, and skips symlinked files whose resolved targets escape the
-requested input tree.
+case-insensitively, skips symlinked files whose resolved targets escape the
+requested input tree, and deduplicates in-tree symlink aliases that resolve to
+the same message file.
 
 **Web UI** — start the local server:
 
@@ -98,6 +99,8 @@ dead-letter-ui --host 127.0.0.1 --port 8765
 ```
 
 Open `http://127.0.0.1:8765` — on first launch, a setup prompt suggests default Inbox and Cabinet folders. Configure or skip to start converting. Import `.eml` files with drag and drop or the file picker. Single-file imports use file mode, while multi-file drops create one directory-mode batch job. Mixed drops ask for confirmation before skipping non-`.eml` files.
+The backend enforces a 100 MB per-file import limit for both single and batch
+uploads.
 
 From a source checkout, prefix with `uv run`:
 

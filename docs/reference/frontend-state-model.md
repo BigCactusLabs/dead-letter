@@ -172,6 +172,7 @@ Removed browser state:
 - Partitions `.eml` files from non-`.eml` files before submitting anything.
 - If zero `.eml` files remain after filtering, the frontend surfaces an actionable error and rejects the drop.
 - If skipped non-`.eml` files are present, or the total `.eml` payload exceeds 100 MB, the frontend shows a confirmation overlay before submitting. The overlay inerts the idle drop zone behind it.
+- Backend enforces a hard 100 MB per-file limit; oversized files are rejected with `413`.
 - Confirmed single-file imports:
   - sets `inputPath` from `imported_path`
   - sets `mode="file"`
@@ -283,6 +284,7 @@ Terminal statuses:
 - Missing required poll fields stops polling and surfaces operation error.
 - Drop imports reject when no `.eml` files are present.
 - Batch confirmation is required before submitting mixed drops or `.eml` payloads larger than 100 MB.
+- Oversized import files are rejected by backend with `413`.
 
 ## localStorage Persistence
 

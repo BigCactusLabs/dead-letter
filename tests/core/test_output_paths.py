@@ -181,6 +181,42 @@ def test_convert_dir_skips_symlinked_eml_files_resolving_outside_root(
     assert seen == ["inside.eml"]
 
 
+def test_convert_dir_deduplicates_in_tree_symlink_aliases(
+    tmp_path: Path, monkeypatch
+) -> None:
+    input_root = tmp_path / "in"
+    input_root.mkdir(parents=True, exist_ok=True)
+    source = input_root / "inside.eml"
+    source.write_text("placeholder", encoding="utf-8")
+    (input_root / "alias.eml").symlink_to(source)
+
+    seen: list[Path] = []
+
+    def fake_convert(path: str | Path, *, output: str | Path | None = None, options=None) -> ConvertResult:
+        _ = (output, options)
+        seen.append(Path(path).resolve())
+        return ConvertResult(
+            source=Path(path),
+            output=None,
+            subject="",
+            sender="",
+            date=None,
+            attachments=[],
+            success=True,
+            error=None,
+            dry_run=False,
+        )
+
+    import dead_letter.core._pipeline as pipeline
+
+    monkeypatch.setattr(pipeline, "convert", fake_convert)
+
+    results = convert_dir(input_root)
+
+    assert len(results) == 1
+    assert seen == [source.resolve()]
+
+
 def test_dry_run_writes_nothing_and_disables_delete(copy_fixture) -> None:
     source = copy_fixture("plain_text.eml", "in/plain_text.eml")
     expected = source.parent / "plain-text-fixture.md"

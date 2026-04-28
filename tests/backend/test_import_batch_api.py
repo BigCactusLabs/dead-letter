@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+import dead_letter.backend.api as api_mod
 from dead_letter.backend.api import create_app
 from dead_letter.backend.filesystem import FilesystemBrowser
 from dead_letter.backend.schemas import JobCreateRequest, JobCreateResponse, OutputLocation
@@ -179,4 +180,27 @@ async def test_import_batch_rolls_back_reserved_batch_dir_when_job_creation_fail
         )
 
     assert response.status_code == 500
+    assert sorted(inbox.iterdir()) == []
+
+
+@pytest.mark.anyio
+async def test_import_batch_rejects_oversized_file_with_413(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(api_mod, "_MAX_IMPORT_FILE_BYTES", 5)
+    manager = _StubJobManager()
+    app = _make_app(tmp_path, manager)
+    inbox = tmp_path / "Inbox"
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/import-batch",
+            files=[("files", ("big.eml", b"123456", "message/rfc822"))],
+        )
+
+    assert response.status_code == 413
+    payload = response.json()
+    assert payload["errors"][0]["code"] == "invalid_request"
+    assert "100 MB limit" in payload["errors"][0]["message"]
+    assert manager.requests == []
     assert sorted(inbox.iterdir()) == []
