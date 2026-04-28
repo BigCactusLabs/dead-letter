@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-04-28
+
+### Fixed
+
+- Pinned `html-to-markdown` to `>=2.9.1,<3.0` to prevent import-time crashes
+  caused by upstream v3 removal of `convert_with_visitor`.
+- Long-term v3 migration is tracked in issue [#11](https://github.com/BigCactusLabs/dead-letter/issues/11).
+
 ## [0.1.1] - 2026-03-26
 
 ### Added
