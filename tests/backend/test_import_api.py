@@ -6,10 +6,13 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 import dead_letter.backend.api as api_mod
+import dead_letter.backend.jobs as jobs_mod
 from dead_letter.backend.api import create_app
 from dead_letter.backend.filesystem import FilesystemBrowser
+from dead_letter.backend.jobs import JobManager
 from dead_letter.backend.schemas import JobCreateResponse, JobCreateRequest, OutputLocation
 from dead_letter.backend.settings import WorkflowSettings
+from dead_letter.core.types import BundleResult
 
 
 class _StubJobManager:
@@ -210,6 +213,66 @@ async def test_import_copies_into_inbox_and_starts_job(tmp_path: Path) -> None:
     assert request.mode == "file"
     assert request.input_path == str(imported_path)
     assert request.options.allow_fallback_on_html_error is False
+
+
+@pytest.mark.anyio
+async def test_import_refreshes_saved_roots_before_creating_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old_inbox = tmp_path / "OldInbox"
+    old_cabinet = tmp_path / "OldCabinet"
+    new_inbox = tmp_path / "NewInbox"
+    new_cabinet = tmp_path / "NewCabinet"
+    manager = JobManager(worker_count=1, inbox_root=old_inbox, cabinet_root=old_cabinet)
+    app = create_app(
+        browser=FilesystemBrowser(root=tmp_path),
+        settings_path=tmp_path / "settings.json",
+        manager=manager,
+        worker_count=1,
+    )
+    app.state.settings.save(inbox_path=old_inbox, cabinet_path=old_cabinet)
+    app.state.settings.save(inbox_path=new_inbox, cabinet_path=new_cabinet)
+    bundle_roots: list[str] = []
+
+    def fake_convert(path: str | Path, *, bundle_root: str | Path, options, source_handling):
+        _ = (options, source_handling)
+        src = Path(path)
+        root = Path(bundle_root).resolve()
+        bundle_roots.append(str(root))
+        bundle = root / src.stem
+        bundle.mkdir(parents=True, exist_ok=True)
+        markdown = bundle / "message.md"
+        markdown.write_text("ok", encoding="utf-8")
+        source_artifact = bundle / src.name
+        source_artifact.write_text("x", encoding="utf-8")
+        src.unlink(missing_ok=True)
+        return BundleResult(
+            source=src,
+            bundle=bundle,
+            markdown=markdown,
+            source_artifact=source_artifact,
+            attachments=[],
+            success=True,
+            error=None,
+            dry_run=False,
+        ), None
+
+    monkeypatch.setattr(jobs_mod, "run_bundle_conversion", fake_convert)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/import",
+            files={"file": ("uploaded.eml", b"From: a@b\nSubject: hi\n\nHello\n", "message/rfc822")},
+        )
+        terminal = await manager.wait_for_terminal(response.json()["id"], timeout=5.0)
+
+    assert response.status_code == 202
+    imported_path = Path(response.json()["imported_path"])
+    assert imported_path.parent == new_inbox.resolve()
+    assert response.json()["output_location"]["cabinet_path"] == str(new_cabinet.resolve())
+    assert terminal.output_location.cabinet_path == str(new_cabinet.resolve())
+    assert bundle_roots == [str(new_cabinet.resolve())]
+    assert not (old_cabinet / "uploaded").exists()
 
 
 @pytest.mark.anyio

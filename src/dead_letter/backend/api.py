@@ -191,6 +191,26 @@ def create_app(
     def _current_settings() -> WorkflowSettings | None:
         return cast(WorkflowSettings | None, app.state.settings.load())
 
+    def _sync_job_manager_roots(configured: WorkflowSettings) -> None:
+        if hasattr(app.state.job_manager, "update_roots"):
+            app.state.job_manager.update_roots(
+                inbox_root=configured.inbox_path,
+                cabinet_root=configured.cabinet_path,
+            )
+
+    class _SettingsBackedJobCreator:
+        async def create_job(
+            self,
+            request: JobCreateRequest,
+            *,
+            origin: str = "manual",
+        ) -> JobCreateResponse:
+            configured = _current_settings()
+            if configured is None:
+                raise RuntimeError("workflow settings are not configured")
+            _sync_job_manager_roots(configured)
+            return await app.state.job_manager.create_job(request, origin=origin)
+
     def _resolve_watch_target(path: str) -> Path:
         raw_path = Path(path).expanduser()
         if raw_path.is_absolute():
@@ -248,11 +268,7 @@ def create_app(
                 path="settings",
                 stage="validation",
             )
-        if hasattr(app.state.job_manager, "update_roots"):
-            app.state.job_manager.update_roots(
-                inbox_root=configured.inbox_path,
-                cabinet_root=configured.cabinet_path,
-            )
+        _sync_job_manager_roots(configured)
         try:
             return await job_manager.create_job(request)
         except ValueError as exc:
@@ -335,11 +351,7 @@ def create_app(
                 stage="backend",
             )
 
-        if hasattr(app.state.job_manager, "update_roots"):
-            app.state.job_manager.update_roots(
-                inbox_root=configured.inbox_path,
-                cabinet_root=configured.cabinet_path,
-            )
+        _sync_job_manager_roots(configured)
 
         return SettingsResponse(
             configured=True,
@@ -447,6 +459,7 @@ def create_app(
                 path="settings",
                 stage="validation",
             )
+        _sync_job_manager_roots(configured)
         parsed_options = _parse_import_options(options)
         if isinstance(parsed_options, JSONResponse):
             return parsed_options
@@ -532,6 +545,7 @@ def create_app(
                 path="settings",
                 stage="validation",
             )
+        _sync_job_manager_roots(configured)
         parsed_options = _parse_import_options(options)
         if isinstance(parsed_options, JSONResponse):
             return parsed_options
@@ -639,7 +653,11 @@ def create_app(
                 path=watch_path,
             )
         try:
-            await watcher.start(watch_path, request.options.model_dump(), job_manager)
+            await watcher.start(
+                watch_path,
+                request.options.model_dump(),
+                _SettingsBackedJobCreator(),
+            )
         except PermissionError as exc:
             return _error_response(403, code="invalid_request", message=str(exc), path=watch_path)
         except FileNotFoundError as exc:
