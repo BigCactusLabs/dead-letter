@@ -137,6 +137,12 @@ wait_for_server() {
 	local remaining="$READY_TIMEOUT_SECONDS"
 
 	while [ "$remaining" -gt 0 ]; do
+		if curl -sS --max-time 2 "$URL" 2>/dev/null | grep -q "<title>dead-letter</title>"; then
+			printf "Opening dead-letter at %s...\n" "$URL"
+			open "$URL"
+			return 0
+		fi
+
 		if ! kill -0 "$server_pid" 2>/dev/null; then
 			local exit_code=0
 			if wait "$server_pid"; then
@@ -147,12 +153,6 @@ wait_for_server() {
 			printf "dead-letter-ui exited before the UI became ready.\n"
 			print_manual_command
 			exit "$exit_code"
-		fi
-
-		if curl -sS --max-time 2 "$URL" 2>/dev/null | grep -q "<title>dead-letter</title>"; then
-			printf "Opening dead-letter at %s...\n" "$URL"
-			open "$URL"
-			return 0
 		fi
 
 		sleep 1
