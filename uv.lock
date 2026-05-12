@@ -312,7 +312,7 @@ requires-dist = [
     { name = "dead-letter", extras = ["cli"], marker = "extra == 'ui'" },
     { name = "dead-letter", extras = ["ui", "mcp"], marker = "extra == 'dev'" },
     { name = "fastapi", marker = "extra == 'ui'", specifier = ">=0.136.0" },
-    { name = "html-to-markdown", specifier = ">=2.9.1,<3.0" },
+    { name = "html-to-markdown", specifier = ">=2.9.1,<4.0" },
     { name = "httpx", marker = "extra == 'ui'", specifier = ">=0.28.0" },
     { name = "icalendar", specifier = ">=6.1.1" },
     { name = "mail-parser", specifier = ">=4.2.0" },
@@ -356,14 +356,9 @@ wheels = [
 
 [[package]]
 name = "html-to-markdown"
-version = "2.30.0"
+version = "3.4.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/11/90/6cd0f8306f8537101074ac233dd24b76d9949cb01c10bcc45099e912ca2a/html_to_markdown-2.30.0.tar.gz", hash = "sha256:499300fdb538252c00abab5d8fee474243c761ade1faf7dbc854ca068d1bd263", size = 312471, upload-time = "2026-03-27T19:04:16.245Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/75/49/57f85fb22891d21cddeb183b497459841b71a9b78b392c187a7f3453a437/html_to_markdown-2.30.0-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:080ed04c51003d82c1b4e95ef043d02ea8f8ce965c137f35d8d3382eedf218e5", size = 8887761, upload-time = "2026-03-27T19:04:08.917Z" },
-    { url = "https://files.pythonhosted.org/packages/1a/f3/6f1f26d54d30675f4174bf5706ba60f04466223181afeeb5a9ab0bc00310/html_to_markdown-2.30.0-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:47b69d1878d91f3814b5616421038bb2e498e0c799a55e28aa7873e1cd71734a", size = 9701687, upload-time = "2026-03-27T19:04:11.568Z" },
-    { url = "https://files.pythonhosted.org/packages/51/37/de34075b0d1fb1252b5039320e46b37d7a7a2ae4eb4052199d8960410883/html_to_markdown-2.30.0-cp310-abi3-win_amd64.whl", hash = "sha256:ebb541b332f77f824c8d975f326c67efae2c72c426b8f71af48b3ffc984a2ecb", size = 9322722, upload-time = "2026-03-27T19:04:14.156Z" },
-]
+sdist = { url = "https://files.pythonhosted.org/packages/ae/30/a4aa8f9c9febf6096b0d14e3fa3559a8e100802fa81bd67deb8a8031c14d/html_to_markdown-3.4.0.tar.gz", hash = "sha256:3e7e0813cc871c7abe2d5ea927e9038374bea339e8dd72f3b4c2f1c0b8e51672", size = 283028, upload-time = "2026-05-09T11:07:49.784Z" }
 
 [[package]]
 name = "httpcore"
@@ -774,11 +769,11 @@ wheels = [
 
 [[package]]
 name = "python-multipart"
-version = "0.0.27"
+version = "0.0.28"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/69/9b/f23807317a113dc36e74e75eb265a02dd1a4d9082abc3c1064acd22997c4/python_multipart-0.0.27.tar.gz", hash = "sha256:9870a6a8c5a20a5bf4f07c017bd1489006ff8836cff097b6933355ee2b49b602", size = 44043, upload-time = "2026-04-27T10:51:26.649Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/82/54/a85eb421fbdd5007bc5af39d0f4ed9fa609e0fedbfdc2adcf0b34526870e/python_multipart-0.0.28.tar.gz", hash = "sha256:8550da197eac0f7ab748961fc9509b999fa2662ea25cef857f05249f6893c0f8", size = 45314, upload-time = "2026-05-10T11:05:16.596Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/99/78/4126abcbdbd3c559d43e0db7f7b9173fc6befe45d39a2856cc0b8ec2a5a6/python_multipart-0.0.27-py3-none-any.whl", hash = "sha256:6fccfad17a27334bd0193681b369f476eda3409f17381a2d65aa7df3f7275645", size = 29254, upload-time = "2026-04-27T10:51:24.997Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/a2/43bbc5860b5034e2af4ef99a0e04d726ff329c43e192ef3abaa8d7ecfce5/python_multipart-0.0.28-py3-none-any.whl", hash = "sha256:10faac07eb966c3f48dc415f9dee46c04cb10d58d30a35677db8027c825ed9b6", size = 29438, upload-time = "2026-05-10T11:05:15.052Z" },
 ]
 
 [[package]]
