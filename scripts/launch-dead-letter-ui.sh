@@ -191,6 +191,8 @@ main() {
 	if ! has_ui_binary; then
 		require_uv
 		ensure_synced
+	elif command -v uv >/dev/null 2>&1; then
+		ensure_synced
 	fi
 
 	printf "Starting dead-letter-ui at %s...\n" "$URL"

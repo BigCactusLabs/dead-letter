@@ -99,6 +99,67 @@ def test_helper_uses_existing_ui_binary_when_uv_is_missing(tmp_path: Path) -> No
     ]
 
 
+def test_helper_resyncs_when_binary_exists_but_deps_are_stale(tmp_path: Path) -> None:
+    log_path = tmp_path / "calls.log"
+    ready_path = tmp_path / "ready"
+    ui_bin = _write_stub(
+        tmp_path,
+        "dead-letter-ui",
+        textwrap.dedent(
+            f"""
+            printf 'ui:%s\\n' "$*" >> "{log_path}"
+            touch "{ready_path}"
+            sleep 1
+            """
+        ),
+    )
+    _write_stub(
+        tmp_path,
+        "curl",
+        textwrap.dedent(
+            f"""
+            if [ -e "{ready_path}" ]; then
+              printf '%s\\n' '<!doctype html><title>dead-letter</title>'
+              exit 0
+            fi
+            exit 7
+            """
+        ),
+    )
+    _write_stub(
+        tmp_path,
+        "open",
+        textwrap.dedent(
+            f"""
+            printf 'open:%s\\n' "$1" >> "{log_path}"
+            """
+        ),
+    )
+    _write_stub(
+        tmp_path,
+        "uv",
+        textwrap.dedent(
+            f"""
+            printf 'uv:%s\\n' "$*" >> "{log_path}"
+            if [ "$1" = "sync" ] && [ "$2" = "--check" ]; then
+              exit 1
+            fi
+            exit 0
+            """
+        ),
+    )
+
+    result = _run_helper(tmp_path, ui_bin=ui_bin)
+
+    assert result.returncode == 0
+    assert log_path.read_text(encoding="utf-8").splitlines() == [
+        "uv:sync --check --all-extras",
+        "uv:sync --all-extras",
+        "ui:--host 127.0.0.1 --port 8765",
+        "open:http://127.0.0.1:8765",
+    ]
+
+
 def test_helper_opens_when_server_is_ready_before_clean_exit(tmp_path: Path) -> None:
     log_path = tmp_path / "calls.log"
     ready_path = tmp_path / "ready"
