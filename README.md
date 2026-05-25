@@ -215,7 +215,7 @@ The `codex mcp add` command registers the local `dead-letter` MCP server, and `c
 src/dead_letter/
 ├── core/           # conversion pipeline (MIME, HTML, threads, rendering)
 ├── backend/        # CLI, API server, job runner, watch mode, MCP server
-└── frontend/       # static web UI (htmx + Alpine.js)
+└── frontend/       # static web UI (Alpine.js ES modules + vanilla fetch)
 tests/
 ├── core/           # conversion pipeline tests with .eml fixtures
 ├── backend/        # API, job, and watch tests

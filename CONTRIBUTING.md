@@ -21,7 +21,8 @@ uv sync --extra dev
 # Verify the setup
 uv run pytest tests/core
 uv run pytest tests/backend
-node --test tests/frontend/app.test.js
+node --test tests/frontend/*.test.js
+node --check src/dead_letter/frontend/static/app.js
 ```
 
 ## Test Commands
@@ -30,14 +31,14 @@ node --test tests/frontend/app.test.js
 |---|---|
 | Core | `uv run pytest tests/core -v` |
 | Backend | `uv run pytest tests/backend -v` |
-| Frontend | `node --test tests/frontend/app.test.js` |
+| Frontend | `node --test tests/frontend/*.test.js` |
 | Frontend syntax | `node --check src/dead_letter/frontend/static/app.js` |
 | Stop on first failure | `uv run pytest -x` |
 | Single test | `uv run pytest -k "test_name"` |
 | Coverage | `uv run pytest --cov` |
-| Lint | `uv run ruff check .` |
-| Format check | `uv run ruff format --check .` |
-| Type check | `uv run pyright` |
+| Advisory lint | `uv run ruff check .` |
+| Advisory format check | `uv run ruff format --check .` |
+| Advisory type check | `uv run pyright` |
 
 Run the most targeted suite first, then broaden if your change touches shared
 interfaces.
@@ -79,7 +80,7 @@ docs: clarify CLI watch mode usage
 - Follow existing patterns in the codebase.
 - Format with `ruff format`.
 - Lint with `ruff check`.
-- Type-annotate public APIs; verify with `pyright`.
+- Type-annotate public APIs; use `pyright` as an advisory local check.
 - Keep changes scoped and minimal. Avoid drive-by refactors.
 - Add tests for behavior changes.
 
@@ -90,12 +91,12 @@ docs: clarify CLI watch mode usage
    or `feat/ics-recurrence`.
 3. **Keep PRs focused.** One logical change per pull request.
 4. **Write or update tests** for any changed behavior.
-5. **Run the full check suite** before pushing:
+5. **Run the CI check suite** before pushing:
    ```bash
    uv run pytest tests/core
    uv run pytest tests/backend
-   uv run ruff check .
-   uv run ruff format --check .
+   node --test tests/frontend/*.test.js
+   node --check src/dead_letter/frontend/static/app.js
    ```
 6. **Open a PR** against `main` and fill in the pull request template.
 7. A maintainer will review and may request changes.

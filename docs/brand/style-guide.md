@@ -193,7 +193,7 @@ Do not:
 
 ## 9. Brand Mark
 
-Full mascot and asset documentation lives in `docs/brand/handoff.md`. This section covers the production integration.
+This section covers production mascot and asset integration.
 
 ### Primary Mark
 

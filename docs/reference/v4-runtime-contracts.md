@@ -632,6 +632,29 @@ Returns current aggregate watch status:
 
 Stops the active watch session and returns the same aggregate watch-status shape.
 
+### `POST /api/open-folder`
+
+Opens the configured Cabinet folder in the host operating system's file manager.
+
+Request: empty body.
+
+Response (`200`):
+
+```json
+{
+  "path": "absolute Cabinet path string"
+}
+```
+
+Rules:
+
+- Workflow folders must already be configured, otherwise the endpoint returns `409`.
+- The Cabinet directory is created if it does not already exist.
+- This endpoint has a local OS side effect: macOS launches `open`, Windows launches `explorer`, and Linux/other Unix launches `xdg-open`.
+- If Cabinet creation or file-manager launch fails, the endpoint returns `500` with `backend_error`.
+
+All non-2xx responses use the standard top-level error envelope.
+
 ## Error Taxonomy
 
 Common error codes:
@@ -722,7 +745,7 @@ Exit codes:
 
 ## HTTP Status Mapping
 
-- `200`: settings get/put, filesystem list, watch get/start/stop, job snapshot
+- `200`: settings get/put, filesystem list, watch get/start/stop, job snapshot, open Cabinet folder
 - `202`: job create accepted, import accepted, cancel accepted
 - `400`: request rejected (schema or semantic validation)
 - `403`: filesystem/watch path escapes configured browser root
