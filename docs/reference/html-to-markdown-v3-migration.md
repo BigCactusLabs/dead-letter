@@ -1,8 +1,8 @@
 ---
 title: html-to-markdown v3 Migration Plan
 doc_type: reference
-status: canonical
-last_updated: 2026-04-21
+status: completed
+last_updated: 2026-05-25
 audience:
   - maintainers
 scope:
@@ -17,12 +17,11 @@ This document defines the migration from `html-to-markdown` 2.x to 3.x.
 
 ## Current State
 
-- Runtime currently depends on `html-to-markdown>=2.9.1,<3.0` as a temporary guardrail.
-- `dead-letter` currently relies on:
-  - `convert(...)` in `src/dead_letter/core/html.py`
-  - `convert_with_visitor(...)` in `src/dead_letter/core/quotes.py`
-- `html-to-markdown` v3 removed `convert_with_visitor`, which currently causes import-time failure in the core test suite.
-- Current v3 packaging also needs monitoring for Python 3.14 compatibility in CI/release environments.
+- Runtime now depends on `html-to-markdown>=3.1.0,<4.0`.
+- `src/dead_letter/core/quotes.py` uses DOM-based quote-pattern detection and no longer imports `convert_with_visitor`.
+- `src/dead_letter/core/html.py` calls the internal adapter in `src/dead_letter/core/html_to_markdown_adapter.py`.
+- Core and backend suites have been validated against `html-to-markdown==3.1.0`
+  and the locked `html-to-markdown==3.4.0`.
 
 ## Migration Goal
 
@@ -37,6 +36,16 @@ Upgrade to `html-to-markdown` v3 without changing user-facing conversion contrac
 1. Decouple quote detection from `html-to-markdown` visitor APIs.
 2. Keep markdown conversion behind an internal adapter boundary.
 3. Validate parity and resilience before removing the `<3.0` guardrail.
+
+## Completion Notes
+
+- Quote detection now traverses sanitized HTML with `selectolax` and preserves
+  the existing `gmail`, `outlook`, `yahoo`, `generic`, `thunderbird`, and
+  `apple_mail` signals.
+- The conversion adapter normalizes v2 string results, early v3 dict results,
+  and current v3 `ConversionResult.content` results into the string expected by
+  the pipeline.
+- The guardrail has been removed in favor of `html-to-markdown>=3.1.0,<4.0`.
 
 ## Implementation Plan
 
@@ -67,8 +76,9 @@ Exit criteria:
 ### Phase 3: v3 trial and compatibility checks
 
 - In isolated env, run:
-  - `uv run --with html-to-markdown==3.1.0 pytest -q tests/core`
-  - `uv run --with html-to-markdown==3.1.0 pytest -q tests/backend`
+  - `uv run --with html-to-markdown==3.1.0 pytest -q tests/core tests/backend`
+  - `uv run --with html-to-markdown==3.4.0 pytest -q tests/core`
+  - `uv run --with html-to-markdown==3.4.0 pytest -q tests/backend`
 - Fix API or behavior differences in adapter only (avoid broad pipeline rewrites).
 - Keep diagnostics semantics stable (`html_markdown_failed`, repair/fallback behavior).
 
