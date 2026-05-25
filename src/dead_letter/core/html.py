@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from html_to_markdown import ConversionOptions, convert
 from selectolax.parser import HTMLParser
 
+from dead_letter.core.html_to_markdown_adapter import convert_html_to_markdown
 from dead_letter.core.quotes import detect_quote_patterns
 from dead_letter.core.sanitize import sanitize_html
 
@@ -25,14 +25,7 @@ def html_to_markdown(html: str, *, include_raw_html: bool = False) -> HtmlConver
 
     markdown = ""
     if cleaned:
-        markdown = convert(
-            cleaned,
-            options=ConversionOptions(
-                heading_style="atx",
-                code_block_style="backticks",
-                output_format="markdown",
-            ),
-        ).strip()
+        markdown = convert_html_to_markdown(cleaned)
 
     return HtmlConversionResult(
         markdown=markdown,

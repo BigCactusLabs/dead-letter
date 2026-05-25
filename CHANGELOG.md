@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `html-to-markdown` runtime support now targets v3 (`>=3.1.0,<4.0`).
 - Dependency floors raised for backend/dev runtime packages:
   `fastapi>=0.136.0`, `mcp>=1.27.0`, `python-multipart>=0.0.26`,
   `uvicorn[standard]>=0.45.0`, and `pytest>=9.0.3`.
@@ -57,6 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   detail content (output paths, error messages, diagnostics).
 - `relativeTime` helper now tolerates up to 30 seconds of server-ahead
   clock skew instead of showing blank timestamps.
+- Quote-pattern detection no longer imports the removed
+  `html-to-markdown` v2 `convert_with_visitor` API.
 
 ## [0.1.2] - 2026-04-28
 

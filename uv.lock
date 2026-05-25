@@ -312,7 +312,7 @@ requires-dist = [
     { name = "dead-letter", extras = ["cli"], marker = "extra == 'ui'" },
     { name = "dead-letter", extras = ["ui", "mcp"], marker = "extra == 'dev'" },
     { name = "fastapi", marker = "extra == 'ui'", specifier = ">=0.136.0" },
-    { name = "html-to-markdown", specifier = ">=2.9.1,<3.0" },
+    { name = "html-to-markdown", specifier = ">=3.1.0,<4.0" },
     { name = "httpx", marker = "extra == 'ui'", specifier = ">=0.28.0" },
     { name = "icalendar", specifier = ">=6.1.1" },
     { name = "mail-parser", specifier = ">=4.2.0" },
@@ -356,14 +356,9 @@ wheels = [
 
 [[package]]
 name = "html-to-markdown"
-version = "2.30.0"
+version = "3.4.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/11/90/6cd0f8306f8537101074ac233dd24b76d9949cb01c10bcc45099e912ca2a/html_to_markdown-2.30.0.tar.gz", hash = "sha256:499300fdb538252c00abab5d8fee474243c761ade1faf7dbc854ca068d1bd263", size = 312471, upload-time = "2026-03-27T19:04:16.245Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/75/49/57f85fb22891d21cddeb183b497459841b71a9b78b392c187a7f3453a437/html_to_markdown-2.30.0-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:080ed04c51003d82c1b4e95ef043d02ea8f8ce965c137f35d8d3382eedf218e5", size = 8887761, upload-time = "2026-03-27T19:04:08.917Z" },
-    { url = "https://files.pythonhosted.org/packages/1a/f3/6f1f26d54d30675f4174bf5706ba60f04466223181afeeb5a9ab0bc00310/html_to_markdown-2.30.0-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:47b69d1878d91f3814b5616421038bb2e498e0c799a55e28aa7873e1cd71734a", size = 9701687, upload-time = "2026-03-27T19:04:11.568Z" },
-    { url = "https://files.pythonhosted.org/packages/51/37/de34075b0d1fb1252b5039320e46b37d7a7a2ae4eb4052199d8960410883/html_to_markdown-2.30.0-cp310-abi3-win_amd64.whl", hash = "sha256:ebb541b332f77f824c8d975f326c67efae2c72c426b8f71af48b3ffc984a2ecb", size = 9322722, upload-time = "2026-03-27T19:04:14.156Z" },
-]
+sdist = { url = "https://files.pythonhosted.org/packages/ae/30/a4aa8f9c9febf6096b0d14e3fa3559a8e100802fa81bd67deb8a8031c14d/html_to_markdown-3.4.0.tar.gz", hash = "sha256:3e7e0813cc871c7abe2d5ea927e9038374bea339e8dd72f3b4c2f1c0b8e51672", size = 283028, upload-time = "2026-05-09T11:07:49.784Z" }
 
 [[package]]
 name = "httpcore"

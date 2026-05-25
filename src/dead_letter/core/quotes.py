@@ -1,57 +1,41 @@
-"""HTML quote-pattern detection via html-to-markdown visitor callbacks."""
+"""HTML quote-pattern detection."""
 
 from __future__ import annotations
 
 import re
 
-from html_to_markdown import convert_with_visitor
+from selectolax.parser import HTMLParser
 
 _ON_WROTE_RE = re.compile(r"\bon\s+.+\bwrote:\s*$", re.IGNORECASE)
 
 
-class QuoteDetectorVisitor:
-    """Collect quote patterns encountered during conversion traversal."""
+def _detect_element_patterns(tag: str, attrs: dict[str, str], patterns: set[str]) -> None:
+    element_id = attrs.get("id", "").lower()
+    element_type = attrs.get("type", "").lower()
+    classes = {part.strip().lower() for part in attrs.get("class", "").split() if part.strip()}
+    style = attrs.get("style", "").lower()
 
-    def __init__(self) -> None:
-        self.patterns: set[str] = set()
+    if tag == "div" and ({"gmail_quote", "gmail_attr"} & classes):
+        patterns.add("gmail")
+    if tag == "blockquote" and "gmail_quote" in classes:
+        patterns.add("gmail")
 
-    def visit_element_start(self, ctx: dict[str, object]) -> dict[str, str]:
-        tag = str(ctx.get("tag_name", "")).lower()
-        attrs = {str(k).lower(): str(v) for k, v in (ctx.get("attributes") or {}).items()}
+    if (tag == "div" and element_id == "divrplyfwdmsg") or (
+        tag == "span" and element_id == "olk_src_body_section"
+    ):
+        patterns.add("outlook")
 
-        element_id = attrs.get("id", "").lower()
-        element_type = attrs.get("type", "").lower()
-        classes = {part.strip().lower() for part in attrs.get("class", "").split() if part.strip()}
-        style = attrs.get("style", "").lower()
+    if tag == "hr" and "border-top" in style and ("#b5c4df" in style or "#e1e1e1" in style):
+        patterns.add("outlook")
 
-        if tag == "div" and ({"gmail_quote", "gmail_attr"} & classes):
-            self.patterns.add("gmail")
-        if tag == "blockquote" and "gmail_quote" in classes:
-            self.patterns.add("gmail")
+    if tag == "div" and "yahoo_quoted" in classes:
+        patterns.add("yahoo")
 
-        if (tag == "div" and element_id == "divrplyfwdmsg") or (
-            tag == "span" and element_id == "olk_src_body_section"
-        ):
-            self.patterns.add("outlook")
-
-        if tag == "hr" and "border-top" in style and ("#b5c4df" in style or "#e1e1e1" in style):
-            self.patterns.add("outlook")
-
-        if tag == "div" and "yahoo_quoted" in classes:
-            self.patterns.add("yahoo")
-
-        if tag == "blockquote":
-            self.patterns.add("generic")
-            if element_type == "cite":
-                self.patterns.add("thunderbird")
-                self.patterns.add("apple_mail")
-
-        return {"type": "continue"}
-
-    def visit_text(self, _ctx: dict[str, object], text: str) -> dict[str, str]:
-        if _ON_WROTE_RE.search(text.strip()):
-            self.patterns.add("generic")
-        return {"type": "continue"}
+    if tag == "blockquote":
+        patterns.add("generic")
+        if element_type == "cite":
+            patterns.add("thunderbird")
+            patterns.add("apple_mail")
 
 
 def detect_quote_patterns(html: str) -> set[str]:
@@ -59,8 +43,13 @@ def detect_quote_patterns(html: str) -> set[str]:
     if not html:
         return set()
 
-    visitor = QuoteDetectorVisitor()
-    # We intentionally use html-to-markdown visitor traversal so detection runs in
-    # the same pass family as conversion.
-    convert_with_visitor(html, visitor=visitor)
-    return visitor.patterns
+    patterns: set[str] = set()
+    parser = HTMLParser(html)
+    for node in parser.root.traverse():
+        tag = (node.tag or "").lower()
+        attrs = {str(k).lower(): str(v) for k, v in node.attributes.items()}
+        _detect_element_patterns(tag, attrs, patterns)
+        if _ON_WROTE_RE.search(node.text(deep=False, strip=True)):
+            patterns.add("generic")
+
+    return patterns
