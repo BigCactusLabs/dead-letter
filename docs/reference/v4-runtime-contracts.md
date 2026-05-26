@@ -82,7 +82,13 @@ Rules:
 - `allow_html_repair_on_panic`
 - `delete_eml`
 - `dry_run`
+- `thread_mode` — `"latest"` (default) or `"structured"`. Structured mode appends per-message sections for prior replies.
+- `thread_order` — `"oldest-first"` (default) or `"latest-first"`. Only meaningful when `thread_mode` is `"structured"`.
 - `report`
+
+### Thread history
+
+When `thread_mode="structured"`, the renderer appends per-message sections after the latest message. Each section uses a header ladder rooted in the parsed sender (`## From {sender}` plus optional date / subject). Sections whose attribution line could not be parsed render as `## Earlier message`; threads that the parser could not split at all render as a single `## Earlier in thread` section. Front matter gains a `thread_messages: N` key when N > 0. Default behavior (`thread_mode="latest"`) is byte-identical to v4.x output.
 
 ### `ConvertResult`
 
