@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-26
+
 ### Added
 
 - MCP server for Claude Desktop and Claude Code integration. Install with
@@ -60,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clock skew instead of showing blank timestamps.
 - Quote-pattern detection no longer imports the removed
   `html-to-markdown` v2 `convert_with_visitor` API.
+- Runtime version reporting now matches package metadata.
 
 ## [0.1.2] - 2026-04-28
 
