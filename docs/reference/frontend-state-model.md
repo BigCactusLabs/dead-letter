@@ -139,7 +139,7 @@ Removed browser state:
 
 ## Request Lifecycle
 
-All mutating `/api/*` requests are sent through `static/lib/api.js`. The helper lazily calls `GET /api/session` on the first mutation, caches the returned per-process token, and injects `X-Dead-Letter-CSRF` into `POST`, `PUT`, and `DELETE` requests. Multipart uploads keep browser-managed `Content-Type` handling; the helper adds only the CSRF header.
+All mutating `/api/*` requests are sent through `static/lib/api.js`. The helper lazily calls `GET /api/session` on the first mutation, caches the returned per-process token, and injects `X-Dead-Letter-CSRF` into `POST`, `PUT`, and `DELETE` requests. Multipart uploads keep browser-managed `Content-Type` handling; the helper adds only the CSRF header. If a mutation returns `403 csrf_validation_failed` (e.g., the backend restarted and rotated its token), the helper clears the cached token, refetches `/api/session`, and retries the request once with the refreshed token before surfacing the failure.
 
 ### First-Run Setup
 

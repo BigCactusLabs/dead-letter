@@ -20,8 +20,12 @@ function mergeCsrfHeader(headers, csrfToken) {
   return { ...(headers || {}), [CSRF_HEADER_NAME]: csrfToken };
 }
 
-export function resetCsrfTokenForTests() {
+function clearCachedCsrfToken() {
   csrfTokenPromise = null;
+}
+
+export function resetCsrfTokenForTests() {
+  clearCachedCsrfToken();
 }
 
 export async function getCsrfToken() {
@@ -42,14 +46,39 @@ export async function getCsrfToken() {
   return csrfTokenPromise;
 }
 
+async function isCsrfValidationFailure(response) {
+  if (response.status !== 403) {
+    return false;
+  }
+  try {
+    const payload = await response.clone().json();
+    const errors = Array.isArray(payload?.errors) ? payload.errors : [];
+    return errors.some((err) => err?.code === "csrf_validation_failed");
+  } catch {
+    return false;
+  }
+}
+
 export async function apiFetch(url, options = {}) {
   if (!isMutatingRequest(options)) {
     return fetch(url, options);
   }
 
-  const csrfToken = await getCsrfToken();
-  return fetch(url, {
-    ...options,
-    headers: mergeCsrfHeader(options.headers, csrfToken),
-  });
+  const send = async (token) =>
+    fetch(url, { ...options, headers: mergeCsrfHeader(options.headers, token) });
+
+  const initialToken = await getCsrfToken();
+  const response = await send(initialToken);
+
+  if (!(await isCsrfValidationFailure(response))) {
+    return response;
+  }
+
+  // Token likely rotated (e.g., backend restarted). Refresh once and retry.
+  clearCachedCsrfToken();
+  const refreshedToken = await getCsrfToken();
+  if (refreshedToken === initialToken) {
+    return response;
+  }
+  return send(refreshedToken);
 }
