@@ -220,3 +220,58 @@ def test_path_b_outlook_splitter_discards_preamble_before_first_boundary() -> No
     assert len(blocks) == 1
     assert blocks[0].startswith("**From:** Bob")
     assert "External Sender Warning" not in blocks[0]
+
+
+def test_path_b_skips_split_when_only_quoted_content_present(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """Regression for Codex P1 (PR #24 r3301133479).
+
+    When Path B segmentation produces only QUOTED zones (no body), the
+    STRUCTURED-mode splitter must not mutate them. Otherwise it strips
+    leading ``---`` projections and ``.strip()``s the content without
+    leaving a ``_quoted_original`` snapshot, and the render fallback
+    diverges from LATEST output.
+    """
+    from dead_letter.core.conversation import ConversationResult
+    from dead_letter.core.types import ConversationZone
+
+    # Synthetic QUOTED-only result with content that would be mutated by
+    # ``_split_path_b_quoted_zone`` (leading ``---`` projection + outer
+    # whitespace) if the guard were absent.
+    quoted_content = "---\n\nQuoted body without a latest message.\n"
+
+    def _only_quoted_result(_html: str, *, client_hint: str | None = None) -> ConversationResult:
+        return ConversationResult(
+            zones=[
+                ConversationZone(
+                    kind=ZoneKind.QUOTED,
+                    content=quoted_content,
+                    source_kind="plain",
+                    confidence=0.8,
+                )
+            ],
+            client_hint="generic",
+            rules_triggered=["test-only-quoted"],
+        )
+
+    monkeypatch.setattr(pipeline_module, "segment_html_conversation", _only_quoted_result)
+    parsed = _make_parsed("<html><body>doesn't matter — segmenter is patched</body></html>", tmp_path)
+
+    latest_threaded, _r1, _d1 = pipeline_module._threaded_content_from_conversation(
+        parsed, ConvertOptions()
+    )
+    structured_threaded, _r2, _d2 = pipeline_module._threaded_content_from_conversation(
+        parsed, ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+    )
+
+    assert latest_threaded is not None and structured_threaded is not None
+    # Same zone count and same content — STRUCTURED must not mutate when
+    # there's nothing structured to render.
+    assert len(latest_threaded.zones) == len(structured_threaded.zones)
+    for latest_zone, structured_zone in zip(latest_threaded.zones, structured_threaded.zones):
+        assert latest_zone.kind is structured_zone.kind
+        assert latest_zone.content == structured_zone.content, (
+            "STRUCTURED mutated QUOTED-only content: LATEST=%r STRUCTURED=%r"
+            % (latest_zone.content, structured_zone.content)
+        )

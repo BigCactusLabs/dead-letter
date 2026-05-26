@@ -302,7 +302,18 @@ def _threaded_content_from_conversation(
         ))
 
     if options.thread_mode is ThreadMode.STRUCTURED:
-        text_zones = _split_path_b_quoted_zone(text_zones)
+        # Mirror the fallback-safety guard inside ``annotate_quoted_zones``:
+        # if there is no latest-message content, skip splitting so the QUOTED
+        # zone reaches render unmutated and the QUOTED-fallback path stays
+        # byte-identical to LATEST. Without this guard the splitter would
+        # strip leading ``---`` projections and ``.strip()`` the content
+        # without leaving a ``_quoted_original`` snapshot.
+        has_non_quoted_content = any(
+            zone.kind is not ZoneKind.QUOTED and zone.content.strip()
+            for zone in text_zones
+        )
+        if has_non_quoted_content:
+            text_zones = _split_path_b_quoted_zone(text_zones)
 
     annotated = annotate_quoted_zones(text_zones, options)
     cleaned = cleanup_zones(annotated, options)
