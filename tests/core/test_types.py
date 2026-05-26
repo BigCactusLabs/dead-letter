@@ -13,6 +13,8 @@ from dead_letter.core.types import (
     PartDefect,
     StrippedImage,
     StrippedImageCategory,
+    ThreadMode,
+    ThreadOrder,
     Zone,
     ZoneKind,
 )
@@ -82,6 +84,8 @@ def test_convert_options_contract_defaults() -> None:
     assert options.allow_html_repair_on_panic is False
     assert options.delete_eml is False
     assert options.dry_run is False
+    assert options.thread_mode is ThreadMode.LATEST
+    assert options.thread_order is ThreadOrder.OLDEST_FIRST
 
 
 def test_convert_options_contract_fields() -> None:
@@ -99,8 +103,24 @@ def test_convert_options_contract_fields() -> None:
         "allow_html_repair_on_panic",
         "delete_eml",
         "dry_run",
+        "thread_mode",
+        "thread_order",
         "report",
     ]
+
+
+def test_convert_options_normalizes_string_thread_mode() -> None:
+    options = ConvertOptions(thread_mode="latest", thread_order="oldest-first")
+
+    assert options.thread_mode is ThreadMode.LATEST
+    assert options.thread_order is ThreadOrder.OLDEST_FIRST
+
+
+def test_convert_options_rejects_unknown_thread_mode() -> None:
+    import pytest
+
+    with pytest.raises(ValueError):
+        ConvertOptions(thread_mode="garbage")
 
 
 def test_convert_result_exposes_structured_error_metadata() -> None:
