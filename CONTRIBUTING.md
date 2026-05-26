@@ -104,6 +104,13 @@ docs: clarify CLI watch mode usage
 For large changes or new features, please open an issue first to discuss the
 approach.
 
+## Maintainer Publishing
+
+Maintainers should follow the [publishing runbook](docs/reference/publishing.md)
+for version bumps, GitHub releases, PyPI publishing, and Homebrew tap updates.
+The Homebrew tap is intentionally core CLI only; UI and MCP installs remain
+Python-extra installs via `pipx` or source `uv`.
+
 ## Scope Guidance
 
 dead-letter converts `.eml` files to Markdown with YAML front matter. Changes

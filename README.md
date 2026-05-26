@@ -34,6 +34,19 @@ For direct LLM integration, the MCP server lets Claude Desktop, Claude Code, Cod
 
 ## 📦 Install
 
+With Homebrew on Apple silicon macOS:
+
+```bash
+brew tap BigCactusLabs/tap
+brew install dead-letter
+```
+
+The Homebrew formula installs the core CLI only: `dead-letter convert` and
+`dead-letter doctor`. It intentionally does not bundle the optional web UI or
+MCP server dependency stacks.
+
+With pip:
+
 ```bash
 pip install dead-letter            # core + CLI
 pip install dead-letter[cli]       # + watch mode (watchfiles)
@@ -41,10 +54,11 @@ pip install dead-letter[ui]        # + web UI, API server, and watch mode
 pip install dead-letter[mcp]       # + MCP server
 ```
 
-Or use [pipx](https://pipx.pypa.io/) for an isolated install:
+Use [pipx](https://pipx.pypa.io/) for isolated UI or MCP installs:
 
 ```bash
-pipx install 'dead-letter[ui]'   # installs dead-letter and dead-letter-ui commands
+pipx install 'dead-letter[ui]'    # installs dead-letter and dead-letter-ui
+pipx install 'dead-letter[mcp]'   # installs dead-letter and dead-letter-mcp
 ```
 
 From source:
@@ -53,6 +67,7 @@ From source:
 git clone https://github.com/BigCactusLabs/dead-letter.git
 cd dead-letter
 uv sync --extra dev     # all extras
+uv sync --extra ui      # UI only
 uv sync --extra mcp     # MCP only
 ```
 
@@ -106,7 +121,7 @@ From a source checkout, prefix with `uv run`:
 
 ```bash
 uv run dead-letter convert message.eml
-uv run dead-letter-ui --host 127.0.0.1 --port 8765
+uv run --extra ui dead-letter-ui --host 127.0.0.1 --port 8765
 ```
 
 ## 🐍 Python API
@@ -247,7 +262,7 @@ CI runs all three on every push and PR with the same commands.
 - **[MarkEdit](https://github.com/MarkEdit-app/MarkEdit)** — TextEdit for Markdown, native macOS, ~4 MB. Opens dead-letter output like it was always meant to live there.
 - **[mo](https://github.com/k1LoW/mo)** — local Markdown viewer that renders files in the browser with live reload. Point it at your Cabinet and read converted mail like a feed.
 
-## ⚠️ Known Limitations (v0.1)
+## ⚠️ Known Limitations
 
 - Local-only — no remote server, no auth
 - In-memory job registry (state resets on restart)
