@@ -561,6 +561,23 @@
                 <label :class="{ 'opt--strip-active': options.strip_quoted_headers }">
                   <input type="checkbox" x-model="options.strip_quoted_headers" /> Strip quoted headers</label>
 
+                <!-- Thread history -->
+                <p class="option-section-title option-section-title--spaced">Thread history</p>
+                <label>
+                  Thread mode
+                  <select x-model="options.thread_mode">
+                    <option value="latest">Latest message only (default)</option>
+                    <option value="structured">All messages (structured)</option>
+                  </select>
+                </label>
+                <label x-show="options.thread_mode !== 'latest'">
+                  Section order
+                  <select x-model="options.thread_order">
+                    <option value="oldest-first">Oldest first (default)</option>
+                    <option value="latest-first">Latest first</option>
+                  </select>
+                </label>
+
                 <!-- Images -->
                 <p class="option-section-title option-section-title--spaced">Images</p>
                 <label :class="{ 'opt--strip-active': options.strip_signature_images }">
