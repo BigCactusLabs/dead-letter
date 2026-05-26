@@ -164,3 +164,17 @@ test("setup modal markup is present with required elements", () => {
   assert.match(html, /Create & Get Started/);
   assert.match(html, /Skip for now/);
 });
+
+
+test("options defaults include thread_mode=latest and thread_order=oldest-first", () => {
+  const source = readApp();
+  assert.match(source, /thread_mode:\s*"latest"/);
+  assert.match(source, /thread_order:\s*"oldest-first"/);
+});
+
+
+test("_loadOptions delegates to applyStoredOptions", () => {
+  const source = readApp();
+  assert.match(source, /import\s*{[^}]*\bapplyStoredOptions\b[^}]*}\s*from\s*"\/static\/lib\/helpers\.js"/);
+  assert.match(source, /applyStoredOptions\(/);
+});

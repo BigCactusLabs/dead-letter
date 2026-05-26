@@ -81,6 +81,27 @@ test("buildPayload constructs job payload with delete_eml safety", () => {
   assert.equal(result.options.delete_eml, false);
 });
 
+
+test("buildPayload propagates thread_mode and thread_order defaults", () => {
+  const result = buildPayload("file", "/tmp/mail.eml", {
+    strip_signatures: false,
+    thread_mode: "latest",
+    thread_order: "oldest-first",
+  });
+  assert.equal(result.options.thread_mode, "latest");
+  assert.equal(result.options.thread_order, "oldest-first");
+});
+
+
+test("buildPayload propagates user-modified thread_mode", () => {
+  const result = buildPayload("file", "/tmp/mail.eml", {
+    thread_mode: "structured",
+    thread_order: "latest-first",
+  });
+  assert.equal(result.options.thread_mode, "structured");
+  assert.equal(result.options.thread_order, "latest-first");
+});
+
 test("validateForm returns errors for missing fields", () => {
   assert.deepEqual(validateForm({ mode: "file", inputPath: "" }), ["Input path is required."]);
   assert.deepEqual(validateForm({ mode: "bad", inputPath: "/tmp/x" }), [
