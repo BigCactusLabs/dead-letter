@@ -659,6 +659,7 @@ def _build_rendered_markdown(
         include_all_headers=options.include_all_headers,
         include_raw_html=options.include_raw_html,
         raw_html=raw_html,
+        options=options,
     )
     if options.strip_signature_images or options.strip_tracking_pixels:
         attachment_reference_text = rendered.body

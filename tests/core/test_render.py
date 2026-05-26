@@ -2,8 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from dead_letter.core.render import render_markdown, serialize_markdown
-from dead_letter.core.types import ParsedEmail, ThreadedContent, Zone, ZoneKind
+from dead_letter.core.types import (
+    ConvertOptions,
+    ParsedEmail,
+    ThreadedContent,
+    ThreadMode,
+    Zone,
+    ZoneKind,
+)
 
 
 def _parsed_email() -> ParsedEmail:
@@ -58,3 +67,28 @@ def test_serialize_markdown_emits_yaml_front_matter() -> None:
     assert document.startswith("---\n")
     assert "subject: Plain Text Fixture" in document
     assert "Only body" in document
+
+
+def test_render_markdown_accepts_options_keyword() -> None:
+    parsed = _parsed_email()
+    threaded = ThreadedContent(zones=[Zone(kind=ZoneKind.BODY, content="Body")])
+
+    rendered = render_markdown(parsed, threaded, options=ConvertOptions())
+
+    assert "Body" in rendered.body
+
+
+def test_render_markdown_latest_mode_byte_identical_to_no_options() -> None:
+    parsed = _parsed_email()
+    threaded = ThreadedContent(
+        zones=[
+            Zone(kind=ZoneKind.BODY, content="Body"),
+            Zone(kind=ZoneKind.QUOTED, content="Older"),
+        ]
+    )
+
+    no_opts = render_markdown(parsed, threaded)
+    latest = render_markdown(parsed, threaded, options=ConvertOptions(thread_mode=ThreadMode.LATEST))
+
+    assert no_opts.body == latest.body
+    assert no_opts.front_matter == latest.front_matter

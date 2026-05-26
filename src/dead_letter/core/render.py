@@ -6,7 +6,13 @@ from collections.abc import Iterable
 
 import yaml
 
-from dead_letter.core.types import ParsedEmail, RenderedMarkdown, ThreadedContent, ZoneKind
+from dead_letter.core.types import (
+    ConvertOptions,
+    ParsedEmail,
+    RenderedMarkdown,
+    ThreadedContent,
+    ZoneKind,
+)
 
 
 def render_markdown(
@@ -18,8 +24,10 @@ def render_markdown(
     include_all_headers: bool = False,
     include_raw_html: bool = False,
     raw_html: str | None = None,
+    options: ConvertOptions | None = None,
 ) -> RenderedMarkdown:
     """Build front matter and markdown body from normalized pipeline outputs."""
+    _opts = options or ConvertOptions()
     front_matter: dict[str, object] = {
         "source": str(parsed.source),
         "subject": parsed.subject,
