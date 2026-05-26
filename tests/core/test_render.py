@@ -128,3 +128,38 @@ def test_render_structured_emits_per_message_sections() -> None:
     assert "prior 1 body" in rendered.body
     assert "prior 2 body" in rendered.body
     assert rendered.front_matter["thread_messages"] == 2
+
+
+@pytest.mark.parametrize(
+    "metadata,expected_header",
+    [
+        ({"attribution_from": "Alice"}, "## From Alice"),
+        ({"attribution_from": "Alice", "attribution_date": "Mar 5"}, "## From Alice (Mar 5)"),
+        (
+            {"attribution_from": "Alice", "attribution_subject": "Re: x"},
+            "## From Alice — Re: x",
+        ),
+        (
+            {"attribution_from": "Alice", "attribution_date": "Mar 5", "attribution_subject": "Re: x"},
+            "## From Alice (Mar 5) — Re: x",
+        ),
+        ({}, "## Earlier message"),
+        ({"attribution_date": "Mar 5"}, "## Earlier message"),
+        ({"attribution_subject": "Re: x"}, "## Earlier message"),
+        ({"thread_render": "degenerate"}, "## Earlier in thread"),
+    ],
+)
+def test_render_section_header_ladder(metadata: dict[str, str], expected_header: str) -> None:
+    parsed = _parsed_email()
+    threaded = ThreadedContent(
+        zones=[
+            Zone(kind=ZoneKind.BODY, content="Latest"),
+            Zone(kind=ZoneKind.QUOTED, content="prior body", metadata=metadata),
+        ]
+    )
+
+    rendered = render_markdown(
+        parsed, threaded, options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+    )
+
+    assert expected_header in rendered.body
