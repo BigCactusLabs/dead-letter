@@ -9,6 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
 
+from dead_letter.core.attribution import annotate_quoted_zones
 from dead_letter.core.calendar import summarize_calendar_parts
 from dead_letter.core.html_conversation import segment_html_conversation
 from dead_letter.core.html import html_has_italic_nodes, html_to_markdown, unwrap_italic_tags
@@ -17,6 +18,7 @@ from dead_letter.core.mime import parse_eml
 from dead_letter.core.render import render_markdown, serialize_markdown
 from dead_letter.core.sanitize import sanitize_html
 from dead_letter.core.slugs import slugify_subject
+from dead_letter.core.text_conversation import parse_email_replies
 from dead_letter.core.threads import build_zones
 from dead_letter.core.types import (
     AttachmentPart,
@@ -28,7 +30,9 @@ from dead_letter.core.types import (
     RenderedMarkdown,
     StrippedImage,
     ThreadedContent,
+    ThreadMode,
     Zone,
+    ZoneKind,
 )
 from dead_letter.core.zone_cleanup import cleanup_zones
 
@@ -297,7 +301,11 @@ def _threaded_content_from_conversation(
             metadata=zone.metadata,
         ))
 
-    cleaned = cleanup_zones(text_zones, options)
+    if options.thread_mode is ThreadMode.STRUCTURED:
+        text_zones = _split_path_b_quoted_zone(text_zones)
+
+    annotated = annotate_quoted_zones(text_zones, options)
+    cleaned = cleanup_zones(annotated, options)
 
     zones: list[Zone] = []
     for zone in cleaned:
@@ -322,6 +330,106 @@ def _threaded_content_from_conversation(
             "segmentation_path": "html",
         },
     )
+
+
+# Matches the start of an Outlook attribution block, in either plain or
+# markdown-bold projection. Used to split a multi-block QUOTED zone when
+# mail-parser-reply can't (it doesn't recognize From:/Sent: headers).
+_OUTLOOK_BLOCK_BOUNDARY_RE = re.compile(
+    r"(?m)^(?=\*{0,2}From:\*{0,2}\s+\S.*\n\*{0,2}Sent:\*{0,2}\s)",
+)
+
+
+def _strip_leading_hr_projections(text: str) -> str:
+    """Drop leading markdown ``---`` horizontal-rule projections.
+
+    Outlook's ``<hr>`` becomes ``---`` after ``html_to_markdown``. Those rules
+    sit between the latest body and the prior thread but carry no semantic
+    value once we are inside the QUOTED zone.
+    """
+    stripped = text.lstrip()
+    while stripped.startswith("---"):
+        newline = stripped.find("\n")
+        if newline == -1:
+            return ""
+        stripped = stripped[newline + 1:].lstrip()
+    return stripped
+
+
+def _split_outlook_blocks(text: str) -> list[str]:
+    """Split markdown text on Outlook-block header boundaries.
+
+    Returns one string per detected Outlook block. Any preamble before the
+    first boundary (e.g. an external-sender warning banner) is discarded.
+    """
+    first = _OUTLOOK_BLOCK_BOUNDARY_RE.search(text)
+    if first is None:
+        return []
+    sliced = text[first.start():]
+    parts = _OUTLOOK_BLOCK_BOUNDARY_RE.split(sliced)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _split_path_b_quoted_zone(zones: list[ConversationZone]) -> list[ConversationZone]:
+    """Split the single Path B QUOTED zone into N per-reply zones.
+
+    Tries mail-parser-reply first, then an Outlook block splitter. If both
+    yield ≤1 piece, the zone is tagged ``thread_render='degenerate'``.
+    """
+    quoted_indices = [i for i, z in enumerate(zones) if z.kind is ZoneKind.QUOTED]
+    if len(quoted_indices) != 1:
+        return zones
+
+    idx = quoted_indices[0]
+    original = zones[idx]
+    if not original.content.strip():
+        return zones
+
+    cleaned_content = _strip_leading_hr_projections(original.content)
+
+    def _make_quoted(content: str) -> ConversationZone:
+        return ConversationZone(
+            kind=ZoneKind.QUOTED,
+            content=content.strip(),
+            source_kind=original.source_kind,
+            client_hint=original.client_hint,
+            confidence=original.confidence,
+            metadata=dict(original.metadata),
+        )
+
+    def _tag_degenerate() -> ConversationZone:
+        new_meta = dict(original.metadata)
+        new_meta["thread_render"] = "degenerate"
+        return ConversationZone(
+            kind=original.kind,
+            content=original.content,
+            source_kind=original.source_kind,
+            client_hint=original.client_hint,
+            confidence=original.confidence,
+            metadata=new_meta,
+        )
+
+    try:
+        replies = parse_email_replies(cleaned_content)
+    except Exception:
+        replies = []
+    reply_blocks = [str(r.content or "").strip() for r in replies]
+    reply_blocks = [b for b in reply_blocks if b]
+    if len(reply_blocks) >= 2:
+        split_zones = [_make_quoted(b) for b in reply_blocks]
+        return [*zones[:idx], *split_zones, *zones[idx + 1:]]
+
+    outlook_blocks = _split_outlook_blocks(cleaned_content)
+    if len(outlook_blocks) >= 2:
+        split_zones = [_make_quoted(b) for b in outlook_blocks]
+        return [*zones[:idx], *split_zones, *zones[idx + 1:]]
+
+    if len(outlook_blocks) == 1:
+        return [*zones[:idx], _make_quoted(outlook_blocks[0]), *zones[idx + 1:]]
+    if len(reply_blocks) == 1:
+        return [*zones[:idx], _make_quoted(reply_blocks[0]), *zones[idx + 1:]]
+
+    return [*zones[:idx], _tag_degenerate(), *zones[idx + 1:]]
 
 
 def _defect_warnings(parsed: ParsedEmail) -> list[dict[str, str]]:
