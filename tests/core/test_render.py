@@ -163,3 +163,54 @@ def test_render_section_header_ladder(metadata: dict[str, str], expected_header:
     )
 
     assert expected_header in rendered.body
+
+
+from dead_letter.core.types import ThreadOrder
+
+
+def _two_prior_threaded() -> ThreadedContent:
+    return ThreadedContent(
+        zones=[
+            Zone(kind=ZoneKind.BODY, content="Latest"),
+            Zone(
+                kind=ZoneKind.QUOTED,
+                content="middle body",
+                metadata={"attribution_from": "Middle"},
+            ),
+            Zone(
+                kind=ZoneKind.QUOTED,
+                content="oldest body",
+                metadata={"attribution_from": "Oldest"},
+            ),
+        ]
+    )
+
+
+def test_render_structured_oldest_first_reverses_zone_order() -> None:
+    parsed = _parsed_email()
+    rendered = render_markdown(
+        parsed,
+        _two_prior_threaded(),
+        options=ConvertOptions(
+            thread_mode=ThreadMode.STRUCTURED, thread_order=ThreadOrder.OLDEST_FIRST
+        ),
+    )
+
+    oldest = rendered.body.index("## From Oldest")
+    middle = rendered.body.index("## From Middle")
+    assert oldest < middle
+
+
+def test_render_structured_latest_first_preserves_zone_order() -> None:
+    parsed = _parsed_email()
+    rendered = render_markdown(
+        parsed,
+        _two_prior_threaded(),
+        options=ConvertOptions(
+            thread_mode=ThreadMode.STRUCTURED, thread_order=ThreadOrder.LATEST_FIRST
+        ),
+    )
+
+    middle = rendered.body.index("## From Middle")
+    oldest = rendered.body.index("## From Oldest")
+    assert middle < oldest
