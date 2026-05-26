@@ -92,3 +92,39 @@ def test_render_markdown_latest_mode_byte_identical_to_no_options() -> None:
 
     assert no_opts.body == latest.body
     assert no_opts.front_matter == latest.front_matter
+
+
+def test_render_structured_emits_per_message_sections() -> None:
+    parsed = _parsed_email()
+    threaded = ThreadedContent(
+        zones=[
+            Zone(kind=ZoneKind.BODY, content="Latest body"),
+            Zone(
+                kind=ZoneKind.QUOTED,
+                content="prior 1 body",
+                metadata={
+                    "attribution_from": "Alice <alice@example.com>",
+                    "attribution_date": "Mar 5, 2026",
+                },
+            ),
+            Zone(
+                kind=ZoneKind.QUOTED,
+                content="prior 2 body",
+                metadata={
+                    "attribution_from": "Bob <bob@example.com>",
+                    "attribution_date": "Mar 4, 2026",
+                },
+            ),
+        ]
+    )
+
+    rendered = render_markdown(
+        parsed, threaded, options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+    )
+
+    assert "Latest body" in rendered.body
+    assert "## From Alice <alice@example.com> (Mar 5, 2026)" in rendered.body
+    assert "## From Bob <bob@example.com> (Mar 4, 2026)" in rendered.body
+    assert "prior 1 body" in rendered.body
+    assert "prior 2 body" in rendered.body
+    assert rendered.front_matter["thread_messages"] == 2

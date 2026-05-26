@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 import yaml
 
 from dead_letter.core.types import (
@@ -11,6 +9,9 @@ from dead_letter.core.types import (
     ParsedEmail,
     RenderedMarkdown,
     ThreadedContent,
+    ThreadMode,
+    ThreadOrder,
+    Zone,
     ZoneKind,
 )
 
@@ -27,7 +28,7 @@ def render_markdown(
     options: ConvertOptions | None = None,
 ) -> RenderedMarkdown:
     """Build front matter and markdown body from normalized pipeline outputs."""
-    _opts = options or ConvertOptions()
+    opts = options or ConvertOptions()
     front_matter: dict[str, object] = {
         "source": str(parsed.source),
         "subject": parsed.subject,
@@ -48,20 +49,71 @@ def render_markdown(
     if include_raw_html and raw_html is not None:
         front_matter["raw_html"] = raw_html
 
-    body_lines = [
+    head_lines = [
         zone.content.strip()
         for zone in threaded.zones
         if zone.kind is not ZoneKind.QUOTED and zone.content.strip()
     ]
-    if not body_lines:
-        body_lines = [
-            zone.content.strip()
+    used_quoted_fallback = False
+    if not head_lines:
+        used_quoted_fallback = True
+        # In STRUCTURED mode, restore the original (un-stripped) content from
+        # the _quoted_original snapshot so output stays byte-identical to LATEST.
+        head_lines = [
+            (zone.metadata.get("_quoted_original") or zone.content).strip()
             for zone in threaded.zones
-            if zone.kind is ZoneKind.QUOTED and zone.content.strip()
+            if zone.kind is ZoneKind.QUOTED
+            and (zone.metadata.get("_quoted_original") or zone.content).strip()
         ]
-    body = "\n\n".join(body_lines).strip()
+
+    body = "\n\n".join(head_lines).strip()
+
+    if opts.thread_mode is ThreadMode.STRUCTURED and not used_quoted_fallback:
+        sections = _build_thread_sections(threaded, opts)
+        if sections:
+            front_matter["thread_messages"] = len(sections)
+            body = "\n\n".join([body, *sections]).strip()
 
     return RenderedMarkdown(front_matter=front_matter, body=body)
+
+
+def _build_thread_sections(threaded: ThreadedContent, opts: ConvertOptions) -> list[str]:
+    quoted = [z for z in threaded.zones if z.kind is ZoneKind.QUOTED]
+    if not quoted:
+        return []
+    sections: list[str] = []
+    for zone in quoted:
+        if not zone.content.strip():
+            continue
+        sections.append(_render_thread_section(zone))
+    if opts.thread_order is ThreadOrder.OLDEST_FIRST:
+        sections = list(reversed(sections))
+    return sections
+
+
+def _render_thread_section(zone: Zone) -> str:
+    header = _section_header(zone)
+    body = zone.content.strip()
+    if body:
+        return f"{header}\n\n{body}"
+    return header
+
+
+def _section_header(zone: Zone) -> str:
+    if zone.metadata.get("thread_render") == "degenerate":
+        return "## Earlier in thread"
+    from_ = zone.metadata.get("attribution_from")
+    if not from_:
+        return "## Earlier message"
+    date = zone.metadata.get("attribution_date")
+    subject = zone.metadata.get("attribution_subject")
+    if date and subject:
+        return f"## From {from_} ({date}) — {subject}"
+    if date:
+        return f"## From {from_} ({date})"
+    if subject:
+        return f"## From {from_} — {subject}"
+    return f"## From {from_}"
 
 
 def serialize_markdown(rendered: RenderedMarkdown) -> str:
