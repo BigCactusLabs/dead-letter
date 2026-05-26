@@ -214,3 +214,78 @@ def test_render_structured_latest_first_preserves_zone_order() -> None:
     middle = rendered.body.index("## From Middle")
     oldest = rendered.body.index("## From Oldest")
     assert middle < oldest
+
+
+def test_render_structured_uses_quoted_original_in_fallback_case() -> None:
+    parsed = _parsed_email()
+    threaded = ThreadedContent(
+        zones=[
+            Zone(
+                kind=ZoneKind.QUOTED,
+                content="stripped post-annotation body",
+                metadata={
+                    "_quoted_original": "On X wrote:\nstripped post-annotation body",
+                    "attribution_from": "X",
+                },
+            )
+        ]
+    )
+
+    rendered = render_markdown(
+        parsed, threaded, options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+    )
+
+    assert "On X wrote:\nstripped post-annotation body" in rendered.body
+    assert "## From X" not in rendered.body
+    assert "thread_messages" not in rendered.front_matter
+
+
+def test_render_structured_skips_empty_quoted_zones() -> None:
+    parsed = _parsed_email()
+    threaded = ThreadedContent(
+        zones=[
+            Zone(kind=ZoneKind.BODY, content="Latest body"),
+            Zone(
+                kind=ZoneKind.QUOTED,
+                content="",
+                metadata={"attribution_from": "Alice"},
+            ),
+            Zone(
+                kind=ZoneKind.QUOTED,
+                content="real body",
+                metadata={"attribution_from": "Bob"},
+            ),
+        ]
+    )
+
+    rendered = render_markdown(
+        parsed, threaded, options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+    )
+
+    assert "## From Alice" not in rendered.body
+    assert "## From Bob" in rendered.body
+    assert rendered.front_matter["thread_messages"] == 1
+
+
+def test_render_structured_fallback_byte_identical_to_latest() -> None:
+    parsed = _parsed_email()
+    original = "On X wrote:\nbody"
+    structured_zones = ThreadedContent(
+        zones=[
+            Zone(
+                kind=ZoneKind.QUOTED,
+                content="body",
+                metadata={"_quoted_original": original, "attribution_from": "X"},
+            )
+        ]
+    )
+    latest_zones = ThreadedContent(
+        zones=[Zone(kind=ZoneKind.QUOTED, content=original)]
+    )
+
+    structured = render_markdown(
+        parsed, structured_zones, options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+    )
+    latest = render_markdown(parsed, latest_zones, options=ConvertOptions())
+
+    assert structured.body == latest.body
