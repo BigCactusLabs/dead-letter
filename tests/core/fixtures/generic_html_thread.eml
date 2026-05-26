@@ -1,0 +1,13 @@
+From: Carol <carol@example.com>
+To: Team <team@example.com>
+Subject: Re: generic HTML thread
+Date: Thu, 05 Mar 2026 10:35:00 +0000
+Message-ID: <generic-html-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<div>Carol latest reply.</div>
+<blockquote>
+<div>On Wed Bob wrote:</div>
+<div>Bob reply text.</div>
+</blockquote>
