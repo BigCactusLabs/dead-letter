@@ -170,3 +170,120 @@ def test_consumed_end_skips_following_blank_lines() -> None:
 
     assert result is not None
     assert text[result.consumed_end:] == "> body\n"
+
+
+from dead_letter.core.attribution import annotate_quoted_zones
+from dead_letter.core.types import ConversationZone, ConvertOptions, ThreadMode, ZoneKind
+
+
+def _quoted(content: str) -> ConversationZone:
+    return ConversationZone(kind=ZoneKind.QUOTED, content=content, source_kind="plain", confidence=0.8)
+
+
+def _body(content: str) -> ConversationZone:
+    return ConversationZone(kind=ZoneKind.BODY, content=content, source_kind="plain", confidence=0.8)
+
+
+def test_annotate_quoted_zones_is_noop_in_latest_mode() -> None:
+    zones = [_body("hello"), _quoted("On X wrote:\n> old")]
+    result = annotate_quoted_zones(zones, ConvertOptions())
+
+    out = list(result)
+    assert out[1].content == "On X wrote:\n> old"
+    assert "attribution_from" not in out[1].metadata
+
+
+def test_annotate_strips_attribution_and_caches_metadata() -> None:
+    zones = [
+        _body("Hello"),
+        _quoted("On Thu, Mar 5, 2026 at 10:23 AM Alice <alice@example.com> wrote:\nold body\n"),
+    ]
+    opts = ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+
+    out = annotate_quoted_zones(zones, opts)
+
+    assert out[1].content == "old body\n"
+    assert out[1].metadata["attribution_from"] == "Alice <alice@example.com>"
+    assert "Mar 5, 2026" in out[1].metadata["attribution_date"]
+    assert out[1].metadata["_quoted_original"].startswith("On Thu")
+
+
+def test_annotate_preserves_keys_only_for_populated_fields() -> None:
+    zones = [
+        _body("Hello"),
+        _quoted("On Thu, Mar 5, 2026 at 10:23 AM Alice <alice@example.com> wrote:\nold\n"),
+    ]
+    opts = ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+
+    out = annotate_quoted_zones(zones, opts)
+
+    assert "attribution_from" in out[1].metadata
+    assert "attribution_date" in out[1].metadata
+    assert "attribution_subject" not in out[1].metadata
+
+
+def test_annotate_leaves_zone_unchanged_when_attribution_fails() -> None:
+    zones = [
+        _body("Hello"),
+        _quoted("no attribution at all here\nmore body\n"),
+    ]
+    opts = ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+
+    out = annotate_quoted_zones(zones, opts)
+
+    assert out[1].content == "no attribution at all here\nmore body\n"
+    assert "attribution_from" not in out[1].metadata
+    assert "_quoted_original" not in out[1].metadata
+
+
+def test_annotate_skips_when_no_non_quoted_content_exists() -> None:
+    zones = [_quoted("On Thu Alice wrote:\nold body\n")]
+    opts = ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+
+    out = annotate_quoted_zones(zones, opts)
+
+    assert out[0].content == "On Thu Alice wrote:\nold body\n"
+    assert "attribution_from" not in out[0].metadata
+
+
+def test_annotate_parses_attribution_through_leading_quote_markers() -> None:
+    quoted_text = (
+        "> On Thu, Mar 5, 2026 at 9:50 AM Alice <alice@example.com> wrote:\n"
+        "> Original message from Alice.\n"
+    )
+    zones = [_body("Hello"), _quoted(quoted_text)]
+    opts = ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+
+    out = annotate_quoted_zones(zones, opts)
+
+    assert out[1].metadata["attribution_from"] == "Alice <alice@example.com>"
+    assert "> Original" not in out[1].content
+    assert "Original message from Alice." in out[1].content
+    assert out[1].metadata["_quoted_original"] == quoted_text
+
+
+def test_annotate_parses_attribution_through_double_nested_quote_markers() -> None:
+    quoted_text = (
+        "> > On Thu, Mar 5, 2026 at 9:50 AM Alice <alice@example.com> wrote:\n"
+        "> > Original message from Alice.\n"
+    )
+    zones = [_body("Hello"), _quoted(quoted_text)]
+    opts = ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+
+    out = annotate_quoted_zones(zones, opts)
+
+    assert out[1].metadata["attribution_from"] == "Alice <alice@example.com>"
+    for line in out[1].content.splitlines():
+        assert not line.startswith(">"), f"residual marker on line: {line!r}"
+    assert "Original message from Alice." in out[1].content
+
+
+def test_annotate_strips_quote_markers_even_when_attribution_fails() -> None:
+    zones = [_body("Hello"), _quoted("> some unrecognized prefix\n> more body\n")]
+    opts = ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+
+    out = annotate_quoted_zones(zones, opts)
+
+    assert out[1].content == "some unrecognized prefix\nmore body\n"
+    assert "attribution_from" not in out[1].metadata
+    assert out[1].metadata["_quoted_original"] == "> some unrecognized prefix\n> more body\n"

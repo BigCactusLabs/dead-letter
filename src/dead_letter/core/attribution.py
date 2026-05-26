@@ -120,3 +120,67 @@ def parse_attribution_line(text: str) -> AttributionMatch | None:
         return AttributionMatch(metadata=metadata, consumed_end=end, matched_text=text[:end])
     _LOGGER.debug("attribution: no pattern matched for input prefix %r", text[:80])
     return None
+
+
+_QUOTE_PREFIX_RE = re.compile(r"^(?:>\s?)+", re.MULTILINE)
+
+
+def _strip_leading_quote_markers(text: str) -> str:
+    """Remove all consecutive leading ``>`` markers from each line.
+
+    mailparser_reply dedents one level per reply, but deeply nested chains
+    still come back with multiple ``> `` prefixes. The ``(?:>\\s?)+`` group
+    consumes every consecutive marker in one pass, so a single ``sub`` handles
+    any nesting depth without a fixpoint loop.
+    """
+    return _QUOTE_PREFIX_RE.sub("", text)
+
+
+def annotate_quoted_zones(
+    zones: list[ConversationZone],
+    options: ConvertOptions,
+) -> list[ConversationZone]:
+    """Parse attribution lines on QUOTED zones in STRUCTURED mode.
+
+    Two-part fallback safety:
+    1. If no non-QUOTED content exists, skip annotation entirely so the
+       render layer's QUOTED-fallback path returns byte-identical output.
+    2. Where annotation does run, ``_quoted_original`` snapshots the input
+       content so the render fallback can restore it later.
+    """
+    if options.thread_mode is not ThreadMode.STRUCTURED:
+        return list(zones)
+
+    has_non_quoted_content = any(
+        zone.kind is not ZoneKind.QUOTED and zone.content.strip()
+        for zone in zones
+    )
+    if not has_non_quoted_content:
+        return list(zones)
+
+    out: list[ConversationZone] = []
+    for zone in zones:
+        if zone.kind is not ZoneKind.QUOTED:
+            out.append(zone)
+            continue
+        normalized = _strip_leading_quote_markers(zone.content)
+        match = parse_attribution_line(normalized)
+        if match is None:
+            if normalized != zone.content:
+                new_meta = dict(zone.metadata)
+                new_meta["_quoted_original"] = zone.content
+                out.append(replace(zone, content=normalized, metadata=new_meta))
+            else:
+                out.append(zone)
+            continue
+        new_meta = dict(zone.metadata)
+        new_meta["_quoted_original"] = zone.content
+        if match.metadata.from_:
+            new_meta["attribution_from"] = match.metadata.from_
+        if match.metadata.date:
+            new_meta["attribution_date"] = match.metadata.date
+        if match.metadata.subject:
+            new_meta["attribution_subject"] = match.metadata.subject
+        new_content = normalized[match.consumed_end:].lstrip("\n")
+        out.append(replace(zone, content=new_content, metadata=new_meta))
+    return out
