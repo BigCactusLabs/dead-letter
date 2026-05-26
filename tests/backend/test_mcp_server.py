@@ -356,3 +356,118 @@ async def test_mcp_client_convert_eml_round_trip():
     assert content_blocks, "Expected at least one content block"
     text = content_blocks[0].text
     assert text.startswith("---"), "Expected YAML front matter"
+
+
+# ---------------------------------------------------------------------------
+# Thread mode / order — signature, _resolve_options, and per-tool propagation
+# ---------------------------------------------------------------------------
+
+import inspect
+
+from dead_letter.backend import mcp_server
+from dead_letter.core.types import ThreadMode, ThreadOrder
+
+
+MCP_FLAG_TOOLS = (
+    mcp_server.convert_eml,
+    mcp_server.convert_eml_to_bundle,
+    mcp_server.convert_directory,
+    mcp_server.get_diagnostics,
+)
+
+
+@pytest.mark.parametrize("tool", MCP_FLAG_TOOLS)
+def test_mcp_tool_exposes_thread_mode_and_thread_order(tool) -> None:
+    fn = getattr(tool, "fn", tool)
+    sig = inspect.signature(fn)
+    assert "thread_mode" in sig.parameters
+    assert "thread_order" in sig.parameters
+
+
+def test_mcp_resolve_options_normalizes_thread_mode_string_to_enum() -> None:
+    opts = mcp_server._resolve_options(thread_mode="structured", thread_order="latest-first")
+
+    assert opts.thread_mode is ThreadMode.STRUCTURED
+    assert opts.thread_order is ThreadOrder.LATEST_FIRST
+
+
+def test_mcp_resolve_options_defaults_to_latest_oldest_first() -> None:
+    opts = mcp_server._resolve_options()
+
+    assert opts.thread_mode is ThreadMode.LATEST
+    assert opts.thread_order is ThreadOrder.OLDEST_FIRST
+
+
+def _make_eml(tmp_path: Path, name: str = "msg.eml") -> Path:
+    src = (Path(__file__).resolve().parents[1] / "core/fixtures/reply_chain.eml").read_bytes()
+    target = tmp_path / name
+    target.write_bytes(src)
+    return target
+
+
+def test_convert_eml_threads_options_to_core(monkeypatch, tmp_path) -> None:
+    captured: list[ConvertOptions] = []
+
+    real_convert = mcp_server.convert
+
+    def _spy(source, *, output, options):
+        captured.append(options)
+        return real_convert(source, output=output, options=options)
+
+    monkeypatch.setattr(mcp_server, "convert", _spy)
+    eml = _make_eml(tmp_path)
+
+    mcp_server.convert_eml(str(eml), thread_mode="structured")
+
+    assert captured and captured[0].thread_mode is ThreadMode.STRUCTURED
+
+
+def test_convert_directory_threads_options_to_core(monkeypatch, tmp_path) -> None:
+    captured: list[ConvertOptions] = []
+    real = mcp_server.convert_dir
+
+    def _spy(directory, *, output, options):
+        captured.append(options)
+        return real(directory, output=output, options=options)
+
+    monkeypatch.setattr(mcp_server, "convert_dir", _spy)
+    _make_eml(tmp_path)
+
+    mcp_server.convert_directory(str(tmp_path), thread_mode="structured")
+
+    assert captured and captured[0].thread_mode is ThreadMode.STRUCTURED
+
+
+def test_convert_eml_to_bundle_threads_options_to_core(monkeypatch, tmp_path) -> None:
+    captured: list[ConvertOptions] = []
+    real = mcp_server.convert_to_bundle_with_diagnostics
+
+    def _spy(source, *, bundle_root, options, source_handling="copy"):
+        captured.append(options)
+        return real(source, bundle_root=bundle_root, options=options, source_handling=source_handling)
+
+    monkeypatch.setattr(mcp_server, "convert_to_bundle_with_diagnostics", _spy)
+    eml = _make_eml(tmp_path)
+    bundle_root = tmp_path / "bundle"
+
+    mcp_server.convert_eml_to_bundle(str(eml), str(bundle_root), thread_mode="structured")
+
+    assert captured and captured[0].thread_mode is ThreadMode.STRUCTURED
+
+
+def test_get_diagnostics_threads_options_to_core(monkeypatch, tmp_path) -> None:
+    captured: list[ConvertOptions] = []
+    real = mcp_server.convert_to_bundle_with_diagnostics
+
+    def _spy(source, *, bundle_root, options, source_handling="copy"):
+        captured.append(options)
+        return real(source, bundle_root=bundle_root, options=options, source_handling=source_handling)
+
+    monkeypatch.setattr(mcp_server, "convert_to_bundle_with_diagnostics", _spy)
+    eml = _make_eml(tmp_path)
+
+    result_json = mcp_server.get_diagnostics(str(eml), thread_mode="structured")
+
+    assert captured and captured[0].thread_mode is ThreadMode.STRUCTURED
+    parsed = json.loads(result_json)
+    assert "state" in parsed or "selected_body" in parsed
