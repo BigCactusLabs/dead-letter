@@ -10,6 +10,8 @@ from dead_letter.backend.api import create_app
 from dead_letter.backend.filesystem import FilesystemBrowser
 from dead_letter.backend.schemas import JobCreateRequest, JobCreateResponse
 
+from .helpers import csrf_headers
+
 
 def _configured_app(tmp_path: Path, *, manager: object | None = None):
     app = create_app(
@@ -30,7 +32,7 @@ def _configured_app(tmp_path: Path, *, manager: object | None = None):
 async def test_validation_errors_are_400() -> None:
     app = create_app(worker_count=1)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/api/jobs", json={})
+        response = await client.post("/api/jobs", headers=await csrf_headers(client), json={})
 
     assert response.status_code == 400
 
@@ -42,8 +44,10 @@ async def test_create_poll_and_cancel_unknown_job(tmp_path: Path) -> None:
 
     app = _configured_app(tmp_path)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        headers = await csrf_headers(client)
         create = await client.post(
             "/api/jobs",
+            headers=headers,
             json={
                 "mode": "file",
                 "input_path": str(source),
@@ -83,7 +87,7 @@ async def test_create_poll_and_cancel_unknown_job(tmp_path: Path) -> None:
         missing_get = await client.get("/api/jobs/missing")
         assert missing_get.status_code == 404
 
-        missing_cancel = await client.post("/api/jobs/missing/cancel")
+        missing_cancel = await client.post("/api/jobs/missing/cancel", headers=headers)
         assert missing_cancel.status_code == 404
 
 
@@ -94,8 +98,10 @@ async def test_cancel_terminal_job_returns_409(tmp_path: Path) -> None:
 
     app = _configured_app(tmp_path)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        headers = await csrf_headers(client)
         create = await client.post(
             "/api/jobs",
+            headers=headers,
             json={
                 "mode": "file",
                 "input_path": str(source),
@@ -114,7 +120,7 @@ async def test_cancel_terminal_job_returns_409(tmp_path: Path) -> None:
                 break
             await asyncio.sleep(0.01)
 
-        cancel = await client.post(f"/api/jobs/{job_id}/cancel")
+        cancel = await client.post(f"/api/jobs/{job_id}/cancel", headers=headers)
         assert cancel.status_code == 409
         payload = cancel.json()
         assert "errors" in payload
@@ -127,6 +133,7 @@ async def test_create_job_invalid_path_returns_top_level_errors(tmp_path: Path) 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/jobs",
+            headers=await csrf_headers(client),
             json={
                 "mode": "file",
                 "input_path": "/tmp/does-not-exist.eml",
@@ -155,6 +162,7 @@ async def test_create_job_unexpected_error_returns_top_level_errors() -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/jobs",
+            headers=await csrf_headers(client),
             json={
                 "mode": "file",
                 "input_path": "/tmp/anything.eml",
@@ -198,6 +206,7 @@ async def test_retry_job_uses_retry_action_contract(tmp_path: Path, action: str)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/jobs/job-123/retry",
+            headers=await csrf_headers(client),
             json={"action": action},
         )
 
@@ -296,10 +305,12 @@ async def test_history_endpoint_returns_terminal_jobs(tmp_path: Path) -> None:
     inbox.mkdir(parents=True, exist_ok=True)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        headers = await csrf_headers(client)
         source = inbox / "test.eml"
         source.write_text("placeholder", encoding="utf-8")
         create = await client.post(
             "/api/jobs",
+            headers=headers,
             json={"mode": "file", "input_path": str(source), "options": {"dry_run": True}},
         )
         assert create.status_code == 202
@@ -330,11 +341,13 @@ async def test_history_endpoint_respects_limit(tmp_path: Path) -> None:
     inbox.mkdir(parents=True, exist_ok=True)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        headers = await csrf_headers(client)
         for i in range(3):
             source = inbox / f"test{i}.eml"
             source.write_text("placeholder", encoding="utf-8")
             create = await client.post(
                 "/api/jobs",
+                headers=headers,
                 json={"mode": "file", "input_path": str(source), "options": {"dry_run": True}},
             )
             job_id = create.json()["id"]

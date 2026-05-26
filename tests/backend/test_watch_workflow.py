@@ -16,6 +16,8 @@ from dead_letter.backend.jobs import JobManager
 from dead_letter.backend.watch import WatchManager
 from dead_letter.core.types import BundleResult
 
+from .helpers import csrf_headers
+
 
 @dataclass
 class _WatchStatus:
@@ -54,7 +56,11 @@ async def test_watch_requires_configured_settings_when_using_default_inbox(tmp_p
     )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/api/watch", json={"path": "", "options": {}})
+        response = await client.post(
+            "/api/watch",
+            headers=await csrf_headers(client),
+            json={"path": "", "options": {}},
+        )
 
     assert response.status_code == 409
     payload = response.json()
@@ -73,7 +79,11 @@ async def test_watch_requires_configured_settings_for_explicit_override(tmp_path
     (tmp_path / "mail").mkdir()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/api/watch", json={"path": str(tmp_path / "mail"), "options": {}})
+        response = await client.post(
+            "/api/watch",
+            headers=await csrf_headers(client),
+            json={"path": str(tmp_path / "mail"), "options": {}},
+        )
 
     assert response.status_code == 409
     payload = response.json()
@@ -95,7 +105,11 @@ async def test_watch_uses_saved_inbox_as_default_target(tmp_path: Path) -> None:
     app.state.settings.save(inbox_path=inbox, cabinet_path=cabinet)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/api/watch", json={"path": "", "options": {}})
+        response = await client.post(
+            "/api/watch",
+            headers=await csrf_headers(client),
+            json={"path": "", "options": {}},
+        )
 
     assert response.status_code == 200
     assert watcher.started_paths == [str(inbox.resolve())]
@@ -119,7 +133,11 @@ async def test_watch_rejects_override_targets_inside_cabinet(tmp_path: Path) -> 
     app.state.settings.save(inbox_path=inbox, cabinet_path=cabinet)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/api/watch", json={"path": str(override), "options": {}})
+        response = await client.post(
+            "/api/watch",
+            headers=await csrf_headers(client),
+            json={"path": str(override), "options": {}},
+        )
 
     assert response.status_code == 400
     payload = response.json()
@@ -185,7 +203,11 @@ async def test_watch_api_surfaces_startup_backlog_jobs(tmp_path: Path, monkeypat
     app.state.settings.save(inbox_path=inbox, cabinet_path=cabinet)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        start = await client.post("/api/watch", json={"path": "", "options": {}})
+        start = await client.post(
+            "/api/watch",
+            headers=await csrf_headers(client),
+            json={"path": "", "options": {}},
+        )
         await asyncio.wait_for(job_manager.processed.wait(), timeout=1.0)
         status = await client.get("/api/watch")
 
@@ -264,7 +286,8 @@ async def test_watch_created_jobs_refresh_saved_roots_before_creating_job(
     app.state.settings.save(inbox_path=old_inbox, cabinet_path=old_cabinet)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        start = await client.post("/api/watch", json={"path": "", "options": {}})
+        headers = await csrf_headers(client)
+        start = await client.post("/api/watch", headers=headers, json={"path": "", "options": {}})
         app.state.settings.save(inbox_path=new_inbox, cabinet_path=new_cabinet)
         source.write_text("From: a@b\nSubject: watched\n\nHello\n", encoding="utf-8")
         emit_event.set()
@@ -279,7 +302,7 @@ async def test_watch_created_jobs_refresh_saved_roots_before_creating_job(
 
         assert latest_job_id is not None
         terminal = await manager.wait_for_terminal(latest_job_id, timeout=5.0)
-        await client.delete("/api/watch")
+        await client.delete("/api/watch", headers=headers)
 
     assert start.status_code == 200
     assert start.json()["path"] == str(old_inbox.resolve())

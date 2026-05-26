@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hmac
+import secrets
 import shutil
 import subprocess
 import sys
@@ -10,7 +12,7 @@ from pathlib import Path
 from typing import Protocol, cast
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -52,6 +54,10 @@ ERROR_RESPONSES = {
 _MAX_IMPORT_COLLISION_INDEX = 10_000
 _IMPORT_STREAM_CHUNK_SIZE = 1024 * 1024
 _MAX_IMPORT_FILE_BYTES = 100 * 1024 * 1024
+_MAX_IMPORT_BATCH_FILES = 100
+_MAX_IMPORT_BATCH_BYTES = 100 * 1024 * 1024
+_SAFE_API_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+_CSRF_HEADER_NAME = "x-dead-letter-csrf"
 
 
 class UploadTooLargeError(RuntimeError):
@@ -152,6 +158,20 @@ def _error_response(
     return JSONResponse(status_code=status_code, content={"errors": [payload]})
 
 
+def _csrf_error_response(message: str) -> JSONResponse:
+    return _error_response(
+        403,
+        code="csrf_validation_failed",
+        message=message,
+        stage="validation",
+    )
+
+
+def _request_origin(request: Request) -> str:
+    host = request.headers.get("host") or request.url.netloc
+    return f"{request.url.scheme}://{host}"
+
+
 def create_app(
     *,
     worker_count: int = 8,
@@ -187,6 +207,23 @@ def create_app(
     app.state.fs_browser = fs_browser
     app.state.settings = settings
     app.state.watch_manager = watcher
+    app.state.csrf_token = secrets.token_urlsafe(32)
+
+    @app.middleware("http")
+    async def csrf_middleware(request: Request, call_next):
+        if request.url.path.startswith("/api/") and request.method.upper() not in _SAFE_API_METHODS:
+            if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+                return _csrf_error_response("cross-site requests are not allowed")
+
+            origin = request.headers.get("origin")
+            if origin is not None and origin != _request_origin(request):
+                return _csrf_error_response("cross-origin requests are not allowed")
+
+            csrf_token = request.headers.get(_CSRF_HEADER_NAME)
+            if csrf_token is None or not hmac.compare_digest(csrf_token, app.state.csrf_token):
+                return _csrf_error_response("missing or invalid CSRF token")
+
+        return await call_next(request)
 
     def _current_settings() -> WorkflowSettings | None:
         return cast(WorkflowSettings | None, app.state.settings.load())
@@ -251,6 +288,10 @@ def create_app(
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(_request, exc: RequestValidationError):
         return JSONResponse(status_code=400, content=_validation_error_payload(exc))
+
+    @app.get("/api/session", status_code=200)
+    async def get_session() -> dict[str, str]:
+        return {"csrf_token": app.state.csrf_token}
 
     @app.post(
         "/api/jobs",
@@ -556,6 +597,13 @@ def create_app(
                 message="no files provided",
                 path="files",
             )
+        if len(files) > _MAX_IMPORT_BATCH_FILES:
+            return _error_response(
+                413,
+                code="invalid_request",
+                message=f"batch import accepts at most {_MAX_IMPORT_BATCH_FILES} files",
+                path="files",
+            )
 
         invalid_names = [
             upload.filename or "unknown"
@@ -572,6 +620,7 @@ def create_app(
 
         batch_dir = configured.inbox_path / f"_batch-{uuid4()}"
         imported_paths: list[str] = []
+        total_import_bytes = 0
         try:
             for upload in files:
                 written = await _write_batch_import_file(
@@ -579,6 +628,11 @@ def create_app(
                     upload.filename or "upload.eml",
                     upload,
                 )
+                total_import_bytes += written.stat().st_size
+                if total_import_bytes > _MAX_IMPORT_BATCH_BYTES:
+                    raise UploadTooLargeError(
+                        f"batch upload exceeds 100 MB limit ({_MAX_IMPORT_BATCH_BYTES} bytes)"
+                    )
                 imported_paths.append(str(written))
 
             job = await app.state.job_manager.create_job(

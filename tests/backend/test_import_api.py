@@ -14,6 +14,8 @@ from dead_letter.backend.schemas import JobCreateResponse, JobCreateRequest, Out
 from dead_letter.backend.settings import WorkflowSettings
 from dead_letter.core.types import BundleResult
 
+from .helpers import csrf_headers
+
 
 class _StubJobManager:
     def __init__(self) -> None:
@@ -174,6 +176,7 @@ async def test_import_requires_configured_settings(tmp_path: Path) -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import",
+            headers=await csrf_headers(client),
             files={"file": ("hello.eml", b"From: a@b\nSubject: hi\n\nHello\n", "message/rfc822")},
         )
 
@@ -198,6 +201,7 @@ async def test_import_copies_into_inbox_and_starts_job(tmp_path: Path) -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import",
+            headers=await csrf_headers(client),
             files={"file": ("hello.eml", b"From: a@b\nSubject: hi\n\nHello\n", "message/rfc822")},
         )
 
@@ -262,6 +266,7 @@ async def test_import_refreshes_saved_roots_before_creating_job(
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import",
+            headers=await csrf_headers(client),
             files={"file": ("uploaded.eml", b"From: a@b\nSubject: hi\n\nHello\n", "message/rfc822")},
         )
         terminal = await manager.wait_for_terminal(response.json()["id"], timeout=5.0)
@@ -293,6 +298,7 @@ async def test_import_uses_suffixed_filename_without_overwriting_existing_file(t
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import",
+            headers=await csrf_headers(client),
             files={"file": ("hello.eml", b"new message", "message/rfc822")},
         )
 
@@ -318,6 +324,7 @@ async def test_import_passes_job_options_from_multipart_options_field(tmp_path: 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import",
+            headers=await csrf_headers(client),
             files={
                 "file": ("hello.eml", b"From: a@b\nSubject: hi\n\nHello\n", "message/rfc822"),
                 "options": (None, '{"allow_fallback_on_html_error": true, "dry_run": true}'),
@@ -345,6 +352,7 @@ async def test_import_rejects_invalid_options_payload(tmp_path: Path) -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import",
+            headers=await csrf_headers(client),
             files={
                 "file": ("hello.eml", b"From: a@b\nSubject: hi\n\nHello\n", "message/rfc822"),
                 "options": (None, '{"allow_fallback_on_html_error": {"invalid": true}}'),
@@ -368,6 +376,7 @@ async def test_import_rejects_non_eml_with_error_envelope(tmp_path: Path) -> Non
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import",
+            headers=await csrf_headers(client),
             files={"file": ("bad.txt", b"not email", "text/plain")},
         )
 
@@ -395,6 +404,7 @@ async def test_import_rejects_oversized_file_with_413(
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import",
+            headers=await csrf_headers(client),
             files={"file": ("hello.eml", b"123456", "message/rfc822")},
         )
 
@@ -425,6 +435,7 @@ async def test_import_returns_500_when_collision_cap_exceeded(
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import",
+            headers=await csrf_headers(client),
             files={"file": ("hello.eml", b"new content", "message/rfc822")},
         )
 
@@ -451,6 +462,7 @@ async def test_import_suppresses_active_inbox_watch_for_imported_path(tmp_path: 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import",
+            headers=await csrf_headers(client),
             files={"file": ("hello.eml", b"From: a@b\nSubject: hi\n\nHello\n", "message/rfc822")},
         )
 
@@ -479,6 +491,7 @@ async def test_import_rolls_back_copied_file_when_job_creation_fails(tmp_path: P
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import",
+            headers=await csrf_headers(client),
             files={"file": ("hello.eml", b"From: a@b\nSubject: hi\n\nHello\n", "message/rfc822")},
         )
 
@@ -508,6 +521,7 @@ async def test_import_does_not_suppress_watch_path_when_job_creation_fails(tmp_p
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import",
+            headers=await csrf_headers(client),
             files={"file": ("hello.eml", b"From: a@b\nSubject: hi\n\nHello\n", "message/rfc822")},
         )
 

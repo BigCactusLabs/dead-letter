@@ -14,6 +14,8 @@ from dead_letter.backend.jobs import JobManager
 from dead_letter.backend.schemas import JobCreateRequest, JobCreateResponse, OutputLocation
 from dead_letter.core.types import BundleResult
 
+from .helpers import csrf_headers
+
 
 class _StubJobManager:
     def __init__(self) -> None:
@@ -55,6 +57,7 @@ async def test_import_batch_creates_batch_dir_and_directory_mode_job(tmp_path: P
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import-batch",
+            headers=await csrf_headers(client),
             files=[
                 ("files", ("a.eml", b"From: a@b\n\nOne\n", "message/rfc822")),
                 ("files", ("b.eml", b"From: c@d\n\nTwo\n", "message/rfc822")),
@@ -126,6 +129,7 @@ async def test_import_batch_refreshes_saved_roots_before_creating_job(
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import-batch",
+            headers=await csrf_headers(client),
             files=[
                 ("files", ("a.eml", b"From: a@b\n\nOne\n", "message/rfc822")),
                 ("files", ("b.eml", b"From: c@d\n\nTwo\n", "message/rfc822")),
@@ -147,7 +151,11 @@ async def test_import_batch_rejects_empty_file_list(tmp_path: Path) -> None:
     app = _make_app(tmp_path)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/api/import-batch", files=[])
+        response = await client.post(
+            "/api/import-batch",
+            headers=await csrf_headers(client),
+            files=[],
+        )
 
     assert response.status_code in (400, 422)
 
@@ -159,6 +167,7 @@ async def test_import_batch_rejects_non_eml_files(tmp_path: Path) -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import-batch",
+            headers=await csrf_headers(client),
             files=[
                 ("files", ("good.eml", b"From: a@b\n\n", "message/rfc822")),
                 ("files", ("bad.txt", b"not email", "text/plain")),
@@ -182,6 +191,7 @@ async def test_import_batch_requires_configured_settings(tmp_path: Path) -> None
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import-batch",
+            headers=await csrf_headers(client),
             files=[("files", ("a.eml", b"From: a@b\n\n", "message/rfc822"))],
         )
 
@@ -196,6 +206,7 @@ async def test_import_batch_passes_options(tmp_path: Path) -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import-batch",
+            headers=await csrf_headers(client),
             files=[("files", ("a.eml", b"From: a@b\n\n", "message/rfc822"))],
             data={"options": '{"dry_run": true}'},
         )
@@ -213,6 +224,7 @@ async def test_import_batch_handles_filename_collisions(tmp_path: Path) -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import-batch",
+            headers=await csrf_headers(client),
             files=[
                 ("files", ("same.eml", b"From: a@b\n\nOne\n", "message/rfc822")),
                 ("files", ("same.eml", b"From: c@d\n\nTwo\n", "message/rfc822")),
@@ -239,6 +251,7 @@ async def test_import_batch_rolls_back_reserved_batch_dir_when_job_creation_fail
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import-batch",
+            headers=await csrf_headers(client),
             files=[
                 ("files", ("a.eml", b"From: a@b\n\nOne\n", "message/rfc822")),
                 ("files", ("b.eml", b"From: c@d\n\nTwo\n", "message/rfc822")),
@@ -261,6 +274,7 @@ async def test_import_batch_rejects_oversized_file_with_413(
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/import-batch",
+            headers=await csrf_headers(client),
             files=[("files", ("big.eml", b"123456", "message/rfc822"))],
         )
 
@@ -268,5 +282,60 @@ async def test_import_batch_rejects_oversized_file_with_413(
     payload = response.json()
     assert payload["errors"][0]["code"] == "invalid_request"
     assert "100 MB limit" in payload["errors"][0]["message"]
+    assert manager.requests == []
+    assert sorted(inbox.iterdir()) == []
+
+
+@pytest.mark.anyio
+async def test_import_batch_rejects_too_many_files_before_staging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(api_mod, "_MAX_IMPORT_BATCH_FILES", 2)
+    manager = _StubJobManager()
+    app = _make_app(tmp_path, manager)
+    inbox = tmp_path / "Inbox"
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/import-batch",
+            headers=await csrf_headers(client),
+            files=[
+                ("files", ("a.eml", b"From: a@b\n\nOne\n", "message/rfc822")),
+                ("files", ("b.eml", b"From: c@d\n\nTwo\n", "message/rfc822")),
+                ("files", ("c.eml", b"From: e@f\n\nThree\n", "message/rfc822")),
+            ],
+        )
+
+    assert response.status_code == 413
+    payload = response.json()
+    assert payload["errors"][0]["code"] == "invalid_request"
+    assert "at most 2 files" in payload["errors"][0]["message"]
+    assert manager.requests == []
+    assert sorted(inbox.iterdir()) == []
+
+
+@pytest.mark.anyio
+async def test_import_batch_rejects_aggregate_size_with_413_and_cleans_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(api_mod, "_MAX_IMPORT_BATCH_BYTES", 10)
+    manager = _StubJobManager()
+    app = _make_app(tmp_path, manager)
+    inbox = tmp_path / "Inbox"
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/import-batch",
+            headers=await csrf_headers(client),
+            files=[
+                ("files", ("a.eml", b"12345", "message/rfc822")),
+                ("files", ("b.eml", b"678901", "message/rfc822")),
+            ],
+        )
+
+    assert response.status_code == 413
+    payload = response.json()
+    assert payload["errors"][0]["code"] == "invalid_request"
+    assert "batch upload exceeds 100 MB limit" in payload["errors"][0]["message"]
     assert manager.requests == []
     assert sorted(inbox.iterdir()) == []

@@ -2,7 +2,7 @@
 title: dead-letter v4 Frontend State Model
 doc_type: reference
 status: canonical
-last_updated: 2026-03-31
+last_updated: 2026-05-26
 audience:
   - maintainers
   - frontend contributors
@@ -139,6 +139,8 @@ Removed browser state:
 
 ## Request Lifecycle
 
+All mutating `/api/*` requests are sent through `static/lib/api.js`. The helper lazily calls `GET /api/session` on the first mutation, caches the returned per-process token, and injects `X-Dead-Letter-CSRF` into `POST`, `PUT`, and `DELETE` requests. Multipart uploads keep browser-managed `Content-Type` handling; the helper adds only the CSRF header.
+
 ### First-Run Setup
 
 - `init()` calls `loadSettings()`, `pollWatch()`, and `history.load()`.
@@ -172,7 +174,7 @@ Removed browser state:
 - Partitions `.eml` files from non-`.eml` files before submitting anything.
 - If zero `.eml` files remain after filtering, the frontend surfaces an actionable error and rejects the drop.
 - If skipped non-`.eml` files are present, or the total `.eml` payload exceeds 100 MB, the frontend shows a confirmation overlay before submitting. The overlay inerts the idle drop zone behind it.
-- Backend enforces a hard 100 MB per-file limit; oversized files are rejected with `413`.
+- Backend enforces a hard 100 MB per-file limit, a 100-file browser batch limit, and a 100 MB aggregate browser batch limit; oversized uploads are rejected with `413`.
 - Confirmed single-file imports:
   - sets `inputPath` from `imported_path`
   - sets `mode="file"`

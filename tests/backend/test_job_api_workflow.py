@@ -9,6 +9,8 @@ from dead_letter.backend.api import create_app
 from dead_letter.backend.filesystem import FilesystemBrowser
 from dead_letter.backend.schemas import JobCreateRequest, JobCreateResponse, OutputLocation
 
+from .helpers import csrf_headers
+
 
 class _StubJobManager:
     def __init__(self) -> None:
@@ -42,7 +44,11 @@ async def test_create_job_requires_configured_settings(tmp_path: Path) -> None:
     source.write_text("x", encoding="utf-8")
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/api/jobs", json={"mode": "file", "input_path": str(source), "options": {}})
+        response = await client.post(
+            "/api/jobs",
+            headers=await csrf_headers(client),
+            json={"mode": "file", "input_path": str(source), "options": {}},
+        )
 
     assert response.status_code == 409
     payload = response.json()
@@ -68,7 +74,11 @@ async def test_create_job_uses_saved_settings_roots(tmp_path: Path) -> None:
     source.write_text("x", encoding="utf-8")
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/api/jobs", json={"mode": "file", "input_path": str(source), "options": {}})
+        response = await client.post(
+            "/api/jobs",
+            headers=await csrf_headers(client),
+            json={"mode": "file", "input_path": str(source), "options": {}},
+        )
 
     assert response.status_code == 202
     assert stub_manager.requests[0].input_path == str(source.resolve())

@@ -2,7 +2,7 @@
 title: dead-letter v4 Runtime Contracts
 doc_type: reference
 status: canonical
-last_updated: 2026-04-28
+last_updated: 2026-05-26
 audience:
   - maintainers
   - contributors
@@ -149,6 +149,30 @@ Non-2xx API responses use:
   ]
 }
 ```
+
+### Local API Session and CSRF
+
+#### `GET /api/session`
+
+Returns the per-process CSRF token required by mutating local UI requests.
+
+Response (`200`):
+
+```json
+{
+  "csrf_token": "string"
+}
+```
+
+Rules:
+
+- The token is generated once per `create_app()` process and changes after the local server restarts.
+- `GET`, `HEAD`, and `OPTIONS` `/api/*` requests are not gated by CSRF.
+- Every non-safe `/api/*` request (`POST`, `PUT`, `DELETE`, etc.) must include `X-Dead-Letter-CSRF: <csrf_token>`.
+- Browser requests with `Sec-Fetch-Site: cross-site` are rejected with `403`.
+- Requests with an `Origin` header that does not match the request origin are rejected with `403`.
+- CSRF failures use the standard error envelope with `code="csrf_validation_failed"`.
+- No CORS support is provided; the same-origin local UI is the only browser client. Script clients must call `/api/session` and include the CSRF header before using mutating endpoints.
 
 ### Workflow Settings
 
@@ -541,8 +565,10 @@ Rules:
 
 - Workflow folders must already be configured, otherwise the endpoint returns `409`.
 - At least one uploaded file is required.
+- Batch uploads accept at most 100 files. Larger batches are rejected with `413` before any batch directory is staged.
 - Every uploaded filename must end with `.eml`; any non-`.eml` filename is rejected with `422`.
 - Uploaded files larger than 100 MB are rejected with `413`.
+- The aggregate staged batch payload is capped at 100 MB. If the total exceeds the cap after staging a file, the reserved `_batch-*` directory is removed and the endpoint returns `413`.
 - Uploaded files are copied into `Inbox/_batch-<uuid>/` using collision-safe filenames (`name.eml`, `name-2.eml`, ...), capped at 10,000 attempts. Exceeding the cap returns `500` with `backend_error`.
 - Import immediately creates one directory-mode job using the reserved batch directory and the provided options.
 - Active watch sessions ignore `_batch-*` directories, so batch imports do not create duplicate watch-origin jobs.
@@ -748,8 +774,8 @@ Exit codes:
 - `200`: settings get/put, filesystem list, watch get/start/stop, job snapshot, open Cabinet folder
 - `202`: job create accepted, import accepted, cancel accepted
 - `400`: request rejected (schema or semantic validation)
-- `403`: filesystem/watch path escapes configured browser root
+- `403`: CSRF validation failure, hostile browser-origin signal, or filesystem/watch path escaping the configured browser root
 - `404`: unknown or evicted job id, or missing browse/watch target
 - `409`: workflow settings missing, or invalid lifecycle/watch conflict
-- `413`: import payload exceeds the 100 MB per-file backend limit
+- `413`: import payload exceeds the 100 MB per-file limit, the 100-file batch limit, or the 100 MB aggregate batch limit
 - `500`: unexpected backend failure

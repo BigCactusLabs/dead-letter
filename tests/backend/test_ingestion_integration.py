@@ -10,6 +10,8 @@ from dead_letter.backend.api import create_app
 from dead_letter.backend.filesystem import FilesystemBrowser
 from dead_letter.backend.jobs import JobManager
 
+from .helpers import csrf_headers
+
 
 def _sample_eml_bytes() -> bytes:
     return (
@@ -57,10 +59,12 @@ async def test_browse_entry_input_path_can_be_submitted_to_jobs(integration_app)
     app, _browser, _inbox, cabinet = integration_app
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        headers = await csrf_headers(client)
         browse = await client.get("/api/fs/list", params={"path": "mail", "filter": ".eml"})
         entry = browse.json()["entries"][0]
         create = await client.post(
             "/api/jobs",
+            headers=headers,
             json={
                 "mode": "file",
                 "input_path": entry["input_path"],
@@ -83,6 +87,7 @@ async def test_import_then_convert_moves_inbox_copy_into_cabinet_bundle(integrat
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         imported = await client.post(
             "/api/import",
+            headers=await csrf_headers(client),
             files={"file": ("uploaded.eml", _sample_eml_bytes(), "message/rfc822")},
         )
         assert imported.status_code == 202

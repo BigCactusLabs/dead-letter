@@ -1,4 +1,5 @@
 import Alpine from "/static/vendor/alpine.esm.js";
+import { apiFetch } from "/static/lib/api.js";
 import { applyStoredOptions, buildPayload, computeGrade, firstErrorMessage, isTerminalStatus, jobDisplayName, jobStatusColor, relativeTime, validateForm } from "/static/lib/helpers.js";
 import { registerJobStore } from "/static/stores/job.js";
 import { registerSettingsStore } from "/static/stores/settings.js";
@@ -553,7 +554,7 @@ Alpine.data("deadLetterApp", () => ({
   async openCabinet() {
     if (!this.$store.settings.configured) return;
     try {
-      const response = await fetch("/api/open-folder", { method: "POST" });
+      const response = await apiFetch("/api/open-folder", { method: "POST" });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
         this.$store.job.setOpError(firstErrorMessage(payload, "Failed to open Cabinet folder."));

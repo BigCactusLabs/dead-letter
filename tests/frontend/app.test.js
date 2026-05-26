@@ -55,6 +55,7 @@ test("index.html loads app.js as ES module", () => {
 test("app.js imports Alpine and all stores", () => {
   const source = readApp();
   assert.match(source, /import Alpine from/);
+  assert.match(source, /import\s+\{\s*apiFetch\s*\}\s+from\s+"\/static\/lib\/api\.js"/);
   assert.match(source, /import.*registerSettingsStore/);
   assert.match(source, /import.*registerJobStore/);
   assert.match(source, /import.*registerWatchStore/);
@@ -107,6 +108,11 @@ test("done header contains grade badge markup", () => {
 test("app.js imports computeGrade from helpers", () => {
   const appContent = readApp();
   assert.match(appContent, /computeGrade/);
+});
+
+test("openCabinet uses CSRF-aware API helper", () => {
+  const appContent = readApp();
+  assert.match(appContent, /apiFetch\("\/api\/open-folder",\s*\{\s*method:\s*"POST"\s*\}\)/);
 });
 
 test("diagnostics disclosure shows stripped images section", () => {

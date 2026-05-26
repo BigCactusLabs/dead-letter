@@ -1,3 +1,4 @@
+import { apiFetch } from "../lib/api.js";
 import { firstErrorMessage, isTerminalStatus } from "../lib/helpers.js";
 
 export function registerWatchStore(Alpine) {
@@ -115,7 +116,7 @@ export function registerWatchStore(Alpine) {
       this.activeActionController = controller;
       this.actionInFlight = true;
       try {
-        const response = await fetch("/api/watch", {
+        const response = await apiFetch("/api/watch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: controller.signal,
@@ -193,7 +194,7 @@ export function registerWatchStore(Alpine) {
       this.activeActionController = controller;
       this.actionInFlight = true;
       try {
-        const response = await fetch("/api/watch", { method: "DELETE", signal: controller.signal });
+        const response = await apiFetch("/api/watch", { method: "DELETE", signal: controller.signal });
         if (sessionId !== this.sessionId) {
           return;
         }
