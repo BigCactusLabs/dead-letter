@@ -10,6 +10,8 @@ from dead_letter.backend.api import create_app
 from dead_letter.backend.filesystem import FilesystemBrowser
 from dead_letter.backend.schemas import ErrorItem
 
+from .helpers import csrf_headers
+
 
 @pytest.fixture
 def sample_tree(tmp_path: Path) -> Path:
@@ -108,9 +110,10 @@ async def test_watch_api_start_stop_and_conflict_use_error_envelope(browser: Fil
     )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        start = await client.post("/api/watch", json={"path": "mail", "options": {}})
-        conflict = await client.post("/api/watch", json={"path": "mail", "options": {}})
-        stop = await client.delete("/api/watch")
+        headers = await csrf_headers(client)
+        start = await client.post("/api/watch", headers=headers, json={"path": "mail", "options": {}})
+        conflict = await client.post("/api/watch", headers=headers, json={"path": "mail", "options": {}})
+        stop = await client.delete("/api/watch", headers=headers)
 
     assert start.status_code == 200
     assert start.json()["active"] is True

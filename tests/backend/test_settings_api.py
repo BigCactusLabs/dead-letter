@@ -9,6 +9,8 @@ from httpx import ASGITransport, AsyncClient
 from dead_letter.backend.api import create_app
 from dead_letter.backend.filesystem import FilesystemBrowser
 
+from .helpers import csrf_headers
+
 
 @pytest.mark.anyio
 async def test_get_settings_reports_unconfigured_when_missing(tmp_path: Path) -> None:
@@ -43,6 +45,7 @@ async def test_put_settings_persists_and_creates_directories(tmp_path: Path) -> 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         saved = await client.put(
             "/api/settings",
+            headers=await csrf_headers(client),
             json={
                 "inbox_path": str(inbox),
                 "cabinet_path": str(cabinet),
@@ -74,6 +77,7 @@ async def test_put_settings_rejects_overlapping_paths(tmp_path: Path) -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.put(
             "/api/settings",
+            headers=await csrf_headers(client),
             json={
                 "inbox_path": str(workspace / "Inbox"),
                 "cabinet_path": str(workspace / "Inbox" / "Cabinet"),
@@ -164,7 +168,7 @@ async def test_open_folder_returns_error_envelope_when_cabinet_mkdir_fails(
 
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/api/open-folder")
+        response = await client.post("/api/open-folder", headers=await csrf_headers(client))
 
     assert response.status_code == 500
     assert response.json() == {

@@ -25,6 +25,13 @@ function makeResponse({ ok = true, status = 200, jsonData = {} } = {}) {
   };
 }
 
+function headerValue(headers, name) {
+  if (headers instanceof Headers) {
+    return headers.get(name) ?? undefined;
+  }
+  return headers?.[name] ?? headers?.[name.toLowerCase()];
+}
+
 class FormDataStub {
   constructor() {
     this.entries = [];
@@ -35,8 +42,9 @@ class FormDataStub {
   }
 }
 
-async function createJobStore(fetchImpl) {
+async function createJobStore(fetchImpl, requestLog = null) {
   const { registerJobStore } = await import("../../src/dead_letter/frontend/static/stores/job.js");
+  const { resetCsrfTokenForTests } = await import("../../src/dead_letter/frontend/static/lib/api.js");
   const stores = {};
   const intervals = new Map();
   let nextIntervalId = 1;
@@ -52,6 +60,7 @@ async function createJobStore(fetchImpl) {
     },
   };
   globalThis.FormData = FormDataStub;
+  resetCsrfTokenForTests();
 
   const mockAlpine = {
     store(name, def) {
@@ -62,7 +71,13 @@ async function createJobStore(fetchImpl) {
   stores.watch = {
     adoptWatchJob() {},
   };
-  globalThis.fetch = fetchImpl || (() => Promise.resolve(makeResponse()));
+  globalThis.fetch = (url, options = {}) => {
+    requestLog?.push({ url, options });
+    if (url === "/api/session") {
+      return Promise.resolve(makeResponse({ jsonData: { csrf_token: "csrf-test-token" } }));
+    }
+    return fetchImpl ? fetchImpl(url, options) : Promise.resolve(makeResponse());
+  };
   registerJobStore(mockAlpine);
   return { job: stores.job, stores, intervals };
 }
@@ -106,6 +121,37 @@ test("start() stores cabinet output_location", async () => {
 
   const body = JSON.parse(requests[0].options.body);
   assert.equal(Object.hasOwn(body, "output_path"), false);
+});
+
+test("start() fetches CSRF session before mutating request", async () => {
+  const requests = [];
+  const { job } = await createJobStore(
+    () =>
+      Promise.resolve(
+        makeResponse({
+          jsonData: {
+            id: "job-1",
+            status: "queued",
+            output_location: {
+              strategy: "cabinet",
+              cabinet_path: "/tmp/Cabinet",
+              bundle_path: "/tmp/Cabinet/mail",
+            },
+          },
+        })
+      ),
+    requests
+  );
+
+  job.startPolling = () => {};
+  await job.start({
+    mode: "file",
+    input_path: "/tmp/mail.eml",
+    options: { delete_eml: false, dry_run: false },
+  });
+
+  assert.deepEqual(requests.map((request) => request.url), ["/api/session", "/api/jobs"]);
+  assert.equal(headerValue(requests[1].options.headers, "X-Dead-Letter-CSRF"), "csrf-test-token");
 });
 
 test("poll() updates cabinet output_location", async () => {

@@ -1,3 +1,4 @@
+import { apiFetch } from "../lib/api.js";
 import {
   firstErrorMessage,
   isTerminalStatus,
@@ -132,7 +133,7 @@ export function registerJobStore(Alpine) {
       this.isSubmitting = true;
 
       try {
-        const response = await fetch("/api/jobs", {
+        const response = await apiFetch("/api/jobs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -325,7 +326,7 @@ export function registerJobStore(Alpine) {
       );
 
       try {
-        const response = await fetch("/api/import", { method: "POST", body: formData });
+        const response = await apiFetch("/api/import", { method: "POST", body: formData });
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
           this.setOpError(firstErrorMessage(payload, "Import failed."));
@@ -369,7 +370,7 @@ export function registerJobStore(Alpine) {
       );
 
       try {
-        const response = await fetch("/api/import-batch", { method: "POST", body: formData });
+        const response = await apiFetch("/api/import-batch", { method: "POST", body: formData });
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
           this.setOpError(firstErrorMessage(payload, "Batch import failed."));
@@ -408,7 +409,7 @@ export function registerJobStore(Alpine) {
       this.isSubmitting = true;
 
       try {
-        const response = await fetch(`/api/jobs/${requestedJobId}/retry`, {
+        const response = await apiFetch(`/api/jobs/${requestedJobId}/retry`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action }),
@@ -442,7 +443,7 @@ export function registerJobStore(Alpine) {
       this.activeCancelController = controller;
 
       try {
-        const response = await fetch(`/api/jobs/${requestedJobId}/cancel`, {
+        const response = await apiFetch(`/api/jobs/${requestedJobId}/cancel`, {
           method: "POST",
           signal: controller.signal,
         });

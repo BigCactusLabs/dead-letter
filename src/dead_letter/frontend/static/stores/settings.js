@@ -1,3 +1,4 @@
+import { apiFetch } from "../lib/api.js";
 import { firstErrorMessage, normalizeErrors } from "../lib/helpers.js";
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -91,7 +92,7 @@ export function registerSettingsStore(Alpine) {
     async submitSetup() {
       this.setupErrors = [];
       try {
-        const response = await fetch("/api/settings", {
+        const response = await apiFetch("/api/settings", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -141,7 +142,7 @@ export function registerSettingsStore(Alpine) {
       this.saving = true;
 
       try {
-        const response = await fetch("/api/settings", {
+        const response = await apiFetch("/api/settings", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

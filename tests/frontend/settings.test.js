@@ -11,6 +11,13 @@ function makeResponse({ ok = true, status = 200, jsonData = {} } = {}) {
   };
 }
 
+function headerValue(headers, name) {
+  if (headers instanceof Headers) {
+    return headers.get(name) ?? undefined;
+  }
+  return headers?.[name] ?? headers?.[name.toLowerCase()];
+}
+
 function createMockLocalStorage(initial = {}) {
   const store = { ...initial };
   return {
@@ -20,10 +27,11 @@ function createMockLocalStorage(initial = {}) {
   };
 }
 
-async function createSettingsStore(fetchImpl) {
+async function createSettingsStore(fetchImpl, requestLog = null) {
   const { registerSettingsStore } = await import(
     "../../src/dead_letter/frontend/static/stores/settings.js"
   );
+  const { resetCsrfTokenForTests } = await import("../../src/dead_letter/frontend/static/lib/api.js");
   const stores = {};
   const mockAlpine = {
     store(name, def) {
@@ -42,7 +50,14 @@ async function createSettingsStore(fetchImpl) {
     },
   };
   stores.watch = { active: false, pathOverride: "" };
-  globalThis.fetch = fetchImpl || (() => Promise.resolve(makeResponse()));
+  resetCsrfTokenForTests();
+  globalThis.fetch = (url, options = {}) => {
+    requestLog?.push({ url, options });
+    if (url === "/api/session") {
+      return Promise.resolve(makeResponse({ jsonData: { csrf_token: "csrf-test-token" } }));
+    }
+    return fetchImpl ? fetchImpl(url, options) : Promise.resolve(makeResponse());
+  };
   registerSettingsStore(mockAlpine);
   return { settings: stores.settings, stores };
 }
@@ -100,6 +115,32 @@ test("save() persists folders and marks configured", async () => {
     inbox_path: "/tmp/Inbox",
     cabinet_path: "/tmp/Cabinet",
   });
+});
+
+test("save() fetches CSRF session before PUT", async () => {
+  const requests = [];
+  const { settings } = await createSettingsStore(
+    () =>
+      Promise.resolve(
+        makeResponse({
+          jsonData: {
+            configured: true,
+            inbox_path: "/tmp/Inbox",
+            cabinet_path: "/tmp/Cabinet",
+          },
+        })
+      ),
+    requests
+  );
+
+  settings.form.inbox_path = "/tmp/Inbox";
+  settings.form.cabinet_path = "/tmp/Cabinet";
+
+  await settings.save();
+
+  assert.deepEqual(requests.map((request) => request.url), ["/api/session", "/api/settings"]);
+  assert.equal(headerValue(requests[1].options.headers, "X-Dead-Letter-CSRF"), "csrf-test-token");
+  assert.equal(headerValue(requests[1].options.headers, "Content-Type"), "application/json");
 });
 
 test("applyResponse() rejects payloads missing required fields", async () => {

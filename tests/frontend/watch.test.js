@@ -21,8 +21,16 @@ function makeResponse({ ok = true, status = 200, jsonData = {} } = {}) {
   };
 }
 
-async function createWatchStore(fetchImpl) {
+function headerValue(headers, name) {
+  if (headers instanceof Headers) {
+    return headers.get(name) ?? undefined;
+  }
+  return headers?.[name] ?? headers?.[name.toLowerCase()];
+}
+
+async function createWatchStore(fetchImpl, requestLog = null) {
   const { registerWatchStore } = await import("../../src/dead_letter/frontend/static/stores/watch.js");
+  const { resetCsrfTokenForTests } = await import("../../src/dead_letter/frontend/static/lib/api.js");
   const stores = {};
   const intervals = new Map();
   let nextIntervalId = 1;
@@ -74,7 +82,14 @@ async function createWatchStore(fetchImpl) {
     },
     isSubmitting: false,
   };
-  globalThis.fetch = fetchImpl || (() => Promise.resolve(makeResponse()));
+  resetCsrfTokenForTests();
+  globalThis.fetch = (url, options = {}) => {
+    requestLog?.push({ url, options });
+    if (url === "/api/session") {
+      return Promise.resolve(makeResponse({ jsonData: { csrf_token: "csrf-test-token" } }));
+    }
+    return fetchImpl ? fetchImpl(url, options) : Promise.resolve(makeResponse());
+  };
   registerWatchStore(mockAlpine);
   return { watch: stores.watch, stores, intervals };
 }
@@ -273,6 +288,33 @@ test("start() sends empty path when no override", async () => {
   assert.equal(body.path, "");
   assert.equal(watch.active, true);
   assert.equal(watch.path, "/tmp/Inbox");
+});
+
+test("start() fetches CSRF session before POST", async () => {
+  const requests = [];
+  const { watch } = await createWatchStore(
+    () =>
+      Promise.resolve(
+        makeResponse({
+          jsonData: {
+            active: true,
+            path: "/tmp/Inbox",
+            files_detected: 0,
+            jobs_created: 0,
+            failed_events: 0,
+            last_error: null,
+            latest_job_id: null,
+            latest_job_status: null,
+          },
+        })
+      ),
+    requests
+  );
+
+  await watch.start({ delete_eml: false, dry_run: false });
+
+  assert.deepEqual(requests.map((request) => request.url), ["/api/session", "/api/watch"]);
+  assert.equal(headerValue(requests[1].options.headers, "X-Dead-Letter-CSRF"), "csrf-test-token");
 });
 
 test("poll() surfaces repeated transient failures", async () => {
