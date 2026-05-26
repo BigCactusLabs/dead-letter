@@ -6,7 +6,7 @@ import re
 from typing import get_args
 
 from dead_letter.backend.schemas import JobOptions, JobStatus
-from dead_letter.core.types import ConvertOptions
+from dead_letter.core.types import ConvertOptions, ThreadMode, ThreadOrder
 
 
 def test_backend_option_fields_match_core_convert_options() -> None:
@@ -58,6 +58,22 @@ def test_docs_do_not_reference_removed_contract_fields() -> None:
                 offenders.append(f"{doc_file.relative_to(repo_root)}:{line_no}: {pattern.pattern}")
 
     assert offenders == []
+
+
+def test_job_options_to_convert_options_normalizes_thread_mode_to_enum() -> None:
+    job = JobOptions(thread_mode="structured", thread_order="latest-first")  # type: ignore[arg-type]
+    core = ConvertOptions(**job.model_dump())
+
+    assert core.thread_mode is ThreadMode.STRUCTURED
+    assert core.thread_order is ThreadOrder.LATEST_FIRST
+
+
+def test_job_options_default_thread_fields_match_core() -> None:
+    job = JobOptions()
+    core = ConvertOptions(**job.model_dump())
+
+    assert core.thread_mode is ThreadMode.LATEST
+    assert core.thread_order is ThreadOrder.OLDEST_FIRST
 
 
 def test_canonical_docs_do_not_reference_pre_restructure_source_paths() -> None:

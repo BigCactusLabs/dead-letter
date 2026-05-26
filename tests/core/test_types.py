@@ -13,6 +13,8 @@ from dead_letter.core.types import (
     PartDefect,
     StrippedImage,
     StrippedImageCategory,
+    ThreadMode,
+    ThreadOrder,
     Zone,
     ZoneKind,
 )
@@ -82,6 +84,8 @@ def test_convert_options_contract_defaults() -> None:
     assert options.allow_html_repair_on_panic is False
     assert options.delete_eml is False
     assert options.dry_run is False
+    assert options.thread_mode is ThreadMode.LATEST
+    assert options.thread_order is ThreadOrder.OLDEST_FIRST
 
 
 def test_convert_options_contract_fields() -> None:
@@ -99,8 +103,24 @@ def test_convert_options_contract_fields() -> None:
         "allow_html_repair_on_panic",
         "delete_eml",
         "dry_run",
+        "thread_mode",
+        "thread_order",
         "report",
     ]
+
+
+def test_convert_options_normalizes_string_thread_mode() -> None:
+    options = ConvertOptions(thread_mode="latest", thread_order="oldest-first")  # type: ignore[arg-type]
+
+    assert options.thread_mode is ThreadMode.LATEST
+    assert options.thread_order is ThreadOrder.OLDEST_FIRST
+
+
+def test_convert_options_rejects_unknown_thread_mode() -> None:
+    import pytest
+
+    with pytest.raises(ValueError):
+        ConvertOptions(thread_mode="garbage")  # type: ignore[arg-type]
 
 
 def test_convert_result_exposes_structured_error_metadata() -> None:
@@ -182,3 +202,15 @@ def test_convert_options_image_stripping_defaults() -> None:
     opts = ConvertOptions()
     assert opts.strip_signature_images is False
     assert opts.strip_tracking_pixels is False
+
+
+def test_public_core_package_exports_thread_enums() -> None:
+    from dead_letter.core import ThreadMode as CoreThreadMode
+    from dead_letter.core import ThreadOrder as CoreThreadOrder
+    from dead_letter import ThreadMode as TopThreadMode
+    from dead_letter import ThreadOrder as TopThreadOrder
+
+    assert CoreThreadMode is TopThreadMode
+    assert CoreThreadOrder is TopThreadOrder
+    assert CoreThreadMode.LATEST.value == "latest"
+    assert CoreThreadOrder.OLDEST_FIRST.value == "oldest-first"

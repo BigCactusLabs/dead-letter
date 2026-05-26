@@ -11,7 +11,7 @@ from dead_letter.core import ConvertOptions
 from dead_letter.core import convert as core_convert
 from dead_letter.core import convert_dir as core_convert_dir
 from dead_letter.core.report import ReportEntry, build_report, write_report
-from dead_letter.core.types import ConvertResult
+from dead_letter.core.types import ConvertResult, ThreadMode, ThreadOrder
 
 SUBCOMMANDS = frozenset({"convert", "doctor"})
 
@@ -32,6 +32,20 @@ def _add_convert_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--allow-html-repair-on-panic", action="store_true")
     parser.add_argument("--delete-eml", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--thread-mode",
+        type=ThreadMode,
+        choices=list(ThreadMode),
+        default=ThreadMode.LATEST,
+        help="Thread history rendering: latest (default) or structured.",
+    )
+    parser.add_argument(
+        "--thread-order",
+        type=ThreadOrder,
+        choices=list(ThreadOrder),
+        default=ThreadOrder.OLDEST_FIRST,
+        help="Section order in structured mode (default: oldest-first).",
+    )
     parser.add_argument("--report", action="store_true", help="Write conversion report to output directory")
 
 
@@ -65,6 +79,8 @@ def _to_core_options(args: argparse.Namespace) -> ConvertOptions:
         allow_html_repair_on_panic=args.allow_html_repair_on_panic,
         delete_eml=args.delete_eml and not args.dry_run,
         dry_run=args.dry_run,
+        thread_mode=args.thread_mode,
+        thread_order=args.thread_order,
         report=args.report,
     )
 

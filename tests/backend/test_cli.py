@@ -25,6 +25,8 @@ EXPECTED_FLAGS = {
     "allow_html_repair_on_panic",
     "delete_eml",
     "dry_run",
+    "thread_mode",
+    "thread_order",
     "report",
 }
 
@@ -232,3 +234,38 @@ def test_cli_report_writes_artifact_for_directory_output_root(tmp_path: Path) ->
     assert data["job"]["input_mode"] == "directory"
     assert data["summary"]["total"] == 2
     assert data["summary"]["written"] == 2
+
+
+from dead_letter.core.types import ThreadMode, ThreadOrder
+
+
+def test_cli_parses_thread_mode_and_thread_order() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        ["convert", "dummy.eml", "--thread-mode", "structured", "--thread-order", "latest-first"]
+    )
+    opts = cli._to_core_options(args)
+
+    assert opts.thread_mode is ThreadMode.STRUCTURED
+    assert opts.thread_order is ThreadOrder.LATEST_FIRST
+
+
+def test_cli_defaults_thread_options_to_latest_oldest_first() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(["convert", "dummy.eml"])
+    opts = cli._to_core_options(args)
+
+    assert opts.thread_mode is ThreadMode.LATEST
+    assert opts.thread_order is ThreadOrder.OLDEST_FIRST
+
+
+def test_cli_rejects_unknown_thread_mode() -> None:
+    parser = cli.build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["convert", "dummy.eml", "--thread-mode", "garbage"])
+
+
+def test_cli_rejects_unknown_thread_order() -> None:
+    parser = cli.build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["convert", "dummy.eml", "--thread-order", "middle"])

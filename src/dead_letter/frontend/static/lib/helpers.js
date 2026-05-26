@@ -81,6 +81,29 @@ export function buildPayload(mode, inputPath, options) {
   };
 }
 
+export const OPTION_ENUM_VALIDATORS = {
+  thread_mode: (v) => v === "latest" || v === "structured",
+  thread_order: (v) => v === "oldest-first" || v === "latest-first",
+};
+
+export function applyStoredOptions(saved, currentOptions) {
+  const result = { ...currentOptions };
+  if (!saved || typeof saved !== "object") return result;
+  for (const key of Object.keys(result)) {
+    const validator = OPTION_ENUM_VALIDATORS[key];
+    if (validator) {
+      if (typeof saved[key] === "string" && validator(saved[key])) {
+        result[key] = saved[key];
+      }
+      continue;
+    }
+    if (typeof saved[key] === "boolean") {
+      result[key] = saved[key];
+    }
+  }
+  return result;
+}
+
 export function validateForm({ mode, inputPath }) {
   const errors = [];
   if (!inputPath.trim()) errors.push("Input path is required.");

@@ -195,3 +195,7 @@ images may be absent from rendered Markdown and bundle attachment artifacts.
 - Diagnostics appear only for the current polled file job.
 - Directory jobs return `diagnostics: null`.
 - The frontend can now surface the latest watch-created file job through the same workspace job view, but raw trace inspection remains out of scope in v1.
+
+## Thread Mode
+
+- `thread_mode="structured"` adds per-message section headers for prior replies. No new diagnostic codes; attribution-parse failures emit `logging.DEBUG` on logger `dead_letter.core.attribution`.

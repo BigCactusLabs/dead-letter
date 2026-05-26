@@ -1,0 +1,22 @@
+From: Carol <carol@example.com>
+To: Team <team@example.com>
+Subject: RE: project status
+Date: Thu, 05 Mar 2026 10:30:00 +0000
+Message-ID: <outlook-dom-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<div>Carol latest reply.</div>
+<div id="divRplyFwdMsg">
+  <hr>
+  <p><b>From:</b> Bob &lt;bob@example.com&gt;<br>
+  <b>Sent:</b> Wednesday, March 4, 2026 9:55 AM<br>
+  <b>To:</b> Team &lt;team@example.com&gt;<br>
+  <b>Subject:</b> RE: project status</p>
+  <p>Bob reply text.</p>
+  <p><b>From:</b> Alice &lt;alice@example.com&gt;<br>
+  <b>Sent:</b> Tuesday, March 3, 2026 9:50 AM<br>
+  <b>To:</b> Team &lt;team@example.com&gt;<br>
+  <b>Subject:</b> project status</p>
+  <p>Alice original.</p>
+</div>

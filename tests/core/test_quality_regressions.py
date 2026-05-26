@@ -452,3 +452,139 @@ def test_empty_html_body_preserves_plain_text_without_html_quote_patterns(tmp_pa
     md = result.markdown.read_text()
     assert "Hello team" in md
     assert "plain text body" in md
+
+
+from dead_letter.core.types import ThreadMode
+
+
+def test_gmail_3_message_thread_structured(tmp_path) -> None:
+    fixture = FIXTURES / "gmail_3_message_thread.eml"
+    output = tmp_path / "out.md"
+    result = convert(
+        fixture,
+        output=output,
+        options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED),
+    )
+
+    assert result.success
+    text = output.read_text(encoding="utf-8")
+    parts = text.split("---\n", 2)
+    assert len(parts) == 3
+    body = parts[2]
+
+    assert "Reply level 2 from Carol." in body
+    assert "## From Bob" in body
+    assert "## From Alice" in body
+    leaked = [line for line in body.splitlines() if line.startswith(">")]
+    assert not leaked, f"residual quote markers in body: {leaked!r}"
+    assert "thread_messages: 2" in text
+
+
+def test_gmail_3_message_thread_latest_byte_identical_to_baseline(tmp_path) -> None:
+    fixture = FIXTURES / "gmail_3_message_thread.eml"
+    baseline_out = tmp_path / "baseline.md"
+    latest_out = tmp_path / "latest.md"
+
+    convert(fixture, output=baseline_out, options=ConvertOptions())
+    convert(fixture, output=latest_out, options=ConvertOptions(thread_mode=ThreadMode.LATEST))
+
+    assert baseline_out.read_text() == latest_out.read_text()
+
+
+def test_outlook_dom_segmented_thread_structured(tmp_path) -> None:
+    fixture = FIXTURES / "outlook_dom_segmented_thread.eml"
+    output = tmp_path / "out.md"
+    result = convert(
+        fixture,
+        output=output,
+        options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED),
+    )
+
+    assert result.success
+    text = output.read_text(encoding="utf-8")
+    parts = text.split("---\n", 2)
+    assert len(parts) == 3, "expected YAML front matter delimited by ---"
+    body = parts[2]
+
+    assert "thread_messages: 2" in text
+    assert "Carol latest reply" in body
+    assert "## From Bob" in body
+    assert "## From Alice" in body
+    assert "---" not in body, "stray --- in body suggests broken Outlook projection"
+    assert "**From:**" not in body
+
+
+def test_generic_html_thread_via_plain_fallback_structured(tmp_path) -> None:
+    fixture = FIXTURES / "generic_html_thread.eml"
+    output = tmp_path / "out.md"
+    result = convert(
+        fixture,
+        output=output,
+        options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED),
+    )
+
+    assert result.success
+    text = output.read_text(encoding="utf-8")
+    assert "Carol latest reply" in text
+
+
+def test_mixed_attribution_thread_renders_earlier_message_for_unparseable(tmp_path) -> None:
+    fixture = FIXTURES / "mixed_attribution_thread.eml"
+    output = tmp_path / "out.md"
+    convert(
+        fixture,
+        output=output,
+        options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED),
+    )
+
+    text = output.read_text(encoding="utf-8")
+    assert "## Earlier message" in text or "## From Bob" in text
+
+
+def test_multilingual_thread_structured(tmp_path) -> None:
+    fixture = FIXTURES / "multilingual_thread.eml"
+    output = tmp_path / "out.md"
+    convert(
+        fixture,
+        output=output,
+        options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED),
+    )
+
+    text = output.read_text(encoding="utf-8")
+    assert "Bob" in text
+
+
+def test_outlook_with_cc_thread_parses_attribution(tmp_path) -> None:
+    fixture = FIXTURES / "outlook_with_cc_thread.eml"
+    output = tmp_path / "out.md"
+    result = convert(
+        fixture,
+        output=output,
+        options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED),
+    )
+
+    assert result.success
+    text = output.read_text(encoding="utf-8")
+    parts = text.split("---\n", 2)
+    assert len(parts) == 3
+    body = parts[2]
+
+    assert "## From Bob" in body
+    assert "**From:**" not in body
+    assert "**Cc:**" not in body
+    assert "**Subject:**" not in body
+    assert "Bob reply text with cc." in body
+
+
+def test_empty_quoted_attribution_skips_empty_section(tmp_path) -> None:
+    fixture = FIXTURES / "empty_quoted_attribution.eml"
+    output = tmp_path / "out.md"
+    convert(
+        fixture,
+        output=output,
+        options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED),
+    )
+
+    text = output.read_text(encoding="utf-8")
+    assert "Carol latest reply" in text
+    assert "thread_messages: 0" in text or "thread_messages:" not in text

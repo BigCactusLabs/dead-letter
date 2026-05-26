@@ -40,20 +40,20 @@ _CONVERSION_FLAGS = frozenset({
     "strip_signatures", "strip_disclaimers", "strip_tracking_pixels",
     "strip_signature_images", "strip_quoted_headers", "embed_inline_images",
     "include_all_headers", "include_raw_html", "no_calendar_summary",
-    "dry_run",
+    "dry_run", "thread_mode", "thread_order",
 })
 
 
-def _resolve_options(preset: str = "default", **overrides: bool | None) -> ConvertOptions:
+def _resolve_options(preset: str = "default", **overrides: bool | str | None) -> ConvertOptions:
     """Build ConvertOptions from a preset name with optional flag overrides."""
-    base = dict(PRESETS.get(preset, PRESETS["default"]))
+    base: dict[str, bool | str] = dict(PRESETS.get(preset, PRESETS["default"]))
     for key, value in overrides.items():
         if value is not None:
             base[key] = value
     # MCP operations always enable resilience
     base["allow_fallback_on_html_error"] = True
     base["allow_html_repair_on_panic"] = True
-    return ConvertOptions(**base)
+    return ConvertOptions(**base)  # type: ignore[arg-type]
 
 
 def _build_options(local_vars: dict) -> ConvertOptions:
@@ -94,6 +94,8 @@ def convert_eml(
     include_all_headers: bool | None = None,
     include_raw_html: bool | None = None,
     no_calendar_summary: bool | None = None,
+    thread_mode: Literal["latest", "structured"] = "latest",
+    thread_order: Literal["oldest-first", "latest-first"] = "oldest-first",
 ) -> str:
     """Convert a .eml email file to Markdown with YAML front matter.
 
@@ -139,6 +141,8 @@ def convert_eml_to_bundle(
     include_all_headers: bool | None = None,
     include_raw_html: bool | None = None,
     no_calendar_summary: bool | None = None,
+    thread_mode: Literal["latest", "structured"] = "latest",
+    thread_order: Literal["oldest-first", "latest-first"] = "oldest-first",
 ) -> str:
     """Convert a .eml file to a self-contained bundle with markdown and attachments.
 
@@ -194,6 +198,8 @@ def convert_directory(
     include_all_headers: bool | None = None,
     include_raw_html: bool | None = None,
     no_calendar_summary: bool | None = None,
+    thread_mode: Literal["latest", "structured"] = "latest",
+    thread_order: Literal["oldest-first", "latest-first"] = "oldest-first",
 ) -> str:
     """Batch convert all .eml files in a directory to Markdown.
 
@@ -236,6 +242,8 @@ def get_diagnostics(
     include_all_headers: bool | None = None,
     include_raw_html: bool | None = None,
     no_calendar_summary: bool | None = None,
+    thread_mode: Literal["latest", "structured"] = "latest",
+    thread_order: Literal["oldest-first", "latest-first"] = "oldest-first",
 ) -> str:
     """Inspect email quality and structure without writing permanent files.
 

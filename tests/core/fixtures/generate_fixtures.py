@@ -158,6 +158,129 @@ def main() -> int:
             iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Zk8kAAAAASUVORK5CYII=
             --rel-1--
         """,
+        "gmail_3_message_thread.eml": """
+            From: Carol <carol@example.com>
+            To: Team <team@example.com>
+            Subject: Re: Project Update
+            Date: Thu, 05 Mar 2026 10:00:00 +0000
+            Message-ID: <gmail-3msg-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Reply level 2 from Carol.
+
+            On Thu, Mar 5, 2026 at 9:55 AM Bob <bob@example.com> wrote:
+            > Reply level 1 from Bob.
+            >
+            > On Thu, Mar 5, 2026 at 9:50 AM Alice <alice@example.com> wrote:
+            > > Original message from Alice.
+        """,
+        "outlook_dom_segmented_thread.eml": """
+            From: Carol <carol@example.com>
+            To: Team <team@example.com>
+            Subject: RE: project status
+            Date: Thu, 05 Mar 2026 10:30:00 +0000
+            Message-ID: <outlook-dom-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div>Carol latest reply.</div>
+            <div id="divRplyFwdMsg">
+              <hr>
+              <p><b>From:</b> Bob &lt;bob@example.com&gt;<br>
+              <b>Sent:</b> Wednesday, March 4, 2026 9:55 AM<br>
+              <b>To:</b> Team &lt;team@example.com&gt;<br>
+              <b>Subject:</b> RE: project status</p>
+              <p>Bob reply text.</p>
+              <p><b>From:</b> Alice &lt;alice@example.com&gt;<br>
+              <b>Sent:</b> Tuesday, March 3, 2026 9:50 AM<br>
+              <b>To:</b> Team &lt;team@example.com&gt;<br>
+              <b>Subject:</b> project status</p>
+              <p>Alice original.</p>
+            </div>
+        """,
+        "generic_html_thread.eml": """
+            From: Carol <carol@example.com>
+            To: Team <team@example.com>
+            Subject: Re: generic HTML thread
+            Date: Thu, 05 Mar 2026 10:35:00 +0000
+            Message-ID: <generic-html-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div>Carol latest reply.</div>
+            <blockquote>
+            <div>On Wed Bob wrote:</div>
+            <div>Bob reply text.</div>
+            </blockquote>
+        """,
+        "mixed_attribution_thread.eml": """
+            From: Carol <carol@example.com>
+            To: Team <team@example.com>
+            Subject: Re: mixed attribution
+            Date: Thu, 05 Mar 2026 10:40:00 +0000
+            Message-ID: <mixed-attrib-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Carol latest reply.
+
+            On Thu, Mar 5, 2026 at 9:55 AM Bob <bob@example.com> wrote:
+            > Bob's reply.
+            >
+            > Something garbled here — no recognizable attribution form.
+            > > Alice's text further nested.
+        """,
+        "multilingual_thread.eml": """
+            From: Carol <carol@example.com>
+            To: Team <team@example.com>
+            Subject: Re: international thread
+            Date: Thu, 05 Mar 2026 10:45:00 +0000
+            Message-ID: <multi-lang-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Carol latest reply.
+
+            Am Mittwoch, 4. März 2026 um 09:55 schrieb Bob <bob@example.com>:
+            > Bob reply.
+            >
+            > Le mar. 3 mars 2026 à 09:50, Alice <alice@example.com> a écrit :
+            > > Alice original.
+        """,
+        "outlook_with_cc_thread.eml": """
+            From: Carol <carol@example.com>
+            To: Team <team@example.com>
+            Subject: RE: project status
+            Date: Thu, 05 Mar 2026 10:32:00 +0000
+            Message-ID: <outlook-cc-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div>Carol latest reply.</div>
+            <div id="divRplyFwdMsg">
+              <hr>
+              <p><b>From:</b> Bob &lt;bob@example.com&gt;<br>
+              <b>Sent:</b> Wednesday, March 4, 2026 9:55 AM<br>
+              <b>To:</b> Team &lt;team@example.com&gt;<br>
+              <b>Cc:</b> Dana &lt;dana@example.com&gt;<br>
+              <b>Subject:</b> RE: project status</p>
+              <p>Bob reply text with cc.</p>
+            </div>
+        """,
+        "empty_quoted_attribution.eml": """
+            From: Carol <carol@example.com>
+            To: Team <team@example.com>
+            Subject: Re: empty body after attribution
+            Date: Thu, 05 Mar 2026 10:50:00 +0000
+            Message-ID: <empty-attrib-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Carol latest reply.
+
+            On Thu, Mar 5, 2026 at 9:55 AM Bob <bob@example.com> wrote:
+        """,
         "calendar_invite.eml": """
             From: Organizer <organizer@example.com>
             To: Attendee <attendee@example.com>

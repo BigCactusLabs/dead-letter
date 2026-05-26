@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from dead_letter.core.types import ThreadMode, ThreadOrder
+
 JobStatus = Literal[
     "queued",
     "running",
@@ -86,6 +88,8 @@ class JobOptions(BaseModel):
     allow_html_repair_on_panic: bool = False
     delete_eml: bool = False
     dry_run: bool = False
+    thread_mode: ThreadMode = ThreadMode.LATEST
+    thread_order: ThreadOrder = ThreadOrder.OLDEST_FIRST
     report: bool = False
 
     model_config = ConfigDict(extra="ignore")

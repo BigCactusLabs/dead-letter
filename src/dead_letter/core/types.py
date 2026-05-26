@@ -29,6 +29,20 @@ class StrippedImageCategory(StrEnum):
     TRACKING_PIXEL = "tracking_pixel"
 
 
+class ThreadMode(StrEnum):
+    """How to render prior messages from a thread."""
+
+    LATEST = "latest"
+    STRUCTURED = "structured"
+
+
+class ThreadOrder(StrEnum):
+    """Section order for STRUCTURED thread mode."""
+
+    OLDEST_FIRST = "oldest-first"
+    LATEST_FIRST = "latest-first"
+
+
 @dataclass(slots=True)
 class StrippedImage:
     """Record of an image stripped during pre-sanitization filtering."""
@@ -68,7 +82,15 @@ class ConvertOptions:
     allow_html_repair_on_panic: bool = False
     delete_eml: bool = False
     dry_run: bool = False
+    thread_mode: ThreadMode = ThreadMode.LATEST
+    thread_order: ThreadOrder = ThreadOrder.OLDEST_FIRST
     report: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.thread_mode, ThreadMode):
+            self.thread_mode = ThreadMode(self.thread_mode)
+        if not isinstance(self.thread_order, ThreadOrder):
+            self.thread_order = ThreadOrder(self.thread_order)
 
 
 @dataclass(slots=True)

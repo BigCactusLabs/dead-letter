@@ -1,5 +1,5 @@
 import Alpine from "/static/vendor/alpine.esm.js";
-import { buildPayload, computeGrade, firstErrorMessage, isTerminalStatus, jobDisplayName, jobStatusColor, relativeTime, validateForm } from "/static/lib/helpers.js";
+import { applyStoredOptions, buildPayload, computeGrade, firstErrorMessage, isTerminalStatus, jobDisplayName, jobStatusColor, relativeTime, validateForm } from "/static/lib/helpers.js";
 import { registerJobStore } from "/static/stores/job.js";
 import { registerSettingsStore } from "/static/stores/settings.js";
 import { registerWatchStore } from "/static/stores/watch.js";
@@ -28,6 +28,8 @@ Alpine.data("deadLetterApp", () => ({
     allow_fallback_on_html_error: false,
     delete_eml: false,
     dry_run: false,
+    thread_mode: "latest",
+    thread_order: "oldest-first",
     report: false,
   },
   settingsOpen: false,
@@ -338,14 +340,7 @@ Alpine.data("deadLetterApp", () => ({
     try {
       const raw = localStorage.getItem("dead-letter:options");
       if (!raw) return;
-      const saved = JSON.parse(raw);
-      if (saved && typeof saved === "object") {
-        for (const key of Object.keys(this.options)) {
-          if (typeof saved[key] === "boolean") {
-            this.options[key] = saved[key];
-          }
-        }
-      }
+      this.options = applyStoredOptions(JSON.parse(raw), this.options);
     } catch (_e) { /* corrupted storage */ }
   },
 
