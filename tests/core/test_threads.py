@@ -29,3 +29,17 @@ def test_build_zones_strips_rfc3676_signature_with_trailing_space() -> None:
     threaded = build_zones(text, options=ConvertOptions(strip_signatures=True))
 
     assert all("Signature" not in zone.content for zone in threaded.zones)
+
+
+from dead_letter.core.text_conversation import parse_email_replies
+
+
+def test_parse_email_replies_returns_one_reply_for_plain_body() -> None:
+    replies = parse_email_replies("Just a body, no quotes.")
+    assert len(replies) == 1
+
+
+def test_parse_email_replies_returns_two_for_one_quoted_block() -> None:
+    text = "Latest message.\n\nOn Thu Alice wrote:\n> older message\n"
+    replies = parse_email_replies(text)
+    assert len(replies) >= 2

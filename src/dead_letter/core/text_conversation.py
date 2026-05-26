@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import warnings
 
-from mailparser_reply import EmailReplyParser
+from mailparser_reply import EmailReply, EmailReplyParser
 
 from dead_letter.core.conversation import ConversationResult
 from dead_letter.core.types import ConversationZone, ZoneKind
@@ -13,6 +13,24 @@ from dead_letter.core.types import ConversationZone, ZoneKind
 _FORWARD_MARKER_RE = re.compile(
     r"(?im)^(?:-+\s*Forwarded message\s*-+|Begin forwarded message:)\s*$"
 )
+
+
+def parse_email_replies(text: str) -> list[EmailReply]:
+    """Run ``mailparser_reply.EmailReplyParser`` with the upstream deprecation
+    filter applied. Returns the parsed ``replies`` list.
+
+    Shared by Path A (``segment_text_conversation``) and Path B
+    (``_pipeline._threaded_content_from_conversation``).
+    """
+    parser = EmailReplyParser()
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="'count' is passed as positional argument",
+            category=DeprecationWarning,
+        )
+        message = parser.read(text)
+    return list(message.replies)
 
 
 def _segment_forwarded_message(source: str) -> ConversationResult | None:
@@ -67,19 +85,12 @@ def segment_text_conversation(text: str) -> ConversationResult:
     if forwarded is not None:
         return forwarded
 
-    parser = EmailReplyParser()
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message="'count' is passed as positional argument",
-            category=DeprecationWarning,
-        )
-        message = parser.read(source)
+    replies = parse_email_replies(source)
 
     zones: list[ConversationZone] = []
 
-    if message.replies:
-        body = str(message.replies[0].content or "").strip()
+    if replies:
+        body = str(replies[0].content or "").strip()
         if body:
             zones.append(
                 ConversationZone(
@@ -90,7 +101,7 @@ def segment_text_conversation(text: str) -> ConversationResult:
                 )
             )
 
-        for reply in message.replies[1:]:
+        for reply in replies[1:]:
             quoted = str(reply.content or "").strip()
             if quoted:
                 zones.append(
