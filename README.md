@@ -20,6 +20,7 @@ dead-letter converts email exports into clean Markdown with YAML front matter �
 - **Install validation** — `dead-letter doctor` checks your runtime environment
 - **Conversion report** — opt-in JSON report with per-file diagnostics for automation and audit
 - **MCP server** — integrate with Claude Desktop, Claude Code, Codex, and other MCP clients
+- **Claude plugin** — one-command install in Claude Code or Cowork with four slash commands (`/dead-letter:convert`, `/summarize`, `/triage`, `/cabinet`)
 - **Python API** — `from dead_letter import convert` and you're off
 
 ## 🧠 Built for LLM Pipelines
@@ -209,7 +210,16 @@ uv run --extra mcp dead-letter-mcp
 }
 ```
 
-**Claude Code:**
+**Claude Code or Cowork (recommended — Claude plugin):**
+
+```
+/plugin marketplace add BigCactusLabs/bigcactuslabs-plugins
+/plugin install dead-letter
+```
+
+The plugin bundles the MCP server (via `uvx`, no `pip install` needed — just `uv` on `PATH`) and adds four slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`. Source under [`plugin/`](plugin/).
+
+**Claude Code (manual MCP add — alternative):**
 
 ```bash
 claude mcp add dead-letter -- uv run --extra mcp dead-letter-mcp
@@ -242,10 +252,11 @@ tests/
 ```bash
 uv run pytest -q tests/core        # conversion pipeline
 uv run pytest -q tests/backend     # API and job runner
+uv run pytest -q tests/plugin      # Claude plugin manifest, skill, and command surfaces
 node --test tests/frontend/*.test.js     # frontend
 ```
 
-CI runs all three on every push and PR with the same commands.
+CI runs all four on every push and PR with the same commands (plus `claude plugin validate plugin/`).
 
 ## 📚 Docs
 

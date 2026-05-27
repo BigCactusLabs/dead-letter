@@ -13,4 +13,5 @@
 
 ## Integration
 
-- [MCP Server](../README.md#-mcp-server) — Claude Desktop and Claude Code integration
+- [MCP Server](../README.md#-mcp-server) — Claude Desktop, Claude Code, and Codex integration paths
+- [Claude plugin](../plugin/README.md) — one-command install for Claude Code and Cowork (recommended for those clients); distributed via the [`BigCactusLabs/bigcactuslabs-plugins`](https://github.com/BigCactusLabs/bigcactuslabs-plugins) marketplace
