@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Claude plugin distribution under [`plugin/`](plugin/), released as
+  `plugin-v0.2.0` and surfaced through the new
+  [`BigCactusLabs/bigcactuslabs-plugins`](https://github.com/BigCactusLabs/bigcactuslabs-plugins)
+  marketplace. Install in Claude Code or Cowork with
+  `/plugin marketplace add BigCactusLabs/bigcactuslabs-plugins` followed by
+  `/plugin install dead-letter`. The plugin bundles the existing
+  `dead-letter-mcp` server (via `uvx --python 3.12 --from dead-letter[mcp]==0.2.0`)
+  with four slash commands (`/dead-letter:convert`, `/summarize`, `/triage`,
+  `/cabinet`) and one auto-trigger skill (`dead-letter-context`). Plugin
+  release versioning is independent of the package version — see
+  [`docs/reference/publishing.md`](docs/reference/publishing.md#plugin-release).
+- `tests/plugin/` structural and content tests covering the manifest, MCP
+  launcher pin, skill frontmatter, slash command surfaces, and CI wiring.
+  CI now runs `pytest tests/plugin` and `claude plugin validate plugin/` on
+  every PR.
+
 ## [0.2.0] - 2026-05-26
 
 ### Added

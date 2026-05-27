@@ -21,6 +21,7 @@ uv sync --extra dev
 # Verify the setup
 uv run pytest tests/core
 uv run pytest tests/backend
+uv run pytest tests/plugin
 node --test tests/frontend/*.test.js
 node --check src/dead_letter/frontend/static/app.js
 ```
@@ -31,6 +32,7 @@ node --check src/dead_letter/frontend/static/app.js
 |---|---|
 | Core | `uv run pytest tests/core -v` |
 | Backend | `uv run pytest tests/backend -v` |
+| Plugin | `uv run pytest tests/plugin -v` |
 | Frontend | `node --test tests/frontend/*.test.js` |
 | Frontend syntax | `node --check src/dead_letter/frontend/static/app.js` |
 | Stop on first failure | `uv run pytest -x` |
@@ -95,6 +97,7 @@ docs: clarify CLI watch mode usage
    ```bash
    uv run pytest tests/core
    uv run pytest tests/backend
+   uv run pytest tests/plugin
    node --test tests/frontend/*.test.js
    node --check src/dead_letter/frontend/static/app.js
    ```
