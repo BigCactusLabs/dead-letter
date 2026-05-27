@@ -121,10 +121,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   callbacks and mail-parser-reply for text-based splitting.
 - Attachment extraction with configurable output directories.
 - Calendar (`.ics`) event parsing and inline rendering.
-- CLI interface with file/directory input and `--watch` mode for continuous
-  inbox monitoring.
+- CLI interface with file/directory input (`dead-letter convert`).
 - Web UI with drag-and-drop file input, real-time conversion progress,
-  expandable diagnostics, and settings panel.
+  expandable diagnostics, settings panel, and an Inbox watch mode for
+  continuous folder monitoring.
 - macOS launcher for one-click startup.
 - CLI restructured to subcommands (`dead-letter convert`, `dead-letter doctor`)
   with backward-compatible bare path invocation.

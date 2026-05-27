@@ -50,7 +50,7 @@ With pip:
 
 ```bash
 pip install dead-letter            # core + CLI
-pip install dead-letter[cli]       # + watch mode (watchfiles)
+pip install dead-letter[cli]       # + watchfiles (used by backend/UI watch mode)
 pip install dead-letter[ui]        # + web UI, API server, and watch mode
 pip install dead-letter[mcp]       # + MCP server
 ```
