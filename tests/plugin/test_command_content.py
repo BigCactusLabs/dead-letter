@@ -97,3 +97,46 @@ def test_triage_command_passes_output_directory():
     assert "mktemp" in body_lower or "tempfile" in body_lower or "temp dir" in body_lower, (
         "triage.md must specify a temp-dir output destination for Claude Code (mktemp or similar)"
     )
+
+
+def test_cabinet_command_uses_correct_mcp_tool():
+    fm, body = _read_command("cabinet")
+    assert fm["description"]
+    assert "convert_eml_to_bundle" in body
+
+
+def test_cabinet_command_documents_source_stem_naming():
+    _, body = _read_command("cabinet")
+    body_lower = body.lower()
+    assert "source-stem" in body_lower or "source stem" in body_lower or "source.stem" in body_lower, (
+        "cabinet.md must document that bundle directory is named after the source filename stem"
+    )
+    # Default bundle_root semantics
+    assert "outputs" in body_lower  # Cowork default
+
+
+@pytest.mark.parametrize("name", ["convert", "summarize", "triage", "cabinet"])
+def test_all_commands_disable_model_invocation(name):
+    """Commands must not be model-invocable.
+
+    In current Claude plugin docs, commands act as skills and can be invoked
+    by the model without the user typing the slash command. That's unsafe for
+    side-effecting commands (cabinet writes files; triage runs batch
+    conversions) and contradicts the plugin's design where the
+    `dead-letter-context` skill is the only auto-triggered surface.
+    """
+    fm, _ = _read_command(name)
+    assert fm.get("disable-model-invocation") == "true", (
+        f"{name}.md frontmatter must include `disable-model-invocation: true` "
+        "to prevent the model from invoking it without an explicit slash command."
+    )
+
+
+@pytest.mark.parametrize("name", ["convert", "summarize", "triage", "cabinet"])
+def test_all_commands_have_argument_hint(name):
+    """Each command should declare its argument shape so the UI can render hints."""
+    fm, _ = _read_command(name)
+    assert fm.get("argument-hint"), (
+        f"{name}.md frontmatter must include an `argument-hint` field describing "
+        "the expected slash-command arguments."
+    )
