@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "dead-letter": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "dead-letter[mcp]==0.2.0",
+        "dead-letter-mcp"
+      ]
+    }
+  }
+}
