@@ -35,3 +35,19 @@ def test_convert_command_uses_correct_mcp_tool():
 def test_convert_command_documents_default_preset():
     _, body = _read_command("convert")
     assert "default" in body.lower()
+
+
+def test_summarize_command_uses_convert_eml_with_clean_preset():
+    fm, body = _read_command("summarize")
+    assert fm["description"]
+    assert "convert_eml" in body, "summarize.md must reference convert_eml"
+    assert "clean" in body.lower(), "summarize.md must default to the clean preset"
+
+
+def test_summarize_command_specifies_output_shape():
+    _, body = _read_command("summarize")
+    body_lower = body.lower()
+    # Must mention all three output sections
+    assert "summary" in body_lower
+    assert "action item" in body_lower
+    assert "dates" in body_lower or "people" in body_lower
