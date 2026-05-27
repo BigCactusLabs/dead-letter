@@ -26,8 +26,28 @@ def test_mcp_json_exists_and_uses_uvx():
     server = data["mcpServers"]["dead-letter"]
     assert server["command"] == "uvx"
     args = server["args"]
-    assert args[0] == "--from"
+    assert "--from" in args, "args must include `--from <package>`"
     assert args[-1] == "dead-letter-mcp", "entry-point must be dead-letter-mcp"
+
+
+def test_mcp_json_pins_python_at_least_312():
+    """The `.mcp.json` must pin --python so uvx auto-fetches a managed CPython
+    when the user's default interpreter is older than dead-letter's
+    requires-python (>=3.12). Without this, users on systems with Python 3.10
+    or 3.11 see a confusing uv dependency-resolution error instead of the
+    server starting.
+    """
+    mcp = json.loads((PLUGIN_ROOT / ".mcp.json").read_text())
+    args = mcp["mcpServers"]["dead-letter"]["args"]
+    assert "--python" in args, (
+        "`.mcp.json` must include `--python <ver>` so uvx auto-fetches a "
+        "compatible interpreter when system Python is too old."
+    )
+    python_value = args[args.index("--python") + 1]
+    # Accept exact minor (3.12, 3.13...) or any value containing 3.12/3.13/etc.
+    assert python_value.startswith("3.") and int(python_value.split(".")[1]) >= 12, (
+        f"--python must request 3.12 or newer; got {python_value!r}"
+    )
 
 
 def test_mcp_json_pins_exact_dead_letter_version():
@@ -41,7 +61,8 @@ def test_mcp_json_pins_exact_dead_letter_version():
     import re
 
     mcp = json.loads((PLUGIN_ROOT / ".mcp.json").read_text())
-    from_arg = mcp["mcpServers"]["dead-letter"]["args"][1]
+    args = mcp["mcpServers"]["dead-letter"]["args"]
+    from_arg = args[args.index("--from") + 1]
     match = re.fullmatch(r"dead-letter\[mcp\]==(\d+\.\d+\.\d+(?:[-+.][\w.]+)?)", from_arg)
     assert match, (
         f"`--from` argument must be of the form `dead-letter[mcp]==X.Y.Z`, "

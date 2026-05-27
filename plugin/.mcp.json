@@ -3,6 +3,8 @@
     "dead-letter": {
       "command": "uvx",
       "args": [
+        "--python",
+        "3.12",
         "--from",
         "dead-letter[mcp]==0.2.0",
         "dead-letter-mcp"
