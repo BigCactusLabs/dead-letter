@@ -1,0 +1,9 @@
+{
+  "name": "dead-letter",
+  "description": "Convert .eml emails to Markdown with YAML front matter, triage folders, and build archive bundles.",
+  "version": "0.2.0",
+  "author": {
+    "name": "Big Cactus Labs"
+  },
+  "homepage": "https://github.com/BigCactusLabs/dead-letter"
+}
