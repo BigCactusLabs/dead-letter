@@ -43,6 +43,11 @@ jobs:
       - name: Plugin tests
         run: uv run pytest -q tests/plugin
 
+      - name: Plugin schema validation
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude plugin validate plugin/
+
       - name: Frontend tests
         run: node --test tests/frontend/*.test.js
 
