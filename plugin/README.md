@@ -5,7 +5,7 @@ Convert `.eml` email files to Markdown with YAML front matter, triage small fold
 ## Install
 
 ```
-/plugin marketplace add BigCactusLabs/claude-plugins
+/plugin marketplace add BigCactusLabs/bigcactuslabs-plugins
 /plugin install dead-letter
 ```
 
@@ -31,4 +31,4 @@ The plugin is pinned to a specific dead-letter PyPI release (see `.mcp.json`) so
 
 - Plugin source: https://github.com/BigCactusLabs/dead-letter/tree/main/plugin
 - dead-letter package: https://github.com/BigCactusLabs/dead-letter
-- Marketplace: https://github.com/BigCactusLabs/claude-plugins
+- Marketplace: https://github.com/BigCactusLabs/bigcactuslabs-plugins

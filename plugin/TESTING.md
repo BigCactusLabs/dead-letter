@@ -5,7 +5,7 @@ Run this checklist before each plugin release. Most can run in Cowork; some requ
 ## Prerequisites
 
 - A fixture `.eml` file. Use one of the files under `tests/core/fixtures/` if running locally.
-- Plugin installed via `/plugin marketplace add BigCactusLabs/claude-plugins` → `/plugin install dead-letter`.
+- Plugin installed via `/plugin marketplace add BigCactusLabs/bigcactuslabs-plugins` → `/plugin install dead-letter`.
 
 ## Cowork session checks
 
@@ -61,4 +61,4 @@ Run this checklist before each plugin release. Most can run in Cowork; some requ
 - [ ] All checks above pass
 - [ ] No regressions vs. the previous release
 - [ ] Tag dead-letter repo `plugin-v<X.Y.Z>` and push
-- [ ] Update `BigCactusLabs/claude-plugins/marketplace.json` `ref` and push
+- [ ] Update `BigCactusLabs/bigcactuslabs-plugins/marketplace.json` `ref` and push
