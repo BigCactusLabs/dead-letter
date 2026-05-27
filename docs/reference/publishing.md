@@ -27,12 +27,17 @@ the Homebrew tap.
    uv run python -c "import dead_letter; print(dead_letter.__version__)"
    ```
 
-4. Run local validation:
+4. Run local validation. This block mirrors the `ci.yml` job steps so a local
+   pass implies a CI pass; if you intentionally skip a step (e.g., `claude` CLI
+   not installed), note that in the release-prep PR description so reviewers
+   know CI is the first place that step runs.
 
    ```bash
    uv sync --extra dev --locked
    uv run pytest -q tests/core
    uv run pytest -q tests/backend
+   uv run pytest -q tests/plugin
+   claude plugin validate plugin/
    node --test tests/frontend/*.test.js
    node --check src/dead_letter/frontend/static/app.js
    uv build

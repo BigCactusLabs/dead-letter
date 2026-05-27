@@ -52,6 +52,7 @@ Priority order is fixed:
     - Output (Verbose output): `include_all_headers`, `include_raw_html`
     - Output: `no_calendar_summary`
     - Behavior: `allow_fallback_on_html_error`, `delete_eml`, `dry_run`, `report`
+    - Thread (non-boolean enum options, not part of the Strip junk / Verbose output meta toggles): `thread_mode` (`"latest"` default, or `"structured"`) and `thread_order` (`"oldest-first"` default, or `"latest-first"`; only meaningful when `thread_mode === "structured"`, and the row is hidden in the UI otherwise)
   - `_savedOptions`: snapshot of `options` captured when settings panel opens; restored on Cancel or Escape
 - workspace interaction state:
   - `dragActive`

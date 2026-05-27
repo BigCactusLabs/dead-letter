@@ -256,7 +256,9 @@ Request:
     "allow_html_repair_on_panic": "bool",
     "delete_eml": "bool",
     "dry_run": "bool",
-    "report": "bool"
+    "report": "bool",
+    "thread_mode": "string  // 'latest' (default) or 'structured'",
+    "thread_order": "string  // 'oldest-first' (default) or 'latest-first', only meaningful when thread_mode='structured'"
   }
 }
 ```
@@ -715,6 +717,8 @@ Converts one `.eml` file or a directory of `.eml` files.
 Options:
 
 - `--output PATH` — output file or directory
+- `--thread-mode {latest,structured}` — thread history rendering; defaults to `latest`
+- `--thread-order {oldest-first,latest-first}` — section order in `structured` mode; defaults to `oldest-first` (no effect when `--thread-mode latest`)
 
 Flags (all `store_true`, default `false`):
 
@@ -778,4 +782,5 @@ Exit codes:
 - `404`: unknown or evicted job id, or missing browse/watch target
 - `409`: workflow settings missing, or invalid lifecycle/watch conflict
 - `413`: import payload exceeds the 100 MB per-file limit, the 100-file batch limit, or the 100 MB aggregate batch limit
+- `422`: batch import contains non-`.eml` files (`POST /api/import-batch` rejects any upload whose filename does not end in `.eml`; clients are expected to filter or confirm-and-skip before upload)
 - `500`: unexpected backend failure
