@@ -40,6 +40,9 @@ jobs:
       - name: Backend tests
         run: uv run pytest -q tests/backend
 
+      - name: Plugin tests
+        run: uv run pytest -q tests/plugin
+
       - name: Frontend tests
         run: node --test tests/frontend/*.test.js
 
