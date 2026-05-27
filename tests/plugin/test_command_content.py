@@ -51,3 +51,49 @@ def test_summarize_command_specifies_output_shape():
     assert "summary" in body_lower
     assert "action item" in body_lower
     assert "dates" in body_lower or "people" in body_lower
+
+
+def test_triage_command_uses_convert_directory():
+    fm, body = _read_command("triage")
+    assert fm["description"]
+    assert "convert_directory" in body
+
+
+def test_triage_command_enforces_recursive_count_cap():
+    """Cap must be enforced via recursive counting (matching _iter_source_eml_files),
+    not shallow ls."""
+    _, body = _read_command("triage")
+    body_lower = body.lower()
+    # Must mention the cap
+    assert "50" in body
+    # Must instruct recursive counting (find -type -iname OR recursive Glob)
+    has_find = "find" in body_lower and "-iname" in body_lower
+    has_recursive_glob = "**/*.eml" in body or "**/*.EML" in body
+    assert has_find or has_recursive_glob, (
+        "triage.md must instruct a recursive count of .eml files (find -iname or **/*.eml)"
+    )
+    # Must NOT suggest cabinet as the bulk path
+    assert "/dead-letter:cabinet" not in body or "cabinet is not" in body_lower or "cabinet is single" in body_lower, (
+        "triage.md must not direct users to cabinet for bulk — cabinet is single-email only."
+    )
+
+
+def test_triage_command_passes_output_directory():
+    """convert_directory without output_directory writes beside source files
+    (src/dead_letter/backend/mcp_server.py:216, src/dead_letter/core/_pipeline.py:86).
+    That fails in read-only Cowork uploads/ and pollutes user folders elsewhere.
+    The command MUST pass an explicit output_directory.
+    """
+    _, body = _read_command("triage")
+    assert "output_directory" in body, (
+        "triage.md must pass an explicit `output_directory` to convert_directory; "
+        "otherwise core writes converted files beside the source .eml files."
+    )
+    body_lower = body.lower()
+    # Must define a runtime-specific destination
+    assert "outputs/triage" in body, (
+        "triage.md must specify the Cowork output destination (outputs/triage/<run-id>)"
+    )
+    assert "mktemp" in body_lower or "tempfile" in body_lower or "temp dir" in body_lower, (
+        "triage.md must specify a temp-dir output destination for Claude Code (mktemp or similar)"
+    )
