@@ -200,6 +200,30 @@ def test_plain_text_conversion_escapes_html_like_payloads(tmp_path: Path) -> Non
     assert "&lt;img src=x onerror=alert(2)&gt;" in text
 
 
+def test_plain_text_conversion_preserves_markdown_code_regions(tmp_path: Path) -> None:
+    source = _write_plain_email(
+        tmp_path / "plain_code_payload.eml",
+        (
+            "Inline `<div>` stays literal.\n\n"
+            "```html\n"
+            "<script>alert('in code')</script>\n"
+            "<div>fixture</div>\n"
+            "```\n\n"
+            "Outside code is still <img src=x onerror=alert(2)>."
+        ),
+    )
+
+    result = convert(source, output=tmp_path / "out")
+
+    assert result.success is True
+    assert result.output is not None
+    text = result.output.read_text(encoding="utf-8")
+    assert "`<div>`" in text
+    assert "```html\n<script>alert('in code')</script>\n<div>fixture</div>\n```" in text
+    assert "&lt;img src=x onerror=alert(2)&gt;" in text
+    assert "<img" not in text
+
+
 def test_attachment_reference_without_attachments_emits_warning(tmp_path: Path) -> None:
     source = _write_plain_email(
         tmp_path / "missing_attachments.eml",

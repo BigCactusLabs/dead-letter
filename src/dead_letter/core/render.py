@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import re
 
 import yaml
 
@@ -16,6 +17,8 @@ from dead_letter.core.types import (
     Zone,
     ZoneKind,
 )
+
+_FENCE_OPEN_RE = re.compile(r"^( {0,3})(`{3,}|~{3,})(.*)$")
 
 
 def render_markdown(
@@ -110,7 +113,76 @@ def _render_zone_content(zone: Zone, content: str) -> str:
 
 
 def _escape_plain_text_markdown_html(value: str) -> str:
-    return html.escape(value, quote=False)
+    # Markdown renderers already escape code contents; preserve those regions
+    # while neutralizing raw HTML in normal prose.
+    rendered: list[str] = []
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+
+    for line in value.splitlines(keepends=True):
+        if in_fence:
+            rendered.append(line)
+            if _is_closing_fence(line, fence_char=fence_char, fence_len=fence_len):
+                in_fence = False
+            continue
+
+        line_body = line.rstrip("\r\n")
+        opener = _FENCE_OPEN_RE.match(line_body)
+        if opener:
+            fence = opener.group(2)
+            fence_char = fence[0]
+            fence_len = len(fence)
+            in_fence = True
+            newline = line[len(line_body):]
+            rendered.append(
+                f"{opener.group(1)}{fence}{html.escape(opener.group(3), quote=False)}{newline}"
+            )
+            continue
+
+        if line.startswith(("    ", "\t")):
+            rendered.append(line)
+            continue
+
+        rendered.append(_escape_html_outside_code_spans(line))
+
+    return "".join(rendered)
+
+
+def _is_closing_fence(line: str, *, fence_char: str, fence_len: int) -> bool:
+    stripped = line.strip()
+    return (
+        len(stripped) >= fence_len
+        and set(stripped) == {fence_char}
+    )
+
+
+def _escape_html_outside_code_spans(line: str) -> str:
+    rendered: list[str] = []
+    text_start = 0
+    index = 0
+
+    while index < len(line):
+        if line[index] != "`":
+            index += 1
+            continue
+
+        tick_end = index + 1
+        while tick_end < len(line) and line[tick_end] == "`":
+            tick_end += 1
+        tick_run = line[index:tick_end]
+        closing = line.find(tick_run, tick_end)
+        if closing == -1:
+            index = tick_end
+            continue
+
+        rendered.append(html.escape(line[text_start:index], quote=False))
+        rendered.append(line[index:closing + len(tick_run)])
+        index = closing + len(tick_run)
+        text_start = index
+
+    rendered.append(html.escape(line[text_start:], quote=False))
+    return "".join(rendered)
 
 
 def _section_header(zone: Zone) -> str:

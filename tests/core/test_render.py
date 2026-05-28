@@ -77,6 +77,32 @@ def test_render_markdown_escapes_plain_text_html_tags() -> None:
     assert "&lt;img src=x onerror=alert(2)&gt;" in rendered.body
 
 
+def test_render_markdown_preserves_plain_text_markdown_code_regions() -> None:
+    parsed = _parsed_email()
+    threaded = ThreadedContent(
+        zones=[
+            Zone(
+                kind=ZoneKind.BODY,
+                content=(
+                    "Inline code keeps `<div>` literal.\n\n"
+                    "```html\n"
+                    "<script>alert('in code')</script>\n"
+                    "<div>fixture</div>\n"
+                    "```\n\n"
+                    "Outside code is still <img src=x onerror=alert(2)>."
+                ),
+            ),
+        ]
+    )
+
+    rendered = render_markdown(parsed, threaded)
+
+    assert "`<div>`" in rendered.body
+    assert "```html\n<script>alert('in code')</script>\n<div>fixture</div>\n```" in rendered.body
+    assert "&lt;img src=x onerror=alert(2)&gt;" in rendered.body
+    assert "<img" not in rendered.body
+
+
 def test_render_structured_escapes_plain_text_thread_metadata_and_body() -> None:
     parsed = _parsed_email()
     threaded = ThreadedContent(
