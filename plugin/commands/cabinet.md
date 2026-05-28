@@ -19,7 +19,7 @@ Convert a single `.eml` into a self-contained bundle using the `convert_eml_to_b
 
 ## Bundle naming (important)
 
-The bundle directory name is **always derived from the source filename stem** — this is enforced server-side by `convert_eml_to_bundle` (see `_bundle_slug` in `src/dead_letter/core/_pipeline.py:726`). The plugin command does not override it.
+The bundle directory name is **always derived from the source filename stem** — this is enforced server-side by `convert_eml_to_bundle` (see `_bundle_slug` in `src/dead_letter/core/_pipeline.py`). The plugin command does not override it.
 
 Example: `cabinet ~/Documents/q3-budget.eml ~/archive` produces `~/archive/q3-budget/` (containing the markdown, attachments, and the source `.eml`).
 

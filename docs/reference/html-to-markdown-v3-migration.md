@@ -2,7 +2,7 @@
 title: html-to-markdown v3 Migration Plan
 doc_type: reference
 status: completed
-last_updated: 2026-05-25
+last_updated: 2026-05-28
 audience:
   - maintainers
 scope:
@@ -20,8 +20,8 @@ This document defines the migration from `html-to-markdown` 2.x to 3.x.
 - Runtime now depends on `html-to-markdown>=3.1.0,<4.0`.
 - `src/dead_letter/core/quotes.py` uses DOM-based quote-pattern detection and no longer imports `convert_with_visitor`.
 - `src/dead_letter/core/html.py` calls the internal adapter in `src/dead_letter/core/html_to_markdown_adapter.py`.
-- Core and backend suites have been validated against `html-to-markdown==3.1.0`
-  and the locked `html-to-markdown==3.4.0`.
+- The lockfile currently resolves `html-to-markdown==3.5.3`; compatibility
+  checks still include the lower bound `html-to-markdown==3.1.0`.
 
 ## Migration Goal
 
@@ -77,8 +77,8 @@ Exit criteria:
 
 - In isolated env, run:
   - `uv run --with html-to-markdown==3.1.0 pytest -q tests/core tests/backend`
-  - `uv run --with html-to-markdown==3.4.0 pytest -q tests/core`
-  - `uv run --with html-to-markdown==3.4.0 pytest -q tests/backend`
+  - `uv run --with html-to-markdown==3.5.3 pytest -q tests/core`
+  - `uv run --with html-to-markdown==3.5.3 pytest -q tests/backend`
 - Fix API or behavior differences in adapter only (avoid broad pipeline rewrites).
 - Keep diagnostics semantics stable (`html_markdown_failed`, repair/fallback behavior).
 

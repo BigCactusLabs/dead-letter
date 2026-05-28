@@ -4,7 +4,7 @@
 
 # dead-letter
 
-[![PyPI](https://img.shields.io/pypi/v/dead-letter?cache=bust)](https://pypi.org/project/dead-letter/)
+[![PyPI version](https://img.shields.io/pypi/v/dead-letter.svg?label=PyPI)](https://pypi.org/project/dead-letter/)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-purple.svg)](LICENSE)
 
 **Your `.eml` files deserve a second life.**
@@ -258,7 +258,7 @@ node --test tests/frontend/*.test.js     # frontend
 ```
 
 CI runs all four on every push and PR with the same commands, plus
-`claude plugin validate plugin/` and
+`npx --yes @anthropic-ai/claude-code@2.1.145 plugin validate plugin/` and
 `node --check src/dead_letter/frontend/static/app.js`.
 
 ## 📚 Docs
