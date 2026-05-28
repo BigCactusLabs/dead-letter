@@ -7,15 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-28
+
 ### Added
 
 - Claude plugin distribution under [`plugin/`](plugin/), released as
-  `plugin-v0.2.0` and surfaced through the new
+  `plugin-v0.2.1` and surfaced through the new
   [`BigCactusLabs/bigcactuslabs-plugins`](https://github.com/BigCactusLabs/bigcactuslabs-plugins)
   marketplace. Install in Claude Code or Cowork with
   `/plugin marketplace add BigCactusLabs/bigcactuslabs-plugins` followed by
   `/plugin install dead-letter`. The plugin bundles the existing
-  `dead-letter-mcp` server (via `uvx --python 3.12 --from dead-letter[mcp]==0.2.0`)
+  `dead-letter-mcp` server (via `uvx --python 3.12 --from dead-letter[mcp]==0.2.1`)
   with four slash commands (`/dead-letter:convert`, `/summarize`, `/triage`,
   `/cabinet`) and one auto-trigger skill (`dead-letter-context`). Plugin
   release versioning is independent of the package version — see
@@ -24,6 +26,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   launcher pin, skill frontmatter, slash command surfaces, and CI wiring.
   CI now runs `pytest tests/plugin` and `claude plugin validate plugin/` on
   every PR.
+
+### Changed
+
+- Locked the resolved `html-to-markdown` dependency to 3.5.3.
+- MCP directory conversion now requires an explicit `output_directory` and
+  rejects batches above 50 `.eml` files before writing output.
+
+### Fixed
+
+- State-changing API routes now require a CSRF token, and the frontend sends
+  the token for import, settings, job, and watch requests.
+- Rendering and MCP conversion paths are more defensive around thread metadata,
+  attachment references, and command-side batch safety.
+- Plain-text conversion now preserves Markdown code regions while still
+  escaping HTML-like payloads outside code.
+- The macOS launcher now handles the ready-exit race where `dead-letter-ui`
+  exits after the local UI is already reachable.
 
 ## [0.2.0] - 2026-05-26
 
