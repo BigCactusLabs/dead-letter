@@ -1,0 +1,8 @@
+Subject: [Alert] Build #4821 failed on main
+From: CI Bot <ci@example.com>
+To: dev-team@example.com
+Date: Mon, 02 Mar 2026 09:00:00 +0000
+Message-ID: <177999632397.6867.6947818102701393198@example.com>
+Content-Type: text/html; charset="utf-8"
+
+<html><body style="font-family:Arial,sans-serif;color:#222;"><table width="600" style="border:1px solid #e1e1e1;"><tr><td style="background:#c0392b;color:#fff;padding:16px;font-size:18px;">Build failed</td></tr><tr><td style="padding:16px;"><p>Pipeline <b>main</b> failed at stage <code>integration-tests</code>.</p><ul><li>Commit: <a href="https://example.com/c/9f2a1">9f2a1</a></li><li>Duration: 7m 12s</li><li>Failed: 3 / 412</li></ul><p><a href="https://example.com/builds/4821" style="background:#0563C1;color:#fff;padding:10px 20px;text-decoration:none;border-radius:3px;">View logs</a></p></td></tr></table><img src="https://track.example-mail.net/open?id=8c1f2a9e4b7d&u=42198&c=campaign-q1" width="1" height="1" border="0" alt="" style="display:block"></body></html>

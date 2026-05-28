@@ -40,8 +40,9 @@ ui = [
   "python-multipart>=0.0.26",
   "uvicorn[standard]>=0.45.0",
 ]
+benchmark = ["tiktoken>=0.8.0"]
 dev = [
-  "dead-letter[ui,mcp]",
+  "dead-letter[ui,mcp,benchmark]",
   "anyio>=4.0.0",
   "pytest>=9.0.3",
   "pytest-cov>=5.0.0",

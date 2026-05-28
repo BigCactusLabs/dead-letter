@@ -1,0 +1,44 @@
+Subject: Re: webhook retry + DLQ double-count
+From: Sam Ortiz <sam@example.com>
+To: Priya Nair <priya@example.com>
+Date: Mon, 02 Mar 2026 09:00:00 +0000
+Message-ID: <177999632397.6867.6424345712799850344@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="===============7647815167985243219=="
+
+--===============7647815167985243219==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Pushed the fix to staging =E2=80=94 can you sanity check the webhook retries =
+when you get a sec? Mostly worried about the backoff jitter.
+
+Looks good on my end, retries back off correctly now and the jitter spread lo=
+oks healthy across the sample.
+
+One edge case though: the dead-letter queue still double-counts on the final =
+retry attempt before it gives up.
+
+--===============7647815167985243219==
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<div dir=3D"ltr"><div dir=3D"ltr">Pushed the fix to staging =E2=80=94 can you=
+ sanity check the webhook retries when you get a sec? Mostly worried about th=
+e backoff jitter.</div><div><br></div><div>Best,<br>Sam</div><div class=3D"gm=
+ail_quote gmail_quote_container"><div dir=3D"ltr" class=3D"gmail_attr">On Mon=
+, Mar 2, 2026 at 8:30 AM Priya Nair &lt;priya@example.com&gt; wrote:</div><bl=
+ockquote class=3D"gmail_quote" style=3D"margin:0px 0px 0px 0.8ex;border-left:=
+1px solid rgb(204,204,204);padding-left:1ex"><div dir=3D"ltr">Looks good on m=
+y end, retries back off correctly now and the jitter spread looks healthy acr=
+oss the sample.</div><div class=3D"gmail_quote gmail_quote_container"><div di=
+r=3D"ltr" class=3D"gmail_attr">On Mon, Mar 2, 2026 at 8:00 AM Sam Ortiz &lt;s=
+am@example.com&gt; wrote:</div><blockquote class=3D"gmail_quote" style=3D"mar=
+gin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex=
+"><div dir=3D"ltr">One edge case though: the dead-letter queue still double-c=
+ounts on the final retry attempt before it gives up.</div></blockquote></div>=
+</blockquote></div></div>
+
+--===============7647815167985243219==--
