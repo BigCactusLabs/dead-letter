@@ -35,7 +35,10 @@ def render_markdown(
     """Build front matter and markdown body from normalized pipeline outputs."""
     opts = options or ConvertOptions()
     front_matter: dict[str, object] = {
-        "source": str(parsed.source),
+        # Basename only: the source .eml lives alongside the .md (sibling convert
+        # or bundle/cabinet), so "which file" is all the provenance needed. The
+        # absolute path was machine-specific dead weight (~28-31 tokens/email).
+        "source": parsed.source.name,
         "subject": parsed.subject,
         "sender": parsed.sender,
         "date": parsed.date,

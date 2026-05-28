@@ -43,13 +43,13 @@ category:
 <!-- BENCHMARK-TABLE:START (regenerate with: uv run python benchmarks/run.py --markdown-only) -->
 | Category | N | Raw `.eml` | Naive (plain) | Naive (HTML) | dead-letter | vs raw | Attachments kept |
 |---|---:|---:|---:|---:|---:|---:|:--:|
-| attachment | 3 | 126,393 | 134 | 113 | 197 | 100% | 2/2 |
-| gmail-html | 2 | 748 | 84 | 153 | 247 | 67% | n/a |
-| html-only | 1 | 356 | 35 | 35 | 150 | 58% | n/a |
-| newsletter | 1 | 1,539 | 26 | 157 | 449 | 71% | n/a |
-| outlook-html | 2 | 1,880 | 310 | 251 | 319 | 83% | n/a |
-| plaintext | 2 | 148 | 49 | 49 | 123 | 17% | n/a |
-| **all** | **11** | **1,539** | **72** | **113** | **197** | **87%** | — |
+| attachment | 3 | 126,393 | 134 | 113 | 178 | 100% | 2/2 |
+| gmail-html | 2 | 748 | 84 | 153 | 228 | 70% | n/a |
+| html-only | 1 | 356 | 35 | 35 | 132 | 63% | n/a |
+| newsletter | 1 | 1,539 | 26 | 157 | 430 | 72% | n/a |
+| outlook-html | 2 | 1,880 | 310 | 251 | 300 | 84% | n/a |
+| plaintext | 2 | 148 | 49 | 49 | 104 | 30% | n/a |
+| **all** | **11** | **1,539** | **72** | **113** | **178** | **88%** | — |
 <!-- BENCHMARK-TABLE:END -->
 
 _Counts are model-relative; absolute numbers shift across tokenizers but the

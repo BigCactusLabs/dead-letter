@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Front matter `source` is now the input filename (basename) instead of the
+  absolute filesystem path. The source `.eml` sits alongside the rendered `.md`
+  in the common workflows (sibling convert and bundle/cabinet output), so the
+  basename carries the needed provenance while dropping ~25–30 machine-specific
+  tokens per email. Token-cost benchmark numbers refreshed accordingly.
+
 ## [0.2.1] - 2026-05-28
 
 ### Added

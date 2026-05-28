@@ -37,7 +37,7 @@ For direct LLM integration, the MCP server lets Claude Desktop, Claude Code, Cod
 
 dead-letter's value isn't fewer tokens than every alternative — it's **fidelity per token**: the cheapest representation that keeps the email *intact*. Measured across a synthetic corpus of HTML threads, attachments, and newsletters (tokenizer `o200k_base`, medians):
 
-- **~87% fewer tokens than the raw `.eml`** — a single email with a PDF attachment is ~126k tokens raw vs ~200 converted.
+- **~88% fewer tokens than the raw `.eml`** — a single email with a PDF attachment is ~126k tokens raw vs ~180 converted.
 - **The only representation that keeps the email whole** — thread structure, per-message sender attribution, links, and attachment metadata all survive. Naive text extraction is cheaper precisely because it *drops* them (0/2 attachments retained vs dead-letter's 2/2).
 
 The benchmark is honest about where it loses: naive extraction is fewer tokens when you don't mind throwing away attachments, links, and thread structure. Full method, the complete table (including those rows), tokenizer disclosure, and a one-command reproduce are in [`benchmarks/`](benchmarks/).

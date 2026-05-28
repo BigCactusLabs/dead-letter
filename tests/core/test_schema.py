@@ -25,6 +25,17 @@ def test_front_matter_includes_required_keys(copy_fixture) -> None:
     assert {"source", "subject", "sender", "date", "attachments"}.issubset(front.keys())
 
 
+def test_front_matter_source_is_basename_not_absolute_path(copy_fixture) -> None:
+    source = copy_fixture("plain_text.eml", "nested/dir/plain_text.eml")
+
+    result = convert(source)
+
+    assert result.output is not None
+    front = _front_matter(result.output)
+    assert front["source"] == "plain_text.eml"
+    assert "/" not in str(front["source"])
+
+
 def test_include_all_headers_adds_headers_block(copy_fixture) -> None:
     source = copy_fixture("plain_text.eml")
 
