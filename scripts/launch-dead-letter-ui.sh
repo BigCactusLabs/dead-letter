@@ -150,6 +150,11 @@ wait_for_server() {
 			else
 				exit_code="$?"
 			fi
+			if curl -sS --max-time 2 "$URL" 2>/dev/null | grep -q "<title>dead-letter</title>"; then
+				printf "Opening dead-letter at %s...\n" "$URL"
+				open "$URL"
+				return 0
+			fi
 			printf "dead-letter-ui exited before the UI became ready.\n"
 			print_manual_command
 			exit "$exit_code"

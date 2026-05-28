@@ -20,12 +20,17 @@ def _write_stub(tmp_path: Path, name: str, body: str) -> Path:
 
 
 def _run_helper(
-    tmp_path: Path, *, ui_bin: Path | None = None
+    tmp_path: Path,
+    *,
+    ui_bin: Path | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["PATH"] = f"{tmp_path}:/usr/bin:/bin:/usr/sbin:/sbin"
     env["DEAD_LETTER_PATH_PREFIX"] = ""
     env["DEAD_LETTER_UI_BIN"] = str(ui_bin or tmp_path / "missing-dead-letter-ui")
+    if extra_env:
+        env.update(extra_env)
     return subprocess.run(
         ["bash", str(HELPER_SCRIPT)],
         cwd=REPO_ROOT,
@@ -163,6 +168,8 @@ def test_helper_resyncs_when_binary_exists_but_deps_are_stale(tmp_path: Path) ->
 def test_helper_opens_when_server_is_ready_before_clean_exit(tmp_path: Path) -> None:
     log_path = tmp_path / "calls.log"
     ready_path = tmp_path / "ready"
+    curl_count_path = tmp_path / "curl-count"
+    bash_env_path = tmp_path / "bash-env.sh"
     ui_bin = _write_stub(
         tmp_path,
         "dead-letter-ui",
@@ -178,6 +185,20 @@ def test_helper_opens_when_server_is_ready_before_clean_exit(tmp_path: Path) -> 
         "curl",
         textwrap.dedent(
             f"""
+            count=0
+            if [ -e "{curl_count_path}" ]; then
+              count="$(cat "{curl_count_path}")"
+            fi
+            count=$((count + 1))
+            printf '%s\\n' "$count" > "{curl_count_path}"
+
+            if [ "$count" = "2" ]; then
+              while [ ! -e "{ready_path}" ]; do
+                sleep 0.05
+              done
+              exit 7
+            fi
+
             if [ -e "{ready_path}" ]; then
               printf '%s\\n' '<!doctype html><title>dead-letter</title>'
               exit 0
@@ -195,8 +216,25 @@ def test_helper_opens_when_server_is_ready_before_clean_exit(tmp_path: Path) -> 
             """
         ),
     )
+    bash_env_path.write_text(
+        textwrap.dedent(
+            f"""
+            kill() {{
+              if [ "${{1:-}}" = "-0" ] && [ -e "{ready_path}" ]; then
+                return 1
+              fi
+              command kill "$@"
+            }}
+            """
+        ),
+        encoding="utf-8",
+    )
 
-    result = _run_helper(tmp_path, ui_bin=ui_bin)
+    result = _run_helper(
+        tmp_path,
+        ui_bin=ui_bin,
+        extra_env={"BASH_ENV": str(bash_env_path)},
+    )
 
     assert result.returncode == 0
     assert log_path.read_text(encoding="utf-8").splitlines() == [
