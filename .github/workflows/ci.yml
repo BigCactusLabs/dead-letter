@@ -44,9 +44,7 @@ jobs:
         run: uv run pytest -q tests/plugin
 
       - name: Plugin schema validation
-        run: |
-          npm install -g @anthropic-ai/claude-code
-          claude plugin validate plugin/
+        run: npx --yes @anthropic-ai/claude-code@2.1.145 plugin validate plugin/
 
       - name: Frontend tests
         run: node --test tests/frontend/*.test.js

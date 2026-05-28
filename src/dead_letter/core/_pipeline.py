@@ -326,7 +326,14 @@ def _threaded_content_from_conversation(
         metadata = dict(zone.metadata)
         if zone.client_hint:
             metadata["client_hint"] = zone.client_hint
-        zones.append(Zone(kind=zone.kind, content=rendered, metadata=metadata))
+        zones.append(
+            Zone(
+                kind=zone.kind,
+                content=rendered,
+                source_kind=zone.source_kind,
+                metadata=metadata,
+            )
+        )
 
     if not zones:
         return None, None, None
@@ -581,6 +588,7 @@ def _build_rendered_markdown(
     if threaded is None:
         quote_patterns: set[str] = set()
         text_for_threading = parsed.text_body
+        threading_source_kind = "plain"
         segmentation_path = "plain_fallback"
         client_hint = "generic"
         confidence = "medium"
@@ -627,6 +635,7 @@ def _build_rendered_markdown(
             elif html_result is not None:
                 if html_result.markdown.strip():
                     text_for_threading = html_result.markdown
+                    threading_source_kind = "html"
                     quote_patterns = html_result.quote_patterns
                     raw_html = html_result.raw_html
                     text_for_threading = _rewrite_inline_image_refs(
@@ -648,7 +657,12 @@ def _build_rendered_markdown(
                         confidence = "medium"
                         fallback_used = "html_markdown_panic_repaired" if repaired_html_after_panic else None
 
-        threaded = build_zones(text_for_threading, quote_patterns=quote_patterns, options=options)
+        threaded = build_zones(
+            text_for_threading,
+            quote_patterns=quote_patterns,
+            options=options,
+            source_kind=threading_source_kind,
+        )
         if diagnostics is None:
             diagnostics = _build_diagnostics_summary(
                 parsed,

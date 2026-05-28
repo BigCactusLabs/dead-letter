@@ -33,7 +33,7 @@ Do not proceed with the conversion.
 
 ### 3. Pick a controlled output directory
 
-`convert_directory` writes converted markdown files to disk. If `output_directory` is omitted, the server passes `out=None` and core conversion writes each output **beside the source `.eml`** (`src/dead_letter/backend/mcp_server.py:216`, `src/dead_letter/core/_pipeline.py:86`). That's wrong for two reasons:
+`convert_directory` writes converted markdown files to disk. `output_directory` is required by the MCP server so batch output never lands implicitly in the source folder. This matters for two reasons:
 
 - In Cowork, the typical source folder is either `uploads/` (read-only — write fails with `PermissionError`) or a granted host folder (where pollution is unwanted).
 - In Claude Code, a user-pointed folder shouldn't be silently polluted with `.md` siblings.

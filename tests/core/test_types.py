@@ -64,10 +64,14 @@ def test_zone_defaults_and_metadata_copy() -> None:
     zone = Zone(kind=ZoneKind.QUOTED, content="quoted text", metadata=metadata)
 
     assert zone.kind is ZoneKind.QUOTED
+    assert zone.source_kind == "plain"
     assert zone.metadata["client"] == "gmail"
 
     metadata["client"] = "outlook"
     assert zone.metadata["client"] == "gmail"
+
+    html_zone = Zone(kind=ZoneKind.BODY, content="**converted**", source_kind="html")
+    assert html_zone.source_kind == "html"
 
 
 def test_convert_options_contract_defaults() -> None:

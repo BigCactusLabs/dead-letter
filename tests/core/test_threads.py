@@ -12,6 +12,14 @@ def test_build_zones_splits_reply_and_quoted_text() -> None:
     assert threaded.zones[0].kind is ZoneKind.BODY
     assert "Hello team" in threaded.zones[0].content
     assert any(zone.kind is ZoneKind.QUOTED for zone in threaded.zones)
+    assert all(zone.source_kind == "plain" for zone in threaded.zones)
+
+
+def test_build_zones_preserves_explicit_source_kind() -> None:
+    threaded = build_zones("**Converted HTML**", source_kind="html")
+
+    assert threaded.zones
+    assert all(zone.source_kind == "html" for zone in threaded.zones)
 
 
 def test_build_zones_strips_signature_when_requested() -> None:

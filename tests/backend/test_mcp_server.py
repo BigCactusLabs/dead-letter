@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from dead_letter.core.types import ConvertOptions
+from dead_letter.core.types import ConvertOptions, ConvertResult
 
 
 def test_resolve_options_default_preset():
@@ -185,12 +185,13 @@ def test_convert_eml_to_bundle_source_handling_delete(tmp_path: Path):
     shutil.copy2(FIXTURES / "plain_text.eml", source)
 
     cabinet = tmp_path / "cabinet"
-    convert_eml_to_bundle(
-        eml_path=str(source),
-        bundle_root=str(cabinet),
-        source_handling="delete",
-    )
-    assert source.exists() is False
+    with pytest.raises(ValueError, match="source_handling='copy'"):
+        convert_eml_to_bundle(
+            eml_path=str(source),
+            bundle_root=str(cabinet),
+            source_handling="delete",
+        )
+    assert source.exists()
 
 
 def test_convert_eml_to_bundle_file_not_found():
@@ -213,6 +214,24 @@ def _make_eml_dir(tmp_path: Path, count: int = 2) -> Path:
     return eml_dir
 
 
+def _write_minimal_eml(path: Path, body: str = "Body") -> None:
+    path.write_text(
+        "\n".join(
+            [
+                "From: Test <test@example.com>",
+                "To: Example <example@example.com>",
+                "Subject: Minimal",
+                "Date: Thu, 05 Mar 2026 10:20:00 +0000",
+                "MIME-Version: 1.0",
+                "Content-Type: text/plain; charset=utf-8",
+                "",
+                body,
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_convert_directory_returns_summary(tmp_path: Path):
     from dead_letter.backend.mcp_server import convert_directory
 
@@ -232,13 +251,26 @@ def test_convert_directory_returns_summary(tmp_path: Path):
     assert result["errors"] == []
 
 
-def test_convert_directory_dry_run(tmp_path: Path):
+def test_convert_directory_requires_output_directory(tmp_path: Path):
     from dead_letter.backend.mcp_server import convert_directory
 
     eml_dir = _make_eml_dir(tmp_path, count=1)
 
+    with pytest.raises(ValueError, match="output_directory"):
+        convert_directory(directory=str(eml_dir))
+
+    assert not list(eml_dir.glob("*.md"))
+
+
+def test_convert_directory_dry_run(tmp_path: Path):
+    from dead_letter.backend.mcp_server import convert_directory
+
+    eml_dir = _make_eml_dir(tmp_path, count=1)
+    out_dir = tmp_path / "output"
+
     result_str = convert_directory(
         directory=str(eml_dir),
+        output_directory=str(out_dir),
         dry_run=True,
     )
     result = json.loads(result_str)
@@ -266,6 +298,74 @@ def test_convert_directory_with_preset(tmp_path: Path):
     )
     result = json.loads(result_str)
     assert result["successes"] == 1
+
+
+def test_convert_directory_rejects_more_than_fifty_files_before_writes(
+    monkeypatch, tmp_path: Path
+):
+    from dead_letter.backend import mcp_server
+
+    eml_dir = tmp_path / "emails"
+    eml_dir.mkdir()
+    for index in range(51):
+        _write_minimal_eml(eml_dir / f"{index:02d}.eml")
+
+    def _fail_convert_dir(*_args, **_kwargs):
+        pytest.fail("convert_dir should not be called when the MCP cap is exceeded")
+
+    monkeypatch.setattr(mcp_server, "convert_dir", _fail_convert_dir)
+
+    with pytest.raises(ValueError, match="at most 50"):
+        mcp_server.convert_directory(
+            directory=str(eml_dir),
+            output_directory=str(tmp_path / "output"),
+        )
+
+    assert not (tmp_path / "output").exists()
+
+
+def test_convert_directory_counts_with_core_file_scan_before_cap(
+    monkeypatch, tmp_path: Path
+):
+    from dead_letter.backend import mcp_server
+    from dead_letter.core._pipeline import _iter_source_eml_files
+
+    eml_dir = tmp_path / "emails"
+    eml_dir.mkdir()
+    for index in range(50):
+        _write_minimal_eml(eml_dir / f"{index:02d}.eml")
+    outside = tmp_path / "outside.eml"
+    _write_minimal_eml(outside)
+    (eml_dir / "outside-link.eml").symlink_to(outside)
+
+    def _fake_convert_dir(directory, *, output, options):
+        files = _iter_source_eml_files(Path(directory).resolve())
+        return [
+            ConvertResult(
+                source=file_path,
+                output=Path(output) / f"{file_path.stem}.md",
+                subject="Minimal",
+                sender="test@example.com",
+                date=None,
+                attachments=[],
+                success=True,
+                error=None,
+                dry_run=options.dry_run,
+            )
+            for file_path in files
+        ]
+
+    monkeypatch.setattr(mcp_server, "convert_dir", _fake_convert_dir)
+
+    result = json.loads(
+        mcp_server.convert_directory(
+            directory=str(eml_dir),
+            output_directory=str(tmp_path / "output"),
+        )
+    )
+
+    assert result["total"] == 50
+    assert result["successes"] == 50
 
 
 def test_get_diagnostics_returns_json():
@@ -358,6 +458,29 @@ async def test_mcp_client_convert_eml_round_trip():
     assert text.startswith("---"), "Expected YAML front matter"
 
 
+@pytest.mark.anyio
+async def test_mcp_client_convert_bundle_rejects_delete(tmp_path: Path):
+    """The MCP protocol path must enforce copy-only bundle conversion."""
+    from dead_letter.backend.mcp_server import mcp
+
+    source = tmp_path / "input" / "plain_text.eml"
+    source.parent.mkdir()
+    shutil.copy2(FIXTURES / "plain_text.eml", source)
+
+    with pytest.raises(Exception) as exc_info:
+        await mcp.call_tool(
+            "convert_eml_to_bundle",
+            {
+                "eml_path": str(source),
+                "bundle_root": str(tmp_path / "cabinet"),
+                "source_handling": "delete",
+            },
+        )
+
+    assert "source_handling='copy'" in str(exc_info.value)
+    assert source.exists()
+
+
 # ---------------------------------------------------------------------------
 # Thread mode / order — signature, _resolve_options, and per-tool propagation
 # ---------------------------------------------------------------------------
@@ -433,7 +556,11 @@ def test_convert_directory_threads_options_to_core(monkeypatch, tmp_path) -> Non
     monkeypatch.setattr(mcp_server, "convert_dir", _spy)
     _make_eml(tmp_path)
 
-    mcp_server.convert_directory(str(tmp_path), thread_mode="structured")
+    mcp_server.convert_directory(
+        str(tmp_path),
+        output_directory=str(tmp_path / "output"),
+        thread_mode="structured",
+    )
 
     assert captured and captured[0].thread_mode is ThreadMode.STRUCTURED
 

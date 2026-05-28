@@ -59,6 +59,7 @@ class Zone:
     kind: ZoneKind
     content: str
     metadata: dict[str, str] = field(default_factory=dict)
+    source_kind: str = "plain"
 
     def __post_init__(self) -> None:
         # Normalize to a detached mapping to avoid accidental external mutation.

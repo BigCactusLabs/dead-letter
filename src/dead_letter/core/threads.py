@@ -13,6 +13,7 @@ def build_zones(
     *,
     quote_patterns: set[str] | None = None,
     options: ConvertOptions | None = None,
+    source_kind: str = "plain",
 ) -> ThreadedContent:
     """Split message text into body and quoted zones."""
     opts = options or ConvertOptions()
@@ -25,6 +26,13 @@ def build_zones(
         metadata = dict(zone.metadata)
         if zone.kind.value == "body" and quote_patterns:
             metadata["quote_patterns"] = ",".join(sorted(quote_patterns))
-        zones.append(Zone(kind=zone.kind, content=zone.content, metadata=metadata))
+        zones.append(
+            Zone(
+                kind=zone.kind,
+                content=zone.content,
+                source_kind=source_kind,
+                metadata=metadata,
+            )
+        )
 
     return ThreadedContent(zones=zones)

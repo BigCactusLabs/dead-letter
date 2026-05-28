@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import html
+import re
+
 import yaml
 
 from dead_letter.core.types import (
@@ -14,6 +17,8 @@ from dead_letter.core.types import (
     Zone,
     ZoneKind,
 )
+
+_FENCE_OPEN_RE = re.compile(r"^( {0,3})(`{3,}|~{3,})(.*)$")
 
 
 def render_markdown(
@@ -49,22 +54,23 @@ def render_markdown(
     if include_raw_html and raw_html is not None:
         front_matter["raw_html"] = raw_html
 
-    head_lines = [
-        zone.content.strip()
-        for zone in threaded.zones
-        if zone.kind is not ZoneKind.QUOTED and zone.content.strip()
-    ]
+    head_lines = []
+    for zone in threaded.zones:
+        if zone.kind is ZoneKind.QUOTED or not zone.content.strip():
+            continue
+        head_lines.append(_render_zone_content(zone, zone.content))
     used_quoted_fallback = False
     if not head_lines:
         used_quoted_fallback = True
         # In STRUCTURED mode, restore the original (un-stripped) content from
         # the _quoted_original snapshot so output stays byte-identical to LATEST.
-        head_lines = [
-            (zone.metadata.get("_quoted_original") or zone.content).strip()
-            for zone in threaded.zones
-            if zone.kind is ZoneKind.QUOTED
-            and (zone.metadata.get("_quoted_original") or zone.content).strip()
-        ]
+        head_lines = []
+        for zone in threaded.zones:
+            if zone.kind is not ZoneKind.QUOTED:
+                continue
+            content = zone.metadata.get("_quoted_original") or zone.content
+            if content.strip():
+                head_lines.append(_render_zone_content(zone, content))
 
     body = "\n\n".join(head_lines).strip()
 
@@ -93,20 +99,100 @@ def _build_thread_sections(threaded: ThreadedContent, opts: ConvertOptions) -> l
 
 def _render_thread_section(zone: Zone) -> str:
     header = _section_header(zone)
-    body = zone.content.strip()
+    body = _render_zone_content(zone, zone.content)
     if body:
         return f"{header}\n\n{body}"
     return header
 
 
+def _render_zone_content(zone: Zone, content: str) -> str:
+    body = content.strip()
+    if getattr(zone, "source_kind", "plain") == "plain":
+        return _escape_plain_text_markdown_html(body)
+    return body
+
+
+def _escape_plain_text_markdown_html(value: str) -> str:
+    # Markdown renderers already escape code contents; preserve those regions
+    # while neutralizing raw HTML in normal prose.
+    rendered: list[str] = []
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+
+    for line in value.splitlines(keepends=True):
+        if in_fence:
+            rendered.append(line)
+            if _is_closing_fence(line, fence_char=fence_char, fence_len=fence_len):
+                in_fence = False
+            continue
+
+        line_body = line.rstrip("\r\n")
+        opener = _FENCE_OPEN_RE.match(line_body)
+        if opener:
+            fence = opener.group(2)
+            fence_char = fence[0]
+            fence_len = len(fence)
+            in_fence = True
+            newline = line[len(line_body):]
+            rendered.append(
+                f"{opener.group(1)}{fence}{html.escape(opener.group(3), quote=False)}{newline}"
+            )
+            continue
+
+        if line.startswith(("    ", "\t")):
+            rendered.append(line)
+            continue
+
+        rendered.append(_escape_html_outside_code_spans(line))
+
+    return "".join(rendered)
+
+
+def _is_closing_fence(line: str, *, fence_char: str, fence_len: int) -> bool:
+    stripped = line.strip()
+    return (
+        len(stripped) >= fence_len
+        and set(stripped) == {fence_char}
+    )
+
+
+def _escape_html_outside_code_spans(line: str) -> str:
+    rendered: list[str] = []
+    text_start = 0
+    index = 0
+
+    while index < len(line):
+        if line[index] != "`":
+            index += 1
+            continue
+
+        tick_end = index + 1
+        while tick_end < len(line) and line[tick_end] == "`":
+            tick_end += 1
+        tick_run = line[index:tick_end]
+        closing = line.find(tick_run, tick_end)
+        if closing == -1:
+            index = tick_end
+            continue
+
+        rendered.append(html.escape(line[text_start:index], quote=False))
+        rendered.append(line[index:closing + len(tick_run)])
+        index = closing + len(tick_run)
+        text_start = index
+
+    rendered.append(html.escape(line[text_start:], quote=False))
+    return "".join(rendered)
+
+
 def _section_header(zone: Zone) -> str:
     if zone.metadata.get("thread_render") == "degenerate":
         return "## Earlier in thread"
-    from_ = zone.metadata.get("attribution_from")
+    from_ = _escaped_metadata(zone, "attribution_from")
     if not from_:
         return "## Earlier message"
-    date = zone.metadata.get("attribution_date")
-    subject = zone.metadata.get("attribution_subject")
+    date = _escaped_metadata(zone, "attribution_date")
+    subject = _escaped_metadata(zone, "attribution_subject")
     if date and subject:
         return f"## From {from_} ({date}) — {subject}"
     if date:
@@ -114,6 +200,13 @@ def _section_header(zone: Zone) -> str:
     if subject:
         return f"## From {from_} — {subject}"
     return f"## From {from_}"
+
+
+def _escaped_metadata(zone: Zone, key: str) -> str | None:
+    value = zone.metadata.get(key)
+    if value is None:
+        return None
+    return _escape_plain_text_markdown_html(value)
 
 
 def serialize_markdown(rendered: RenderedMarkdown) -> str:

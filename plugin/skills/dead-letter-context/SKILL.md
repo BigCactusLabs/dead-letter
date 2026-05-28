@@ -30,7 +30,7 @@ When the user describes intent in natural language without typing a slash comman
 
 The two side-effecting redirects exist because:
 1. `convert_eml_to_bundle` writes files to disk; the user should commit to the destination by typing the command.
-2. `convert_directory` recurses through a folder with no built-in cap; the `triage` command's preflight count is what keeps it safe.
+2. `convert_directory` now has a server-side cap and requires `output_directory`, but batch conversion still writes files; the slash command keeps the user's explicit intent and destination choice in the loop.
 
 ## Presets
 
