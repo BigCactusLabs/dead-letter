@@ -20,7 +20,7 @@ dead-letter converts email exports into clean Markdown with YAML front matter �
 - **Install validation** — `dead-letter doctor` checks your runtime environment
 - **Conversion report** — opt-in JSON report with per-file diagnostics for automation and audit
 - **MCP server** — integrate with Claude Desktop, Claude Code, Codex, and other MCP clients
-- **Claude plugin** — one-command install in Claude Code or Cowork with four slash commands (`/dead-letter:convert`, `/summarize`, `/triage`, `/cabinet`)
+- **Claude plugin** — one-command install in Claude Code or Cowork with four slash commands (`/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`)
 - **Python API** — `from dead_letter import convert` and you're off
 
 ## 🧠 Built for LLM Pipelines
@@ -244,6 +244,7 @@ src/dead_letter/
 tests/
 ├── core/           # conversion pipeline tests with .eml fixtures
 ├── backend/        # API, job, and watch tests
+├── plugin/         # Claude plugin manifest, skill, and command tests
 └── frontend/       # JS unit tests
 ```
 
@@ -256,7 +257,9 @@ uv run pytest -q tests/plugin      # Claude plugin manifest, skill, and command 
 node --test tests/frontend/*.test.js     # frontend
 ```
 
-CI runs all four on every push and PR with the same commands (plus `claude plugin validate plugin/`).
+CI runs all four on every push and PR with the same commands, plus
+`claude plugin validate plugin/` and
+`node --check src/dead_letter/frontend/static/app.js`.
 
 ## 📚 Docs
 
