@@ -58,6 +58,51 @@ def test_render_markdown_falls_back_to_quoted_zones_when_no_body_zones_exist() -
     assert rendered.body == "Only quoted message"
 
 
+def test_render_markdown_escapes_plain_text_html_tags() -> None:
+    parsed = _parsed_email()
+    threaded = ThreadedContent(
+        zones=[
+            Zone(
+                kind=ZoneKind.BODY,
+                content="<script>alert(1)</script>\n<img src=x onerror=alert(2)>",
+            ),
+        ]
+    )
+
+    rendered = render_markdown(parsed, threaded)
+
+    assert "<script>" not in rendered.body
+    assert "<img" not in rendered.body
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered.body
+    assert "&lt;img src=x onerror=alert(2)&gt;" in rendered.body
+
+
+def test_render_structured_escapes_plain_text_thread_metadata_and_body() -> None:
+    parsed = _parsed_email()
+    threaded = ThreadedContent(
+        zones=[
+            Zone(kind=ZoneKind.BODY, content="Latest body"),
+            Zone(
+                kind=ZoneKind.QUOTED,
+                content="<img src=x onerror=alert(2)>",
+                metadata={
+                    "attribution_from": "<b>Alice</b>",
+                    "attribution_date": "<script>alert(1)</script>",
+                },
+            ),
+        ]
+    )
+
+    rendered = render_markdown(
+        parsed, threaded, options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+    )
+
+    assert "## From &lt;b&gt;Alice&lt;/b&gt; (&lt;script&gt;alert(1)&lt;/script&gt;)" in rendered.body
+    assert "&lt;img src=x onerror=alert(2)&gt;" in rendered.body
+    assert "<b>Alice</b>" not in rendered.body
+    assert "<img" not in rendered.body
+
+
 def test_serialize_markdown_emits_yaml_front_matter() -> None:
     parsed = _parsed_email()
     threaded = ThreadedContent(zones=[Zone(kind=ZoneKind.BODY, content="Only body")])
@@ -67,6 +112,18 @@ def test_serialize_markdown_emits_yaml_front_matter() -> None:
     assert document.startswith("---\n")
     assert "subject: Plain Text Fixture" in document
     assert "Only body" in document
+
+
+def test_serialize_markdown_body_hr_does_not_create_second_front_matter() -> None:
+    parsed = _parsed_email()
+    threaded = ThreadedContent(zones=[Zone(kind=ZoneKind.BODY, content="---\nnot yaml")])
+
+    document = serialize_markdown(render_markdown(parsed, threaded))
+
+    parts = document.split("---\n", 2)
+    assert len(parts) == 3
+    assert parts[0] == ""
+    assert parts[2] == "\n---\nnot yaml\n"
 
 
 def test_render_markdown_accepts_options_keyword() -> None:
@@ -123,8 +180,8 @@ def test_render_structured_emits_per_message_sections() -> None:
     )
 
     assert "Latest body" in rendered.body
-    assert "## From Alice <alice@example.com> (Mar 5, 2026)" in rendered.body
-    assert "## From Bob <bob@example.com> (Mar 4, 2026)" in rendered.body
+    assert "## From Alice &lt;alice@example.com&gt; (Mar 5, 2026)" in rendered.body
+    assert "## From Bob &lt;bob@example.com&gt; (Mar 4, 2026)" in rendered.body
     assert "prior 1 body" in rendered.body
     assert "prior 2 body" in rendered.body
     assert rendered.front_matter["thread_messages"] == 2

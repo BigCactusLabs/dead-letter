@@ -10,10 +10,11 @@ from typing import Literal
 from mcp.server.fastmcp import FastMCP
 
 from dead_letter.core import convert, convert_dir
-from dead_letter.core._pipeline import convert_to_bundle_with_diagnostics
+from dead_letter.core._pipeline import _iter_source_eml_files, convert_to_bundle_with_diagnostics
 from dead_letter.core.types import ConvertOptions
 
 mcp = FastMCP("dead-letter")
+MCP_MAX_DIRECTORY_FILES = 50
 
 PRESETS: dict[str, dict[str, bool]] = {
     "default": {
@@ -157,6 +158,12 @@ def convert_eml_to_bundle(
     Returns JSON with bundle_path, markdown_path, attachment_paths, and
     optional diagnostics.
     """
+    if source_handling != "copy":
+        raise ValueError(
+            "MCP convert_eml_to_bundle only supports source_handling='copy'; "
+            "use the CLI/API for move/delete."
+        )
+
     options = _build_options(locals())
     source = Path(eml_path)
     if not source.exists():
@@ -209,11 +216,20 @@ def convert_directory(
     Use convert_eml to retrieve individual converted file content.
     """
     options = _build_options(locals())
-    dir_path = Path(directory)
+    dir_path = Path(directory).expanduser().resolve()
     if not dir_path.is_dir():
         raise FileNotFoundError(f"Directory not found: {directory}")
+    if output_directory is None:
+        raise ValueError("output_directory is required for MCP directory conversion")
 
-    out = Path(output_directory) if output_directory else None
+    files = _iter_source_eml_files(dir_path)
+    if len(files) > MCP_MAX_DIRECTORY_FILES:
+        raise ValueError(
+            "MCP directory conversion supports at most "
+            f"{MCP_MAX_DIRECTORY_FILES} .eml files; found {len(files)}."
+        )
+
+    out = Path(output_directory).expanduser()
     results = convert_dir(dir_path, output=out, options=options)
 
     successes = [r for r in results if r.success]

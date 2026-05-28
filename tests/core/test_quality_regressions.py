@@ -149,7 +149,7 @@ def test_convert_forwarded_email_preserves_forwarded_message_content(tmp_path: P
     assert result.output is not None
 
     body = result.output.read_text(encoding="utf-8")
-    assert "Vendor <vendor@example.net>" in body
+    assert "Vendor &lt;vendor@example.net&gt;" in body
     assert "Please review the attached quote." in body
 
 
@@ -181,6 +181,23 @@ def test_plain_text_path_reports_plain_text_reply_fallback() -> None:
     assert diagnostics is not None
     assert diagnostics["segmentation_path"] == "plain_fallback"
     assert diagnostics["fallback_used"] == "plain_text_reply_parser"
+
+
+def test_plain_text_conversion_escapes_html_like_payloads(tmp_path: Path) -> None:
+    source = _write_plain_email(
+        tmp_path / "plain_payload.eml",
+        "<script>alert(1)</script>\n<img src=x onerror=alert(2)>",
+    )
+
+    result = convert(source, output=tmp_path / "out")
+
+    assert result.success is True
+    assert result.output is not None
+    text = result.output.read_text(encoding="utf-8")
+    assert "<script>" not in text
+    assert "<img" not in text
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in text
+    assert "&lt;img src=x onerror=alert(2)&gt;" in text
 
 
 def test_attachment_reference_without_attachments_emits_warning(tmp_path: Path) -> None:

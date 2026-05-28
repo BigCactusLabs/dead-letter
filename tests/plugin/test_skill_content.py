@@ -102,3 +102,11 @@ def test_skill_redirects_side_effecting_asks_to_slash_commands():
     assert "do not invoke" in body_lower or "not invoke" in body_lower or "don't invoke" in body_lower, (
         "skill must use explicit do-not-invoke language for side-effecting MCP tools"
     )
+
+
+def test_skill_reflects_server_side_mcp_batch_safety():
+    _, body = _read_skill()
+    body_lower = body.lower()
+
+    assert "server-side cap" in body_lower or "built-in cap" in body_lower
+    assert "no built-in cap" not in body_lower

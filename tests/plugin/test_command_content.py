@@ -99,6 +99,15 @@ def test_triage_command_passes_output_directory():
     )
 
 
+def test_triage_command_reflects_server_side_output_requirement():
+    _, body = _read_command("triage")
+    body_lower = body.lower()
+
+    assert "`output_directory` is required" in body_lower or "output_directory is required" in body_lower
+    assert "server passes `out=none`" not in body_lower
+    assert "writes beside the source" not in body_lower
+
+
 def test_cabinet_command_uses_correct_mcp_tool():
     fm, body = _read_command("cabinet")
     assert fm["description"]
