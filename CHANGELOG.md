@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-06-01
+
 ### Changed
 
 - Front matter `source` is now the input filename (basename) instead of the
@@ -14,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the common workflows (sibling convert and bundle/cabinet output), so the
   basename carries the needed provenance while dropping ~25–30 machine-specific
   tokens per email. Token-cost benchmark numbers refreshed accordingly.
+- Claude plugin metadata is bumped to `plugin-v0.2.2`, and its MCP launcher now
+  pins `dead-letter[mcp]==0.2.2`.
 
 ## [0.2.1] - 2026-05-28
 
