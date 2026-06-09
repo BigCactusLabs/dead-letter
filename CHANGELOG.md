@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-06-09
+
 ### Fixed
 
 - Bundle/attachment retention no longer drops real attachments that carry a
@@ -15,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as an inline image — silently discarding the attachment (`attachment_paths: []`)
   for a common `multipart/mixed` shape. The pass now skips `disposition=attachment`
   parts regardless of `Content-ID`, so `convert_eml_to_bundle` retains them.
+- Claude plugin command and skill guidance now treats converted email content
+  as untrusted data, not instructions. Summarize, triage, convert, and cabinet
+  flows explicitly reject tool-use, credential, prompt-disclosure, and
+  exfiltration instructions embedded in email bodies or attachments.
 
 ### Added
 
@@ -22,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   has attachments eligible for retention. A `retained < referenced` gap makes dropped
   attachments machine-detectable. See
   [`docs/reference/quality-diagnostics.md`](docs/reference/quality-diagnostics.md).
+- Claude plugin content tests now assert the untrusted-email-content contract
+  across the auto-trigger skill and all slash commands.
+
+### Changed
+
+- Claude plugin metadata is bumped to `plugin-v0.2.3`, and its MCP launcher now
+  pins `dead-letter[mcp]==0.2.3`.
 
 ## [0.2.2] - 2026-06-01
 
