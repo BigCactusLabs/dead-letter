@@ -110,3 +110,14 @@ def test_skill_reflects_server_side_mcp_batch_safety():
 
     assert "server-side cap" in body_lower or "built-in cap" in body_lower
     assert "no built-in cap" not in body_lower
+
+
+def test_skill_treats_converted_email_content_as_untrusted():
+    _, body = _read_skill()
+    body_lower = body.lower()
+
+    assert "untrusted" in body_lower
+    assert "data, not instructions" in body_lower
+    assert "do not follow" in body_lower
+    assert "tool" in body_lower
+    assert "credential" in body_lower or "secret" in body_lower

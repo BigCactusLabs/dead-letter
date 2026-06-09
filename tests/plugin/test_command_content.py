@@ -149,3 +149,13 @@ def test_all_commands_have_argument_hint(name):
         f"{name}.md frontmatter must include an `argument-hint` field describing "
         "the expected slash-command arguments."
     )
+
+
+@pytest.mark.parametrize("name", ["convert", "summarize", "triage", "cabinet"])
+def test_all_commands_treat_email_content_as_untrusted(name):
+    _, body = _read_command(name)
+    body_lower = body.lower()
+
+    assert "untrusted" in body_lower
+    assert "data, not instructions" in body_lower
+    assert "do not follow" in body_lower
