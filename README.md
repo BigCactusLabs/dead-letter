@@ -4,7 +4,8 @@
 
 # dead-letter
 
-[![PyPI version](https://img.shields.io/pypi/v/dead-letter.svg?label=PyPI)](https://pypi.org/project/dead-letter/)
+[![PyPI package](https://img.shields.io/pypi/v/dead-letter?label=PyPI%20package&cacheSeconds=300)](https://pypi.org/project/dead-letter/)
+[![Python versions](https://img.shields.io/pypi/pyversions/dead-letter?label=Python&cacheSeconds=300)](https://pypi.org/project/dead-letter/)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-purple.svg)](LICENSE)
 
 **Your `.eml` files deserve a second life.**
@@ -18,7 +19,7 @@ dead-letter converts email exports into clean Markdown with YAML front matter �
 - **Local web UI** — dark command-center interface with drag-and-drop import, watch mode, conversion grade badges, processing history, and per-job diagnostics
 - **Inbox/Cabinet workflow** — drop `.eml` files into an Inbox, let dead-letter organize the Markdown bundles into a Cabinet
 - **Install validation** — `dead-letter doctor` checks your runtime environment
-- **Conversion report** — opt-in JSON report with per-file diagnostics for automation and audit
+- **Conversion report** — opt-in JSON report with per-file diagnostics, including attachment referenced/retained counts for automation and audit
 - **MCP server** — integrate with Claude Desktop, Claude Code, Codex, and other MCP clients
 - **Claude plugin** — one-command install in Claude Code or Cowork with four slash commands (`/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`)
 - **Python API** — `from dead_letter import convert` and you're off
@@ -180,6 +181,10 @@ print(bundle.attachments)  # retained extracted files under cabinet/message/atta
 Retained extracted attachment filenames are normalized to safe basenames before
 they are written under `attachments/`.
 
+Quality diagnostics include referenced/retained attachment counts when a message
+has attachments eligible for retention, so dropped artifacts are
+machine-detectable. See [Quality Diagnostics](docs/reference/quality-diagnostics.md).
+
 Batch:
 
 ```python
@@ -226,7 +231,7 @@ uv run --extra mcp dead-letter-mcp
 /plugin install dead-letter
 ```
 
-The plugin bundles the MCP server (via `uvx`, no `pip install` needed — just `uv` on `PATH`) and adds four slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`. Source under [`plugin/`](plugin/).
+The plugin bundles the MCP server (via `uvx`, no `pip install` needed — just `uv` on `PATH`) and adds four slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`. Email content handled through the plugin is treated as untrusted data, not instructions, so tool-use, credential, and exfiltration requests embedded in messages are not followed. Source under [`plugin/`](plugin/).
 
 **Claude Code (manual MCP add — alternative):**
 
