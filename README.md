@@ -266,7 +266,8 @@ uv run pytest -q tests/plugin      # Claude plugin manifest, skill, and command 
 node --test tests/frontend/*.test.js     # frontend
 ```
 
-CI runs all four on every push and PR with the same commands, plus
+CI runs all four on PRs and on pushes to `main` or `feat/**` branches with the
+same commands, plus
 `npx --yes @anthropic-ai/claude-code@2.1.145 plugin validate plugin/` and
 `node --check src/dead_letter/frontend/static/app.js`.
 

@@ -2,7 +2,7 @@
 title: html-to-markdown v3 Migration Plan
 doc_type: reference
 status: completed
-last_updated: 2026-05-28
+last_updated: 2026-06-09
 audience:
   - maintainers
 scope:
@@ -20,7 +20,7 @@ This document defines the migration from `html-to-markdown` 2.x to 3.x.
 - Runtime now depends on `html-to-markdown>=3.1.0,<4.0`.
 - `src/dead_letter/core/quotes.py` uses DOM-based quote-pattern detection and no longer imports `convert_with_visitor`.
 - `src/dead_letter/core/html.py` calls the internal adapter in `src/dead_letter/core/html_to_markdown_adapter.py`.
-- The lockfile currently resolves `html-to-markdown==3.5.3`; compatibility
+- The lockfile currently resolves `html-to-markdown==3.5.7`; compatibility
   checks still include the lower bound `html-to-markdown==3.1.0`.
 
 ## Migration Goal
@@ -77,8 +77,8 @@ Exit criteria:
 
 - In isolated env, run:
   - `uv run --with html-to-markdown==3.1.0 pytest -q tests/core tests/backend`
-  - `uv run --with html-to-markdown==3.5.3 pytest -q tests/core`
-  - `uv run --with html-to-markdown==3.5.3 pytest -q tests/backend`
+  - `uv run --with html-to-markdown==3.5.7 pytest -q tests/core`
+  - `uv run --with html-to-markdown==3.5.7 pytest -q tests/backend`
 - Fix API or behavior differences in adapter only (avoid broad pipeline rewrites).
 - Keep diagnostics semantics stable (`html_markdown_failed`, repair/fallback behavior).
 
@@ -109,8 +109,10 @@ Exit criteria:
 
 ## Rollback Plan
 
-If v3 migration fails at any phase:
+If a post-migration v3 dependency regression appears:
 
-- Keep dependency guardrail `html-to-markdown>=2.9.1,<3.0`.
-- Revert adapter changes behind the boundary while preserving quote-detector decoupling if already validated.
-- Re-open migration from the last completed phase gate.
+- Narrow the `html-to-markdown>=3.1.0,<4.0` range or pin the last known-good
+  v3 release, then refresh `uv.lock`.
+- Keep the adapter boundary in place while fixing or isolating the regression.
+- Re-run the lower-bound and locked-version compatibility checks before
+  widening the range again.

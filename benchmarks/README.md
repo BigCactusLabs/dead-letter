@@ -5,7 +5,7 @@ model? This benchmark measures that across four representations of the same
 message and reports the honest spread — including the cases where a naive
 approach is *cheaper* than dead-letter.
 
-> **TL;DR** dead-letter is **~87% smaller than the raw `.eml`** (median), and it
+> **TL;DR** dead-letter is **~88% smaller than the raw `.eml`** (median), and it
 > is the only representation that keeps thread structure, sender attribution,
 > links, and attachment metadata intact. It is **not** the fewest possible
 > tokens — lossy text extraction is cheaper because it throws those things away.
