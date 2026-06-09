@@ -228,7 +228,13 @@ def _retain_referenced_inline_attachments(
     removed_name_counts: Counter[str] = Counter()
     filtered_parts: list[AttachmentPart] = []
     for part in parsed.attachment_parts:
-        if part.content_id and f"cid:{part.content_id}" not in reference_text:
+        # Only inline assets are candidates for removal. Outlook/Exchange stamps a
+        # Content-ID on real disposition=attachment parts too, so gating on content_id
+        # alone would silently drop legitimate attachments that are never referenced
+        # by cid: in the rendered body.
+        disposition_type = part.disposition.split(";", 1)[0].strip().lower()
+        is_inline = disposition_type != "attachment"
+        if is_inline and part.content_id and f"cid:{part.content_id}" not in reference_text:
             removed_name_counts[part.filename] += 1
             continue
         filtered_parts.append(part)
@@ -686,6 +692,7 @@ def _build_rendered_markdown(
         raw_html=raw_html,
         options=options,
     )
+    referenced_attachments = len(parsed.attachments)
     if options.strip_signature_images or options.strip_tracking_pixels:
         attachment_reference_text = rendered.body
         if options.include_raw_html and raw_html is not None:
@@ -724,6 +731,11 @@ def _build_rendered_markdown(
             {"category": s.category.value, "reason": s.reason, "reference": s.reference}
             for s in stripped_images
         ]
+    if diagnostics is not None and referenced_attachments:
+        diagnostics["attachments"] = {
+            "referenced": referenced_attachments,
+            "retained": len(parsed.attachments),
+        }
 
     return result, parsed, rendered, diagnostics
 

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Bundle/attachment retention no longer drops real attachments that carry a
+  `Content-ID`. Outlook/Exchange stamps a `Content-ID` on `disposition=attachment`
+  parts, and the unreferenced-inline-asset pass was treating any cid-bearing part
+  as an inline image — silently discarding the attachment (`attachment_paths: []`)
+  for a common `multipart/mixed` shape. The pass now skips `disposition=attachment`
+  parts regardless of `Content-ID`, so `convert_eml_to_bundle` retains them.
+
+### Added
+
+- `diagnostics.attachments` `{referenced, retained}` counts, present when a message
+  has attachments eligible for retention. A `retained < referenced` gap makes dropped
+  attachments machine-detectable. See
+  [`docs/reference/quality-diagnostics.md`](docs/reference/quality-diagnostics.md).
+
 ## [0.2.2] - 2026-06-01
 
 ### Changed
