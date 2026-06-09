@@ -249,6 +249,63 @@ async def test_job_manager_file_mode_projects_diagnostics_summary(tmp_path: Path
 
 
 @pytest.mark.anyio
+async def test_job_manager_file_mode_projects_attachment_counts(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "mail.eml"
+    source.write_text("x", encoding="utf-8")
+
+    def fake_bundle(
+        path: str | Path,
+        *,
+        bundle_root: str | Path,
+        options: object | None = None,
+        source_handling: str = "move",
+    ) -> tuple[BundleResult, dict[str, object]]:
+        _ = (options, source_handling)
+        src = Path(path)
+        bundle = Path(bundle_root) / src.stem
+        bundle.mkdir(parents=True, exist_ok=True)
+        markdown = bundle / "message.md"
+        markdown.write_text("ok", encoding="utf-8")
+        return (
+            BundleResult(
+                source=src,
+                bundle=bundle,
+                markdown=markdown,
+                source_artifact=bundle / src.name,
+                attachments=[bundle / "attachments" / "report.xlsx"],
+                success=True,
+                error=None,
+                dry_run=False,
+            ),
+            {
+                "state": "normal",
+                "selected_body": "html",
+                "segmentation_path": "html",
+                "client_hint": "outlook",
+                "confidence": "high",
+                "fallback_used": None,
+                "warnings": [],
+                "attachments": {"referenced": 1, "retained": 1},
+            },
+        )
+
+    import dead_letter.backend.jobs as jobs_mod
+
+    monkeypatch.setattr(jobs_mod, "run_bundle_conversion", fake_bundle)
+
+    manager = _manager(tmp_path, worker_count=1)
+    created = await manager.create_job(JobCreateRequest(mode="file", input_path=str(source)))
+
+    terminal = await manager.wait_for_terminal(created.id, timeout=2.0)
+
+    assert terminal.status == "succeeded"
+    assert terminal.diagnostics is not None
+    assert terminal.diagnostics.attachments is not None
+    assert terminal.diagnostics.attachments.referenced == 1
+    assert terminal.diagnostics.attachments.retained == 1
+
+
+@pytest.mark.anyio
 async def test_job_manager_cancel_marks_running_job_cancelled(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path / "in"
     root.mkdir(parents=True, exist_ok=True)

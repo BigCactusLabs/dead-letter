@@ -59,6 +59,11 @@ class StrippedImageInfo(BaseModel):
     reference: str
 
 
+class AttachmentCounts(BaseModel):
+    referenced: int
+    retained: int
+
+
 class QualityDiagnostics(BaseModel):
     state: DiagnosticState
     selected_body: SelectedBody
@@ -72,6 +77,7 @@ class QualityDiagnostics(BaseModel):
     ] | None = None
     warnings: list[DiagnosticWarning] = Field(default_factory=list)
     stripped_images: list[StrippedImageInfo] = Field(default_factory=list)
+    attachments: AttachmentCounts | None = None
 
 
 class JobOptions(BaseModel):

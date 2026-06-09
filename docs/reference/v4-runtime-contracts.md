@@ -329,7 +329,8 @@ Response (`200`):
     "confidence": "high|medium|low",
     "fallback_used": "plain_text_reply_parser|html_failure_plain_text_fallback|html_markdown_panic_repaired|null",
     "warnings": [{"code": "string", "message": "string", "severity": "warning"}],
-    "stripped_images": [{"category": "signature_image|tracking_pixel", "reason": "string", "reference": "string"}]
+    "stripped_images": [{"category": "signature_image|tracking_pixel", "reason": "string", "reference": "string"}],
+    "attachments": {"referenced": 0, "retained": 0}
   },
   "report_path": "string|null",
   "created_at": "ISO-8601 string",
@@ -352,6 +353,7 @@ Diagnostics semantics:
 
 - `diagnostics` is populated for `mode="file"` jobs only.
 - Directory jobs return `"diagnostics": null`.
+- `diagnostics.attachments` is an object when the message has attachments eligible for retention, and `null` otherwise. `referenced` counts attachments before the unreferenced-inline-asset pass; `retained` counts those written to the output. A `retained < referenced` gap signals dropped attachments and is machine-detectable.
 - When `report=true` and report generation succeeds, `report_path` points to a per-job JSON artifact under Cabinet named `.dead-letter-report-<job_id>.json`.
 - Report generation still occurs for successful zero-file jobs; those reports contain `total=0` and an empty `results` array.
 - `recovery_actions` is empty by default.

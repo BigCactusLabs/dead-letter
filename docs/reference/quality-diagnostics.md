@@ -2,7 +2,7 @@
 title: Quality Diagnostics
 doc_type: reference
 status: canonical
-last_updated: 2026-04-21
+last_updated: 2026-06-09
 audience:
   - operators
   - maintainers
@@ -37,6 +37,10 @@ This summary is intended for operator review. It is not the raw internal convers
   - `category`: `signature_image | tracking_pixel`
   - `reason`: detection layer that matched (e.g., `gmail_signature_wrapper`, `front_signature_wrapper`, `thunderbird_signature_wrapper`, `apple_mail_signature_wrapper`, `gmail_mail_sig_url`, `filename_pattern:logo`, `structural_boundary_extension`, `dimension_heuristic`, `hidden_image`)
   - `reference`: the image `src` or CID that was stripped
+- `attachments`: `{referenced, retained}` counts, populated when the message has attachments eligible for retention. The job-status API returns `null` when there are none (same convention as `client_hint`); the raw MCP diagnostics dict and per-job report omit the key entirely.
+  - `referenced`: attachment count before the unreferenced-inline-asset pass
+  - `retained`: attachment count written to the rendered output and bundle
+  - A `retained < referenced` gap means attachments were dropped; pair it with the `attachment_reference_without_attachments` warning for a machine-detectable signal.
 
 ## State Meanings
 
@@ -172,6 +176,27 @@ Warnings are additive. The pipeline prefers preserving extra content over deleti
     {"category": "signature_image", "reason": "gmail_signature_wrapper", "reference": "cid:logo.png"},
     {"category": "tracking_pixel", "reason": "dimension_heuristic", "reference": "https://t.example.com/pixel.gif"}
   ]
+}
+```
+
+### Normal with a retained attachment
+
+An Outlook/Exchange message whose real attachment carries a `Content-ID` alongside a stripped
+inline signature image. The attachment is retained; the signature image is stripped.
+
+```json
+{
+  "state": "normal",
+  "selected_body": "html",
+  "segmentation_path": "html",
+  "client_hint": "outlook",
+  "confidence": "high",
+  "fallback_used": null,
+  "warnings": [],
+  "stripped_images": [
+    {"category": "signature_image", "reason": "filename_pattern:logo", "reference": "cid:sig-logo"}
+  ],
+  "attachments": {"referenced": 1, "retained": 1}
 }
 ```
 

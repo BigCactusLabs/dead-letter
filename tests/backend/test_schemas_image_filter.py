@@ -50,3 +50,33 @@ def test_quality_diagnostics_empty_stripped_images_default() -> None:
         confidence="high",
     )
     assert diag.stripped_images == []
+
+
+def test_quality_diagnostics_preserves_attachments() -> None:
+    diag = QualityDiagnostics.model_validate(
+        {
+            "state": "normal",
+            "selected_body": "html",
+            "segmentation_path": "html",
+            "client_hint": "outlook",
+            "confidence": "high",
+            "fallback_used": None,
+            "warnings": [],
+            "stripped_images": [],
+            "attachments": {"referenced": 1, "retained": 1},
+        }
+    )
+    assert diag.attachments is not None
+    assert diag.attachments.referenced == 1
+    assert diag.attachments.retained == 1
+    assert diag.model_dump()["attachments"] == {"referenced": 1, "retained": 1}
+
+
+def test_quality_diagnostics_attachments_default_none() -> None:
+    diag = QualityDiagnostics(
+        state="normal",
+        selected_body="html",
+        segmentation_path="html",
+        confidence="high",
+    )
+    assert diag.attachments is None

@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import base64
 import threading
 from pathlib import Path
 
 import pytest
 
 from dead_letter.core import BundleResult, ConvertOptions, convert_to_bundle
+from dead_letter.core._pipeline import convert_to_bundle_with_diagnostics
+
+# Decodes the base64 payload embedded in outlook_attachment_with_cid.eml.
+EXPECTED_XLSX_BYTES = base64.b64decode(
+    "UEsDBGRlYWQtbGV0dGVyIHJlZ3Jlc3Npb24geGxzeCBwYXlsb2FkAAECA/8="
+)
 
 
 def _front_matter(path: Path) -> dict[str, object]:
@@ -144,6 +151,63 @@ def test_convert_to_bundle_omits_stripped_inline_signature_attachments(
     assert front["attachments"] == []
     assert "attachment_files" not in front
     assert "cid:logo.png" not in result.markdown.read_text(encoding="utf-8")
+
+
+def test_convert_to_bundle_retains_attachment_with_content_id(
+    copy_fixture, tmp_path: Path
+) -> None:
+    # Outlook/Exchange stamps a Content-ID on real disposition=attachment parts.
+    # The inline-image retention pass must not mistake that for an unreferenced
+    # inline image and drop it.
+    source = copy_fixture("outlook_attachment_with_cid.eml")
+
+    result = convert_to_bundle(
+        source,
+        bundle_root=tmp_path / "cabinet",
+        source_handling="copy",
+        options=ConvertOptions(strip_signature_images=True),
+    )
+
+    assert result.success is True
+    assert [path.name for path in result.attachments] == ["report.xlsx"]
+    assert result.attachments[0].read_bytes() == EXPECTED_XLSX_BYTES
+
+    front = _front_matter(result.markdown)
+    assert front["attachments"] == ["report.xlsx"]
+    assert front["attachment_files"] == ["attachments/report.xlsx"]
+    # The inline signature image is still stripped, not retained as an attachment.
+    assert "logo.png" not in [path.name for path in result.attachments]
+
+
+def test_convert_to_bundle_diagnostics_report_referenced_and_retained_counts(
+    copy_fixture, tmp_path: Path
+) -> None:
+    source = copy_fixture("outlook_attachment_with_cid.eml")
+
+    _result, diagnostics = convert_to_bundle_with_diagnostics(
+        source,
+        bundle_root=tmp_path / "cabinet",
+        options=ConvertOptions(strip_signature_images=True),
+        source_handling="copy",
+    )
+
+    assert diagnostics is not None
+    assert diagnostics["attachments"] == {"referenced": 1, "retained": 1}
+
+
+def test_convert_to_bundle_diagnostics_omit_attachment_counts_when_none_present(
+    copy_fixture, tmp_path: Path
+) -> None:
+    source = copy_fixture("html_only.eml")
+
+    _result, diagnostics = convert_to_bundle_with_diagnostics(
+        source,
+        bundle_root=tmp_path / "cabinet",
+        source_handling="copy",
+    )
+
+    assert diagnostics is not None
+    assert "attachments" not in diagnostics
 
 
 def test_convert_to_bundle_cleans_partial_bundle_after_write_failure(

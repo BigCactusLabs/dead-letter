@@ -82,7 +82,7 @@ Priority order is fixed:
   - `jobStatus`
   - `outputLocation`: `{strategy:"cabinet", cabinet_path, bundle_path|null} | null`
   - `recoveryActions`: `[{kind, label, message}]`
-  - `jobDiagnostics`: `{state, selected_body, segmentation_path, client_hint, confidence, fallback_used, warnings, stripped_images} | null`
+  - `jobDiagnostics`: `{state, selected_body, segmentation_path, client_hint, confidence, fallback_used, warnings, stripped_images, attachments} | null` (`attachments` is `{referenced, retained} | null`)
   - `diagnosticsOpen`
   - `reportPath`: `string | null`
   - `cancelRequested`
