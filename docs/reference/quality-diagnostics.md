@@ -37,7 +37,7 @@ This summary is intended for operator review. It is not the raw internal convers
   - `category`: `signature_image | tracking_pixel`
   - `reason`: detection layer that matched (e.g., `gmail_signature_wrapper`, `front_signature_wrapper`, `thunderbird_signature_wrapper`, `apple_mail_signature_wrapper`, `gmail_mail_sig_url`, `filename_pattern:logo`, `structural_boundary_extension`, `dimension_heuristic`, `hidden_image`)
   - `reference`: the image `src` or CID that was stripped
-- `attachments`: `{referenced, retained}` counts (present only when the message has attachments eligible for retention)
+- `attachments`: `{referenced, retained}` counts, populated when the message has attachments eligible for retention. The job-status API returns `null` when there are none (same convention as `client_hint`); the raw MCP diagnostics dict and per-job report omit the key entirely.
   - `referenced`: attachment count before the unreferenced-inline-asset pass
   - `retained`: attachment count written to the rendered output and bundle
   - A `retained < referenced` gap means attachments were dropped; pair it with the `attachment_reference_without_attachments` warning for a machine-detectable signal.

@@ -353,7 +353,7 @@ Diagnostics semantics:
 
 - `diagnostics` is populated for `mode="file"` jobs only.
 - Directory jobs return `"diagnostics": null`.
-- `diagnostics.attachments` is present only when the message has attachments eligible for retention. `referenced` counts attachments before the unreferenced-inline-asset pass; `retained` counts those written to the output. A `retained < referenced` gap signals dropped attachments and is machine-detectable.
+- `diagnostics.attachments` is an object when the message has attachments eligible for retention, and `null` otherwise. `referenced` counts attachments before the unreferenced-inline-asset pass; `retained` counts those written to the output. A `retained < referenced` gap signals dropped attachments and is machine-detectable.
 - When `report=true` and report generation succeeds, `report_path` points to a per-job JSON artifact under Cabinet named `.dead-letter-report-<job_id>.json`.
 - Report generation still occurs for successful zero-file jobs; those reports contain `total=0` and an empty `results` array.
 - `recovery_actions` is empty by default.
