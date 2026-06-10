@@ -67,5 +67,5 @@ Run this checklist before each plugin release. Most can run in Cowork; some requ
 - [ ] All checks above pass
 - [ ] No regressions vs. the previous release
 - [ ] Tag dead-letter repo `plugin-v<X.Y.Z>` and push
-- [ ] Update `BigCactusLabs/bigcactuslabs-plugins/.claude-plugin/marketplace.json`
-      `source.ref` and push
+- [ ] Fast-forward the release pointer:
+      `git push origin 'plugin-v<X.Y.Z>^{}:release'`

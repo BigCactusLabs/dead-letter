@@ -115,9 +115,11 @@ Update `BigCactusLabs/homebrew-tap` only after the PyPI release is live.
 The Claude plugin under [`plugin/`](../../plugin/) has its own release tag
 independent of the package version. The
 [`BigCactusLabs/bigcactuslabs-plugins`](https://github.com/BigCactusLabs/bigcactuslabs-plugins)
-marketplace points at this directory via `git-subdir` with a pinned `ref`, so a
-new plugin release is just a new tag that the marketplace manifest already
-references.
+marketplace points at this directory via `git-subdir` with
+`"ref": "release"` — a fast-forward-only branch in this repo. Shipping a
+plugin release means advancing `release`; the marketplace manifest is never
+edited per release. (Rationale:
+[`docs/superpowers/specs/2026-06-09-marketplace-versioning-strategy.md`](../superpowers/specs/2026-06-09-marketplace-versioning-strategy.md).)
 
 Release the plugin only after the PyPI release the plugin's `.mcp.json` is
 pinned to has been published (verify with the `dead-letter==X.Y.Z` step under
@@ -135,24 +137,28 @@ enforced shape.
 2. Tag the plugin release on the current `main` commit. The tag name is
    `plugin-vX.Y.Z` (note the `plugin-` prefix; the package's own release tag is
    plain `vX.Y.Z`). The `X.Y.Z` is the plugin's asset version — independent of
-   the package version, though they're aligned today:
+   the package version, though they're aligned today. The tag exists for the
+   changelog, humans, and emergency rollback:
 
    ```bash
    git tag -a plugin-vX.Y.Z -m "Plugin release vX.Y.Z"
    git push origin plugin-vX.Y.Z
    ```
 
-3. Confirm the marketplace manifest already references this ref:
+3. Fast-forward the `release` branch to the tagged commit. This is the step
+   that ships — marketplace auto-update follows `release` and picks up the
+   bumped `plugin.json` `version`. The `^{}` suffix is required because the
+   tag is annotated:
 
    ```bash
-   gh api repos/BigCactusLabs/bigcactuslabs-plugins/contents/.claude-plugin/marketplace.json --jq '.content' | base64 -d | grep '"ref"'
+   git push origin 'plugin-vX.Y.Z^{}:release'
    ```
 
-   The `ref` should be `plugin-vX.Y.Z`. If the marketplace has been bumping
-   independently and is on an older ref, update
-   [`marketplace.json`](https://github.com/BigCactusLabs/bigcactuslabs-plugins/blob/main/.claude-plugin/marketplace.json),
-   commit, push, and tag the marketplace itself (`vY.Y.Y` in that repo — its
-   own versioning).
+   Rollback, if ever needed:
+   `git push --force origin 'plugin-vOLD.X.Y^{}:release'` — or, in an
+   emergency, temporarily re-pin the marketplace
+   [`marketplace.json`](https://github.com/BigCactusLabs/bigcactuslabs-plugins/blob/main/.claude-plugin/marketplace.json)
+   `ref` to an old tag.
 
 4. Smoke-test the live install in a fresh Claude Code session:
 
