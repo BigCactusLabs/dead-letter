@@ -285,6 +285,7 @@ same commands, plus
 - [Brand & Style Guide](docs/brand/style-guide.md)
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
+- [Agent Guide](AGENTS.md) — operational guide for AI coding agents working in this repo
 
 ## 🔧 Tools We Love
 

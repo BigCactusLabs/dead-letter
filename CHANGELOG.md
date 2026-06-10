@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `AGENTS.md` — operational guide for AI coding agents contributing to the
+  repo: verification commands, hard invariants (untrusted email content,
+  version sync points, release-pointer ordering), and conventions.
+
 ## [0.2.3] - 2026-06-09
 
 ### Fixed
