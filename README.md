@@ -233,6 +233,8 @@ uv run --extra mcp dead-letter-mcp
 
 The plugin bundles the MCP server (via `uvx`, no `pip install` needed — just `uv` on `PATH`) and adds four slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`. Email content handled through the plugin is treated as untrusted data, not instructions, so tool-use, credential, and exfiltration requests embedded in messages are not followed. Source under [`plugin/`](plugin/).
 
+The marketplace distributes the plugin from this repo's `release` branch, which only moves on a published release; the bundled MCP server is pinned to an exact PyPI version, so installs are reproducible and auto-update only delivers released versions.
+
 **Claude Code (manual MCP add — alternative):**
 
 ```bash

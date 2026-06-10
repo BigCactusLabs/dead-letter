@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repo: verification commands, hard invariants (untrusted email content,
   version sync points, release-pointer ordering), and conventions.
 
+### Changed
+
+- Plugin distribution: the
+  [`BigCactusLabs/bigcactuslabs-plugins`](https://github.com/BigCactusLabs/bigcactuslabs-plugins)
+  marketplace now tracks a fast-forward-only `release` branch in this repo
+  instead of a per-version tag pin, so shipping a plugin release no longer
+  requires a hand-edited marketplace `ref` bump. Runtime versioning is
+  unchanged — the plugin's `.mcp.json` still pins an exact PyPI version.
+  `plugin-vX.Y.Z` tags continue to mark each plugin release. See the updated
+  [release runbook](docs/reference/publishing.md). No action needed for
+  installed plugins.
+
 ## [0.2.3] - 2026-06-09
 
 ### Fixed
