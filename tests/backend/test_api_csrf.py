@@ -31,6 +31,49 @@ class _StubJobManager:
 
 
 @pytest.mark.anyio
+async def test_api_session_rejects_untrusted_host(tmp_path: Path) -> None:
+    app = create_app(
+        browser=FilesystemBrowser(root=tmp_path),
+        settings_path=tmp_path / "settings.json",
+        worker_count=1,
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://attacker.example:8765") as client:
+        response = await client.get("/api/session")
+
+    assert response.status_code == 403
+    payload = response.json()
+    assert payload["errors"][0]["code"] == "host_validation_failed"
+    assert "csrf_token" not in payload
+
+
+@pytest.mark.anyio
+async def test_untrusted_host_mutation_is_rejected_before_write(tmp_path: Path) -> None:
+    app = create_app(
+        browser=FilesystemBrowser(root=tmp_path),
+        settings_path=tmp_path / "settings.json",
+        worker_count=1,
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://attacker.example:8765") as client:
+        response = await client.put(
+            "/api/settings",
+            headers={
+                "Origin": "http://attacker.example:8765",
+                "X-Dead-Letter-CSRF": app.state.csrf_token,
+            },
+            json={
+                "inbox_path": str(tmp_path / "Inbox"),
+                "cabinet_path": str(tmp_path / "Cabinet"),
+            },
+        )
+
+    assert response.status_code == 403
+    assert response.json()["errors"][0]["code"] == "host_validation_failed"
+    assert app.state.settings.load() is None
+
+
+@pytest.mark.anyio
 async def test_get_routes_remain_ungated(tmp_path: Path) -> None:
     app = create_app(
         browser=FilesystemBrowser(root=tmp_path),
@@ -38,7 +81,7 @@ async def test_get_routes_remain_ungated(tmp_path: Path) -> None:
         worker_count=1,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         session = await client.get("/api/session")
         settings = await client.get("/api/settings")
 
@@ -55,7 +98,7 @@ async def test_mutating_json_route_requires_csrf_token(tmp_path: Path) -> None:
         worker_count=1,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.put(
             "/api/settings",
             json={
@@ -76,7 +119,7 @@ async def test_mutating_json_route_rejects_invalid_csrf_token(tmp_path: Path) ->
         worker_count=1,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.put(
             "/api/settings",
             headers={"X-Dead-Letter-CSRF": "not-the-token"},
@@ -98,7 +141,7 @@ async def test_mutating_json_route_accepts_session_token(tmp_path: Path) -> None
         worker_count=1,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.put(
             "/api/settings",
             headers=await csrf_headers(client),
@@ -123,7 +166,7 @@ async def test_hostile_origin_import_is_rejected_before_write(tmp_path: Path) ->
     )
     app.state.settings.save(inbox_path=inbox, cabinet_path=tmp_path / "Cabinet")
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import",
             headers={"Origin": "https://attacker.test"},
@@ -146,7 +189,7 @@ async def test_cross_site_fetch_metadata_is_rejected(tmp_path: Path) -> None:
     )
     app.state.settings.save(inbox_path=tmp_path / "Inbox", cabinet_path=tmp_path / "Cabinet")
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         headers = await csrf_headers(client)
         headers["Sec-Fetch-Site"] = "cross-site"
         response = await client.post(
@@ -170,9 +213,9 @@ async def test_same_origin_import_accepts_session_token(tmp_path: Path) -> None:
     )
     app.state.settings.save(inbox_path=tmp_path / "Inbox", cabinet_path=tmp_path / "Cabinet")
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         headers = await csrf_headers(client)
-        headers["Origin"] = "http://test"
+        headers["Origin"] = "http://127.0.0.1:8765"
         response = await client.post(
             "/api/import",
             headers=headers,

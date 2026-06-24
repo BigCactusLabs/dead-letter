@@ -173,7 +173,7 @@ async def test_import_requires_configured_settings(tmp_path: Path) -> None:
         worker_count=1,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import",
             headers=await csrf_headers(client),
@@ -198,7 +198,7 @@ async def test_import_copies_into_inbox_and_starts_job(tmp_path: Path) -> None:
     )
     app.state.settings.save(inbox_path=inbox, cabinet_path=cabinet)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import",
             headers=await csrf_headers(client),
@@ -263,7 +263,7 @@ async def test_import_refreshes_saved_roots_before_creating_job(
 
     monkeypatch.setattr(jobs_mod, "run_bundle_conversion", fake_convert)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import",
             headers=await csrf_headers(client),
@@ -295,7 +295,7 @@ async def test_import_uses_suffixed_filename_without_overwriting_existing_file(t
     )
     app.state.settings.save(inbox_path=inbox, cabinet_path=cabinet)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import",
             headers=await csrf_headers(client),
@@ -321,7 +321,7 @@ async def test_import_passes_job_options_from_multipart_options_field(tmp_path: 
     )
     app.state.settings.save(inbox_path=inbox, cabinet_path=cabinet)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import",
             headers=await csrf_headers(client),
@@ -349,7 +349,7 @@ async def test_import_rejects_invalid_options_payload(tmp_path: Path) -> None:
     )
     app.state.settings.save(inbox_path=inbox, cabinet_path=cabinet)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import",
             headers=await csrf_headers(client),
@@ -373,7 +373,7 @@ async def test_import_rejects_non_eml_with_error_envelope(tmp_path: Path) -> Non
     )
     app.state.settings.save(inbox_path=tmp_path / "Inbox", cabinet_path=tmp_path / "Cabinet")
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import",
             headers=await csrf_headers(client),
@@ -401,7 +401,7 @@ async def test_import_rejects_oversized_file_with_413(
     cabinet = tmp_path / "Cabinet"
     app.state.settings.save(inbox_path=inbox, cabinet_path=cabinet)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import",
             headers=await csrf_headers(client),
@@ -432,7 +432,7 @@ async def test_import_returns_500_when_collision_cap_exceeded(
     )
     app.state.settings.save(inbox_path=inbox, cabinet_path=cabinet)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import",
             headers=await csrf_headers(client),
@@ -459,7 +459,7 @@ async def test_import_suppresses_active_inbox_watch_for_imported_path(tmp_path: 
     )
     app.state.settings.save(inbox_path=inbox, cabinet_path=cabinet)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import",
             headers=await csrf_headers(client),
@@ -488,7 +488,7 @@ async def test_import_rolls_back_copied_file_when_job_creation_fails(tmp_path: P
 
     app.state.job_manager.create_job = boom
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import",
             headers=await csrf_headers(client),
@@ -518,7 +518,7 @@ async def test_import_does_not_suppress_watch_path_when_job_creation_fails(tmp_p
 
     app.state.job_manager.create_job = boom
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import",
             headers=await csrf_headers(client),

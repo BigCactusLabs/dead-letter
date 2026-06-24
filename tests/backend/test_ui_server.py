@@ -12,7 +12,7 @@ from dead_letter.backend.ui_server import create_ui_app
 async def test_ui_server_serves_index_and_static_assets() -> None:
     app = create_ui_app(frontend_root=Path("src/dead_letter/frontend"))
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         index = await client.get("/")
         script = await client.get("/static/app.js")
 

@@ -31,7 +31,7 @@ def _configured_app(tmp_path: Path, *, manager: object | None = None):
 @pytest.mark.anyio
 async def test_validation_errors_are_400() -> None:
     app = create_app(worker_count=1)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post("/api/jobs", headers=await csrf_headers(client), json={})
 
     assert response.status_code == 400
@@ -43,7 +43,7 @@ async def test_create_poll_and_cancel_unknown_job(tmp_path: Path) -> None:
     source.write_text("placeholder", encoding="utf-8")
 
     app = _configured_app(tmp_path)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         headers = await csrf_headers(client)
         create = await client.post(
             "/api/jobs",
@@ -97,7 +97,7 @@ async def test_cancel_terminal_job_returns_409(tmp_path: Path) -> None:
     source.write_text("placeholder", encoding="utf-8")
 
     app = _configured_app(tmp_path)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         headers = await csrf_headers(client)
         create = await client.post(
             "/api/jobs",
@@ -130,7 +130,7 @@ async def test_cancel_terminal_job_returns_409(tmp_path: Path) -> None:
 @pytest.mark.anyio
 async def test_create_job_invalid_path_returns_top_level_errors(tmp_path: Path) -> None:
     app = _configured_app(tmp_path)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/jobs",
             headers=await csrf_headers(client),
@@ -159,7 +159,7 @@ async def test_create_job_unexpected_error_returns_top_level_errors() -> None:
             raise RuntimeError("boom")
 
     app = _configured_app(Path("/tmp"), manager=BrokenManager())
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/jobs",
             headers=await csrf_headers(client),
@@ -203,7 +203,7 @@ async def test_retry_job_uses_retry_action_contract(tmp_path: Path, action: str)
     manager = RetryStubManager()
     app = _configured_app(tmp_path, manager=manager)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/jobs/job-123/retry",
             headers=await csrf_headers(client),
@@ -304,7 +304,7 @@ async def test_history_endpoint_returns_terminal_jobs(tmp_path: Path) -> None:
     inbox = tmp_path / "Inbox"
     inbox.mkdir(parents=True, exist_ok=True)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         headers = await csrf_headers(client)
         source = inbox / "test.eml"
         source.write_text("placeholder", encoding="utf-8")
@@ -340,7 +340,7 @@ async def test_history_endpoint_respects_limit(tmp_path: Path) -> None:
     inbox = tmp_path / "Inbox"
     inbox.mkdir(parents=True, exist_ok=True)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         headers = await csrf_headers(client)
         for i in range(3):
             source = inbox / f"test{i}.eml"

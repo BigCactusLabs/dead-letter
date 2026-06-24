@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [release runbook](docs/reference/publishing.md). No action needed for
   installed plugins.
 
+### Fixed
+
+- Local UI API requests now reject untrusted `Host` headers before issuing CSRF
+  tokens, closing a DNS-rebinding-style bypass against the local-only browser
+  workflow.
+
 ## [0.2.3] - 2026-06-09
 
 ### Fixed

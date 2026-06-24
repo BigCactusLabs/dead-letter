@@ -54,7 +54,7 @@ async def test_import_batch_creates_batch_dir_and_directory_mode_job(tmp_path: P
     app = _make_app(tmp_path, manager)
     inbox = tmp_path / "Inbox"
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import-batch",
             headers=await csrf_headers(client),
@@ -126,7 +126,7 @@ async def test_import_batch_refreshes_saved_roots_before_creating_job(
 
     monkeypatch.setattr(jobs_mod, "run_bundle_conversion", fake_convert)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import-batch",
             headers=await csrf_headers(client),
@@ -150,7 +150,7 @@ async def test_import_batch_refreshes_saved_roots_before_creating_job(
 async def test_import_batch_rejects_empty_file_list(tmp_path: Path) -> None:
     app = _make_app(tmp_path)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import-batch",
             headers=await csrf_headers(client),
@@ -164,7 +164,7 @@ async def test_import_batch_rejects_empty_file_list(tmp_path: Path) -> None:
 async def test_import_batch_rejects_non_eml_files(tmp_path: Path) -> None:
     app = _make_app(tmp_path)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import-batch",
             headers=await csrf_headers(client),
@@ -188,7 +188,7 @@ async def test_import_batch_requires_configured_settings(tmp_path: Path) -> None
         worker_count=1,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import-batch",
             headers=await csrf_headers(client),
@@ -203,7 +203,7 @@ async def test_import_batch_passes_options(tmp_path: Path) -> None:
     manager = _StubJobManager()
     app = _make_app(tmp_path, manager)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import-batch",
             headers=await csrf_headers(client),
@@ -221,7 +221,7 @@ async def test_import_batch_handles_filename_collisions(tmp_path: Path) -> None:
     manager = _StubJobManager()
     app = _make_app(tmp_path, manager)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import-batch",
             headers=await csrf_headers(client),
@@ -248,7 +248,7 @@ async def test_import_batch_rolls_back_reserved_batch_dir_when_job_creation_fail
 
     app.state.job_manager.create_job = boom
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import-batch",
             headers=await csrf_headers(client),
@@ -271,7 +271,7 @@ async def test_import_batch_rejects_oversized_file_with_413(
     app = _make_app(tmp_path, manager)
     inbox = tmp_path / "Inbox"
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import-batch",
             headers=await csrf_headers(client),
@@ -295,7 +295,7 @@ async def test_import_batch_rejects_too_many_files_before_staging(
     app = _make_app(tmp_path, manager)
     inbox = tmp_path / "Inbox"
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import-batch",
             headers=await csrf_headers(client),
@@ -323,7 +323,7 @@ async def test_import_batch_rejects_aggregate_size_with_413_and_cleans_up(
     app = _make_app(tmp_path, manager)
     inbox = tmp_path / "Inbox"
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/import-batch",
             headers=await csrf_headers(client),

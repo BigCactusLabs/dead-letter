@@ -55,7 +55,7 @@ async def test_watch_requires_configured_settings_when_using_default_inbox(tmp_p
         worker_count=1,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/watch",
             headers=await csrf_headers(client),
@@ -78,7 +78,7 @@ async def test_watch_requires_configured_settings_for_explicit_override(tmp_path
     )
     (tmp_path / "mail").mkdir()
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/watch",
             headers=await csrf_headers(client),
@@ -104,7 +104,7 @@ async def test_watch_uses_saved_inbox_as_default_target(tmp_path: Path) -> None:
     cabinet = tmp_path / "Cabinet"
     app.state.settings.save(inbox_path=inbox, cabinet_path=cabinet)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/watch",
             headers=await csrf_headers(client),
@@ -132,7 +132,7 @@ async def test_watch_rejects_override_targets_inside_cabinet(tmp_path: Path) -> 
     override.mkdir(parents=True)
     app.state.settings.save(inbox_path=inbox, cabinet_path=cabinet)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/watch",
             headers=await csrf_headers(client),
@@ -202,7 +202,7 @@ async def test_watch_api_surfaces_startup_backlog_jobs(tmp_path: Path, monkeypat
     )
     app.state.settings.save(inbox_path=inbox, cabinet_path=cabinet)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         start = await client.post(
             "/api/watch",
             headers=await csrf_headers(client),
@@ -285,7 +285,7 @@ async def test_watch_created_jobs_refresh_saved_roots_before_creating_job(
     )
     app.state.settings.save(inbox_path=old_inbox, cabinet_path=old_cabinet)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         headers = await csrf_headers(client)
         start = await client.post("/api/watch", headers=headers, json={"path": "", "options": {}})
         app.state.settings.save(inbox_path=new_inbox, cabinet_path=new_cabinet)

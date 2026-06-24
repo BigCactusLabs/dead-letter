@@ -34,7 +34,7 @@ def app(browser: FilesystemBrowser):
 
 @pytest.mark.anyio
 async def test_browse_lists_entries_with_safe_paths(app) -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.get("/api/fs/list", params={"path": "mail", "filter": ".eml"})
 
     assert response.status_code == 200
@@ -50,7 +50,7 @@ async def test_browse_lists_entries_with_safe_paths(app) -> None:
 
 @pytest.mark.anyio
 async def test_browse_errors_use_top_level_error_envelope(app) -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.get("/api/fs/list", params={"path": "../../etc"})
 
     assert response.status_code == 403
@@ -109,7 +109,7 @@ async def test_watch_api_start_stop_and_conflict_use_error_envelope(browser: Fil
         cabinet_path=browser.root / "Cabinet",
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         headers = await csrf_headers(client)
         start = await client.post("/api/watch", headers=headers, json={"path": "mail", "options": {}})
         conflict = await client.post("/api/watch", headers=headers, json={"path": "mail", "options": {}})
@@ -135,7 +135,7 @@ async def test_browse_skips_escaping_symlink_entries(app, sample_tree: Path) -> 
     outside.write_text("secret", encoding="utf-8")
     (sample_tree / "mail" / "escape.eml").symlink_to(outside)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.get("/api/fs/list", params={"path": "mail"})
 
     assert response.status_code == 200

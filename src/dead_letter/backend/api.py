@@ -58,6 +58,7 @@ _MAX_IMPORT_BATCH_FILES = 100
 _MAX_IMPORT_BATCH_BYTES = 100 * 1024 * 1024
 _SAFE_API_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _CSRF_HEADER_NAME = "x-dead-letter-csrf"
+_TRUSTED_API_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
 class UploadTooLargeError(RuntimeError):
@@ -167,6 +168,22 @@ def _csrf_error_response(message: str) -> JSONResponse:
     )
 
 
+def _host_validation_error_response(message: str) -> JSONResponse:
+    return _error_response(
+        403,
+        code="host_validation_failed",
+        message=message,
+        stage="validation",
+    )
+
+
+def _is_trusted_api_host(request: Request) -> bool:
+    host = request.url.hostname
+    if host is None:
+        return False
+    return host.rstrip(".").lower() in _TRUSTED_API_HOSTS
+
+
 def _request_origin(request: Request) -> str:
     host = request.headers.get("host") or request.url.netloc
     return f"{request.url.scheme}://{host}"
@@ -211,17 +228,21 @@ def create_app(
 
     @app.middleware("http")
     async def csrf_middleware(request: Request, call_next):
-        if request.url.path.startswith("/api/") and request.method.upper() not in _SAFE_API_METHODS:
-            if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
-                return _csrf_error_response("cross-site requests are not allowed")
+        if request.url.path.startswith("/api/"):
+            if not _is_trusted_api_host(request):
+                return _host_validation_error_response("untrusted host is not allowed")
 
-            origin = request.headers.get("origin")
-            if origin is not None and origin != _request_origin(request):
-                return _csrf_error_response("cross-origin requests are not allowed")
+            if request.method.upper() not in _SAFE_API_METHODS:
+                if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+                    return _csrf_error_response("cross-site requests are not allowed")
 
-            csrf_token = request.headers.get(_CSRF_HEADER_NAME)
-            if csrf_token is None or not hmac.compare_digest(csrf_token, app.state.csrf_token):
-                return _csrf_error_response("missing or invalid CSRF token")
+                origin = request.headers.get("origin")
+                if origin is not None and origin != _request_origin(request):
+                    return _csrf_error_response("cross-origin requests are not allowed")
+
+                csrf_token = request.headers.get(_CSRF_HEADER_NAME)
+                if csrf_token is None or not hmac.compare_digest(csrf_token, app.state.csrf_token):
+                    return _csrf_error_response("missing or invalid CSRF token")
 
         return await call_next(request)
 

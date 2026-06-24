@@ -43,7 +43,7 @@ async def test_create_job_requires_configured_settings(tmp_path: Path) -> None:
     source = tmp_path / "outside.eml"
     source.write_text("x", encoding="utf-8")
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/jobs",
             headers=await csrf_headers(client),
@@ -73,7 +73,7 @@ async def test_create_job_uses_saved_settings_roots(tmp_path: Path) -> None:
     source = tmp_path / "outside.eml"
     source.write_text("x", encoding="utf-8")
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.post(
             "/api/jobs",
             headers=await csrf_headers(client),

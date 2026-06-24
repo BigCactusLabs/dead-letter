@@ -20,7 +20,7 @@ async def test_get_settings_reports_unconfigured_when_missing(tmp_path: Path) ->
         worker_count=1,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.get("/api/settings")
 
     assert response.status_code == 200
@@ -42,7 +42,7 @@ async def test_put_settings_persists_and_creates_directories(tmp_path: Path) -> 
         worker_count=1,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         saved = await client.put(
             "/api/settings",
             headers=await csrf_headers(client),
@@ -74,7 +74,7 @@ async def test_put_settings_rejects_overlapping_paths(tmp_path: Path) -> None:
         worker_count=1,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.put(
             "/api/settings",
             headers=await csrf_headers(client),
@@ -100,7 +100,7 @@ async def test_get_settings_treats_malformed_persisted_file_as_unconfigured(tmp_
         worker_count=1,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.get("/api/settings")
 
     assert response.status_code == 200
@@ -133,7 +133,7 @@ async def test_get_settings_treats_file_backed_paths_as_unconfigured(tmp_path: P
         worker_count=1,
     )
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         response = await client.get("/api/settings")
 
     assert response.status_code == 200
@@ -167,7 +167,7 @@ async def test_open_folder_returns_error_envelope_when_cabinet_mkdir_fails(
     monkeypatch.setattr(Path, "mkdir", failing_mkdir)
 
     transport = ASGITransport(app=app, raise_app_exceptions=False)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url="http://127.0.0.1:8765") as client:
         response = await client.post("/api/open-folder", headers=await csrf_headers(client))
 
     assert response.status_code == 500

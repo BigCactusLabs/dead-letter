@@ -58,7 +58,7 @@ def integration_app(tmp_path: Path):
 async def test_browse_entry_input_path_can_be_submitted_to_jobs(integration_app) -> None:
     app, _browser, _inbox, cabinet = integration_app
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         headers = await csrf_headers(client)
         browse = await client.get("/api/fs/list", params={"path": "mail", "filter": ".eml"})
         entry = browse.json()["entries"][0]
@@ -84,7 +84,7 @@ async def test_browse_entry_input_path_can_be_submitted_to_jobs(integration_app)
 async def test_import_then_convert_moves_inbox_copy_into_cabinet_bundle(integration_app) -> None:
     app, _browser, inbox, cabinet = integration_app
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
         imported = await client.post(
             "/api/import",
             headers=await csrf_headers(client),

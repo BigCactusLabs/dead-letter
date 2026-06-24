@@ -167,6 +167,7 @@ Response (`200`):
 Rules:
 
 - The token is generated once per `create_app()` process and changes after the local server restarts.
+- All `/api/*` requests, including `GET /api/session`, require a trusted loopback `Host` (`localhost`, `127.0.0.1`, or `::1`).
 - `GET`, `HEAD`, and `OPTIONS` `/api/*` requests are not gated by CSRF.
 - Every non-safe `/api/*` request (`POST`, `PUT`, `DELETE`, etc.) must include `X-Dead-Letter-CSRF: <csrf_token>`.
 - Browser requests with `Sec-Fetch-Site: cross-site` are rejected with `403`.
