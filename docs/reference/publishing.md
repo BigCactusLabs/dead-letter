@@ -118,8 +118,7 @@ independent of the package version. The
 marketplace points at this directory via `git-subdir` with
 `"ref": "release"` — a fast-forward-only branch in this repo. Shipping a
 plugin release means advancing `release`; the marketplace manifest is never
-edited per release. (Rationale:
-[`docs/superpowers/specs/2026-06-09-marketplace-versioning-strategy.md`](../superpowers/specs/2026-06-09-marketplace-versioning-strategy.md).)
+edited per release.
 
 Release the plugin only after the PyPI release the plugin's `.mcp.json` is
 pinned to has been published (verify with the `dead-letter==X.Y.Z` step under
