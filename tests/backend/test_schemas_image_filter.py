@@ -72,6 +72,17 @@ def test_quality_diagnostics_preserves_attachments() -> None:
     assert diag.model_dump()["attachments"] == {"referenced": 1, "retained": 1}
 
 
+def test_quality_diagnostics_accepts_front_client_hint() -> None:
+    diag = QualityDiagnostics(
+        state="normal",
+        selected_body="html",
+        segmentation_path="html",
+        client_hint="front",
+        confidence="high",
+    )
+    assert diag.client_hint == "front"
+
+
 def test_quality_diagnostics_attachments_default_none() -> None:
     diag = QualityDiagnostics(
         state="normal",

@@ -22,7 +22,7 @@ ErrorStage = Literal["validation", "backend", "core"]
 DiagnosticState = Literal["normal", "degraded", "review_recommended"]
 SelectedBody = Literal["html", "plain"]
 SegmentationPath = Literal["html", "plain_fallback"]
-ClientHint = Literal["gmail", "outlook", "generic"] | None
+ClientHint = Literal["gmail", "outlook", "front", "generic"] | None
 ConfidenceLevel = Literal["high", "medium", "low"]
 WarningSeverity = Literal["warning"]
 

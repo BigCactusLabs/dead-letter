@@ -41,6 +41,7 @@ def test_segment_html_conversation_extracts_front_reply_before_blockquote() -> N
     result = segment_html_conversation(html)
 
     assert result.rules_triggered == ["front_blockquote"]
+    assert result.client_hint == "front"
     assert result.zones[0].kind is ZoneKind.BODY
     assert "Latest Front response" in result.zones[0].content
     assert "Older Front message" not in result.zones[0].content
@@ -48,6 +49,59 @@ def test_segment_html_conversation_extracts_front_reply_before_blockquote() -> N
         zone.kind is ZoneKind.QUOTED
         and 'class="front-blockquote"' in zone.content
         and "Older Front message" in zone.content
+        for zone in result.zones
+    )
+
+
+def test_segment_html_conversation_handles_front_generated_classes_and_nested_quotes() -> None:
+    html = (
+        "<html><body>"
+        "<div>Latest Front response</div>"
+        '<img alt="Sent from Front" src="https://app.frontapp.com/seen.gif" '
+        'style="width:1px;height:1px">'
+        "<br>"
+        '<blockquote type="cite" class="fa-731mdn fanx2yle front-blockquote">'
+        "On November 30, 2023 someone wrote:"
+        '<div id="divRplyFwdMsg">Nested Outlook quote header</div>'
+        '<blockquote type="cite" class="front-blockquote">Nested Front quote</blockquote>'
+        "</blockquote>"
+        "</body></html>"
+    )
+
+    result = segment_html_conversation(html)
+
+    assert result.client_hint == "front"
+    assert result.rules_triggered == ["front_blockquote"]
+    assert result.zones[0].kind is ZoneKind.BODY
+    assert "Latest Front response" in result.zones[0].content
+    assert "Nested Outlook quote header" not in result.zones[0].content
+    assert any(
+        zone.kind is ZoneKind.QUOTED
+        and "Nested Outlook quote header" in zone.content
+        and "Nested Front quote" in zone.content
+        for zone in result.zones
+    )
+
+
+def test_segment_html_conversation_preserves_front_trailing_siblings_as_body() -> None:
+    html = (
+        "<html><body>"
+        "<div>Latest Front response</div>"
+        '<blockquote type="cite" class="front-blockquote">Older Front message</blockquote>'
+        '<div class="moz-signature">Author signature after quote</div>'
+        "</body></html>"
+    )
+
+    result = segment_html_conversation(html)
+
+    assert result.client_hint == "front"
+    assert "Latest Front response" in result.zones[0].content
+    assert "Author signature after quote" in result.zones[0].content
+    assert "Older Front message" not in result.zones[0].content
+    assert any(
+        zone.kind is ZoneKind.QUOTED
+        and "Older Front message" in zone.content
+        and "Author signature after quote" not in zone.content
         for zone in result.zones
     )
 

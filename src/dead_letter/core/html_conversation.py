@@ -41,6 +41,43 @@ def _wrap_node_html(node, inner_html: str) -> str:
     return f"<{node.tag}{attrs}>{inner_html}</{node.tag}>"
 
 
+def _class_tokens(node) -> set[str]:
+    class_attr = node.attributes.get("class", "") or ""
+    return set(class_attr.split())
+
+
+def _iter_nodes_in_document_order(node):
+    yield node
+    child = node.child
+    while child is not None:
+        yield from _iter_nodes_in_document_order(child)
+        child = child.next
+
+
+def _quote_match(node) -> tuple[str, str] | None:
+    classes = _class_tokens(node)
+    if "gmail_quote" in classes:
+        return "gmail", "gmail_quote"
+    if node.attributes.get("id") == "divRplyFwdMsg":
+        return "outlook", "outlook_divRplyFwdMsg"
+    if node.tag == "blockquote" and "front-blockquote" in classes:
+        return "front", "front_blockquote"
+    return None
+
+
+def _find_first_quote_boundary(tree: HTMLParser):
+    root = tree.body or tree.css_first("html")
+    if root is None:
+        return None, None, None
+
+    for node in _iter_nodes_in_document_order(root):
+        match = _quote_match(node)
+        if match is not None:
+            hint, rule = match
+            return node, hint, rule
+    return None, None, None
+
+
 def _split_node_html(node, quote_mem_id: int) -> tuple[str, str, bool]:
     if node.mem_id == quote_mem_id:
         return "", _node_html(node), True
@@ -117,26 +154,10 @@ def segment_html_conversation(html: str, *, client_hint: str | None = None) -> C
     zones: list[ConversationZone] = []
     rules_triggered: list[str] = []
 
-    quote_node = None
-    resolved_hint = client_hint
-
-    gmail_quote = tree.css_first(".gmail_quote")
-    if gmail_quote is not None:
-        quote_node = gmail_quote
-        resolved_hint = "gmail"
-        rules_triggered.append("gmail_quote")
-    else:
-        outlook_quote = tree.css_first("#divRplyFwdMsg")
-        if outlook_quote is not None:
-            quote_node = outlook_quote
-            resolved_hint = "outlook"
-            rules_triggered.append("outlook_divRplyFwdMsg")
-        else:
-            front_quote = tree.css_first("blockquote.front-blockquote")
-            if front_quote is not None:
-                quote_node = front_quote
-                resolved_hint = "generic"
-                rules_triggered.append("front_blockquote")
+    quote_node, detected_hint, detected_rule = _find_first_quote_boundary(tree)
+    resolved_hint = detected_hint or client_hint
+    if detected_rule is not None:
+        rules_triggered.append(detected_rule)
 
     body_content = _body_html(tree)
     quoted_content = None
@@ -150,10 +171,7 @@ def segment_html_conversation(html: str, *, client_hint: str | None = None) -> C
                 quoted_content = _extract_quote_html(quote_node, include_following_siblings=True)
                 body_content = _body_html(tree)
         else:
-            quoted_content = _extract_quote_html(
-                quote_node,
-                include_following_siblings="front_blockquote" in rules_triggered,
-            )
+            quoted_content = _extract_quote_html(quote_node)
             body_content = _body_html(tree)
 
     if body_content:

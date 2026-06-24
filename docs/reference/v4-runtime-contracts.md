@@ -2,7 +2,7 @@
 title: dead-letter v4 Runtime Contracts
 doc_type: reference
 status: canonical
-last_updated: 2026-05-26
+last_updated: 2026-06-24
 audience:
   - maintainers
   - contributors
@@ -326,7 +326,7 @@ Response (`200`):
     "state": "normal|degraded|review_recommended",
     "selected_body": "html|plain",
     "segmentation_path": "html|plain_fallback",
-    "client_hint": "gmail|outlook|generic|null",
+    "client_hint": "gmail|outlook|front|generic|null",
     "confidence": "high|medium|low",
     "fallback_used": "plain_text_reply_parser|html_failure_plain_text_fallback|html_markdown_panic_repaired|null",
     "warnings": [{"code": "string", "message": "string", "severity": "warning"}],
