@@ -355,7 +355,13 @@ class JobManager:
             finished_at=record.finished_at,
         )
 
-    async def _record_run_failure(self, job_id: str, exc: Exception) -> None:
+    async def _record_run_failure(
+        self,
+        job_id: str,
+        exc: Exception,
+        *,
+        transition: bool = True,
+    ) -> None:
         async with self._lock:
             record = self._jobs[job_id]
             if isinstance(exc, ExceptionGroup):
@@ -377,7 +383,7 @@ class JobManager:
                 )
                 record.summary.errors += 1
                 record.progress.failed += 1
-            if record.status == "running":
+            if transition and record.status == "running":
                 self._transition(record, "failed")
 
     async def _run_job(self, job_id: str) -> None:
@@ -450,9 +456,6 @@ class JobManager:
                                 success=False,
                                 error={"code": "backend_exception", "message": str(exc), "stage": "backend"},
                             ))
-                        if record.request.mode == "file":
-                            if record.status == "running":
-                                self._transition(record, "failed")
                     continue
 
                 async with self._lock:
@@ -516,10 +519,6 @@ class JobManager:
                                 record.recovery_actions = []
                         else:
                             record.recovery_actions = []
-                        if record.request.mode == "file":
-                            if record.status == "running":
-                                self._transition(record, "failed")
-
                     if record.cancel_requested:
                         return
 
@@ -528,25 +527,26 @@ class JobManager:
                 for _ in range(self._worker_count):
                     group.create_task(worker())
         except Exception as exc:
-            await self._record_run_failure(job_id, exc)
-        else:
-            async with self._lock:
-                record = self._jobs[job_id]
-                if record.status in TERMINAL_STATUSES:
-                    pass
-                elif record.cancel_requested:
-                    self._transition(record, "cancelled")
-                elif record.request.mode == "file" and record.summary.errors > 0:
-                    self._transition(record, "failed")
-                elif record.summary.errors > 0:
-                    self._transition(record, "completed_with_errors")
-                else:
-                    self._transition(record, "succeeded")
+            await self._record_run_failure(job_id, exc, transition=False)
+
+        async with self._lock:
+            record = self._jobs[job_id]
+            if record.status in TERMINAL_STATUSES:
+                final_status: JobStatus | None = None
+            elif record.cancel_requested:
+                final_status = "cancelled"
+            elif record.request.mode == "file" and record.summary.errors > 0:
+                final_status = "failed"
+            elif record.summary.errors > 0:
+                final_status = "completed_with_errors"
+            else:
+                final_status = "succeeded"
 
         # Write report if enabled
         report_data = None
         cabinet_root = None
         report_filename = None
+        report_file = None
         async with self._lock:
             record = self._jobs[job_id]
             if record.request.options.report:
@@ -560,7 +560,7 @@ class JobManager:
                         entries=record.report_entries,
                         options=core_opts,
                         job_id=record.id,
-                        job_status=record.status,
+                        job_status=final_status or record.status,
                         duration_ms=duration_ms,
                         input_path=record.request.input_path,
                         input_mode=record.request.mode,
@@ -581,13 +581,16 @@ class JobManager:
                     cabinet_root,
                     filename=report_filename,
                 )
-                async with self._lock:
-                    self._jobs[job_id].report_path = str(report_file)
             except Exception:
                 logger.warning("Report write failed for job %s", job_id, exc_info=True)
 
         async with self._lock:
             record = self._jobs.get(job_id)
+            if record is not None and report_file is not None:
+                record.report_path = str(report_file)
+            if record is not None and final_status is not None and record.status not in TERMINAL_STATUSES:
+                status_to_apply = "cancelled" if record.cancel_requested else final_status
+                self._transition(record, status_to_apply)
             input_path = None if record is None else Path(record.request.input_path)
         if input_path is not None and input_path.name.startswith("_batch-") and input_path.is_dir():
             try:
