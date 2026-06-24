@@ -2,7 +2,7 @@
 title: Quality Diagnostics
 doc_type: reference
 status: canonical
-last_updated: 2026-06-09
+last_updated: 2026-06-24
 audience:
   - operators
   - maintainers
@@ -25,7 +25,7 @@ This summary is intended for operator review. It is not the raw internal convers
 - `segmentation_path`: `html | plain_fallback`
   - `html` means the selected HTML body stayed on an HTML rendering path.
   - `plain_fallback` means the final zoning path was plain text. This can be a normal outcome for plain-text mail, not just an error fallback.
-- `client_hint`: `gmail | outlook | generic | null`
+- `client_hint`: `gmail | outlook | front | generic | null`
 - `confidence`: `high | medium | low`
 - `fallback_used`: `plain_text_reply_parser | html_failure_plain_text_fallback | html_markdown_panic_repaired | null`
   - `plain_text_reply_parser` means the plain-text conversation parser was used for the final zoning step.
@@ -59,7 +59,7 @@ This summary is intended for operator review. It is not the raw internal convers
 
 - `high`
   - Strong structure signals were available.
-  - Example: Gmail or Outlook quote boundaries were recognized directly.
+  - Example: Gmail, Outlook, or supported Front quote boundaries were recognized directly.
 - `medium`
   - Conversion succeeded on a standard path without strong provider-specific evidence.
 - `low`
@@ -178,6 +178,16 @@ Warnings are additive. The pipeline prefers preserving extra content over deleti
   ]
 }
 ```
+
+### Supported Front quote boundaries
+
+Front-originated HTML is treated as high-confidence only when the parser finds
+`blockquote.front-blockquote`. Generated companion classes on that blockquote
+are allowed. Tracking pixels before the quote boundary do not affect quote
+segmentation. Content inside the Front blockquote, including nested Gmail,
+Outlook, or Front quote markup, is treated as quoted thread content. Siblings
+after the Front blockquote are preserved as authored body content unless another
+recognized parser rule handles them separately.
 
 ### Normal with a retained attachment
 

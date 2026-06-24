@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Backend jobs now attach `report_path` before exposing a terminal job status
+  when reports are enabled, so polling cannot observe `succeeded` or `failed`
+  with a still-pending report write.
+- Front-originated HTML replies now report `client_hint="front"`, prefer the
+  outer `blockquote.front-blockquote` boundary over nested quote markers, and
+  preserve arbitrary siblings after that Front quote as authored body content.
 - Local UI API requests now reject untrusted `Host` headers before issuing CSRF
   tokens, closing a DNS-rebinding-style bypass against the local-only browser
   workflow.

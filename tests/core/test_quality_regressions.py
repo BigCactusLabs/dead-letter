@@ -281,11 +281,75 @@ def test_front_blockquote_uses_high_confidence_html_segmentation(tmp_path: Path)
     assert diagnostics is not None
     assert diagnostics["state"] == "normal"
     assert diagnostics["segmentation_path"] == "html"
+    assert diagnostics["client_hint"] == "front"
     assert diagnostics["confidence"] == "high"
     assert diagnostics["fallback_used"] is None
     body = serialize_markdown(rendered)
     assert "Latest Front response" in body
     assert "Older Front message" not in body
+
+
+def test_front_blockquote_preserves_authored_trailing_content(tmp_path: Path) -> None:
+    source = _write_html_email(
+        tmp_path / "front_quote_with_trailing_content.eml",
+        (
+            "<div>Latest Front response</div>"
+            '<blockquote type="cite" class="front-blockquote">Older Front message</blockquote>'
+            "<div>Author note after quote</div>"
+        ),
+    )
+
+    _result, _parsed, rendered, diagnostics = _build_rendered_markdown(source, ConvertOptions())
+
+    assert diagnostics is not None
+    assert diagnostics["state"] == "normal"
+    assert diagnostics["segmentation_path"] == "html"
+    assert diagnostics["client_hint"] == "front"
+    body = serialize_markdown(rendered)
+    assert "Latest Front response" in body
+    assert "Author note after quote" in body
+    assert "Older Front message" not in body
+
+
+def test_front_blockquote_handles_nested_signature_disclaimer_and_images(tmp_path: Path) -> None:
+    source = _write_html_email(
+        tmp_path / "front_nested_signature_disclaimer_images.eml",
+        (
+            "<div>Latest Front response</div>"
+            '<div class="front-signature">'
+            '<img src="https://survey.frontapp.com/assets/star.png" alt="Survey">'
+            "</div>"
+            '<img alt="Sent from Front" style="width:1px;height:1px" '
+            'src="https://app.frontapp.com/api/1/noauth/seen/msg.gif">'
+            "<br>"
+            '<blockquote type="cite" class="fa-731mdn fanx2yle front-blockquote">'
+            "On November 30, 2023 someone wrote:"
+            '<div id="divRplyFwdMsg">Nested Outlook quote header</div>'
+            "<div>Older disclaimer text</div>"
+            '<img src="cid:inline-photo" alt="Inline quoted image">'
+            '<blockquote type="cite" class="front-blockquote">Nested Front quote</blockquote>'
+            "</blockquote>"
+        ),
+    )
+
+    _result, _parsed, rendered, diagnostics = _build_rendered_markdown(
+        source,
+        ConvertOptions(strip_signature_images=True, strip_tracking_pixels=True),
+    )
+
+    assert diagnostics is not None
+    assert diagnostics["state"] == "normal"
+    assert diagnostics["segmentation_path"] == "html"
+    assert diagnostics["client_hint"] == "front"
+    stripped_reasons = {item["reason"] for item in diagnostics["stripped_images"]}
+    assert "front_signature_wrapper" in stripped_reasons
+    assert stripped_reasons & {"dimension_heuristic", "structural_boundary_extension"}
+    body = serialize_markdown(rendered)
+    assert "Latest Front response" in body
+    assert "Nested Outlook quote header" not in body
+    assert "Older disclaimer text" not in body
+    assert "Nested Front quote" not in body
+    assert "Inline quoted image" not in body
 
 
 def test_html_conversion_error_hard_fails_by_default(tmp_path: Path, monkeypatch) -> None:
