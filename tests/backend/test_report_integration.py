@@ -97,6 +97,72 @@ async def test_report_written_on_happy_path(tmp_path: Path, monkeypatch) -> None
 
 
 @pytest.mark.anyio
+async def test_terminal_wait_includes_pending_report_write(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "Inbox" / "slow-report.eml"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("x", encoding="utf-8")
+
+    def ok_bundle(
+        path: str | Path,
+        *,
+        bundle_root: str | Path,
+        options: object | None = None,
+        source_handling: str = "move",
+    ) -> tuple[BundleResult, dict[str, object] | None]:
+        src = Path(path)
+        bundle = Path(bundle_root) / src.stem
+        bundle.mkdir(parents=True, exist_ok=True)
+        markdown = bundle / "message.md"
+        markdown.write_text("ok", encoding="utf-8")
+        return (
+            BundleResult(
+                source=src,
+                bundle=bundle,
+                markdown=markdown,
+                source_artifact=bundle / src.name,
+                attachments=[],
+                success=True,
+                error=None,
+                dry_run=False,
+            ),
+            None,
+        )
+
+    import dead_letter.backend.jobs as jobs_mod
+    import dead_letter.core.report as report_mod
+
+    monkeypatch.setattr(jobs_mod, "run_bundle_conversion", ok_bundle)
+    original_write_report = report_mod.write_report
+    loop = asyncio.get_running_loop()
+    write_started = asyncio.Event()
+    release_write = asyncio.Event()
+
+    def blocked_write_report(*args, **kwargs):
+        loop.call_soon_threadsafe(write_started.set)
+        asyncio.run_coroutine_threadsafe(release_write.wait(), loop).result(timeout=2.0)
+        return original_write_report(*args, **kwargs)
+
+    monkeypatch.setattr(report_mod, "write_report", blocked_write_report)
+
+    manager = _report_manager(tmp_path)
+    created = await manager.create_job(
+        JobCreateRequest(mode="file", input_path=str(source), options=JobOptions(report=True))
+    )
+    waiter = asyncio.create_task(manager.wait_for_terminal(created.id, timeout=2.0))
+
+    await asyncio.wait_for(write_started.wait(), timeout=2.0)
+    await asyncio.sleep(0.05)
+
+    assert not waiter.done()
+
+    release_write.set()
+    terminal = await waiter
+
+    assert terminal.status == "succeeded"
+    assert terminal.report_path is not None
+
+
+@pytest.mark.anyio
 async def test_report_written_when_worker_raises_exception(tmp_path: Path, monkeypatch) -> None:
     """Regression: report must still be written even when the TaskGroup except branch runs."""
     source = tmp_path / "Inbox" / "crash.eml"
