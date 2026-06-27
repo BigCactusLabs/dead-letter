@@ -173,10 +173,14 @@ Bundle conversion (Markdown + attachments + source in one directory):
 ```python
 from dead_letter import convert_to_bundle
 
-bundle = convert_to_bundle("message.eml", bundle_root="cabinet/")
+bundle = convert_to_bundle("message.eml", bundle_root="cabinet/", source_handling="copy")
 print(bundle.markdown)     # cabinet/message/message.md
 print(bundle.attachments)  # retained extracted files under cabinet/message/attachments/
 ```
+
+`source_handling="copy"` preserves the original `.eml` in place. If omitted,
+`convert_to_bundle()` defaults to `source_handling="move"` and moves the source
+message into the bundle.
 
 Retained extracted attachment filenames are normalized to safe basenames before
 they are written under `attachments/`.

@@ -2,7 +2,7 @@
 title: dead-letter v4 Runtime Contracts
 doc_type: reference
 status: canonical
-last_updated: 2026-06-24
+last_updated: 2026-06-27
 audience:
   - maintainers
   - contributors
@@ -168,6 +168,7 @@ Rules:
 
 - The token is generated once per `create_app()` process and changes after the local server restarts.
 - All `/api/*` requests, including `GET /api/session`, require a trusted loopback `Host` (`localhost`, `127.0.0.1`, or `::1`).
+- Untrusted `Host` failures use the standard error envelope with `code="host_validation_failed"`.
 - `GET`, `HEAD`, and `OPTIONS` `/api/*` requests are not gated by CSRF.
 - Every non-safe `/api/*` request (`POST`, `PUT`, `DELETE`, etc.) must include `X-Dead-Letter-CSRF: <csrf_token>`.
 - Browser requests with `Sec-Fetch-Site: cross-site` are rejected with `403`.
@@ -692,6 +693,8 @@ Common error codes:
 
 - `validation_error`: request schema validation failure.
 - `invalid_request`: semantic input validation failure.
+- `host_validation_failed`: `/api/*` request used an untrusted non-loopback `Host`.
+- `csrf_validation_failed`: mutating `/api/*` request failed CSRF, cross-site, or cross-origin validation.
 - `backend_error`: unhandled API layer failure.
 - `backend_exception`: worker-side exception around core conversion call.
 - `conversion_error`: mapped core conversion failure (`ConvertResult.success=False`).
@@ -781,7 +784,7 @@ Exit codes:
 - `200`: settings get/put, filesystem list, watch get/start/stop, job snapshot, open Cabinet folder
 - `202`: job create accepted, import accepted, cancel accepted
 - `400`: request rejected (schema or semantic validation)
-- `403`: CSRF validation failure, hostile browser-origin signal, or filesystem/watch path escaping the configured browser root
+- `403`: untrusted API `Host`, CSRF validation failure, hostile browser-origin signal, or filesystem/watch path escaping the configured browser root
 - `404`: unknown or evicted job id, or missing browse/watch target
 - `409`: workflow settings missing, or invalid lifecycle/watch conflict
 - `413`: import payload exceeds the 100 MB per-file limit, the 100-file batch limit, or the 100 MB aggregate batch limit
