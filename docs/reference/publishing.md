@@ -30,6 +30,17 @@ the Homebrew tap.
      `publish-mcp` job re-stamps these from the release tag, so this is
      belt-and-suspenders for local `mcp-publisher publish` runs, but keep it
      in sync.
+   - `plugin/.claude-plugin/plugin.json` — bump `version` to `X.Y.Z`.
+   - `plugin/.mcp.json` — bump the `dead-letter[mcp]==X.Y.Z` pin.
+
+   Bump the plugin files **in lockstep with the package by default**: an
+   aligned release ships the same version to PyPI and to plugin users, so the
+   plugin bump belongs in this same release-prep commit. The only reason to
+   skip them here is a deliberate plugin-only patch or an intentional decision
+   *not* to adopt this package version into the plugin yet — see
+   [Plugin Versioning Model](#plugin-versioning-model). Forgetting them is what
+   left the marketplace on a stale version before; CI now emits a warning when
+   the plugin pin lags `pyproject.toml` (see `.github/workflows/ci.yml`).
 3. Verify the version import:
 
    ```bash
@@ -156,8 +167,16 @@ Update `BigCactusLabs/homebrew-tap` only after the PyPI release is live.
 
 ## Plugin Release
 
-The Claude plugin under [`plugin/`](../../plugin/) has its own release tag
-independent of the package version. The
+These are the closing **ship** steps of an aligned release: the plugin's
+`version` and MCP pin were already bumped in [Prepare The Release](#prepare-the-release)
+(lockstep by default), so all that remains is to tag the plugin and advance the
+marketplace pointer. If you are instead cutting a plugin-only patch, do the
+version bump here in a small standalone commit first.
+
+The Claude plugin under [`plugin/`](../../plugin/) has its own release tag,
+which is *permitted* to diverge from the package version (see
+[Plugin Versioning Model](#plugin-versioning-model)) even though the two are
+aligned today. The
 [`BigCactusLabs/bigcactuslabs-plugins`](https://github.com/BigCactusLabs/bigcactuslabs-plugins)
 marketplace points at this directory via `git-subdir` with
 `"ref": "release"` — a fast-forward-only branch in this repo. Shipping a
