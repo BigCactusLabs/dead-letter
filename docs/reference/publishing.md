@@ -6,6 +6,10 @@ the Homebrew tap.
 ## Policy
 
 - GitHub releases publish to PyPI through `.github/workflows/release.yml`.
+- The same workflow then publishes server metadata to the Official MCP
+  Registry (`registry.modelcontextprotocol.io`) via the `publish-mcp` job,
+  which runs after the PyPI publish succeeds. It authenticates with GitHub
+  OIDC (no stored secret) to claim the `io.github.BigCactusLabs/*` namespace.
 - The Homebrew tap is updated manually after PyPI publish succeeds.
 - The Homebrew formula installs the core CLI only: `dead-letter convert` and
   `dead-letter doctor`.
@@ -21,6 +25,11 @@ the Homebrew tap.
    - `uv.lock`
    - `src/dead_letter/__init__.py`
    - `CHANGELOG.md`
+   - `server.json` — bump `version`, `packages[0].version`, and the
+     `dead-letter[mcp]==X.Y.Z` pin in `packages[0].runtimeArguments`. The
+     `publish-mcp` job re-stamps these from the release tag, so this is
+     belt-and-suspenders for local `mcp-publisher publish` runs, but keep it
+     in sync.
 3. Verify the version import:
 
    ```bash
@@ -69,6 +78,41 @@ Confirm PyPI has the new version:
 
 ```bash
 curl -fsSL https://pypi.org/pypi/dead-letter/X.Y.Z/json
+```
+
+## MCP Registry Publish (Automatic)
+
+The `publish-mcp` job in `.github/workflows/release.yml` runs after the PyPI
+publish and pushes `server.json` to the Official MCP Registry. From there the
+listing propagates automatically to the GitHub MCP Registry (`github.com/mcp`),
+PulseMCP, and other aggregators — no separate submission.
+
+How it works:
+
+- Ownership is proven by two things that must both be true for a given
+  version: the `<!-- mcp-name: io.github.BigCactusLabs/dead-letter -->` marker
+  in `README.md` (which becomes the PyPI package description) and GitHub OIDC
+  proving the workflow runs under the `BigCactusLabs` org.
+- The job waits for PyPI to serve the new version before publishing, because
+  the registry validates the marker against the live PyPI description.
+- Because the marker ships in the package README, the registry publish only
+  succeeds for releases cut **after** the marker landed on PyPI. The `0.2.3`
+  currently on PyPI predates it, so the first successful MCP publish happens on
+  the next release (`0.2.4`+). No backfill is possible for `0.2.3`.
+- The MCP Registry is in preview and may reset its data. Because every release
+  re-publishes, a reset self-heals on the next release; to force a re-publish
+  without a version bump, run the steps below locally.
+
+Manual publish (only if you need to re-publish outside a release, e.g. after a
+registry data reset):
+
+```bash
+# One-time: install the CLI
+brew install mcp-publisher   # or download from the registry releases page
+
+# From a checkout whose server.json version matches a version already on PyPI:
+mcp-publisher login github    # browser device-code flow
+mcp-publisher publish
 ```
 
 ## Update The Homebrew Tap

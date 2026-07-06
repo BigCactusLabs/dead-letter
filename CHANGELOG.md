@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Official MCP Registry publishing. A `server.json` describes the
+  `dead-letter-mcp` server, and a `publish-mcp` job in the release workflow
+  publishes it to `registry.modelcontextprotocol.io` after each PyPI release
+  using GitHub OIDC (no stored secret). The listing propagates automatically
+  to the GitHub MCP Registry, PulseMCP, and other aggregators. Ownership is
+  verified by an `mcp-name` marker in the package README; the first successful
+  publish lands on the next release (`0.2.3` on PyPI predates the marker). See
+  the [publishing runbook](docs/reference/publishing.md).
 - `AGENTS.md` — operational guide for AI coding agents contributing to the
   repo: verification commands, hard invariants (untrusted email content,
   version sync points, release-pointer ordering), and conventions.

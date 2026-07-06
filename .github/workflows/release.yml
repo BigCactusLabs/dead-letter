@@ -31,3 +31,61 @@ jobs:
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           attestations: true
+
+  # Publishes server metadata to the Official MCP Registry
+  # (registry.modelcontextprotocol.io) after the PyPI release is live. From
+  # there it propagates automatically to the GitHub MCP Registry, PulseMCP,
+  # and downstream aggregators. Uses GitHub OIDC to claim the
+  # io.github.BigCactusLabs/* namespace, so there is no stored secret. The
+  # registry only stores metadata; the package itself lives on PyPI.
+  publish-mcp:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC, proves ownership of the io.github.BigCactusLabs namespace
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+
+      - name: Resolve release version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for PyPI to serve the release
+        # The registry validates the mcp-name marker in the package's PyPI
+        # description, so the new version (README included) must be live first.
+        run: |
+          v="${{ steps.version.outputs.version }}"
+          for i in $(seq 1 30); do
+            if curl -fsSL "https://pypi.org/pypi/dead-letter/${v}/json" >/dev/null; then
+              echo "PyPI is serving dead-letter ${v}"
+              exit 0
+            fi
+            echo "waiting for PyPI dead-letter ${v} (attempt ${i}/30)"
+            sleep 10
+          done
+          echo "PyPI did not serve dead-letter ${v} in time" >&2
+          exit 1
+
+      - name: Stamp server.json with the release version
+        run: |
+          v="${{ steps.version.outputs.version }}"
+          jq --arg v "$v" '
+            .version = $v
+            | .packages[0].version = $v
+            | .packages[0].runtimeArguments |= map(
+                if .name == "--from" then .value = ("dead-letter[mcp]==" + $v) else . end
+              )
+          ' server.json > server.json.tmp && mv server.json.tmp server.json
+          cat server.json
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to the MCP Registry (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to the MCP Registry
+        run: ./mcp-publisher publish
