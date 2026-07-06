@@ -1,0 +1,21 @@
+# Keep the build context small — only ship what pip needs to build the package.
+.git
+.github
+.venv
+docs
+tests
+plugin
+scripts
+benchmarks
+dist
+build
+.claude
+.distribution
+.DS_Store
+*.command
+*.egg-info
+__pycache__
+.pytest_cache
+.ruff_cache
+.mypy_cache
+node_modules
