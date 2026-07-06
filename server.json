@@ -1,0 +1,44 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.BigCactusLabs/dead-letter",
+  "title": "dead-letter",
+  "description": "Convert .eml email exports to Markdown with YAML front matter",
+  "repository": {
+    "url": "https://github.com/BigCactusLabs/dead-letter",
+    "source": "github"
+  },
+  "version": "0.2.4",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "dead-letter",
+      "version": "0.2.4",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--python",
+          "value": "3.12",
+          "description": "dead-letter requires Python 3.12+"
+        },
+        {
+          "type": "named",
+          "name": "--from",
+          "value": "dead-letter[mcp]==0.2.4",
+          "description": "Install the pinned package with the MCP server extra"
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "dead-letter-mcp",
+          "description": "MCP server console entrypoint"
+        }
+      ]
+    }
+  ]
+}

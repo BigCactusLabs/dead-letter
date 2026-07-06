@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.BigCactusLabs/dead-letter -->
+
 <p align="center">
   <img src="docs/brand/production/readme-logo.png" width="128" alt="dead-letter">
 </p>
