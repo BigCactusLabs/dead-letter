@@ -46,6 +46,22 @@ jobs:
       - name: Plugin schema validation
         run: npx --yes @anthropic-ai/claude-code@2.1.145 plugin validate plugin/
 
+      # Non-blocking reminder: the plugin MCP pin is *allowed* to lag the package
+      # version (plugin releases are decoupled by design), so this warns rather
+      # than fails. It exists to make a forgotten plugin follow-up release
+      # visible instead of silently shipping a stale plugin to the marketplace.
+      - name: Plugin pin drift reminder (non-blocking)
+        if: always()
+        continue-on-error: true
+        run: |
+          pkg=$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          pin=$(python -c "import json, re; a = json.load(open('plugin/.mcp.json'))['mcpServers']['dead-letter']['args']; f = a[a.index('--from') + 1]; print(re.search(r'==([0-9][^\"]*)', f).group(1))")
+          if [ "$pkg" != "$pin" ]; then
+            echo "::warning title=Plugin pin lags package::plugin/.mcp.json pins dead-letter[mcp]==$pin but pyproject.toml is $pkg. If this package release should reach plugin/Cowork users, cut a plugin follow-up release (docs/reference/publishing.md)."
+          else
+            echo "Plugin pin ($pin) matches package version ($pkg)."
+          fi
+
       - name: Frontend tests
         run: node --test tests/frontend/*.test.js
 
