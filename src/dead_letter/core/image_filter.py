@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from selectolax.parser import HTMLParser
+from selectolax.parser import HTMLParser, Node
 
 from dead_letter.core.types import StrippedImage, StrippedImageCategory
 
@@ -155,7 +155,7 @@ def _detect_signature_image(src: str, alt: str) -> str | None:
     return None
 
 
-def _detect_tracking_pixel(img: object, src: str) -> str | None:
+def _detect_tracking_pixel(img: Node, src: str) -> str | None:
     """Return detection reason if img is a tracking pixel, else None."""
     # Safeguard: never strip CID references via tracking pixel detection.
     if src.startswith("cid:"):

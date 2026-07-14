@@ -111,6 +111,9 @@ def _extract_raw_attachments_from_stdlib(raw: bytes) -> list[dict[str, Any]]:
             else:
                 payload = b""
 
+        if not isinstance(payload, bytes):
+            payload = b""
+
         encoded_payload = base64.b64encode(payload).decode("ascii") if payload else ""
         if not encoded_payload:
             continue
@@ -142,7 +145,7 @@ def parse_eml(
 
     parsed = mailparser.parse_from_bytes(raw)
 
-    subject = parse_subject(parsed.subject)
+    subject = parse_subject(_normalize_header_value(parsed.subject))
     sender = _resolve_sender(parsed)
 
     date_value: str | None

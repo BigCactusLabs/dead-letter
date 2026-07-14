@@ -23,6 +23,7 @@ from dead_letter.backend.settings import SettingsStore
 from dead_letter.backend.schemas import (
     BatchImportStartResponse,
     ErrorItem,
+    ErrorStage,
     FsEntryResponse,
     FsListResponse,
     ImportStartResponse,
@@ -153,7 +154,7 @@ def _error_response(
     code: str,
     message: str,
     path: str | None = None,
-    stage: str = "validation",
+    stage: ErrorStage = "validation",
 ) -> JSONResponse:
     payload = ErrorItem(path=path, code=code, message=message, stage=stage).model_dump()
     return JSONResponse(status_code=status_code, content={"errors": [payload]})
@@ -320,7 +321,7 @@ def create_app(
         status_code=202,
         responses={400: ERROR_RESPONSES[400], 500: ERROR_RESPONSES[500]},
     )
-    async def create_job(request: JobCreateRequest) -> JobCreateResponse:
+    async def create_job(request: JobCreateRequest) -> JobCreateResponse | JSONResponse:
         configured = _current_settings()
         if configured is None:
             return _error_response(
@@ -356,7 +357,7 @@ def create_app(
         status_code=202,
         responses={400: ERROR_RESPONSES[400], 404: ERROR_RESPONSES[404], 409: ERROR_RESPONSES[409]},
     )
-    async def retry_job(job_id: str, request: JobRetryRequest) -> JobCreateResponse:
+    async def retry_job(job_id: str, request: JobRetryRequest) -> JobCreateResponse | JSONResponse:
         try:
             return await job_manager.retry_job(job_id, request.action)
         except KeyError:
@@ -389,7 +390,7 @@ def create_app(
         status_code=200,
         responses={400: ERROR_RESPONSES[400], 500: ERROR_RESPONSES[500]},
     )
-    async def put_settings(request: SettingsUpdateRequest) -> SettingsResponse:
+    async def put_settings(request: SettingsUpdateRequest) -> SettingsResponse | JSONResponse:
         try:
             configured = app.state.settings.save(
                 inbox_path=request.inbox_path,
@@ -436,7 +437,7 @@ def create_app(
         status_code=200,
         responses={404: ERROR_RESPONSES[404]},
     )
-    async def get_job(job_id: str) -> JobStatusResponse:
+    async def get_job(job_id: str) -> JobStatusResponse | JSONResponse:
         snapshot = await job_manager.get_job(job_id)
         if snapshot is None:
             return _error_response(404, code="invalid_request", message="unknown job", path=job_id)
@@ -448,7 +449,7 @@ def create_app(
         status_code=202,
         responses={404: ERROR_RESPONSES[404], 409: ERROR_RESPONSES[409]},
     )
-    async def cancel_job(job_id: str) -> JobCancelResponse:
+    async def cancel_job(job_id: str) -> JobCancelResponse | JSONResponse:
         outcome = await job_manager.cancel_job(job_id)
         if outcome is None:
             return _error_response(404, code="invalid_request", message="unknown job", path=job_id)
@@ -471,7 +472,7 @@ def create_app(
             404: ERROR_RESPONSES[404],
         },
     )
-    async def list_directory(path: str = "", filter: str | None = None) -> FsListResponse:
+    async def list_directory(path: str = "", filter: str | None = None) -> FsListResponse | JSONResponse:
         try:
             entries = fs_browser.list_dir(path, filter_ext=filter)
             normalized_path = fs_browser.normalize_relative(path)
@@ -511,7 +512,7 @@ def create_app(
     async def import_file(
         file: UploadFile = File(...),
         options: str = Form("{}"),
-    ) -> ImportStartResponse:
+    ) -> ImportStartResponse | JSONResponse:
         configured = _current_settings()
         if configured is None:
             return _error_response(
@@ -597,7 +598,7 @@ def create_app(
     async def import_batch(
         files: list[UploadFile] = File(...),
         options: str = Form("{}"),
-    ) -> BatchImportStartResponse:
+    ) -> BatchImportStartResponse | JSONResponse:
         configured = _current_settings()
         if configured is None:
             return _error_response(
@@ -705,7 +706,7 @@ def create_app(
             409: ERROR_RESPONSES[409],
         },
     )
-    async def start_watch(request: WatchStartRequest) -> WatchStatusResponse:
+    async def start_watch(request: WatchStartRequest) -> WatchStatusResponse | JSONResponse:
         configured = _current_settings()
         if configured is None:
             return _error_response(
@@ -755,7 +756,7 @@ def create_app(
         status_code=200,
         responses={409: ERROR_RESPONSES[409], 500: ERROR_RESPONSES[500]},
     )
-    async def open_folder() -> OpenFolderResponse:
+    async def open_folder() -> OpenFolderResponse | JSONResponse:
         configured = _current_settings()
         if configured is None:
             return _error_response(
