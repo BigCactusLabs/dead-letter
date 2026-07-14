@@ -9,13 +9,10 @@ import pytest
 
 import dead_letter.backend.doctor as doctor_mod
 from dead_letter.backend.doctor import (
-    CheckResult,
     check_cabinet_path,
-    check_cli_extras,
     check_core_dependencies,
     check_inbox_path,
     check_python_version,
-    check_ui_extras,
     run_doctor,
 )
 
@@ -122,11 +119,24 @@ def test_check_cabinet_path_uses_real_write_probe(
     assert result.fix is not None
 
 
+@pytest.fixture
+def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Resolve settings to an empty tmp location so run_doctor does not read the
+    developer's real machine config, which may point at paths that no longer
+    exist (making these tests pass or fail based on the host)."""
+    monkeypatch.setattr(
+        "dead_letter.backend.settings.default_settings_path",
+        lambda: tmp_path / "settings.json",
+    )
+
+
+@pytest.mark.usefixtures("isolated_settings")
 def test_run_doctor_exit_zero() -> None:
     rc = run_doctor()
     assert rc == 0
 
 
+@pytest.mark.usefixtures("isolated_settings")
 def test_run_doctor_json_output(capsys) -> None:
     rc = run_doctor(json_output=True)
     assert rc == 0

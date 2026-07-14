@@ -201,15 +201,17 @@ The Carrier bust portrait (`docs/brand/sources/logo-mark-source.png`, job `0b2b0
 
 ### Favicon Set
 
-Angular hood + amber eyes (job `07796a30` exports). Multi-format raster served from `src/dead_letter/frontend/static/`:
+Angular hood + amber eyes (job `07796a30` exports). Three raster formats are served from `src/dead_letter/frontend/static/`:
 
 | File | Size | Context |
 |---|---|---|
 | `favicon-192x192.png` | 192×192 | Android/PWA, Apple touch icon |
-| `favicon-128x128.png` | 128×128 | Chrome Web Store, high-DPI |
-| `favicon-64x64.png` | 64×64 | Windows site tiles |
 | `favicon-32x32.png` | 32×32 | Standard browser favicon |
 | `favicon.ico` | 16/32/48 | Legacy multi-size bundle |
+
+The full export set is archived under `docs/brand/production/` — including
+`favicon-128x128.png` (Chrome Web Store, high-DPI) and `favicon-64x64.png`
+(Windows site tiles), which are not shipped in the served static directory.
 
 No SVG fallback — Midjourney raster output has atmospheric depth that SVG cannot reproduce.
 

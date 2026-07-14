@@ -20,7 +20,7 @@ This document defines the migration from `html-to-markdown` 2.x to 3.x.
 - Runtime now depends on `html-to-markdown>=3.1.0,<4.0`.
 - `src/dead_letter/core/quotes.py` uses DOM-based quote-pattern detection and no longer imports `convert_with_visitor`.
 - `src/dead_letter/core/html.py` calls the internal adapter in `src/dead_letter/core/html_to_markdown_adapter.py`.
-- The lockfile currently resolves `html-to-markdown==3.7.2`; compatibility
+- The lockfile currently resolves `html-to-markdown==3.8.2`; compatibility
   checks still include the lower bound `html-to-markdown==3.1.0`.
 
 ## Migration Goal

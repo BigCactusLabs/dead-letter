@@ -249,7 +249,7 @@ def test_helper_reuses_existing_dead_letter_server_without_running_uv(tmp_path: 
         tmp_path,
         "curl",
         textwrap.dedent(
-            f"""
+            """
             printf '%s\\n' '<!doctype html><title>dead-letter</title>'
             """
         ),

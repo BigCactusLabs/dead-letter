@@ -177,7 +177,7 @@ def run_doctor(*, json_output: bool = False) -> int:
         }
         print(json.dumps(data, indent=2))
     else:
-        print(f"\ndead-letter doctor\n")
+        print("\ndead-letter doctor\n")
         for c in checks:
             tag = {"ok": "[ok]  ", "err": "[err] ", "skip": "[skip]"}[c.status]
             print(f"  {tag} {c.message}")
