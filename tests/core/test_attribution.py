@@ -7,7 +7,6 @@ import logging
 import pytest
 
 from dead_letter.core.attribution import (
-    AttributionMatch,
     parse_attribution_line,
 )
 

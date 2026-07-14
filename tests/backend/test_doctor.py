@@ -9,13 +9,10 @@ import pytest
 
 import dead_letter.backend.doctor as doctor_mod
 from dead_letter.backend.doctor import (
-    CheckResult,
     check_cabinet_path,
-    check_cli_extras,
     check_core_dependencies,
     check_inbox_path,
     check_python_version,
-    check_ui_extras,
     run_doctor,
 )
 

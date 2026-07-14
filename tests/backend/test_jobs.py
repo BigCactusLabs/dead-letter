@@ -14,7 +14,7 @@ from dead_letter.backend.jobs import (
     bundle_result_to_error,
 )
 from dead_letter.backend.schemas import JobCreateRequest
-from dead_letter.core.types import BundleResult
+from dead_letter.core.types import BundleResult, ConvertOptions
 
 
 def _noop_bundle(tmp_path: Path):
