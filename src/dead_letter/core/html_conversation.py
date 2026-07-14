@@ -47,11 +47,22 @@ def _class_tokens(node) -> set[str]:
 
 
 def _iter_nodes_in_document_order(node):
-    yield node
-    child = node.child
-    while child is not None:
-        yield from _iter_nodes_in_document_order(child)
-        child = child.next
+    """Yield node and all descendants in document order.
+
+    Iterative (explicit stack) rather than recursive so that deeply
+    nested, possibly adversarial HTML cannot exceed Python's
+    recursion limit. See issue #51.
+    """
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        yield current
+        children = []
+        child = current.child
+        while child is not None:
+            children.append(child)
+            child = child.next
+        stack.extend(reversed(children))
 
 
 def _quote_match(node) -> tuple[str, str] | None:
@@ -79,45 +90,46 @@ def _find_first_quote_boundary(tree: HTMLParser):
 
 
 def _split_node_html(node, quote_mem_id: int) -> tuple[str, str, bool]:
-    if node.mem_id == quote_mem_id:
-        return "", _node_html(node), True
-
-    child = node.child
-    if child is None:
-        return _node_html(node), "", False
-
-    body_children: list[str] = []
-    quoted_children: list[str] = []
-    found = False
-
-    while child is not None:
-        if found:
+    stack = [(node, node.child, [], [], False)]
+    while stack:
+        current, child, body_children, quoted_children, found = stack[-1]
+        if current.mem_id == quote_mem_id:
+            result = "", _node_html(current), True
+        elif child is None:
+            if not found:
+                result = _node_html(current), "", False
+            else:
+                result = (
+                    _wrap_node_html(current, "".join(body_children)),
+                    _wrap_node_html(current, "".join(quoted_children)),
+                    True,
+                )
+        elif found:
             child_html = _node_html(child)
             if child_html:
                 quoted_children.append(child_html)
-            child = child.next
+            stack[-1] = current, child.next, body_children, quoted_children, found
+            continue
+        else:
+            stack[-1] = current, child.next, body_children, quoted_children, found
+            stack.append((child, child.child, [], [], False))
             continue
 
-        body_html, quoted_html, child_found = _split_node_html(child, quote_mem_id)
+        stack.pop()
+        if not stack:
+            return result
+
+        body_html, quoted_html, child_found = result
+        parent, parent_child, parent_body, parent_quoted, parent_found = stack[-1]
         if child_found:
-            found = True
+            parent_found = True
             if body_html:
-                body_children.append(body_html)
+                parent_body.append(body_html)
             if quoted_html:
-                quoted_children.append(quoted_html)
+                parent_quoted.append(quoted_html)
         elif body_html:
-            body_children.append(body_html)
-
-        child = child.next
-
-    if not found:
-        return _node_html(node), "", False
-
-    return (
-        _wrap_node_html(node, "".join(body_children)),
-        _wrap_node_html(node, "".join(quoted_children)),
-        True,
-    )
+            parent_body.append(body_html)
+        stack[-1] = parent, parent_child, parent_body, parent_quoted, parent_found
 
 
 def _split_outlook_body_and_quote(tree: HTMLParser, quote_node) -> tuple[str | None, str | None]:

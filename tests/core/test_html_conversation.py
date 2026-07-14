@@ -4,6 +4,47 @@ from dead_letter.core.html_conversation import segment_html_conversation
 from dead_letter.core.types import ZoneKind
 
 
+def _deeply_nested_html(depth: int, quote_html: str) -> str:
+    return "<div>Latest response</div>" + "<div>" * depth + quote_html + "</div>" * depth
+
+
+def test_segment_html_conversation_handles_deeply_nested_gmail_quote() -> None:
+    html = _deeply_nested_html(2_000, '<div class="gmail_quote">Quoted message</div>')
+
+    result = segment_html_conversation(html, client_hint="gmail")
+
+    assert any(zone.kind is ZoneKind.BODY and "Latest response" in zone.content for zone in result.zones)
+    assert any(zone.kind is ZoneKind.QUOTED and "Quoted message" in zone.content for zone in result.zones)
+
+
+def test_segment_html_conversation_handles_deeply_nested_outlook_quote() -> None:
+    html = _deeply_nested_html(2_000, '<div id="divRplyFwdMsg">Quoted message</div>')
+
+    result = segment_html_conversation(html, client_hint="outlook")
+
+    assert any(zone.kind is ZoneKind.BODY and "Latest response" in zone.content for zone in result.zones)
+    assert any(zone.kind is ZoneKind.QUOTED and "Quoted message" in zone.content for zone in result.zones)
+
+
+def test_segment_html_conversation_preserves_nested_outlook_split_output() -> None:
+    html = (
+        "<html><body><div>Top reply</div>"
+        '<div><div><div id="divRplyFwdMsg">Original message</div></div>'
+        "<div>Older thread line</div></div></body></html>"
+    )
+
+    result = segment_html_conversation(html, client_hint="outlook")
+
+    body_zone, quoted_zone = result.zones
+    assert body_zone.kind is ZoneKind.BODY
+    assert body_zone.content == "<body><div>Top reply</div></body>"
+    assert quoted_zone.kind is ZoneKind.QUOTED
+    assert quoted_zone.content == (
+        '<body><div><div><div id="divRplyFwdMsg">Original message</div></div>'
+        "<div>Older thread line</div></div></body>"
+    )
+
+
 def test_segment_html_conversation_extracts_gmail_body_before_quote() -> None:
     html = '<div>Latest response</div><div class="gmail_quote">On prior mail wrote: ...</div>'
 
