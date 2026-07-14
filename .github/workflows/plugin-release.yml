@@ -10,13 +10,32 @@ on:
 jobs:
   advance-release:
     runs-on: ubuntu-latest
+    # The push to `release` is authenticated with RELEASE_PAT, a fine-grained
+    # PAT with Contents:write + Workflows:write — NOT the built-in GITHUB_TOKEN.
+    # Advancing `release` carries .github/workflows/* changes (always on the
+    # first run, since release lacks this file, and whenever a workflow changed
+    # on main), and GitHub refuses GITHUB_TOKEN pushes that create or update
+    # workflow files: the `workflows` scope cannot be granted to GITHUB_TOKEN.
+    # See docs/reference/publishing.md -> Plugin Release.
     permissions:
-      contents: write
+      contents: read
     steps:
+      - name: Verify release token is configured
+        env:
+          RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
+        run: |
+          if [ -z "$RELEASE_PAT" ]; then
+            echo "::error::RELEASE_PAT secret is not set. Create a fine-grained PAT scoped to this repo with Contents: write and Workflows: write, then add it as the RELEASE_PAT repository secret (see docs/reference/publishing.md -> Plugin Release)." >&2
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
         with:
           fetch-depth: 0
+          # PAT with workflow-file write permission; persisted by checkout for
+          # the fast-forward push below.
+          token: ${{ secrets.RELEASE_PAT }}
 
       - name: Extract MCP package pin
         id: pin
@@ -41,9 +60,11 @@ jobs:
           exit 1
 
       - name: Fast-forward release to the tagged commit
-        # A non-forced push is fast-forward-only. Manual emergency rollback by
-        # re-pointing release to an older tag, or temporarily re-pinning the
-        # marketplace manifest, remains available and is not obstructed here.
+        # Uses the RELEASE_PAT credential persisted by checkout above (the
+        # built-in GITHUB_TOKEN cannot push workflow-file changes). A non-forced
+        # push is fast-forward-only. Manual emergency rollback by re-pointing
+        # release to an older tag, or temporarily re-pinning the marketplace
+        # manifest, remains available and is not obstructed here.
         run: |
           git fetch origin release || true
           if git rev-parse --verify origin/release >/dev/null 2>&1; then

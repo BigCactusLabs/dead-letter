@@ -221,6 +221,17 @@ enforced shape.
    git push origin 'plugin-vX.Y.Z^{}:release'
    ```
 
+   > **One-time setup — `RELEASE_PAT` secret.** The workflow authenticates the
+   > push with a repository secret named `RELEASE_PAT`, not the built-in
+   > `GITHUB_TOKEN`: advancing `release` carries `.github/workflows/*` changes,
+   > and GitHub refuses `GITHUB_TOKEN` pushes that create or update workflow
+   > files (the `workflows` permission cannot be granted to it). Create a
+   > **fine-grained PAT** scoped to this repository with **Contents: write** and
+   > **Workflows: write**, then add it under *Settings → Secrets and variables →
+   > Actions* as `RELEASE_PAT`. If the secret is absent the workflow fails fast
+   > with a pointer here; the manual `git push … :release` fallback above always
+   > works with your own workflow-scoped credentials.
+
    Rollback, if ever needed:
    `git push --force origin 'plugin-vOLD.X.Y^{}:release'` — or, in an
    emergency, temporarily re-pin the marketplace
