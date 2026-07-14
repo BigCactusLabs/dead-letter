@@ -158,8 +158,12 @@ def test_bare_path_backward_compat(monkeypatch, tmp_path: Path) -> None:
     assert captured["path"] == source
 
 
-def test_doctor_subcommand_exits_zero(monkeypatch) -> None:
+def test_doctor_subcommand_exits_zero(monkeypatch, tmp_path: Path) -> None:
     """Doctor subcommand runs without error when deps are available."""
+    monkeypatch.setattr(
+        "dead_letter.backend.settings.default_settings_path",
+        lambda: tmp_path / "settings.json",
+    )
     rc = cli.main(["doctor"])
     assert rc == 0
 
