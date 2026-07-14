@@ -1,0 +1,59 @@
+name: plugin release
+
+# Deliberately trigger only on plugin asset tags: plugin releases are decoupled
+# from package releases, whose tags use the separate v* namespace.
+on:
+  push:
+    tags:
+      - "plugin-v*"
+
+jobs:
+  advance-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Extract MCP package pin
+        id: pin
+        # The .mcp.json pin is the package version to ship, independent of the
+        # plugin asset version in the tag, so never derive it from the tag name.
+        run: |
+          pin=$(python3 -c "import json, re; a = json.load(open('plugin/.mcp.json'))['mcpServers']['dead-letter']['args']; f = a[a.index('--from') + 1]; print(re.search(r'==([0-9][^\"]*)', f).group(1))")
+          echo "version=$pin" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for PyPI to serve the pinned package
+        run: |
+          v="${{ steps.pin.outputs.version }}"
+          for i in $(seq 1 6); do
+            if curl -fsSL "https://pypi.org/pypi/dead-letter/${v}/json" >/dev/null; then
+              echo "PyPI is serving dead-letter ${v}"
+              exit 0
+            fi
+            echo "waiting for PyPI dead-letter ${v} (attempt ${i}/6)"
+            sleep 10
+          done
+          echo "PyPI did not serve dead-letter ${v} in time" >&2
+          exit 1
+
+      - name: Fast-forward release to the tagged commit
+        # A non-forced push is fast-forward-only. Manual emergency rollback by
+        # re-pointing release to an older tag, or temporarily re-pinning the
+        # marketplace manifest, remains available and is not obstructed here.
+        run: |
+          git fetch origin release || true
+          if git rev-parse --verify origin/release >/dev/null 2>&1; then
+            if ! git merge-base --is-ancestor origin/release "$GITHUB_SHA"; then
+              echo "::error::release ($(git rev-parse --short origin/release)) is not an ancestor of $GITHUB_SHA — refusing non-fast-forward advance." >&2
+              exit 1
+            fi
+          fi
+          git push origin "$GITHUB_SHA:refs/heads/release"
+
+      - name: Summarize release advance
+        run: |
+          echo "Verified dead-letter[mcp]==${{ steps.pin.outputs.version }} is live on PyPI; fast-forwarded release to tagged commit $GITHUB_SHA." >> "$GITHUB_STEP_SUMMARY"

@@ -208,10 +208,14 @@ enforced shape.
    git push origin plugin-vX.Y.Z
    ```
 
-3. Fast-forward the `release` branch to the tagged commit. This is the step
-   that ships — marketplace auto-update follows `release` and picks up the
-   bumped `plugin.json` `version`. The `^{}` suffix is required because the
-   tag is annotated:
+3. Pushing the `plugin-v*` tag automatically runs
+   [`.github/workflows/plugin-release.yml`](../../.github/workflows/plugin-release.yml).
+   It verifies the package version pinned in `.mcp.json` is live on PyPI, then
+   fast-forwards `release` to the tagged commit. This is the step that ships —
+   marketplace auto-update follows `release` and picks up the bumped
+   `plugin.json` `version`. If the workflow needs a manual fallback or an
+   emergency advance, the `^{}` suffix is required because the tag is
+   annotated:
 
    ```bash
    git push origin 'plugin-vX.Y.Z^{}:release'
