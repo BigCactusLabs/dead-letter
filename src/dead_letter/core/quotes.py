@@ -45,7 +45,10 @@ def detect_quote_patterns(html: str) -> set[str]:
 
     patterns: set[str] = set()
     parser = HTMLParser(html)
-    for node in parser.root.traverse():
+    root = parser.root
+    if root is None:
+        return patterns
+    for node in root.traverse():
         tag = (node.tag or "").lower()
         attrs = {str(k).lower(): str(v) for k, v in node.attributes.items()}
         _detect_element_patterns(tag, attrs, patterns)

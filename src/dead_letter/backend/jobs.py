@@ -7,6 +7,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 from dead_letter.backend.schemas import (
@@ -102,7 +103,7 @@ def run_bundle_conversion(
     *,
     bundle_root: str | Path,
     options: ConvertOptions,
-    source_handling: str,
+    source_handling: Literal["move", "copy", "delete"],
 ) -> tuple[BundleResult, dict[str, object] | None]:
     if core_convert_to_bundle is not _DEFAULT_CORE_CONVERT_TO_BUNDLE:
         return (
@@ -421,7 +422,9 @@ class JobManager:
                     request = record.request
 
                 core_options = ConvertOptions(**request.options.model_dump())
-                source_handling = "delete" if request.options.delete_eml else "move"
+                source_handling: Literal["move", "copy", "delete"] = (
+                    "delete" if request.options.delete_eml else "move"
+                )
 
                 try:
                     result, diagnostics = await asyncio.to_thread(

@@ -119,11 +119,13 @@ def convert_eml(
     if output_path is not None:
         result = convert(source, output=Path(output_path), options=options)
         _raise_on_failure(result)
+        assert result.output is not None
         return result.output.read_text(encoding="utf-8")
 
     with tempfile.TemporaryDirectory() as tmp:
         result = convert(source, output=Path(tmp), options=options)
         _raise_on_failure(result)
+        assert result.output is not None
         return result.output.read_text(encoding="utf-8")
 
 

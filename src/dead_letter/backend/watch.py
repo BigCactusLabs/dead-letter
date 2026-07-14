@@ -95,7 +95,8 @@ class WatchManager:
         self._recent_paths.clear()
         self._stop_event = asyncio.Event()
         self._status = WatchStatus(active=True, path=str(resolved))
-        self._task = asyncio.create_task(self._watch_loop(resolved, startup_paths, options, job_manager))
+        job_options = JobOptions.model_validate(options)
+        self._task = asyncio.create_task(self._watch_loop(resolved, startup_paths, job_options, job_manager))
 
     async def stop(self) -> None:
         task = self._task
@@ -125,7 +126,7 @@ class WatchManager:
         self,
         directory: Path,
         startup_paths: list[Path],
-        options: dict[str, object],
+        options: JobOptions,
         job_manager: _JobCreator,
     ) -> None:
         if self._stop_event is None:
@@ -197,7 +198,7 @@ class WatchManager:
     async def _process_candidate(
         self,
         candidate: Path,
-        options: dict[str, object],
+        options: JobOptions,
         job_manager: _JobCreator,
     ) -> None:
         if self._is_recent_duplicate(candidate):
@@ -216,7 +217,7 @@ class WatchManager:
         request = JobCreateRequest(
             mode="file",
             input_path=str(stable_path),
-            options=JobOptions(**options),
+            options=options,
         )
         created_job = await job_manager.create_job(request, origin="watch")
         self._status.jobs_created += 1

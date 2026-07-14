@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import dead_letter.core.mime as mime_module
 
 from dead_letter.core.attachments import collect_attachment_names
+from dead_letter.core import convert
 from dead_letter.core.mime import _normalize_header_value, parse_eml
 
 
@@ -139,6 +140,24 @@ def test_normalize_header_value_skips_none_items() -> None:
     assert _normalize_header_value(["alice@example.com", None, "bob@example.com"]) == (
         "alice@example.com, bob@example.com"
     )
+
+
+def test_convert_handles_duplicate_subject_headers(tmp_path: Path) -> None:
+    source = tmp_path / "duplicate-subject.eml"
+    source.write_text(
+        "From: alice@example.com\n"
+        "To: bob@example.com\n"
+        "Subject: First subject\n"
+        "Subject: Second subject\n"
+        "\n"
+        "Body\n",
+        encoding="utf-8",
+    )
+
+    result = convert(source, output=tmp_path / "output")
+
+    assert result.success is True
+    assert result.subject == "First subject, Second subject"
 
 
 def test_parse_eml_builds_body_candidates_for_multipart_alternative() -> None:
