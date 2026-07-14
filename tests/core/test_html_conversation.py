@@ -1,7 +1,91 @@
 from __future__ import annotations
 
-from dead_letter.core.html_conversation import segment_html_conversation
+from dead_letter.core.html_conversation import (
+    _iter_nodes_in_document_order,
+    segment_html_conversation,
+)
 from dead_letter.core.types import ZoneKind
+
+
+def _deeply_nested_html(depth: int, quote_html: str) -> str:
+    return "<div>Latest response</div>" + "<div>" * depth + quote_html + "</div>" * depth
+
+
+def test_iter_nodes_in_document_order_short_circuits_over_wide_container() -> None:
+    """An early match must not force-walk a wide container's siblings.
+
+    Regression guard for issue #51 PR review r3582791847: the iterative
+    traversal pushes sibling/child pointers lazily, so a caller that stops
+    at the first matching child never reads past it. The previous version
+    pre-loaded every sibling into a list before yielding any child.
+    """
+    sibling_next_reads = 0
+
+    class _Node:
+        def __init__(self, name):
+            self.name = name
+            self.child: object = None
+            self._next: object = None
+
+        @property
+        def next(self):
+            nonlocal sibling_next_reads
+            sibling_next_reads += 1
+            return self._next
+
+        @next.setter
+        def next(self, value):
+            self._next = value
+
+    nodes = [_Node("first")] + [_Node(f"sibling-{i}") for i in range(500)]
+    for left, right in zip(nodes, nodes[1:]):
+        left.next = right  # setter, not counted
+    container = _Node("container")
+    container.child = nodes[0]
+
+    walk = _iter_nodes_in_document_order(container)
+    assert next(walk).name == "container"
+    assert next(walk).name == "first"
+    # Boundary matched at the first child; nothing past it should be touched.
+    # The old list-preloading traversal read every sibling's `.next` (~500).
+    assert sibling_next_reads == 0
+
+
+def test_segment_html_conversation_handles_deeply_nested_gmail_quote() -> None:
+    html = _deeply_nested_html(2_000, '<div class="gmail_quote">Quoted message</div>')
+
+    result = segment_html_conversation(html, client_hint="gmail")
+
+    assert any(zone.kind is ZoneKind.BODY and "Latest response" in zone.content for zone in result.zones)
+    assert any(zone.kind is ZoneKind.QUOTED and "Quoted message" in zone.content for zone in result.zones)
+
+
+def test_segment_html_conversation_handles_deeply_nested_outlook_quote() -> None:
+    html = _deeply_nested_html(2_000, '<div id="divRplyFwdMsg">Quoted message</div>')
+
+    result = segment_html_conversation(html, client_hint="outlook")
+
+    assert any(zone.kind is ZoneKind.BODY and "Latest response" in zone.content for zone in result.zones)
+    assert any(zone.kind is ZoneKind.QUOTED and "Quoted message" in zone.content for zone in result.zones)
+
+
+def test_segment_html_conversation_preserves_nested_outlook_split_output() -> None:
+    html = (
+        "<html><body><div>Top reply</div>"
+        '<div><div><div id="divRplyFwdMsg">Original message</div></div>'
+        "<div>Older thread line</div></div></body></html>"
+    )
+
+    result = segment_html_conversation(html, client_hint="outlook")
+
+    body_zone, quoted_zone = result.zones
+    assert body_zone.kind is ZoneKind.BODY
+    assert body_zone.content == "<body><div>Top reply</div></body>"
+    assert quoted_zone.kind is ZoneKind.QUOTED
+    assert quoted_zone.content == (
+        '<body><div><div><div id="divRplyFwdMsg">Original message</div></div>'
+        "<div>Older thread line</div></div></body>"
+    )
 
 
 def test_segment_html_conversation_extracts_gmail_body_before_quote() -> None:
