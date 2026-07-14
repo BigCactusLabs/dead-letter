@@ -107,9 +107,10 @@ How it works:
 - The job waits for PyPI to serve the new version before publishing, because
   the registry validates the marker against the live PyPI description.
 - Because the marker ships in the package README, the registry publish only
-  succeeds for releases cut **after** the marker landed on PyPI. The `0.2.3`
-  currently on PyPI predates it, so the first successful MCP publish happens on
-  the next release (`0.2.4`+). No backfill is possible for `0.2.3`.
+  succeeds for releases cut **after** the marker landed on PyPI. `0.2.3` — the
+  last release before the marker — predates it and was never registry-published;
+  the first successful MCP publish landed with the `0.2.4` release. No backfill
+  is possible for `0.2.3`.
 - The MCP Registry is in preview and may reset its data. Because every release
   re-publishes, a reset self-heals on the next release; to force a re-publish
   without a version bump, run the steps below locally.
@@ -184,8 +185,8 @@ plugin release means advancing `release`; the marketplace manifest is never
 edited per release.
 
 Release the plugin only after the PyPI release the plugin's `.mcp.json` is
-pinned to has been published (verify with the `dead-letter==X.Y.Z` step under
-Publish To PyPI above). The MCP launcher pin in `plugin/.mcp.json` is the
+pinned to has been published (verify with the PyPI `curl` check —
+`https://pypi.org/pypi/dead-letter/X.Y.Z/json` — under Publish To PyPI above). The MCP launcher pin in `plugin/.mcp.json` is the
 runtime contract — see `tests/plugin/test_plugin_structure.py` for the
 enforced shape.
 

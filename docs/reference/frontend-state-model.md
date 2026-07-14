@@ -2,7 +2,7 @@
 title: dead-letter v4 Frontend State Model
 doc_type: reference
 status: canonical
-last_updated: 2026-05-26
+last_updated: 2026-07-14
 audience:
   - maintainers
   - frontend contributors
@@ -13,15 +13,15 @@ scope:
 
 # dead-letter v4 Frontend State Model
 
-This document describes runtime UI state management in `src/dead_letter/frontend/static/app.js` for the Brume Command Center interface.
+This document describes runtime UI state management for the Brume Command Center interface. State is split between the `deadLetterApp` component in `src/dead_letter/frontend/static/app.js`, which holds only UI-local state, and four Alpine stores in `src/dead_letter/frontend/static/stores/` — `job`, `settings`, `watch`, and `history` — accessed via `$store.job`, `$store.settings`, `$store.watch`, and `$store.history`. Store fields use unprefixed names (e.g. `$store.job.status`, not `jobStatus`; `$store.watch.active`, not `watchActive`). The one exception is `settingsOpen`: it looks store-prefixed but is a component-local field on `deadLetterApp`, not a settings-store field.
 
 ## Workspace State (Computed)
 
 `workspaceState` is computed and never stored directly:
 
-- `settings` when `settingsOpen` is `true`
-- `converting` when `isSubmitting` is `true`, or `jobId` exists and `jobStatus` is non-terminal
-- `done` when `jobId` exists and `jobStatus` is terminal
+- `settings` when `settingsOpen` (component-local) is `true`
+- `converting` when `$store.job.isSubmitting` is `true`, or `$store.job.id` exists and `$store.job.status` is non-terminal
+- `done` when `$store.job.id` exists and `$store.job.status` is terminal
 - `idle` otherwise
 
 Priority order is fixed:
@@ -30,19 +30,19 @@ Priority order is fixed:
 
 ## Primary State Shape
 
-- settings state:
-  - `settingsConfigured`
-  - `settingsLoading`
-  - `settingsSaving`
-  - `settingsForm`: `{inbox_path, cabinet_path}`
-  - `settingsErrors`
-  - `settingsOpen`
+- settings store (`$store.settings`):
+  - `configured`
+  - `loading`
+  - `saving`
+  - `form`: `{inbox_path, cabinet_path}`
+  - `errors`
   - `needsSetup`
   - `showSetupModal`
   - `setupInboxPath`
   - `setupCabinetPath`
   - `setupErrors`
-- input state:
+- input state (component-local on `deadLetterApp`):
+  - `settingsOpen` — controls the settings takeover; component-local despite its prefix, NOT a settings-store field
   - `mode`: `file | directory`
   - `inputPath`
   - `options`: conversion option booleans, persisted to `dead-letter:options` in localStorage. Organized in the UI into four domain sections (Content, Images, Output, Behavior) with two meta toggle cards ("Strip junk", "Verbose output") that bulk-control related options:
@@ -54,35 +54,37 @@ Priority order is fixed:
     - Behavior: `allow_fallback_on_html_error`, `delete_eml`, `dry_run`, `report`
     - Thread (non-boolean enum options, not part of the Strip junk / Verbose output meta toggles): `thread_mode` (`"latest"` default, or `"structured"`) and `thread_order` (`"oldest-first"` default, or `"latest-first"`; only meaningful when `thread_mode === "structured"`, and the row is hidden in the UI otherwise)
   - `_savedOptions`: snapshot of `options` captured when settings panel opens; restored on Cancel or Escape
-- workspace interaction state:
+- workspace interaction state (component-local on `deadLetterApp`):
   - `dragActive`
   - `dragDepth`
   - `dragItemCount`
   - `batchConfirm`: `{show, emlFiles, skipped, totalBytes}`
+  - `dropFeedback`
   - `setupBannerDismissed`
   - `errorsExpanded`
   - `liveAnnouncement`
-- watch state:
-  - `watchPathOverride`
-  - `watchActive`
-  - `watchPath`
-  - `watchStats`
-  - `watchLastError`
-  - `watchLatestJobId`
-  - `watchLatestJobStatus`
-  - `watchPollHandle`
-  - `watchSessionId`
-  - `watchPollInFlight`
-  - `watchActionInFlight`
-  - `activeWatchPollController`
-  - `activeWatchActionController`
-- job state:
-  - `jobId`
-  - `jobOrigin`: `manual | import | watch | ""`
-  - `jobStatus`
+- watch store (`$store.watch`):
+  - `pathOverride`
+  - `active`
+  - `path`
+  - `stats`: `{files_detected, jobs_created, failed_events}`
+  - `lastError`
+  - `latestJobId`
+  - `latestJobStatus`
+  - `pollHandle`
+  - `sessionId`
+  - `pollInFlight`
+  - `pollErrorCount`
+  - `actionInFlight`
+  - `activePollController`
+  - `activeActionController`
+- job store (`$store.job`):
+  - `id`
+  - `origin`: `manual | import | watch | ""`
+  - `status`
   - `outputLocation`: `{strategy:"cabinet", cabinet_path, bundle_path|null} | null`
   - `recoveryActions`: `[{kind, label, message}]`
-  - `jobDiagnostics`: `{state, selected_body, segmentation_path, client_hint, confidence, fallback_used, warnings, stripped_images, attachments} | null` (`attachments` is `{referenced, retained} | null`)
+  - `diagnostics`: `{state, selected_body, segmentation_path, client_hint, confidence, fallback_used, warnings, stripped_images} | null` — `normalizeDiagnostics()` drops the backend response's `attachments`, so it is NOT part of frontend diagnostics state
   - `diagnosticsOpen`
   - `reportPath`: `string | null`
   - `cancelRequested`
@@ -90,33 +92,33 @@ Priority order is fixed:
   - `summary`: `{written, skipped, errors}`
   - `errors`
   - `timestamps`: `{created_at, started_at, finished_at}`
-- operation messaging:
-  - `isSubmitting`
-  - `formErrors`
-  - `opErrors`
-  - `opInfo`
-- polling control:
+- operation messaging (`$store.job`, except `formErrors`):
+  - `isSubmitting` (`$store.job`)
+  - `formErrors` (component-local on `deadLetterApp`)
+  - `opErrors` (`$store.job`)
+  - `opInfo` (`$store.job`)
+- polling control (`$store.job`):
   - `pollHandle`
   - `pollSessionId`
   - `pollInFlight`
   - `pollErrorCount`
   - `activePollController`
-- history state:
-  - `historyJobs`: array of terminal job snapshots (newest first)
-  - `historyTotals`: `{jobs_completed, total_written, total_skipped, total_errors}`
-  - `historyLoading`
-  - `historyOpen`
-- watch handoff state:
+- history store (`$store.history`):
+  - `jobs`: array of terminal job snapshots (newest first)
+  - `totals`: `{jobs_completed, total_written, total_skipped, total_errors}`
+  - `loading`
+  - `open`
+- watch handoff state (`$store.job`):
   - `pendingWatchJobId`
   - `pendingWatchJobStatus`
-- cancellation control:
+- cancellation control (`$store.job`):
   - `cancelInFlight`
   - `activeCancelController`
 
 ## Computed Getters
 
-- `conversionGrade`: computed via `computeGrade(diagnostics, jobStatus)` returning `"pass"` | `"review"` | `"fail"` | `null`
-  - `"fail"` when `jobStatus === "failed"`
+- `conversionGrade`: computed via `computeGrade($store.job.diagnostics, $store.job.status)` returning `"pass"` | `"review"` | `"fail"` | `null`
+  - `"fail"` when `$store.job.status === "failed"`
   - `null` when diagnostics unavailable (directory jobs, cancelled jobs)
   - `"pass"` when `state === "normal"`
   - `"review"` when `state === "degraded"` or `state === "review_recommended"`
@@ -144,7 +146,7 @@ All mutating `/api/*` requests are sent through `static/lib/api.js`. The helper 
 
 ### First-Run Setup
 
-- `init()` calls `loadSettings()`, `pollWatch()`, and `history.load()`.
+- `init()` calls, in order, `_loadOptions()`, `applyDryRunSafety()`, `$store.settings.load()`, `$store.watch.poll()`, and `$store.history.load()`.
 - `GET /api/settings` with `configured=false` triggers the first-run setup flow.
 - A full-page setup modal appears on first launch when unconfigured. The modal pre-fills `~/letters/Inbox` and `~/letters/Cabinet` as suggested defaults. The modal traps keyboard focus via `@keydown.tab` cycling and applies `inert` to `<main>` while visible.
 - "Create & Get Started" calls `PUT /api/settings`, creates missing directories, dismisses the modal, and enables workflows.
@@ -158,7 +160,7 @@ All mutating `/api/*` requests are sent through `static/lib/api.js`. The helper 
 
 ### Start Manual Job
 
-1. Guard duplicate submissions (`isSubmitting`).
+1. Guard duplicate submissions (`$store.job.isSubmitting`).
 2. Require configured settings.
 3. Validate manual form (`inputPath` required, mode must be valid).
 4. Reset run state and close settings takeover (`settingsOpen=false`).
@@ -179,17 +181,17 @@ All mutating `/api/*` requests are sent through `static/lib/api.js`. The helper 
 - Confirmed single-file imports:
   - sets `inputPath` from `imported_path`
   - sets `mode="file"`
-  - applies started job payload with `jobOrigin="import"` and begins polling
+  - applies started job payload with `$store.job.origin="import"` and begins polling
 - Confirmed batch imports:
   - leave manual `inputPath` untouched
-  - apply started job payload with `jobOrigin="import"` and begins polling
+  - apply started job payload with `$store.job.origin="import"` and begins polling
 - Workspace drop handling is ignored while in `converting` or `settings` states.
 - Escape dismissal priority: setup modal > batch confirmation overlay > settings takeover.
 
 ### Watch Inbox
 
-- The status-strip Watch card is a button wired to `toggleWatch()` and reflects `watchActive` / `watchActionInFlight`.
-- `watchPathOverride=""` means "watch saved Inbox path".
+- The status-strip Watch card is a button wired to `handleWatchToggle()` and reflects `$store.watch.active` / `$store.watch.actionInFlight`.
+- `$store.watch.pathOverride=""` means "watch saved Inbox path".
 - Non-empty override is sent as provided to `POST /api/watch`; backend resolves absolute or root-relative path.
 - Cabinet paths are rejected by backend.
 - Settings remain the place for editing watch path override and conversion options; the status-strip card only starts or stops watch.
@@ -207,8 +209,8 @@ All mutating `/api/*` requests are sent through `static/lib/api.js`. The helper 
 - Required keys: `status`, `cancel_requested`, `output_location`, `progress`, `summary`, `errors`.
 - Optional keys: `diagnostics`, `recovery_actions`.
 - Session/job-id guards reject stale responses.
-- Overlapping poll calls are prevented with `pollInFlight`.
-- Polling stops on terminal status; reaching terminal triggers `history.load()` to refresh aggregate counters and the job list.
+- Overlapping poll calls are prevented with `$store.job.pollInFlight`.
+- Polling stops on terminal status; reaching terminal triggers `$store.history.load()` to refresh aggregate counters and the job list.
 - File-job failures can populate `recoveryActions`; the current UI consumes `retry_with_html_repair` first and may later consume `retry_with_html_fallback` on a subsequent eligible failure.
 
 Terminal statuses:
@@ -226,18 +228,18 @@ Terminal statuses:
 
 ### Cancel Job
 
-1. Guard overlapping requests (`cancelInFlight`).
+1. Guard overlapping requests (`$store.job.cancelInFlight`).
 2. `POST /api/jobs/{id}/cancel`.
 3. Ignore stale responses for changed job ids.
-4. If accepted and non-terminal, set `cancelRequested=true` with cooperative cancellation notice.
+4. If accepted and non-terminal, set `$store.job.cancelRequested=true` with cooperative cancellation notice.
 5. Continue polling until terminal.
 
 ### Retry Failed Job
 
-1. Guard duplicate requests with `isSubmitting`.
-2. Only allow retry when the current terminal snapshot exposes a matching `recoveryActions` entry.
+1. Guard duplicate requests with `$store.job.isSubmitting`.
+2. Only allow retry when the current terminal snapshot exposes a matching `$store.job.recoveryActions` entry.
 3. `POST /api/jobs/{id}/retry` with `{action}`.
-4. Preserve the current `jobOrigin` when the replacement job starts so watched failures stay labeled as watch-origin.
+4. Preserve the current `$store.job.origin` when the replacement job starts so watched failures stay labeled as watch-origin.
 5. Replacement job polling uses the normal create-job flow and clears the prior snapshot state.
 
 ## UI Messaging Rules by Workspace State

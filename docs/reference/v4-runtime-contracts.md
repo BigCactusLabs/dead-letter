@@ -769,7 +769,7 @@ Exit codes:
 
 ```json
 {
-  "version": "0.1.0",
+  "version": "0.2.4",
   "python": "3.14.0",
   "platform": "darwin",
   "checks": [
