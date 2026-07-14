@@ -50,19 +50,21 @@ def _iter_nodes_in_document_order(node):
     """Yield node and all descendants in document order.
 
     Iterative (explicit stack) rather than recursive so that deeply
-    nested, possibly adversarial HTML cannot exceed Python's
-    recursion limit. See issue #51.
+    nested, possibly adversarial HTML cannot exceed Python's recursion
+    limit. Sibling and child pointers are pushed lazily, so a caller that
+    stops early (e.g. the quote-boundary search) never walks past the
+    matching node into a wide container's remaining siblings. See issue #51.
     """
-    stack = [node]
+    yield node
+    child = node.child
+    stack = [child] if child is not None else []
     while stack:
         current = stack.pop()
         yield current
-        children = []
-        child = current.child
-        while child is not None:
-            children.append(child)
-            child = child.next
-        stack.extend(reversed(children))
+        if current.next is not None:
+            stack.append(current.next)
+        if current.child is not None:
+            stack.append(current.child)
 
 
 def _quote_match(node) -> tuple[str, str] | None:
@@ -130,6 +132,11 @@ def _split_node_html(node, quote_mem_id: int) -> tuple[str, str, bool]:
         elif body_html:
             parent_body.append(body_html)
         stack[-1] = parent, parent_child, parent_body, parent_quoted, parent_found
+
+    # Unreachable in practice: the loop returns once the root frame is popped.
+    # The explicit return keeps the function total for the type checker without
+    # introducing an unbounded ``while True`` loop.
+    return _node_html(node), "", False
 
 
 def _split_outlook_body_and_quote(tree: HTMLParser, quote_node) -> tuple[str | None, str | None]:
