@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prevented catastrophic Gmail-attribution backtracking on malformed reply text (#79).
+- Prevented quadratic generic quote detection on large prose-only HTML bodies (#81).
+- Subject-derived output slugs now cap at a safe filename length, and failed
+  conversion cleanup absorbs filesystem errors (#80).
+- Failed conversions now clean up only outputs they created, preserving
+  pre-existing collision targets (#82).
 - Clean `dead-letter[mcp]` installs now start with the current dependency
   resolution by migrating to MCP Python SDK 2.x (`mcp>=2,<3`) and its public
   `MCPServer` API.

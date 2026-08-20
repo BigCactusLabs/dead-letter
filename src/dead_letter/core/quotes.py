@@ -52,7 +52,8 @@ def detect_quote_patterns(html: str) -> set[str]:
         tag = (node.tag or "").lower()
         attrs = {str(k).lower(): str(v) for k, v in node.attributes.items()}
         _detect_element_patterns(tag, attrs, patterns)
-        if _ON_WROTE_RE.search(node.text(deep=False, strip=True)):
+        text = node.text(deep=False, strip=True)
+        if "wrote:" in text.lower() and _ON_WROTE_RE.search(text):
             patterns.add("generic")
 
     return patterns

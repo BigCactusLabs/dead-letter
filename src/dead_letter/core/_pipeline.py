@@ -37,6 +37,7 @@ from dead_letter.core.types import (
 from dead_letter.core.zone_cleanup import cleanup_zones
 
 _MAX_COLLISION_INDEX = 10_000
+_MAX_OUTPUT_SLUG_LENGTH = 100
 _MISSING_ATTACHMENT_REFERENCE_PHRASES = (
     "please find attached",
     "see attached",
@@ -78,9 +79,8 @@ def _source_hint(path: str | Path) -> Path:
 
 def _slug_for_output(subject: str, source: Path) -> str:
     # Prefer normalized subject; fall back to source stem for empty subjects.
-    if subject.strip():
-        return slugify_subject(subject)
-    return slugify_subject(source.stem)
+    slug = slugify_subject(subject) if subject.strip() else slugify_subject(source.stem)
+    return slug[:_MAX_OUTPUT_SLUG_LENGTH].rstrip("-") or "email"
 
 
 def _resolve_output_target(source: Path, subject: str, output: str | Path | None) -> Path:
@@ -813,6 +813,7 @@ def convert(
     if opts.dry_run and opts.delete_eml:
         opts = replace(opts, delete_eml=False)
     target: Path | None = None
+    created_target: Path | None = None
 
     try:
         result, markdown_document = _run_pipeline(source, opts)
@@ -820,18 +821,18 @@ def convert(
         target = _resolve_output_target(source, result.subject, output)
 
         if not opts.dry_run:
-            handle, target = _open_collision_safe_output(target)
+            handle, created_target = _open_collision_safe_output(target)
             with handle:
                 handle.write(markdown_document)
             if opts.delete_eml:
                 source.unlink()
-            result.output = target
+            result.output = created_target
 
         return result
     except (OSError, ValueError, UnicodeDecodeError, RuntimeError) as exc:
-        if target is not None and target.exists():
+        if created_target is not None:
             try:
-                target.unlink()
+                created_target.unlink(missing_ok=True)
             except OSError:
                 pass
         error_code, plain_text_fallback_available, html_repair_available = _convert_error_metadata(exc)
