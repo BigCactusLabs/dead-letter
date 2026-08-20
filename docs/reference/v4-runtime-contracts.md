@@ -779,6 +779,65 @@ Exit codes:
 }
 ```
 
+## MCP Server (`dead_letter.backend.mcp_server`)
+
+Published as the `dead-letter-mcp` console script (`dead-letter[mcp]`, MCP Python
+SDK 2.x) and described by `server.json` for the MCP Registry. Four tools:
+
+| Tool | Required arguments | Returns |
+| --- | --- | --- |
+| `convert_eml` | `eml_path` | Markdown text (front matter + body). Writes a file too when `output_path` is given. |
+| `convert_eml_to_bundle` | `eml_path`, `bundle_root` | JSON: `bundle_path`, `markdown_path`, `attachment_paths`, and `diagnostics` when available. |
+| `convert_directory` | `directory`, `output_directory` | JSON: `total`, `successes`, `failures`, `output_paths`, `errors`. |
+| `get_diagnostics` | `eml_path` | Diagnostics JSON (see [quality-diagnostics.md](quality-diagnostics.md)). Writes nothing permanent. |
+
+All four accept `preset` (`default`, `clean`, `verbose`, `raw`) plus per-flag
+overrides: `strip_signatures`, `strip_disclaimers`, `strip_tracking_pixels`,
+`strip_signature_images`, `strip_quoted_headers`, `embed_inline_images`,
+`include_all_headers`, `include_raw_html`, `no_calendar_summary`, `thread_mode`,
+and `thread_order`. An explicit flag overrides the preset; `None` leaves the
+preset value in place.
+
+Presets:
+
+| Preset | Flags set |
+| --- | --- |
+| `default` | `strip_signatures`, `strip_tracking_pixels`, `strip_signature_images` |
+| `clean` | `default` plus `strip_disclaimers`, `strip_quoted_headers` |
+| `verbose` | `include_all_headers`, `include_raw_html` |
+| `raw` | none |
+
+### MCP-only constraints
+
+These differ from the CLI and the Python API:
+
+- **Resilience is forced on.** `_resolve_options` sets
+  `allow_fallback_on_html_error` and `allow_html_repair_on_panic` to `True` for
+  every tool call, whatever the preset. MCP output can therefore differ from an
+  equivalent CLI run on a malformed HTML body.
+- **`convert_eml_to_bundle` is copy-only.** `source_handling` accepts `"copy"`;
+  `"move"` and `"delete"` are rejected with a `ValueError`. The original `.eml`
+  is never modified over MCP.
+- **`convert_directory` requires `output_directory`.** Unlike `convert_dir`, it
+  has no in-place default.
+- **Directory batches cap at 50 files.** `MCP_MAX_DIRECTORY_FILES = 50`; a larger
+  directory is rejected before any conversion runs.
+
+### Error contract
+
+Tool failures do **not** reach the client as exceptions. Under SDK 2 the server
+catches them and returns a `CallToolResult` with `is_error=True` whose only
+content is `str(exception)` — the exception class name is never transmitted.
+Clients must key on the message text:
+
+- `File not found: <path>` — missing `.eml`
+- `Directory not found: <path>` — missing directory
+- `Conversion failed: <reason>` — pipeline failure, optionally followed by
+  `Plain text fallback is available.` and/or `HTML repair is available.`
+- `MCP directory conversion supports at most 50 .eml files; found <n>.`
+- `MCP convert_eml_to_bundle only supports source_handling='copy'; use the CLI/API for move/delete.`
+- `output_directory is required for MCP directory conversion`
+
 ## HTTP Status Mapping
 
 - `200`: settings get/put, filesystem list, watch get/start/stop, job snapshot, open Cabinet folder

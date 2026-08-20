@@ -51,6 +51,10 @@ Call `convert_directory` with:
 - `output_directory=<run-id-dir>` (computed above)
 - `preset=default`
 
+`convert_directory` also accepts `dry_run=true` for a no-write preflight, plus the
+full flag set (`thread_mode`, `thread_order`, and every strip flag). Use `dry_run`
+first when the user is unsure about a folder.
+
 It returns JSON with `total`, `successes`, `failures`, `output_paths`, and `errors`. The `output_paths` are the `.md` files in `<run-id-dir>`.
 
 ### 5. Group and present

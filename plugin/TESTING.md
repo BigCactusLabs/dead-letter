@@ -47,17 +47,25 @@ Run this checklist before each plugin release. Most can run in Cowork; some requ
 ### 7. Host-path remediation
 
 1. Without any granted directory, type `/dead-letter:convert /Users/<you>/Desktop/some.eml`.
-2. Expect: a `FileNotFoundError` from the MCP server, followed by Claude suggesting "drag the file into the chat" (per the SKILL.md path-resolution rule).
+2. Expect: an error result from the MCP server whose text is `File not found: <path>`, followed by Claude suggesting "drag the file into the chat" (per the SKILL.md path-resolution rule).
 
 ## Claude Code session checks
 
-### 8. Convert (filesystem path)
+### 8. Diagnostics tool
+
+1. In a Claude Code session, ask Claude to call the `get_diagnostics` MCP tool on
+   `tests/core/fixtures/<some-fixture>.eml`.
+2. Expect: JSON containing `state`, `selected_body`, `segmentation_path`,
+   `client_hint`, `confidence`, `warnings`, `stripped_images`, and
+   `fallback_used`. No files are written.
+
+### 9. Convert (filesystem path)
 
 1. In a Claude Code session, install the plugin.
 2. Type `/dead-letter:convert tests/core/fixtures/<some-fixture>.eml`.
 3. Expect: rendered Markdown.
 
-### 9. uv-missing error (optional)
+### 10. uv-missing error (optional)
 
 1. On a machine without `uv`, install the plugin and try any command.
 2. Expect: a clear error message about the missing `uv` binary, with a pointer to https://docs.astral.sh/uv/getting-started/installation/.

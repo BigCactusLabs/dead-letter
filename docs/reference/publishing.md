@@ -16,6 +16,16 @@ the Homebrew tap.
 - Do not bundle the optional UI or MCP dependency stacks in the tap. Users who
   need those should install `dead-letter[ui]` or `dead-letter[mcp]` with
   `pipx`, or run them from source with `uv`.
+- A Claude community marketplace listing must not track this repository's
+  default-branch `HEAD`. The community catalog pins plugins to a SHA and its
+  current updater follows upstream `HEAD` by default. Before submission, record
+  the source repository, plugin path, source ref, initial SHA, and automatic
+  update target; submit only when ordinary `main` pushes cannot advance the
+  catalog pin. A `ref: release` field alone is not proof that the catalog's
+  updater honors the release pointer. As of August 11, 2026, the existing
+  candidate source (`BigCactusLabs/dead-letter`, path `plugin`, ref `release`)
+  is blocked from submission because the community workflow resolves repository
+  `HEAD` and does not wire its available release-only tracking option.
 
 ## Prepare The Release
 
@@ -65,6 +75,17 @@ the Homebrew tap.
 
 5. Commit and push the release-prep change to `main`.
 6. Wait for the `main` CI and docs-link-check workflows to pass.
+
+If dead-letter is listed in Anthropic's community marketplace, inspect its
+catalog entry before step 5. Stop if the entry follows default-branch `HEAD` or
+if its update target cannot be proven release-only: pushing release-prep to
+`main` could otherwise publish a plugin whose exact PyPI pin is not live yet.
+
+```bash
+gh api -H 'Accept: application/vnd.github.raw+json' \
+  repos/anthropics/claude-plugins-community/contents/.claude-plugin/marketplace.json \
+  | jq -e '.plugins[] | select(.name == "dead-letter")'
+```
 
 ## Publish To PyPI
 
@@ -251,15 +272,23 @@ enforced shape.
 
 5. Run the full manual checklist in [`plugin/TESTING.md`](../../plugin/TESTING.md).
 
+6. If the Claude community marketplace listing exists, wait for its nightly
+   catalog update and run the catalog query from [Prepare The Release](#prepare-the-release).
+   Record the listed `source.sha`, source path, and source ref. Confirm that the
+   SHA resolves to the released plugin content only after the pinned PyPI
+   version is live. If the SHA advanced early, stop distribution work and ask
+   Anthropic to freeze or correct the entry.
+
 ### Plugin Versioning Model
 
-There are three independent versions to keep straight:
+There are four independent versions to keep straight:
 
 | Version | Source of truth | When it bumps |
 |---|---|---|
 | Package | `pyproject.toml` `version` field | Per package release (PyPI tag `vX.Y.Z`) |
 | Plugin asset | `plugin/.claude-plugin/plugin.json` `version` | Per plugin-only change (tag `plugin-vX.Y.Z`) |
 | MCP pin | `plugin/.mcp.json` `--from dead-letter[mcp]==X.Y.Z` | Per package release the plugin should adopt |
+| Community catalog pin | Anthropic catalog entry `source.sha` plus its recorded update target | Only after an approved plugin release whose MCP pin is live on PyPI |
 
 A plugin-only patch (skill copy, command wording) bumps the plugin asset
 version without touching the MCP pin. A new package release bumps the

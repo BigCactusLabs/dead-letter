@@ -49,6 +49,11 @@ The underlying MCP tools accept a `preset` flag that bundles common conversion o
 
 Pass non-default presets when the user's intent matches: e.g., for `/dead-letter:summarize`, use `clean`.
 
+Every MCP conversion also force-enables `allow_fallback_on_html_error` and
+`allow_html_repair_on_panic`, whatever the preset. The MCP tools therefore
+recover from broken HTML that the CLI would report as a failure, so MCP output
+can differ from the equivalent CLI run.
+
 ## Runtime detection
 
 The plugin works in two runtimes that share the plugin format:
@@ -58,14 +63,14 @@ The plugin works in two runtimes that share the plugin format:
 
 ## Path-resolution rule
 
-Always pass the user's path to the MCP server **unchanged**. The MCP server only checks existence and raises `FileNotFoundError` on missing paths — no rewriting needed.
+Always pass the user's path to the MCP server **unchanged**. The MCP server only checks existence and returns an error result whose text is `File not found: <path>` — no rewriting needed. The error text is all you get; the MCP protocol does not carry an exception class name.
 
-If you get `FileNotFoundError` and you're in Cowork:
+If you get a `File not found:` error and you're in Cowork:
 
 - **The user gave a single host-OS path** (e.g., `/Users/...`, `~/Documents/...`, `C:\Users\...`): suggest "drag the file into the chat" so it lands in `uploads/`.
 - **The user gave a folder path**: suggest "grant directory access to that folder" via the cowork directory request tool, then re-run.
 
-If you're in Claude Code: surface the `FileNotFoundError` verbatim with the path. The user will fix it themselves.
+If you're in Claude Code: surface the error text verbatim with the path. The user will fix it themselves.
 
 ## Cabinet write rule
 

@@ -22,7 +22,7 @@ Convert one `.eml` file to Markdown using the `convert_eml` MCP tool from the de
 1. Parse the user's arguments. If no preset is given, use `default`.
 2. Call the `convert_eml` MCP tool with `eml_path=<path>` and `preset=<preset>`.
 3. Return the resulting markdown directly to the user. Do not summarize or paraphrase — the user asked to *convert*, not summarize.
-4. If the tool raises `FileNotFoundError`, follow the path-resolution rule from the `dead-letter-context` skill.
+4. If the tool returns an error whose text starts with `File not found:`, follow the path-resolution rule from the `dead-letter-context` skill.
 
 ## Notes
 
