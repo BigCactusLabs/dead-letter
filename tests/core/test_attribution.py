@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 import pytest
 
@@ -17,6 +18,23 @@ def test_returns_none_for_empty_input() -> None:
 
 def test_returns_none_for_garbage_input() -> None:
     assert parse_attribution_line("not an attribution line at all\n") is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "On Thu, Mar 5, 2026 at 10:23 AM Alice Smith wrote: I think we should ship it Friday.",
+        "On Thu, Mar 5, 2026 at 10:23 AM Alice Smith\nHi there, see below.",
+    ],
+)
+def test_rejects_non_attribution_gmail_short_forms_without_backtracking(text: str) -> None:
+    started = time.perf_counter()
+
+    result = parse_attribution_line(text)
+
+    elapsed = time.perf_counter() - started
+    assert result is None
+    assert elapsed < 2
 
 
 def test_debug_logs_when_no_pattern_matches(caplog: pytest.LogCaptureFixture) -> None:

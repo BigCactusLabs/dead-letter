@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 
 import dead_letter.core.html as html_mod
 from dead_letter.core._pipeline import _build_rendered_markdown
@@ -97,6 +98,19 @@ def test_convert_gmail_quote_keeps_latest_reply_only(tmp_path: Path) -> None:
     body = result.output.read_text(encoding="utf-8")
     assert "Latest response" in body
     assert "On prior mail wrote" not in body
+
+
+def test_large_prose_html_default_conversion_avoids_quote_regex_backtracking(tmp_path: Path) -> None:
+    phrase = "The team met on Tuesday to review the plan and agreed on the next steps. "
+    prose = (phrase * ((512 * 1024 // len(phrase)) + 1))[: 512 * 1024]
+    source = _write_html_email(tmp_path / "large_prose.eml", f"<html><body>{prose}</body></html>")
+
+    started = time.perf_counter()
+    result = convert(source, output=tmp_path / "out.md")
+
+    elapsed = time.perf_counter() - started
+    assert result.success
+    assert elapsed < 3
 
 
 def test_convert_outlook_quote_keeps_top_reply_only(tmp_path: Path) -> None:
@@ -560,6 +574,37 @@ def test_empty_html_body_preserves_plain_text_without_html_quote_patterns(tmp_pa
 
 
 from dead_letter.core.types import ThreadMode
+
+
+def test_gmail_quote_same_line_structured_does_not_backtrack(tmp_path: Path) -> None:
+    source = tmp_path / "gmail_quote_same_line.eml"
+    source.write_text(
+        "From: Bob <bob@example.com>\n"
+        "To: Alice <alice@example.com>\n"
+        "Subject: Re: Launch plan\n"
+        "Date: Thu, 5 Mar 2026 11:00:00 +0000\n"
+        "MIME-Version: 1.0\n"
+        'Content-Type: text/html; charset="utf-8"\n'
+        "\n"
+        "<html><body>\n"
+        "<div>Sounds good to me.</div>\n"
+        '<div class="gmail_quote">On Thu, Mar 5, 2026 at 10:23 AM Alice Smith wrote: '
+        "I think we should ship it Friday.</div>\n"
+        "</body></html>\n",
+        encoding="utf-8",
+    )
+    assert source.stat().st_size == 354
+
+    started = time.perf_counter()
+    result = convert(
+        source,
+        output=tmp_path / "out.md",
+        options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED),
+    )
+
+    elapsed = time.perf_counter() - started
+    assert result.success
+    assert elapsed < 2
 
 
 def test_gmail_3_message_thread_structured(tmp_path) -> None:

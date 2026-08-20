@@ -40,7 +40,7 @@ _APPLE_MAIL = re.compile(
 # Allows the sender to span a newline (Gmail line-wraps long names).
 _GMAIL_SHORT = re.compile(
     r"^On (?P<date>[A-Za-z]{3},?\s+[A-Za-z]{3}\s+\d{1,2},?\s+\d{4}(?:\s+at\s+[\d:]+\s*(?:AM|PM)?)?)\s+"
-    r"(?P<from_>[^\n<]*(?:\n?[^\n<]*)*(?:<[^>]+>)?)\s+wrote:\s*$",
+    r"(?P<from_>[^<]*?(?:<[^>]+>)?)\s+wrote:\s*$",
     re.MULTILINE,
 )
 
