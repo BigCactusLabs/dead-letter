@@ -267,10 +267,11 @@ def get_diagnostics(
     Use this to assess conversion quality before committing, or to
     troubleshoot problematic .eml files.
 
-    Returns JSON with: state (normal/degraded/review_recommended),
+    Always returns JSON with: state (normal/degraded/review_recommended),
     selected_body, segmentation_path, client_hint, confidence,
-    warnings, stripped_images, fallback_used, and — when the email has
-    attachments — attachments.
+    fallback_used, and warnings. Two keys are conditional: stripped_images
+    appears only when images were removed, and attachments only when the
+    message had attachments eligible for retention.
     """
     source = Path(eml_path)
     if not source.exists():

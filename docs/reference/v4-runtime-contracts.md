@@ -789,7 +789,7 @@ SDK 2.x) and described by `server.json` for the MCP Registry. Four tools:
 | `convert_eml` | `eml_path` | Markdown text (front matter + body). Writes a file too when `output_path` is given. |
 | `convert_eml_to_bundle` | `eml_path`, `bundle_root` | JSON: `bundle_path`, `markdown_path`, `attachment_paths`, and `diagnostics` when available. |
 | `convert_directory` | `directory`, `output_directory` | JSON: `total`, `successes`, `failures`, `output_paths`, `errors`. |
-| `get_diagnostics` | `eml_path` | Diagnostics JSON (see [quality-diagnostics.md](quality-diagnostics.md)). Writes nothing permanent. |
+| `get_diagnostics` | `eml_path` | Diagnostics JSON — `state`, `selected_body`, `segmentation_path`, `client_hint`, `confidence`, `fallback_used`, `warnings`, plus conditional `stripped_images` and `attachments` (see [quality-diagnostics.md](quality-diagnostics.md)). Writes nothing permanent. |
 
 All four accept `preset` (`default`, `clean`, `verbose`, `raw`) plus per-flag
 overrides: `strip_signatures`, `strip_disclaimers`, `strip_tracking_pixels`,

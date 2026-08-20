@@ -56,8 +56,10 @@ Run this checklist before each plugin release. Most can run in Cowork; some requ
 1. In a Claude Code session, ask Claude to call the `get_diagnostics` MCP tool on
    `tests/core/fixtures/<some-fixture>.eml`.
 2. Expect: JSON containing `state`, `selected_body`, `segmentation_path`,
-   `client_hint`, `confidence`, `warnings`, `stripped_images`, and
-   `fallback_used`. No files are written.
+   `client_hint`, `confidence`, `fallback_used`, and `warnings`. No files are
+   written. `stripped_images` and `attachments` are conditional — they appear
+   only when the fixture actually had images stripped or attachments retained,
+   so their absence is not a failure.
 
 ### 9. Convert (filesystem path)
 
