@@ -578,20 +578,21 @@ from dead_letter.core.types import ThreadMode
 
 def test_gmail_quote_same_line_structured_does_not_backtrack(tmp_path: Path) -> None:
     source = tmp_path / "gmail_quote_same_line.eml"
-    source.write_text(
-        "From: Bob <bob@example.com>\n"
-        "To: Alice <alice@example.com>\n"
-        "Subject: Re: Launch plan\n"
-        "Date: Thu, 5 Mar 2026 11:00:00 +0000\n"
-        "MIME-Version: 1.0\n"
-        'Content-Type: text/html; charset="utf-8"\n'
-        "\n"
-        "<html><body>\n"
-        "<div>Sounds good to me.</div>\n"
-        '<div class="gmail_quote">On Thu, Mar 5, 2026 at 10:23 AM Alice Smith wrote: '
-        "I think we should ship it Friday.</div>\n"
-        "</body></html>\n",
-        encoding="utf-8",
+    # write_bytes, not write_text: the byte count below is part of the reported
+    # repro and must not shift with a platform's newline translation.
+    source.write_bytes(
+        b"From: Bob <bob@example.com>\n"
+        b"To: Alice <alice@example.com>\n"
+        b"Subject: Re: Launch plan\n"
+        b"Date: Thu, 5 Mar 2026 11:00:00 +0000\n"
+        b"MIME-Version: 1.0\n"
+        b'Content-Type: text/html; charset="utf-8"\n'
+        b"\n"
+        b"<html><body>\n"
+        b"<div>Sounds good to me.</div>\n"
+        b'<div class="gmail_quote">On Thu, Mar 5, 2026 at 10:23 AM Alice Smith wrote: '
+        b"I think we should ship it Friday.</div>\n"
+        b"</body></html>\n"
     )
     assert source.stat().st_size == 354
 
