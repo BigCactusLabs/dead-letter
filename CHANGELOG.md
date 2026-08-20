@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clean `dead-letter[mcp]` installs now start with the current dependency
   resolution by migrating to MCP Python SDK 2.x (`mcp>=2,<3`) and its public
   `MCPServer` API.
+- Subject-derived output slugs now cap at a safe filename length, and failed
+  conversion cleanup absorbs filesystem errors (#80).
+- Failed conversions now clean up only outputs they created, preserving
+  pre-existing collision targets (#82).
 
 ## [0.2.4] - 2026-07-06
 
