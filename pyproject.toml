@@ -32,7 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 cli = ["watchfiles>=1.0.0"]
-mcp = ["mcp>=1.27.0"]
+mcp = ["mcp>=2,<3"]
 ui = [
   "dead-letter[cli]",
   "fastapi>=0.136.0",

@@ -7,13 +7,13 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 
 from dead_letter.core import convert, convert_dir
 from dead_letter.core._pipeline import _iter_source_eml_files, convert_to_bundle_with_diagnostics
 from dead_letter.core.types import ConvertOptions
 
-mcp = FastMCP("dead-letter")
+mcp = MCPServer("dead-letter")
 MCP_MAX_DIRECTORY_FILES = 50
 
 PRESETS: dict[str, dict[str, bool]] = {

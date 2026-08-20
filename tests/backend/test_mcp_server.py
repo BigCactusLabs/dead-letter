@@ -421,12 +421,32 @@ def test_get_diagnostics_file_not_found():
 # ---------------------------------------------------------------------------
 
 
-def test_server_has_all_tools():
+def test_mcp_extra_requires_supported_sdk_major():
+    from importlib.metadata import requires
+
+    from packaging.requirements import Requirement
+    from packaging.version import Version
+
+    requirements = [Requirement(value) for value in requires("dead-letter") or []]
+    mcp_requirement = next(
+        requirement for requirement in requirements if requirement.name == "mcp"
+    )
+
+    assert Version("1.29.0") not in mcp_requirement.specifier
+    assert Version("2.0.0") in mcp_requirement.specifier
+    assert Version("3.0.0") not in mcp_requirement.specifier
+
+
+@pytest.mark.anyio
+async def test_server_has_all_tools():
+    from mcp import Client
+
     from dead_letter.backend.mcp_server import mcp
 
-    # NOTE: _tool_manager is a private FastMCP internal. If this breaks on
-    # upgrade, fall back to checking module-level function attributes instead.
-    tool_names = {t.name for t in mcp._tool_manager.list_tools()}
+    async with Client(mcp) as client:
+        result = await client.list_tools()
+
+    tool_names = {tool.name for tool in result.tools}
     assert "convert_eml" in tool_names
     assert "convert_eml_to_bundle" in tool_names
     assert "convert_directory" in tool_names
@@ -446,29 +466,35 @@ def test_main_entry_point_is_callable():
 
 @pytest.mark.anyio
 async def test_mcp_client_convert_eml_round_trip():
-    """Invoke convert_eml through the MCP protocol layer via FastMCP.call_tool."""
+    """Invoke convert_eml through the public MCP client protocol layer."""
+    from mcp import Client
+
     from dead_letter.backend.mcp_server import mcp
 
-    content_blocks, _raw = await mcp.call_tool(
-        "convert_eml",
-        {"eml_path": str(FIXTURES / "plain_text.eml")},
-    )
-    assert content_blocks, "Expected at least one content block"
-    text = content_blocks[0].text
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            "convert_eml",
+            {"eml_path": str(FIXTURES / "plain_text.eml")},
+        )
+
+    assert result.content, "Expected at least one content block"
+    text = result.content[0].text
     assert text.startswith("---"), "Expected YAML front matter"
 
 
 @pytest.mark.anyio
 async def test_mcp_client_convert_bundle_rejects_delete(tmp_path: Path):
     """The MCP protocol path must enforce copy-only bundle conversion."""
+    from mcp import Client
+
     from dead_letter.backend.mcp_server import mcp
 
     source = tmp_path / "input" / "plain_text.eml"
     source.parent.mkdir()
     shutil.copy2(FIXTURES / "plain_text.eml", source)
 
-    with pytest.raises(Exception) as exc_info:
-        await mcp.call_tool(
+    async with Client(mcp) as client:
+        result = await client.call_tool(
             "convert_eml_to_bundle",
             {
                 "eml_path": str(source),
@@ -477,7 +503,8 @@ async def test_mcp_client_convert_bundle_rejects_delete(tmp_path: Path):
             },
         )
 
-    assert "source_handling='copy'" in str(exc_info.value)
+    assert result.is_error is True
+    assert "source_handling='copy'" in result.content[0].text
     assert source.exists()
 
 
