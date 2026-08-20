@@ -38,7 +38,10 @@ def test_docs_do_not_reference_removed_contract_fields() -> None:
     legacy_patterns = [
         re.compile(r"\bstrip_decorative\b"),
         re.compile(r"\bembed_mode\b"),
-        re.compile(r"\boutput_path\b"),
+        # `output_path` was removed from the job/API option shape, but it is a
+        # live parameter of the MCP `convert_eml` tool. Ban only the request or
+        # response key form, not the MCP tool parameter named in prose.
+        re.compile(r'"output_path"'),
         re.compile(r"/api/ingest\b"),
         re.compile(r"\bmanaged_root\b"),
         re.compile(r"\badjacent_to_source\b"),
