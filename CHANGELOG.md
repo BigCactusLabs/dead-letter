@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pre-existing collision targets (#82).
 - Clean `dead-letter[mcp]` installs now start with the current dependency
   resolution by migrating to MCP Python SDK 2.x (`mcp>=2,<3`) and its public
-  `MCPServer` API.
+  `MCPServer` API. MCP tool failures now arrive as error results carrying only
+  the message text — the exception class name is no longer transmitted — so
+  clients must match on the text (for example `File not found: <path>`).
 
 ## [0.2.4] - 2026-07-06
 

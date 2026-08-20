@@ -152,10 +152,9 @@ def convert_eml_to_bundle(
     Creates a directory containing the converted markdown, extracted attachments,
     and optionally the original .eml source.
 
-    source_handling controls the original .eml:
-    - copy (default): copy into bundle, leave original untouched
-    - move: move original into bundle
-    - delete: remove original after successful conversion
+    source_handling only accepts 'copy' over MCP: the original .eml is copied
+    into the bundle and left untouched. The 'move' and 'delete' modes are
+    rejected here — use the CLI or the Python API for those.
 
     Returns JSON with bundle_path, markdown_path, attachment_paths, and
     optional diagnostics.
@@ -268,9 +267,11 @@ def get_diagnostics(
     Use this to assess conversion quality before committing, or to
     troubleshoot problematic .eml files.
 
-    Returns JSON with: state (normal/degraded/review_recommended),
+    Always returns JSON with: state (normal/degraded/review_recommended),
     selected_body, segmentation_path, client_hint, confidence,
-    warnings, and stripped_images.
+    fallback_used, and warnings. Two keys are conditional: stripped_images
+    appears only when images were removed, and attachments only when the
+    message had attachments eligible for retention.
     """
     source = Path(eml_path)
     if not source.exists():

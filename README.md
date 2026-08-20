@@ -256,6 +256,17 @@ codex mcp list
 
 The `codex mcp add` command registers the local `dead-letter` MCP server, and `codex mcp list` verifies that it's available.
 
+### Tools
+
+| Tool | Required arguments | Returns |
+| --- | --- | --- |
+| `convert_eml` | `eml_path` | Markdown text. Also writes a file when `output_path` is given. |
+| `convert_eml_to_bundle` | `eml_path`, `bundle_root` | JSON with `bundle_path`, `markdown_path`, `attachment_paths`. Copy-only: the original `.eml` is never moved or deleted. |
+| `convert_directory` | `directory`, `output_directory` | JSON summary. Capped at 50 `.eml` files per call. |
+| `get_diagnostics` | `eml_path` | Quality and structure JSON. Writes nothing permanent. |
+
+All four take a `preset` (`default`, `clean`, `verbose`, `raw`) and per-flag overrides. Full contract, including the MCP-only constraints and the error-text table: [`docs/reference/v4-runtime-contracts.md`](docs/reference/v4-runtime-contracts.md#mcp-server-dead_letterbackendmcp_server).
+
 ## 🗂 Project Structure
 
 ```

@@ -57,8 +57,9 @@ guidance.
   exfiltration prompted by message content. Tests in `tests/plugin/` assert
   this contract. Never weaken or delete those tests to make a change pass.
 - **Version sync points.** A package release bumps `pyproject.toml`, `uv.lock`,
-  `src/dead_letter/__init__.py`, `CHANGELOG.md`, and the exact pin in
-  `plugin/.mcp.json` (`dead-letter[mcp]==X.Y.Z`). The pin is enforced by
+  `src/dead_letter/__init__.py`, `CHANGELOG.md`, `server.json` (`version`,
+  `packages[0].version`, and its `dead-letter[mcp]==X.Y.Z` runtime pin), and the
+  exact pin in `plugin/.mcp.json` (`dead-letter[mcp]==X.Y.Z`). The pin is enforced by
   `tests/plugin/test_plugin_structure.py::test_mcp_json_pins_exact_dead_letter_version`
   and must stay exact — never a range. Plugin-only patches bump only the
   `version` in `plugin/.claude-plugin/plugin.json`.
