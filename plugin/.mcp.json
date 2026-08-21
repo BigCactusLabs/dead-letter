@@ -6,7 +6,7 @@
         "--python",
         "3.12",
         "--from",
-        "dead-letter[mcp]==0.2.4",
+        "dead-letter[mcp]==0.2.5",
         "dead-letter-mcp"
       ]
     }
