@@ -65,9 +65,10 @@ guidance.
   `version` in `plugin/.claude-plugin/plugin.json`.
 - **Never advance a release pointer before the PyPI release is live.** The
   package releases via a `vX.Y.Z` tag; the plugin releases via a
-  `plugin-vX.Y.Z` tag plus a fast-forward of the `release` branch, which the
-  marketplace follows. Releases are maintainer territory: stop and ask before
-  touching version numbers or release pointers. Full runbook:
+  `plugin-vX.Y.Z` tag, an automated marketplace pull request that pins that
+  tag and commit, and a compatibility fast-forward of the `release` branch.
+  Releases are maintainer territory: stop and ask before touching version
+  numbers or release pointers. Full runbook:
   [docs/reference/publishing.md](docs/reference/publishing.md).
 - **CHANGELOG.md** follows Keep a Changelog. Behavior changes need an entry.
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Claude plugin releases now publish an explicit version, release tag, and
+  commit SHA to the Big Cactus Labs marketplace before advancing the legacy
+  `release` branch. This lets Cowork detect the marketplace commit and keeps
+  Cowork and Claude Code on the same immutable plugin assets.
+
 ## [0.2.5] - 2026-08-20
 
 ### Fixed

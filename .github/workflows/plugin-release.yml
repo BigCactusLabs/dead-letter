@@ -11,7 +11,9 @@ jobs:
   advance-release:
     runs-on: ubuntu-latest
     # The push to `release` is authenticated with RELEASE_PAT, a fine-grained
-    # PAT with Contents:write + Workflows:write — NOT the built-in GITHUB_TOKEN.
+    # PAT with Contents:write + Workflows:write in this repo and
+    # Contents:write + Pull requests:write in the marketplace repo — NOT the
+    # built-in GITHUB_TOKEN.
     # Advancing `release` carries .github/workflows/* changes (always on the
     # first run, since release lacks this file, and whenever a workflow changed
     # on main), and GitHub refuses GITHUB_TOKEN pushes that create or update
@@ -25,7 +27,7 @@ jobs:
           RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
         run: |
           if [ -z "$RELEASE_PAT" ]; then
-            echo "::error::RELEASE_PAT secret is not set. Create a fine-grained PAT scoped to this repo with Contents: write and Workflows: write, then add it as the RELEASE_PAT repository secret (see docs/reference/publishing.md -> Plugin Release)." >&2
+            echo "::error::RELEASE_PAT secret is not set. Create a fine-grained PAT scoped to dead-letter and bigcactuslabs-plugins with the permissions documented in docs/reference/publishing.md -> Plugin Release, then add it as the RELEASE_PAT repository secret." >&2
             exit 1
           fi
 
@@ -37,17 +39,25 @@ jobs:
           # the fast-forward push below.
           token: ${{ secrets.RELEASE_PAT }}
 
-      - name: Extract MCP package pin
-        id: pin
+      - name: Extract release versions
+        id: release
         # The .mcp.json pin is the package version to ship, independent of the
-        # plugin asset version in the tag, so never derive it from the tag name.
+        # plugin asset version. Read both manifests, then prove that the tag
+        # identifies the plugin asset version before publishing either pointer.
         run: |
-          pin=$(python3 -c "import json, re; a = json.load(open('plugin/.mcp.json'))['mcpServers']['dead-letter']['args']; f = a[a.index('--from') + 1]; print(re.search(r'==([0-9][^\"]*)', f).group(1))")
-          echo "version=$pin" >> "$GITHUB_OUTPUT"
+          mcp_version=$(python3 -c "import json, re; a = json.load(open('plugin/.mcp.json'))['mcpServers']['dead-letter']['args']; f = a[a.index('--from') + 1]; print(re.search(r'==([0-9][^\"]*)', f).group(1))")
+          plugin_version=$(python3 -c "import json; print(json.load(open('plugin/.claude-plugin/plugin.json'))['version'])")
+          tag_version="${GITHUB_REF_NAME#plugin-v}"
+          if [ "$tag_version" != "$plugin_version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match plugin version $plugin_version." >&2
+            exit 1
+          fi
+          echo "mcp_version=$mcp_version" >> "$GITHUB_OUTPUT"
+          echo "plugin_version=$plugin_version" >> "$GITHUB_OUTPUT"
 
       - name: Wait for PyPI to serve the pinned package
         run: |
-          v="${{ steps.pin.outputs.version }}"
+          v="${{ steps.release.outputs.mcp_version }}"
           for i in $(seq 1 6); do
             if curl -fsSL "https://pypi.org/pypi/dead-letter/${v}/json" >/dev/null; then
               echo "PyPI is serving dead-letter ${v}"
@@ -58,6 +68,58 @@ jobs:
           done
           echo "PyPI did not serve dead-letter ${v} in time" >&2
           exit 1
+
+      - name: Checkout marketplace
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          repository: BigCactusLabs/bigcactuslabs-plugins
+          ref: main
+          path: marketplace
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - name: Publish plugin pointer through the marketplace
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          MARKETPLACE_REPO: BigCactusLabs/bigcactuslabs-plugins
+          PLUGIN_VERSION: ${{ steps.release.outputs.plugin_version }}
+          PLUGIN_REF: ${{ github.ref_name }}
+          PLUGIN_SHA: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path("marketplace/.claude-plugin/marketplace.json")
+          data = json.loads(path.read_text())
+          plugin = next(item for item in data["plugins"] if item["name"] == "dead-letter")
+          plugin["version"] = os.environ["PLUGIN_VERSION"]
+          plugin["source"]["ref"] = os.environ["PLUGIN_REF"]
+          plugin["source"]["sha"] = os.environ["PLUGIN_SHA"]
+          path.write_text(json.dumps(data, indent=2) + "\n")
+          PY
+
+          cd marketplace
+          if git diff --quiet -- .claude-plugin/marketplace.json; then
+            echo "Marketplace already points at dead-letter ${PLUGIN_VERSION}."
+            exit 0
+          fi
+
+          branch="release/dead-letter-${PLUGIN_VERSION}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add .claude-plugin/marketplace.json
+          git commit -m "chore: publish dead-letter ${PLUGIN_VERSION}"
+          git push origin "HEAD:refs/heads/${branch}"
+
+          pr_url=$(gh pr create \
+            --repo "$MARKETPLACE_REPO" \
+            --base main \
+            --head "$branch" \
+            --title "chore: publish dead-letter ${PLUGIN_VERSION}" \
+            --body "Pins dead-letter ${PLUGIN_VERSION} to ${PLUGIN_REF} at ${PLUGIN_SHA}. Generated by the dead-letter plugin release workflow.")
+          gh pr merge --repo "$MARKETPLACE_REPO" "$pr_url" --squash --delete-branch
 
       - name: Fast-forward release to the tagged commit
         # Uses the RELEASE_PAT credential persisted by checkout above (the
@@ -77,4 +139,4 @@ jobs:
 
       - name: Summarize release advance
         run: |
-          echo "Verified dead-letter[mcp]==${{ steps.pin.outputs.version }} is live on PyPI; fast-forwarded release to tagged commit $GITHUB_SHA." >> "$GITHUB_STEP_SUMMARY"
+          echo "Published dead-letter plugin ${{ steps.release.outputs.plugin_version }} to the marketplace, verified dead-letter[mcp]==${{ steps.release.outputs.mcp_version }} is live on PyPI, and fast-forwarded release to tagged commit $GITHUB_SHA." >> "$GITHUB_STEP_SUMMARY"

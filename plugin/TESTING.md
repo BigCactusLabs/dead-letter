@@ -77,5 +77,7 @@ Run this checklist before each plugin release. Most can run in Cowork; some requ
 - [ ] All checks above pass
 - [ ] No regressions vs. the previous release
 - [ ] Tag dead-letter repo `plugin-v<X.Y.Z>` and push
-- [ ] Fast-forward the release pointer:
-      `git push origin 'plugin-v<X.Y.Z>^{}:release'`
+- [ ] Confirm the plugin release workflow merged a marketplace pull request
+      with matching `version`, `ref: plugin-v<X.Y.Z>`, and tagged commit `sha`
+- [ ] Confirm Cowork synced that marketplace commit and shows version `<X.Y.Z>`
+- [ ] Confirm the compatibility `release` branch points at the tagged commit
