@@ -9,6 +9,21 @@ Convert `.eml` email files to Markdown with YAML front matter, triage small fold
 /plugin install dead-letter
 ```
 
+## Update
+
+In Claude Code, refresh the marketplace and update the installed plugin:
+
+```
+/plugin marketplace update bigcactuslabs
+/plugin update dead-letter@bigcactuslabs
+```
+
+In Cowork, open **Customize → Plugins → Personal**, open the
+`bigcactuslabs-plugins` marketplace options, and select **Check for updates**.
+Then open **Dead letter** and select **Update**. Cowork and Claude Code keep
+separate installed copies, but both resolve the same versioned marketplace
+release.
+
 ## Commands
 
 - `/dead-letter:convert <path>` — single `.eml` to Markdown
