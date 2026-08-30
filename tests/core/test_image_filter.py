@@ -138,6 +138,14 @@ class TestSignatureLayer1GmailWrapper:
         assert "banner.jpg" not in result
         assert stripped[0].reason == "gmail_signature_wrapper"
 
+    def test_small_logo_in_gmail_signature_wrapper_is_stripped(self) -> None:
+        html = '<div class="gmail_signature"><img src="cid:logo.gif" width="16" height="16" /></div>'
+
+        result, stripped = filter_images(html, strip_signature_images=True, strip_tracking_pixels=False)
+
+        assert "logo.gif" not in result
+        assert stripped[0].reason == "gmail_signature_wrapper"
+
     def test_gmail_body_images_preserved(self) -> None:
         html = (
             '<div><img src="cid:photo.jpg" alt="Meeting notes" /></div>'
@@ -239,6 +247,25 @@ class TestSignatureLayer3FilenamePatterns:
         result, stripped = filter_images(html, strip_signature_images=True, strip_tracking_pixels=False)
         assert "<img" not in result
         assert stripped[0].reason == "filename_pattern:logo"
+
+    def test_large_logo_draft_is_preserved(self) -> None:
+        html = (
+            '<img src="cid:logo-draft-v3.png" alt="new logo draft" '
+            'width="800" height="600" />'
+        )
+
+        result, stripped = filter_images(html, strip_signature_images=True, strip_tracking_pixels=False)
+
+        assert "logo-draft-v3.png" in result
+        assert stripped == []
+
+    def test_pattern_requires_token_boundaries(self) -> None:
+        html = '<img src="cid:mylogo.png" />'
+
+        result, stripped = filter_images(html, strip_signature_images=True, strip_tracking_pixels=False)
+
+        assert "mylogo.png" in result
+        assert stripped == []
 
     def test_facebook_in_filename(self) -> None:
         html = '<img src="cid:facebook-icon.png" alt="Facebook" />'
