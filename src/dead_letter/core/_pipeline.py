@@ -228,13 +228,14 @@ def _retain_referenced_inline_attachments(
     removed_name_counts: Counter[str] = Counter()
     filtered_parts: list[AttachmentPart] = []
     for part in parsed.attachment_parts:
-        # Only inline assets are candidates for removal. Outlook/Exchange stamps a
-        # Content-ID on real disposition=attachment parts too, so gating on content_id
-        # alone would silently drop legitimate attachments that are never referenced
-        # by cid: in the rendered body.
+        # Only unreferenced inline images are candidates for removal. Outlook/Exchange
+        # stamps a Content-ID on real disposition=attachment parts too, and some clients
+        # send non-image attachments with an inline disposition.
         disposition_type = part.disposition.split(";", 1)[0].strip().lower()
-        is_inline = disposition_type != "attachment"
-        if is_inline and part.content_id and f"cid:{part.content_id}" not in reference_text:
+        is_inline_image = (
+            disposition_type != "attachment" and part.content_type.startswith("image/")
+        )
+        if is_inline_image and part.content_id and f"cid:{part.content_id}" not in reference_text:
             removed_name_counts[part.filename] += 1
             continue
         filtered_parts.append(part)
@@ -532,6 +533,14 @@ def _attachment_reference_without_attachments_warning(body: str) -> dict[str, st
     return {
         "code": "attachment_reference_without_attachments",
         "message": "message references attached files but no retained attachments were extracted",
+        "severity": "warning",
+    }
+
+
+def _attachment_discarded_with_source_deleted_warning() -> dict[str, str]:
+    return {
+        "code": "attachment_discarded_with_source_deleted",
+        "message": "attachment parts were discarded while source handling is set to delete",
         "severity": "warning",
     }
 
@@ -907,6 +916,19 @@ def convert_to_bundle_with_diagnostics(
 
     try:
         result, parsed, rendered, diagnostics = _build_rendered_markdown(source, opts)
+        attachment_counts = diagnostics.get("attachments") if diagnostics is not None else None
+        if (
+            source_handling == "delete"
+            and isinstance(attachment_counts, dict)
+            and attachment_counts.get("retained", 0) < attachment_counts.get("referenced", 0)
+        ):
+            summary_warnings = list(diagnostics.get("warnings") or [])
+            summary_warnings.append(_attachment_discarded_with_source_deleted_warning())
+            diagnostics["warnings"] = summary_warnings
+            diagnostics["state"] = _quality_state(
+                confidence=str(diagnostics.get("confidence") or "medium"),
+                warnings=summary_warnings,
+            )
 
         root = Path(bundle_root).expanduser()
         if opts.dry_run:
