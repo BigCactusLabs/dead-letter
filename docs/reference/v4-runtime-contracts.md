@@ -25,7 +25,7 @@ Rules:
 
 - `path` must have `.eml` suffix.
 - Writes markdown output unless `dry_run=True`.
-- If `output` is omitted, writes next to source using a slugified subject filename.
+- If `output` is omitted, writes next to source using a slugified subject filename. If the subject slugifies to empty (for example a subject in a non-Latin script with no ASCII decomposition), falls back to the slugified source filename stem, and only then to `email`.
 - If output path collides, appends incrementing suffix (`-2`, `-3`, ...).
 - If `delete_eml=True`, source deletion occurs only after successful write.
 - If source deletion fails after writing markdown, the written markdown file is removed and conversion returns failure.

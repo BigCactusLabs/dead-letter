@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parts) no longer leak the embedded message's body into, or replace, the
   outer message body. The embedded message is now recorded as an attachment
   instead (#92).
+- Subjects that slugify to empty, including non-Latin-script subjects with no
+  ASCII decomposition, now fall back to the slugified source filename stem
+  instead of the generic `email` filename (#95).
+- `JobManager` now retains references to background job tasks so a running
+  job can no longer be garbage-collected mid-run; exceptions escaping the job
+  runner are now logged (#96).
+- `write_report` no longer mutates the process-wide umask; the effective
+  umask is read once at import instead (#97).
 
 ## [0.2.5] - 2026-08-20
 
