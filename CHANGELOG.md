@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   commit SHA to the Big Cactus Labs marketplace before advancing the legacy
   `release` branch. This lets Cowork detect the marketplace commit and keeps
   Cowork and Claude Code on the same immutable plugin assets.
+- Forwarded-as-attachment messages (`message/rfc822` or `multipart/digest`
+  parts) no longer leak the embedded message's body into, or replace, the
+  outer message body. The embedded message is now recorded as an attachment
+  instead (#92).
 
 ## [0.2.5] - 2026-08-20
 
