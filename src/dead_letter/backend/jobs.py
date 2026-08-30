@@ -139,6 +139,7 @@ class JobManager:
         self._inbox_root = Path(inbox_root or (Path.home() / "Inbox")).expanduser().resolve()
         self._cabinet_root = Path(cabinet_root or (Path.home() / "Cabinet")).expanduser().resolve()
         self._jobs: dict[str, _JobRecord] = {}
+        self._tasks: set[asyncio.Task[None]] = set()
         self._lock = asyncio.Lock()
 
     def update_roots(self, *, inbox_root: str | Path, cabinet_root: str | Path) -> None:
@@ -163,7 +164,21 @@ class JobManager:
         async with self._lock:
             self._jobs[job_id] = record
 
-        asyncio.create_task(self._run_job(job_id))
+        task = asyncio.create_task(self._run_job(job_id))
+        self._tasks.add(task)
+
+        def _on_task_done(done_task: asyncio.Task[None]) -> None:
+            self._tasks.discard(done_task)
+            if done_task.cancelled():
+                return
+            if (exc := done_task.exception()) is not None:
+                logger.error(
+                    "Background job %s failed unexpectedly",
+                    job_id,
+                    exc_info=(type(exc), exc, exc.__traceback__),
+                )
+
+        task.add_done_callback(_on_task_done)
         return JobCreateResponse(
             id=job_id,
             status=record.status,

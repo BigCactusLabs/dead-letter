@@ -78,9 +78,9 @@ def _source_hint(path: str | Path) -> Path:
 
 
 def _slug_for_output(subject: str, source: Path) -> str:
-    # Prefer normalized subject; fall back to source stem for empty subjects.
-    slug = slugify_subject(subject) if subject.strip() else slugify_subject(source.stem)
-    return slug[:_MAX_OUTPUT_SLUG_LENGTH].rstrip("-") or "email"
+    # Prefer normalized subject; fall back to source stem when its slug is empty.
+    slug = slugify_subject(subject, fallback="") or slugify_subject(source.stem, fallback="")
+    return (slug[:_MAX_OUTPUT_SLUG_LENGTH].rstrip("-")) or "email"
 
 
 def _resolve_output_target(source: Path, subject: str, output: str | Path | None) -> Path:

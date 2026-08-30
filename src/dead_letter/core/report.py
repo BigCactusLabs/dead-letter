@@ -10,6 +10,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+_UMASK = os.umask(0)
+os.umask(_UMASK)
+
 
 @dataclass(slots=True)
 class ReportEntry:
@@ -115,9 +118,7 @@ def write_report(
             os.fsync(f.fileno())
         os.replace(tmp, str(target))
         # mkstemp creates 0o600; restore umask-derived permissions
-        umask = os.umask(0)
-        os.umask(umask)
-        os.chmod(str(target), 0o666 & ~umask)
+        os.chmod(str(target), 0o666 & ~_UMASK)
     except BaseException:
         try:
             os.unlink(tmp)
