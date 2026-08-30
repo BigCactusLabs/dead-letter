@@ -56,6 +56,53 @@ def test_convert_truncates_long_subject_output_name(tmp_path: Path) -> None:
     assert result.output.exists()
 
 
+def test_convert_uses_source_stem_when_subject_slug_is_empty(tmp_path: Path) -> None:
+    source = tmp_path / "message-1.eml"
+    source.write_text(
+        "From: a@b\nSubject: 四半期報告書\n\nQuarterly report\n",
+        encoding="utf-8",
+    )
+
+    result = convert(source, output=tmp_path / "out")
+
+    assert result.success is True
+    assert result.output == tmp_path / "out" / "message-1.md"
+
+
+def test_convert_uses_distinct_source_stems_for_non_latin_subjects(tmp_path: Path) -> None:
+    input_root = tmp_path / "in"
+    output_root = tmp_path / "out"
+    input_root.mkdir()
+    (input_root / "message-2.eml").write_text(
+        "From: a@b\nSubject: Договор аренды\n\nContract\n",
+        encoding="utf-8",
+    )
+    (input_root / "message-3.eml").write_text(
+        "From: c@d\nSubject: Πρόσκληση σύσκεψης\n\nInvitation\n",
+        encoding="utf-8",
+    )
+
+    results = convert_dir(input_root, output=output_root)
+
+    assert [result.output.name for result in results if result.output is not None] == [
+        "message-2.md",
+        "message-3.md",
+    ]
+
+
+def test_convert_prefers_ascii_subject_over_source_stem(tmp_path: Path) -> None:
+    source = tmp_path / "source-name.eml"
+    source.write_text(
+        "From: a@b\nSubject: Quarterly Report Ready\n\nReport\n",
+        encoding="utf-8",
+    )
+
+    result = convert(source, output=tmp_path / "out")
+
+    assert result.success is True
+    assert result.output == tmp_path / "out" / "quarterly-report-ready.md"
+
+
 def test_convert_uses_collision_safe_suffix(copy_fixture, tmp_path: Path) -> None:
     source = copy_fixture("plain_text.eml")
     output_dir = tmp_path / "rendered"
