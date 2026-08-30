@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import dead_letter.core.mime as mime_module
 
 from dead_letter.core.attachments import collect_attachment_names
-from dead_letter.core import convert
+from dead_letter.core import convert, convert_to_bundle
 from dead_letter.core.mime import _normalize_header_value, parse_eml
 
 
@@ -294,3 +294,61 @@ def test_parse_eml_embedded_message_without_subject_uses_fallback_name(tmp_path:
 
     assert parsed.attachments == ["forwarded-message.eml"]
     assert parsed.text_body.strip() == "OUTER PLAIN BODY"
+
+
+def test_parse_eml_caps_derived_embedded_message_filename(tmp_path: Path) -> None:
+    inner = EmailMessage()
+    inner["From"] = "carol@example.org"
+    inner["Subject"] = "extremely verbose forwarded subject line " * 10
+    inner.set_content("INNER PLAIN BODY")
+
+    outer = EmailMessage()
+    outer["From"] = "alice@example.com"
+    outer["Subject"] = "Cover note"
+    outer.set_content("OUTER PLAIN BODY")
+    outer.add_attachment(inner)
+
+    source = tmp_path / "forward-long-subject.eml"
+    source.write_bytes(outer.as_bytes(policy=policy.default))
+
+    parsed = parse_eml(source)
+
+    assert len(parsed.attachments) == 1
+    name = parsed.attachments[0]
+    assert name.endswith(".eml")
+    assert len(name.encode("utf-8")) <= 255
+
+    result = convert_to_bundle(source, bundle_root=tmp_path / "cabinet")
+
+    assert result.success is True
+    assert result.bundle is not None
+    assert (result.bundle / "attachments" / name).exists()
+
+
+def test_parse_eml_keeps_embedded_message_in_source_mime_order(tmp_path: Path) -> None:
+    outer = EmailMessage()
+    outer["From"] = "alice@example.com"
+    outer["Subject"] = "Cover note"
+    outer.set_content("OUTER PLAIN BODY")
+
+    outer.add_attachment(
+        b"before", maintype="application", subtype="octet-stream", filename="before.bin"
+    )
+
+    inner = EmailMessage()
+    inner["From"] = "carol@example.org"
+    inner["Subject"] = "Inner secret message"
+    inner.set_content("INNER PLAIN BODY")
+    outer.add_attachment(inner)
+
+    outer.add_attachment(
+        b"after", maintype="application", subtype="octet-stream", filename="after.bin"
+    )
+
+    source = tmp_path / "forward-between-attachments.eml"
+    source.write_bytes(outer.as_bytes(policy=policy.default))
+
+    parsed = parse_eml(source)
+
+    assert parsed.attachments == ["before.bin", "inner-secret-message.eml", "after.bin"]
+    assert [part.filename for part in parsed.attachment_parts] == parsed.attachments

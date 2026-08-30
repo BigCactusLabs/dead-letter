@@ -23,6 +23,8 @@ from dead_letter.core.mime_selection import build_mime_model, select_body_candid
 from dead_letter.core.slugs import slugify_subject
 from dead_letter.core.types import ParsedEmail, PartDefect
 
+_MAX_EMBEDDED_MESSAGE_SLUG_LENGTH = 100
+
 
 def _normalize_header_value(value: Any) -> str:
     if isinstance(value, str):
@@ -175,7 +177,9 @@ def _embedded_message_attachment(part: Message) -> dict[str, Any] | None:
     filename = str(part.get_filename() or "").strip()
     if not filename:
         subject = parse_subject(_normalize_header_value(inner.get("Subject", "")))
-        filename = f"{slugify_subject(subject, fallback='forwarded-message')}.eml"
+        slug = slugify_subject(subject, fallback="forwarded-message")
+        slug = slug[:_MAX_EMBEDDED_MESSAGE_SLUG_LENGTH].rstrip("-") or "forwarded-message"
+        filename = f"{slug}.eml"
 
     return {
         "filename": filename,
@@ -248,6 +252,31 @@ def _collect_top_level_entity(
     return bool(embedded_messages), plain_bodies, html_bodies, embedded_attachments
 
 
+def _merge_embedded_message_attachments(
+    raw_attachments: list[dict[str, Any]],
+    embedded_attachments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Substitute derived embedded-message entries in place, keeping MIME order.
+
+    Parsers do surface message/rfc822 parts, but mailparser invents a random
+    filename for them, so each is replaced by the derived entry at its original
+    position; entries the parser missed are appended.
+    """
+    pending = list(embedded_attachments)
+    merged: list[dict[str, Any]] = []
+
+    for attachment in raw_attachments:
+        content_type = str(attachment.get("mail_content_type") or "").strip().lower()
+        if content_type != "message/rfc822":
+            merged.append(attachment)
+            continue
+        if pending:
+            merged.append(pending.pop(0))
+
+    merged.extend(pending)
+    return merged
+
+
 def parse_eml(
     path: str | Path,
     *,
@@ -311,14 +340,9 @@ def parse_eml(
         raw_attachments = mailparser_attachments
 
     if has_embedded_messages:
-        # Replace parser-generated message/rfc822 entries (mailparser invents a
-        # random filename for them) with the derived embedded-message entries.
-        raw_attachments = [
-            attachment
-            for attachment in raw_attachments
-            if str(attachment.get("mail_content_type") or "").strip().lower() != "message/rfc822"
-        ]
-        raw_attachments = [*raw_attachments, *embedded_attachments]
+        raw_attachments = _merge_embedded_message_attachments(
+            raw_attachments, embedded_attachments
+        )
 
     return ParsedEmail(
         source=source,
