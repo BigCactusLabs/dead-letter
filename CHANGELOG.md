@@ -13,6 +13,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   commit SHA to the Big Cactus Labs marketplace before advancing the legacy
   `release` branch. This lets Cowork detect the marketplace commit and keeps
   Cowork and Claude Code on the same immutable plugin assets.
+- Forwarded-as-attachment messages (`message/rfc822` or `multipart/digest`
+  parts) no longer leak the embedded message's body into, or replace, the
+  outer message body. The embedded message is now recorded as an attachment
+  instead (#92).
+- Subjects that slugify to empty, including non-Latin-script subjects with no
+  ASCII decomposition, now fall back to the slugified source filename stem
+  instead of the generic `email` filename (#95).
+- `JobManager` now retains references to background job tasks so a running
+  job can no longer be garbage-collected mid-run; exceptions escaping the job
+  runner are now logged (#96).
+- Nested HTML lists now preserve indentation and use `-` bullets at every
+  level instead of cycling markers by depth, so converted Markdown nests
+  correctly under CommonMark instead of splitting into sibling lists (#89).
+- `write_report` no longer mutates the process-wide umask; the effective
+  umask is read once at import instead (#97).
+- `Content-Disposition: inline` attachments that are not images (PDFs,
+  `.ics`, spreadsheets) are no longer dropped as unreferenced inline assets;
+  only unreferenced inline images are removed. A new diagnostics warning,
+  `attachment_discarded_with_source_deleted`, now fires when
+  `source_handling="delete"` discards attachment bytes (#93).
+- Signature-image detection no longer strips full-size inline images on a
+  bare substring match: it now requires a small or absent rendered
+  dimension and matches against filename tokens rather than the whole URL.
+  `diagnostics.attachments.referenced` now counts attachments before
+  `filter_images` exclusions, so images removed by any filtering layer are
+  reflected in the referenced/retained counts (#94).
 
 ## [0.2.5] - 2026-08-20
 
