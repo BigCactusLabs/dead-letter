@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `JobManager` now retains references to background job tasks so a running
   job can no longer be garbage-collected mid-run; exceptions escaping the job
   runner are now logged (#96).
+- Nested HTML lists now preserve indentation and use `-` bullets at every
+  level instead of cycling markers by depth, so converted Markdown nests
+  correctly under CommonMark instead of splitting into sibling lists (#89).
 - `write_report` no longer mutates the process-wide umask; the effective
   umask is read once at import instead (#97).
 - `Content-Disposition: inline` attachments that are not images (PDFs,
