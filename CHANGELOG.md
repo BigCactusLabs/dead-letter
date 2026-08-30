@@ -25,6 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runner are now logged (#96).
 - `write_report` no longer mutates the process-wide umask; the effective
   umask is read once at import instead (#97).
+- `Content-Disposition: inline` attachments that are not images (PDFs,
+  `.ics`, spreadsheets) are no longer dropped as unreferenced inline assets;
+  only unreferenced inline images are removed. A new diagnostics warning,
+  `attachment_discarded_with_source_deleted`, now fires when
+  `source_handling="delete"` discards attachment bytes (#93).
+- Signature-image detection no longer strips full-size inline images on a
+  bare substring match: it now requires a small or absent rendered
+  dimension and matches against filename tokens rather than the whole URL.
+  `diagnostics.attachments.referenced` now counts attachments before
+  `filter_images` exclusions, so images removed by any filtering layer are
+  reflected in the referenced/retained counts (#94).
 
 ## [0.2.5] - 2026-08-20
 

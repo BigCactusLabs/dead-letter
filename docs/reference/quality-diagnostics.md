@@ -38,9 +38,9 @@ This summary is intended for operator review. It is not the raw internal convers
   - `reason`: detection layer that matched (e.g., `gmail_signature_wrapper`, `front_signature_wrapper`, `thunderbird_signature_wrapper`, `apple_mail_signature_wrapper`, `gmail_mail_sig_url`, `filename_pattern:logo`, `structural_boundary_extension`, `dimension_heuristic`, `hidden_image`)
   - `reference`: the image `src` or CID that was stripped
 - `attachments`: `{referenced, retained}` counts, populated when the message has attachments eligible for retention. The job-status API returns `null` when there are none (same convention as `client_hint`); the raw MCP diagnostics dict and per-job report omit the key entirely.
-  - `referenced`: attachment count before the unreferenced-inline-asset pass
+  - `referenced`: attachment count before any filtering pass — this includes both `filter_images` exclusions (signature-image/tracking-pixel layers) and the unreferenced-inline-asset pass, so an image removed by either path is still counted
   - `retained`: attachment count written to the rendered output and bundle
-  - A `retained < referenced` gap means attachments were dropped; pair it with the `attachment_reference_without_attachments` warning for a machine-detectable signal.
+  - A `retained < referenced` gap means attachments were dropped; pair it with the `attachment_reference_without_attachments` warning, or with `attachment_discarded_with_source_deleted` when `source_handling="delete"`, for a machine-detectable signal.
 
 ## State Meanings
 
@@ -72,6 +72,7 @@ Warning codes emitted by the pipeline:
 - `mime_defect` — structural MIME parsing defects (e.g., malformed headers, encoding issues) recovered during parsing
 - `attachment_parser_disagreement` — stdlib MIME parsing found more named attachments than `mailparser`; stdlib extraction was used
 - `attachment_reference_without_attachments` — rendered message body references attached files, but no retained attachments were extracted
+- `attachment_discarded_with_source_deleted` — `source_handling="delete"` removed the source `.eml`, but one or more attachment parts were discarded during conversion (`retained < referenced`), so bytes were permanently lost; severity `warning`
 - `html_markdown_failed` — HTML-to-Markdown conversion panicked; plain-text fallback was used
 - `html_markdown_repaired` — HTML-to-Markdown conversion initially panicked, then succeeded on the explicit repair retry path
 
