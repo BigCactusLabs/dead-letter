@@ -284,6 +284,64 @@ def test_delete_source_warns_when_inline_image_attachment_is_discarded(tmp_path:
     )
 
 
+def test_convert_to_bundle_retains_large_inline_logo_draft(tmp_path: Path) -> None:
+    source = _write_inline_attachment_email(
+        tmp_path / "logo-draft.eml",
+        filename="logo-draft-v3.png",
+        content_type="image/png",
+        content_id="logo-draft-v3",
+        payload=b"fake-large-png",
+        html=(
+            '<html><body><img src="cid:logo-draft-v3" alt="new logo draft" '
+            'width="800" height="600" /></body></html>'
+        ),
+    )
+
+    result, diagnostics = convert_to_bundle_with_diagnostics(
+        source,
+        bundle_root=tmp_path / "cabinet",
+        source_handling="copy",
+        options=ConvertOptions(strip_signature_images=True),
+    )
+
+    assert result.success is True
+    assert [path.name for path in result.attachments] == ["logo-draft-v3.png"]
+    assert result.attachments[0].read_bytes() == b"fake-large-png"
+    assert diagnostics is not None
+    assert diagnostics["attachments"] == {"referenced": 1, "retained": 1}
+
+
+def test_convert_to_bundle_diagnostics_count_signature_filter_discarded_attachment(
+    tmp_path: Path,
+) -> None:
+    source = _write_inline_attachment_email(
+        tmp_path / "small-logo.eml",
+        filename="logo.gif",
+        content_type="image/gif",
+        content_id="small-logo",
+        payload=b"fake-small-gif",
+        html='<html><body><img src="cid:small-logo" width="16" height="16" /></body></html>',
+    )
+
+    result, diagnostics = convert_to_bundle_with_diagnostics(
+        source,
+        bundle_root=tmp_path / "cabinet",
+        source_handling="delete",
+        options=ConvertOptions(strip_signature_images=True),
+    )
+
+    assert result.success is True
+    assert result.attachments == []
+    assert source.exists() is False
+    assert diagnostics is not None
+    assert diagnostics["attachments"] == {"referenced": 1, "retained": 0}
+    assert diagnostics["state"] == "degraded"
+    assert any(
+        warning["code"] == "attachment_discarded_with_source_deleted"
+        for warning in diagnostics["warnings"]
+    )
+
+
 def test_convert_to_bundle_diagnostics_report_referenced_and_retained_counts(
     copy_fixture, tmp_path: Path
 ) -> None:
@@ -297,7 +355,7 @@ def test_convert_to_bundle_diagnostics_report_referenced_and_retained_counts(
     )
 
     assert diagnostics is not None
-    assert diagnostics["attachments"] == {"referenced": 1, "retained": 1}
+    assert diagnostics["attachments"] == {"referenced": 2, "retained": 1}
 
 
 def test_convert_to_bundle_diagnostics_omit_attachment_counts_when_none_present(

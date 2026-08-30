@@ -562,6 +562,7 @@ def _build_rendered_markdown(
         include_attachment_payloads=include_attachment_payloads,
         include_inline_data_uris=options.embed_inline_images,
     )
+    referenced_attachments = len(parsed.attachments)
 
     stripped_images: list[StrippedImage] = []
     filtered_html_body = parsed.html_body
@@ -701,7 +702,6 @@ def _build_rendered_markdown(
         raw_html=raw_html,
         options=options,
     )
-    referenced_attachments = len(parsed.attachments)
     if options.strip_signature_images or options.strip_tracking_pixels:
         attachment_reference_text = rendered.body
         if options.include_raw_html and raw_html is not None:

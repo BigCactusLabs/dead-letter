@@ -9,6 +9,7 @@ from selectolax.parser import HTMLParser, Node
 from dead_letter.core.types import StrippedImage, StrippedImageCategory
 
 _RE_DIMENSION_ATTR = re.compile(r"^[01]$")
+_RE_SIGNATURE_DIMENSION = re.compile(r"^\s*(\d+)(?:px)?\s*$", re.IGNORECASE)
 _RE_CSS_DIMENSION = re.compile(
     r"(?<![\w-])(?:width|height)\s*:\s*([01])(?:px)?\s*(?:!important\s*)?(?:;|$)",
     re.IGNORECASE,
@@ -34,6 +35,7 @@ _SIGNATURE_WRAPPER_SELECTORS = {
 }
 
 _GMAIL_MAIL_SIG_PATTERN = "googleusercontent.com/mail-sig/"
+_MAX_SIGNATURE_IMAGE_DIMENSION = 200
 
 _BLOCK_TAGS = frozenset({
     "div", "p", "table", "section", "article", "main", "header", "footer", "nav",
@@ -112,7 +114,7 @@ def filter_images(
         alt = img.attributes.get("alt", "") or ""
 
         if strip_signature_images:
-            reason = _detect_signature_image(src, alt)
+            reason = _detect_signature_image(img, src, alt)
             if reason is not None:
                 stripped.append(StrippedImage(
                     category=StrippedImageCategory.SIGNATURE_IMAGE,
@@ -140,19 +142,38 @@ def filter_images(
     return (body.html if body else tree.html) or "", stripped
 
 
-def _detect_signature_image(src: str, alt: str) -> str | None:
+def _detect_signature_image(img: Node, src: str, alt: str) -> str | None:
     """Return detection reason if img is a signature image (Layers 2-3), else None."""
     # Layer 2: Gmail proxy URL.
     if _GMAIL_MAIL_SIG_PATTERN in src:
         return "gmail_mail_sig_url"
 
-    # Layer 3: Filename pattern matching.
-    check_text = f"{src} {alt}".lower()
+    # Layer 3: Small, filename-like signature image matching.
+    if not _has_plausible_signature_size(img):
+        return None
+
+    filename = src.rsplit("/", 1)[-1].split("?", 1)[0].split("#", 1)[0]
+    tokens = set(re.findall(r"[a-z0-9]+", f"{filename} {alt}".lower()))
     for pattern in _SIGNATURE_FILENAME_PATTERNS:
-        if pattern in check_text:
+        if pattern in tokens:
             return f"filename_pattern:{pattern}"
 
     return None
+
+
+def _has_plausible_signature_size(img: Node) -> bool:
+    dimensions = [
+        img.attributes.get("width", "") or "",
+        img.attributes.get("height", "") or "",
+    ]
+    if not any(dimensions):
+        return True
+
+    return any(
+        match is not None and int(match.group(1)) <= _MAX_SIGNATURE_IMAGE_DIMENSION
+        for dimension in dimensions
+        if (match := _RE_SIGNATURE_DIMENSION.match(dimension))
+    )
 
 
 def _detect_tracking_pixel(img: Node, src: str) -> str | None:
