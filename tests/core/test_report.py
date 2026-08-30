@@ -100,3 +100,16 @@ def test_write_report_supports_custom_filename(tmp_path: Path) -> None:
 
     assert path == tmp_path / ".dead-letter-report-job-123.json"
     assert json.loads(path.read_text(encoding="utf-8"))["version"] == 1
+
+
+def test_write_report_does_not_probe_umask_at_runtime(tmp_path: Path, monkeypatch) -> None:
+    import dead_letter.core.report as report_module
+
+    def fail_umask(_value: int) -> int:
+        raise AssertionError("write_report must not probe umask")
+
+    monkeypatch.setattr(report_module.os, "umask", fail_umask)
+
+    path = write_report({"version": 1}, tmp_path)
+
+    assert path.stat().st_mode & 0o777 == 0o666 & ~report_module._UMASK
