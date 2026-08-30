@@ -210,3 +210,87 @@ def test_parse_eml_falls_back_when_mailparser_misses_attachments(
     assert len(disagreement) == 1
     assert disagreement[0].severity == "warning"
     assert "mailparser=0" in disagreement[0].message
+
+
+def _forward_as_attachment_bytes(*, html: bool) -> bytes:
+    inner = EmailMessage()
+    inner["From"] = "carol@example.org"
+    inner["To"] = "alice@example.com"
+    inner["Subject"] = "Inner secret message"
+    inner["Date"] = "Mon, 03 Aug 2026 09:00:00 +0000"
+    inner.set_content("INNER PLAIN BODY - a totally different message")
+
+    outer = EmailMessage()
+    outer["From"] = "alice@example.com"
+    outer["To"] = "bob@example.com"
+    outer["Subject"] = "Please review the attached"
+    outer["Date"] = "Tue, 04 Aug 2026 10:00:00 +0000"
+    outer.set_content("OUTER PLAIN BODY - please see attached")
+
+    if html:
+        inner.add_alternative("<html><body><p>INNER HTML BODY</p></body></html>", subtype="html")
+        outer.add_alternative(
+            "<html><body><p>OUTER HTML BODY</p></body></html>", subtype="html"
+        )
+
+    outer.add_attachment(inner)
+    return outer.as_bytes(policy=policy.default)
+
+
+def test_parse_eml_forward_as_attachment_keeps_outer_body(tmp_path: Path) -> None:
+    source = tmp_path / "forward-as-attachment.eml"
+    source.write_bytes(_forward_as_attachment_bytes(html=True))
+
+    parsed = parse_eml(source)
+
+    assert parsed.selected_body_kind == "html"
+    assert parsed.html_body is not None
+    assert "OUTER HTML BODY" in parsed.html_body
+    assert "INNER HTML BODY" not in parsed.html_body
+    assert "INNER PLAIN BODY" not in parsed.text_body
+    assert [candidate.kind for candidate in parsed.body_candidates] == ["html", "plain"]
+
+
+def test_parse_eml_forward_as_attachment_plain_only_keeps_outer_body(tmp_path: Path) -> None:
+    source = tmp_path / "forward-as-attachment-plain.eml"
+    source.write_bytes(_forward_as_attachment_bytes(html=False))
+
+    parsed = parse_eml(source)
+
+    assert parsed.selected_body_kind == "plain"
+    assert parsed.html_body is None
+    assert parsed.text_body.strip() == "OUTER PLAIN BODY - please see attached"
+
+
+def test_parse_eml_forward_as_attachment_records_embedded_message(tmp_path: Path) -> None:
+    source = tmp_path / "forward-as-attachment.eml"
+    source.write_bytes(_forward_as_attachment_bytes(html=True))
+
+    parsed = parse_eml(source)
+
+    assert parsed.attachments == ["inner-secret-message.eml"]
+    assert len(parsed.attachment_parts) == 1
+    embedded = parsed.attachment_parts[0]
+    assert embedded.filename == "inner-secret-message.eml"
+    assert embedded.content_type == "message/rfc822"
+    assert b"Subject: Inner secret message" in embedded.payload
+
+
+def test_parse_eml_embedded_message_without_subject_uses_fallback_name(tmp_path: Path) -> None:
+    inner = EmailMessage()
+    inner["From"] = "carol@example.org"
+    inner.set_content("INNER PLAIN BODY")
+
+    outer = EmailMessage()
+    outer["From"] = "alice@example.com"
+    outer["Subject"] = "Cover note"
+    outer.set_content("OUTER PLAIN BODY")
+    outer.add_attachment(inner)
+
+    source = tmp_path / "forward-no-subject.eml"
+    source.write_bytes(outer.as_bytes(policy=policy.default))
+
+    parsed = parse_eml(source)
+
+    assert parsed.attachments == ["forwarded-message.eml"]
+    assert parsed.text_body.strip() == "OUTER PLAIN BODY"

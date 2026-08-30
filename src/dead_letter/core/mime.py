@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from email import policy
+from email.message import Message
 from email.parser import BytesParser
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from dead_letter.core.attachments import (
 )
 from dead_letter.core.header_parser import parse_date, parse_subject
 from dead_letter.core.mime_selection import build_mime_model, select_body_candidate
+from dead_letter.core.slugs import slugify_subject
 from dead_letter.core.types import ParsedEmail, PartDefect
 
 
@@ -133,6 +135,119 @@ def _extract_raw_attachments_from_stdlib(raw: bytes) -> list[dict[str, Any]]:
     return extracted
 
 
+def _decode_text_part(part: Message) -> str:
+    payload = part.get_payload(decode=True)
+    if not isinstance(payload, bytes):
+        return ""
+
+    charset = str(part.get_content_charset() or "utf-8").strip() or "utf-8"
+    try:
+        return payload.decode(charset, errors="replace")
+    except LookupError:
+        return payload.decode("utf-8", errors="replace")
+
+
+def _is_body_text_part(part: Message) -> bool:
+    if str(part.get_content_disposition() or "").strip().lower() == "attachment":
+        return False
+    if str(part.get_filename() or "").strip():
+        return False
+    return part.get_content_maintype() == "text" and part.get_content_subtype() in {
+        "plain",
+        "html",
+    }
+
+
+def _embedded_message_attachment(part: Message) -> dict[str, Any] | None:
+    """Represent a message/rfc822 part as a raw attachment mapping."""
+    payload = part.get_payload()
+    inner = payload[0] if isinstance(payload, list) and payload else None
+    if not isinstance(inner, Message):
+        return None
+
+    try:
+        raw_inner = inner.as_bytes()
+    except Exception:
+        return None
+    if not raw_inner:
+        return None
+
+    filename = str(part.get_filename() or "").strip()
+    if not filename:
+        subject = parse_subject(_normalize_header_value(inner.get("Subject", "")))
+        filename = f"{slugify_subject(subject, fallback='forwarded-message')}.eml"
+
+    return {
+        "filename": filename,
+        "content-id": "",
+        "mail_content_type": "message/rfc822",
+        "content_transfer_encoding": "base64",
+        "payload": base64.b64encode(raw_inner).decode("ascii"),
+        "content-disposition": "attachment",
+        "charset": "utf-8",
+    }
+
+
+def _walk_top_level_entity(
+    part: Message,
+    *,
+    embedded: bool,
+    plain_bodies: list[str],
+    html_bodies: list[str],
+    embedded_messages: list[Message],
+) -> None:
+    if part.get_content_type() == "message/rfc822":
+        embedded_messages.append(part)
+        return
+
+    if part.is_multipart():
+        nested = embedded or part.get_content_type() == "multipart/digest"
+        for child in part.get_payload():
+            if isinstance(child, Message):
+                _walk_top_level_entity(
+                    child,
+                    embedded=nested,
+                    plain_bodies=plain_bodies,
+                    html_bodies=html_bodies,
+                    embedded_messages=embedded_messages,
+                )
+        return
+
+    if embedded or not _is_body_text_part(part):
+        return
+
+    content = _decode_text_part(part)
+    if part.get_content_subtype() == "html":
+        html_bodies.append(content)
+    else:
+        plain_bodies.append(content)
+
+
+def _collect_top_level_entity(
+    raw: bytes,
+) -> tuple[bool, list[str], list[str], list[dict[str, Any]]]:
+    """Collect body text scoped to the outer message plus its embedded messages."""
+    message = BytesParser(policy=policy.default).parsebytes(raw)
+
+    plain_bodies: list[str] = []
+    html_bodies: list[str] = []
+    embedded_messages: list[Message] = []
+    _walk_top_level_entity(
+        message,
+        embedded=False,
+        plain_bodies=plain_bodies,
+        html_bodies=html_bodies,
+        embedded_messages=embedded_messages,
+    )
+
+    embedded_attachments = [
+        attachment
+        for attachment in (_embedded_message_attachment(part) for part in embedded_messages)
+        if attachment is not None
+    ]
+    return bool(embedded_messages), plain_bodies, html_bodies, embedded_attachments
+
+
 def parse_eml(
     path: str | Path,
     *,
@@ -155,8 +270,21 @@ def parse_eml(
         headers = parsed.headers or {}
         date_value = parse_date(_normalize_header_value(headers.get("Date", "")))
 
-    text_body = "\n".join(parsed.text_plain or []) or parsed.body or ""
-    html_bodies = [body for body in (parsed.text_html or []) if body]
+    (
+        has_embedded_messages,
+        top_level_plain,
+        top_level_html,
+        embedded_attachments,
+    ) = _collect_top_level_entity(raw)
+
+    if has_embedded_messages:
+        # mailparser flattens text parts across the whole tree, so an embedded
+        # message/rfc822 would otherwise leak into (or replace) the outer body.
+        text_body = "\n".join(top_level_plain)
+        html_bodies = [body for body in top_level_html if body]
+    else:
+        text_body = "\n".join(parsed.text_plain or []) or parsed.body or ""
+        html_bodies = [body for body in (parsed.text_html or []) if body]
     defects = _extract_part_defects(parsed)
     mime_model = build_mime_model(text_body=text_body, html_bodies=html_bodies, defects=defects)
     selected_candidate = select_body_candidate(mime_model) if mime_model.body_candidates else None
@@ -181,6 +309,16 @@ def parse_eml(
         )
     else:
         raw_attachments = mailparser_attachments
+
+    if has_embedded_messages:
+        # Replace parser-generated message/rfc822 entries (mailparser invents a
+        # random filename for them) with the derived embedded-message entries.
+        raw_attachments = [
+            attachment
+            for attachment in raw_attachments
+            if str(attachment.get("mail_content_type") or "").strip().lower() != "message/rfc822"
+        ]
+        raw_attachments = [*raw_attachments, *embedded_attachments]
 
     return ParsedEmail(
         source=source,
