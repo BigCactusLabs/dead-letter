@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from email import policy
 from email.message import EmailMessage
 from pathlib import Path
@@ -274,6 +275,44 @@ def test_parse_eml_forward_as_attachment_records_embedded_message(tmp_path: Path
     assert embedded.filename == "inner-secret-message.eml"
     assert embedded.content_type == "message/rfc822"
     assert b"Subject: Inner secret message" in embedded.payload
+
+
+def test_parse_eml_base64_embedded_message_round_trips_original_bytes(tmp_path: Path) -> None:
+    inner_raw = (
+        b"From: carol@example.org\r\n"
+        b"To: alice@example.com\r\n"
+        b"Subject: Encoded inner message\r\n"
+        b"\r\n"
+        b"INNER PLAIN BODY - encoded in transit.\r\n"
+    )
+    encoded = base64.encodebytes(inner_raw)
+    outer_raw = (
+        b"From: alice@example.com\r\n"
+        b"To: bob@example.com\r\n"
+        b"Subject: Please review the attached\r\n"
+        b"MIME-Version: 1.0\r\n"
+        b"Content-Type: multipart/mixed; boundary=BOUND\r\n"
+        b"\r\n"
+        b"--BOUND\r\n"
+        b"Content-Type: text/plain\r\n"
+        b"\r\n"
+        b"OUTER PLAIN BODY - please see attached\r\n"
+        b"--BOUND\r\n"
+        b"Content-Type: message/rfc822\r\n"
+        b"Content-Transfer-Encoding: base64\r\n"
+        b"Content-Disposition: attachment\r\n"
+        b"\r\n" + encoded + b"--BOUND--\r\n"
+    )
+    source = tmp_path / "forward-base64.eml"
+    source.write_bytes(outer_raw)
+
+    parsed = parse_eml(source)
+
+    assert parsed.attachments == ["encoded-inner-message.eml"]
+    assert len(parsed.attachment_parts) == 1
+    embedded = parsed.attachment_parts[0]
+    assert embedded.content_type == "message/rfc822"
+    assert embedded.payload == inner_raw
 
 
 def test_parse_eml_embedded_message_without_subject_uses_fallback_name(tmp_path: Path) -> None:

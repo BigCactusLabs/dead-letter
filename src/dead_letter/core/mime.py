@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import binascii
+import quopri
 from email import policy
 from email.message import Message
 from email.parser import BytesParser
@@ -160,18 +162,45 @@ def _is_body_text_part(part: Message) -> bool:
     }
 
 
-def _embedded_message_attachment(part: Message) -> dict[str, Any] | None:
-    """Represent a message/rfc822 part as a raw attachment mapping."""
+def _embedded_message_content(part: Message) -> tuple[bytes, Message | None]:
+    """Recover an embedded message's original bytes and its parsed form.
+
+    The stdlib parser nests message/rfc822 payloads without honoring the
+    part's Content-Transfer-Encoding, so an encoded part surfaces a bogus
+    inner message whose body is the still-encoded text. Decode that text to
+    recover the original bytes instead of reserializing the bogus message.
+    """
     payload = part.get_payload()
     inner = payload[0] if isinstance(payload, list) and payload else None
     if not isinstance(inner, Message):
-        return None
+        return b"", None
+
+    cte = str(part.get("Content-Transfer-Encoding") or "").strip().lower()
+    if cte in {"base64", "quoted-printable"} and not inner.is_multipart():
+        encoded = inner.get_payload()
+        if isinstance(encoded, str):
+            raw_inner = b""
+            try:
+                if cte == "base64":
+                    raw_inner = base64.b64decode(encoded, validate=False)
+                else:
+                    raw_inner = quopri.decodestring(encoded.encode("ascii", errors="replace"))
+            except (ValueError, binascii.Error):
+                raw_inner = b""
+            if raw_inner:
+                decoded_inner = BytesParser(policy=policy.default).parsebytes(raw_inner)
+                return raw_inner, decoded_inner
 
     try:
-        raw_inner = inner.as_bytes()
+        return inner.as_bytes(), inner
     except Exception:
-        return None
-    if not raw_inner:
+        return b"", None
+
+
+def _embedded_message_attachment(part: Message) -> dict[str, Any] | None:
+    """Represent a message/rfc822 part as a raw attachment mapping."""
+    raw_inner, inner = _embedded_message_content(part)
+    if not raw_inner or inner is None:
         return None
 
     filename = str(part.get_filename() or "").strip()

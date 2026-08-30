@@ -919,6 +919,7 @@ def convert_to_bundle_with_diagnostics(
         attachment_counts = diagnostics.get("attachments") if diagnostics is not None else None
         if (
             source_handling == "delete"
+            and not opts.dry_run
             and isinstance(attachment_counts, dict)
             and attachment_counts.get("retained", 0) < attachment_counts.get("referenced", 0)
         ):

@@ -26,13 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nested HTML lists now preserve indentation and use `-` bullets at every
   level instead of cycling markers by depth, so converted Markdown nests
   correctly under CommonMark instead of splitting into sibling lists (#89).
-- `write_report` no longer mutates the process-wide umask; the effective
-  umask is read once at import instead (#97).
+- `write_report` no longer reads or mutates the process-wide umask; the
+  report temp file is created with default (0o666) permissions so the kernel
+  applies the umask itself (#97).
 - `Content-Disposition: inline` attachments that are not images (PDFs,
   `.ics`, spreadsheets) are no longer dropped as unreferenced inline assets;
   only unreferenced inline images are removed. A new diagnostics warning,
-  `attachment_discarded_with_source_deleted`, now fires when
-  `source_handling="delete"` discards attachment bytes (#93).
+  `attachment_discarded_with_source_deleted`, now fires when a non-dry-run
+  `source_handling="delete"` conversion discards attachment bytes (#93).
 - Signature-image detection no longer strips full-size inline images on a
   bare substring match: it now requires a small or absent rendered
   dimension and matches against filename tokens rather than the whole URL.

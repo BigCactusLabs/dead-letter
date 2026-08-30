@@ -72,7 +72,7 @@ Warning codes emitted by the pipeline:
 - `mime_defect` — structural MIME parsing defects (e.g., malformed headers, encoding issues) recovered during parsing
 - `attachment_parser_disagreement` — stdlib MIME parsing found more named attachments than `mailparser`; stdlib extraction was used
 - `attachment_reference_without_attachments` — rendered message body references attached files, but no retained attachments were extracted
-- `attachment_discarded_with_source_deleted` — `source_handling="delete"` removed the source `.eml`, but one or more attachment parts were discarded during conversion (`retained < referenced`), so bytes were permanently lost; severity `warning`
+- `attachment_discarded_with_source_deleted` — `source_handling="delete"` removed the source `.eml`, but one or more attachment parts were discarded during conversion (`retained < referenced`), so bytes were permanently lost; severity `warning`. Not emitted on dry runs, which never delete the source or discard bytes.
 - `html_markdown_failed` — HTML-to-Markdown conversion panicked; plain-text fallback was used
 - `html_markdown_repaired` — HTML-to-Markdown conversion initially panicked, then succeeded on the explicit repair retry path
 

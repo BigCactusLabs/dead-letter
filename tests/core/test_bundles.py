@@ -284,6 +284,34 @@ def test_delete_source_warns_when_inline_image_attachment_is_discarded(tmp_path:
     )
 
 
+def test_dry_run_delete_does_not_warn_about_discarded_attachments(tmp_path: Path) -> None:
+    source = _write_inline_attachment_email(
+        tmp_path / "dry-run-orphan-image.eml",
+        filename="orphan.png",
+        content_type="image/png",
+        content_id="orphan-image",
+        payload=b"fake-png",
+        html="<html><body><p>No image reference remains.</p></body></html>",
+    )
+
+    result, diagnostics = convert_to_bundle_with_diagnostics(
+        source,
+        bundle_root=tmp_path / "cabinet",
+        source_handling="delete",
+        options=ConvertOptions(
+            dry_run=True, strip_signature_images=True, strip_tracking_pixels=True
+        ),
+    )
+
+    assert result.success is True
+    assert source.exists() is True
+    assert diagnostics is not None
+    assert not any(
+        warning["code"] == "attachment_discarded_with_source_deleted"
+        for warning in diagnostics["warnings"]
+    )
+
+
 def test_convert_to_bundle_retains_large_inline_logo_draft(tmp_path: Path) -> None:
     source = _write_inline_attachment_email(
         tmp_path / "logo-draft.eml",
