@@ -25,7 +25,7 @@ Rules:
 
 - `path` must have `.eml` suffix.
 - Writes markdown output unless `dry_run=True`.
-- If `output` is omitted, writes next to source using a slugified subject filename.
+- If `output` is omitted, writes next to source using a slugified subject filename. If the subject slugifies to empty (for example a subject in a non-Latin script with no ASCII decomposition), falls back to the slugified source filename stem, and only then to `email`.
 - If output path collides, appends incrementing suffix (`-2`, `-3`, ...).
 - If `delete_eml=True`, source deletion occurs only after successful write.
 - If source deletion fails after writing markdown, the written markdown file is removed and conversion returns failure.
@@ -56,6 +56,7 @@ Rules:
 - `message.md` is always the bundle markdown filename.
 - Retained extracted attachments and calendar files are written under `attachments/` when present. Inline signature/tracking assets stripped from the rendered output, or inline CID assets no longer referenced by the retained output, are omitted.
 - Attachment filenames are normalized to safe basenames before writing; directory segments from MIME-provided names are stripped.
+- An embedded `message/rfc822` part (e.g. Outlook/Apple Mail "Forward as Attachment") is recorded as an attachment with content type `message/rfc822`; its filename is the part's own filename if present, else the embedded message's slugified `Subject` plus `.eml`, else `forwarded-message.eml`. Parts with `Content-Transfer-Encoding: base64` or `quoted-printable` are decoded first, so the attachment payload is the original embedded-message bytes rather than a double-encoded copy; otherwise the part is re-serialized as-is. That payload is written under `attachments/` like any other attachment. Body text (plain and HTML) is collected only from the top-level entity, so the embedded message never replaces or leaks into the outer body; this also applies to `multipart/digest` containers.
 - When retained attachments are written, markdown front matter includes relative `attachment_files` entries such as `attachments/logo.png`.
 - `source_handling="move"` moves the original `.eml` into the bundle root.
 - `source_handling="copy"` copies the original `.eml` into the bundle root and leaves the source in place.
@@ -355,7 +356,7 @@ Diagnostics semantics:
 
 - `diagnostics` is populated for `mode="file"` jobs only.
 - Directory jobs return `"diagnostics": null`.
-- `diagnostics.attachments` is an object when the message has attachments eligible for retention, and `null` otherwise. `referenced` counts attachments before the unreferenced-inline-asset pass; `retained` counts those written to the output. A `retained < referenced` gap signals dropped attachments and is machine-detectable.
+- `diagnostics.attachments` is an object when the message has attachments eligible for retention, and `null` otherwise. `referenced` counts attachments before any filtering pass — `filter_images` exclusions and the unreferenced-inline-asset pass alike; `retained` counts those written to the output. A `retained < referenced` gap signals dropped attachments and is machine-detectable; see [quality-diagnostics.md](quality-diagnostics.md) for the associated warning codes.
 - When `report=true` and report generation succeeds, `report_path` points to a per-job JSON artifact under Cabinet named `.dead-letter-report-<job_id>.json`.
 - Report generation still occurs for successful zero-file jobs; those reports contain `total=0` and an empty `results` array.
 - `recovery_actions` is empty by default.

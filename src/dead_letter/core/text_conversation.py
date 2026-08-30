@@ -13,6 +13,25 @@ from dead_letter.core.types import ConversationZone, ZoneKind
 _FORWARD_MARKER_RE = re.compile(
     r"(?im)^(?:-+\s*Forwarded message\s*-+|Begin forwarded message:)\s*$"
 )
+_INDENT_SENTINEL_PREFIX = "\ue000dead-letter-indent-"
+_INDENT_SENTINEL_SUFFIX = "\ue001"
+
+
+def _indentation_sentinel(text: str) -> str:
+    index = 0
+    while True:
+        sentinel = f"{_INDENT_SENTINEL_PREFIX}{index}{_INDENT_SENTINEL_SUFFIX}"
+        if sentinel not in text:
+            return sentinel
+        index += 1
+
+
+def _protect_leading_indentation(text: str, *, sentinel: str) -> str:
+    """Keep Markdown indentation intact across reply-parser normalization."""
+    return "\n".join(
+        f"{sentinel}{line}" if line.startswith((" ", "\t")) else line
+        for line in text.split("\n")
+    )
 
 
 def parse_email_replies(text: str) -> list[EmailReply]:
@@ -23,14 +42,20 @@ def parse_email_replies(text: str) -> list[EmailReply]:
     (``_pipeline._threaded_content_from_conversation``).
     """
     parser = EmailReplyParser()
+    sentinel = _indentation_sentinel(text)
+    protected_text = _protect_leading_indentation(text, sentinel=sentinel)
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
             message="'count' is passed as positional argument",
             category=DeprecationWarning,
         )
-        message = parser.read(text)
-    return list(message.replies)
+        message = parser.read(protected_text)
+
+    replies = list(message.replies)
+    for reply in replies:
+        reply.content = str(reply.content or "").replace(sentinel, "")
+    return replies
 
 
 def _segment_forwarded_message(source: str) -> ConversationResult | None:

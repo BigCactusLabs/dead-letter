@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import gc
+import logging
 import threading
 import time
 from pathlib import Path
@@ -101,6 +103,50 @@ async def test_job_manager_runs_directory_job_and_updates_summary(tmp_path: Path
     assert terminal.summary.errors == 1
     assert len(terminal.errors) == 1
     assert terminal.diagnostics is None
+
+
+@pytest.mark.anyio
+async def test_job_manager_retains_tasks_until_all_jobs_finish(tmp_path: Path, monkeypatch) -> None:
+    import dead_letter.backend.jobs as jobs_mod
+
+    monkeypatch.setattr(jobs_mod, "core_convert_to_bundle", _noop_bundle(tmp_path))
+
+    manager = _manager(tmp_path, worker_count=1)
+    created = []
+    for index in range(8):
+        source = tmp_path / "Inbox" / f"mail-{index}.eml"
+        source.write_text("placeholder", encoding="utf-8")
+        created.append(
+            await manager.create_job(JobCreateRequest(mode="file", input_path=str(source)))
+        )
+
+    gc.collect()
+
+    terminal = await asyncio.gather(
+        *(manager.wait_for_terminal(job.id, timeout=2.0) for job in created)
+    )
+
+    assert [job.status for job in terminal] == ["succeeded"] * len(created)
+
+
+@pytest.mark.anyio
+async def test_job_manager_logs_unexpected_task_exception(tmp_path: Path, monkeypatch, caplog) -> None:
+    manager = _manager(tmp_path)
+
+    async def crashing_job(_job_id: str) -> None:
+        raise RuntimeError("unexpected background failure")
+
+    monkeypatch.setattr(manager, "_run_job", crashing_job)
+    caplog.set_level(logging.ERROR, logger="dead_letter.backend.jobs")
+
+    source = tmp_path / "Inbox" / "crash.eml"
+    source.write_text("placeholder", encoding="utf-8")
+    await manager.create_job(JobCreateRequest(mode="file", input_path=str(source)))
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert "Background job" in caplog.text
+    assert "unexpected background failure" in caplog.text
 
 
 @pytest.mark.anyio

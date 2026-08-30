@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from email.message import EmailMessage
 import threading
 from pathlib import Path
 
@@ -21,6 +22,34 @@ def _front_matter(path: Path) -> dict[str, object]:
     end = text.find("\n---\n", 4)
     assert end != -1
     return __import__("yaml").safe_load(text[4:end])
+
+
+def _write_inline_attachment_email(
+    path: Path,
+    *,
+    filename: str,
+    content_type: str,
+    content_id: str,
+    payload: bytes,
+    html: str,
+) -> Path:
+    message = EmailMessage()
+    message["From"] = "sender@example.com"
+    message["To"] = "recipient@example.com"
+    message["Subject"] = "Inline attachment fixture"
+    message.set_content("Please review the attached file.")
+    message.add_alternative(html, subtype="html")
+    maintype, subtype = content_type.split("/", 1)
+    message.get_payload()[1].add_related(
+        payload,
+        maintype=maintype,
+        subtype=subtype,
+        cid=f"<{content_id}>",
+        filename=filename,
+        disposition="inline",
+    )
+    path.write_bytes(message.as_bytes())
+    return path
 
 
 def test_core_api_exports_bundle_converter() -> None:
@@ -179,6 +208,168 @@ def test_convert_to_bundle_retains_attachment_with_content_id(
     assert "logo.png" not in [path.name for path in result.attachments]
 
 
+def test_convert_to_bundle_retains_inline_non_image_attachment(tmp_path: Path) -> None:
+    source = _write_inline_attachment_email(
+        tmp_path / "apple.eml",
+        filename="invoice-q3.pdf",
+        content_type="application/pdf",
+        content_id="invoice-q3",
+        payload=b"%PDF-fake-invoice",
+        html="<html><body><p>The invoice is attached.</p></body></html>",
+    )
+
+    result = convert_to_bundle(
+        source,
+        bundle_root=tmp_path / "cabinet",
+        source_handling="copy",
+        options=ConvertOptions(strip_signature_images=True, strip_tracking_pixels=True),
+    )
+
+    assert result.success is True
+    assert [path.name for path in result.attachments] == ["invoice-q3.pdf"]
+    assert result.attachments[0].read_bytes() == b"%PDF-fake-invoice"
+    assert result.markdown is not None
+    front = _front_matter(result.markdown)
+    assert front["attachments"] == ["invoice-q3.pdf"]
+    assert front["attachment_files"] == ["attachments/invoice-q3.pdf"]
+
+
+def test_convert_to_bundle_strips_unreferenced_inline_image_attachment(tmp_path: Path) -> None:
+    source = _write_inline_attachment_email(
+        tmp_path / "orphan-image.eml",
+        filename="orphan.png",
+        content_type="image/png",
+        content_id="orphan-image",
+        payload=b"fake-png",
+        html="<html><body><p>No image reference remains.</p></body></html>",
+    )
+
+    result, diagnostics = convert_to_bundle_with_diagnostics(
+        source,
+        bundle_root=tmp_path / "cabinet",
+        source_handling="copy",
+        options=ConvertOptions(strip_signature_images=True, strip_tracking_pixels=True),
+    )
+
+    assert result.success is True
+    assert result.attachments == []
+    assert diagnostics is not None
+    assert diagnostics["attachments"] == {"referenced": 1, "retained": 0}
+
+
+def test_delete_source_warns_when_inline_image_attachment_is_discarded(tmp_path: Path) -> None:
+    source = _write_inline_attachment_email(
+        tmp_path / "deleted-orphan-image.eml",
+        filename="orphan.png",
+        content_type="image/png",
+        content_id="orphan-image",
+        payload=b"fake-png",
+        html="<html><body><p>No image reference remains.</p></body></html>",
+    )
+
+    result, diagnostics = convert_to_bundle_with_diagnostics(
+        source,
+        bundle_root=tmp_path / "cabinet",
+        source_handling="delete",
+        options=ConvertOptions(strip_signature_images=True, strip_tracking_pixels=True),
+    )
+
+    assert result.success is True
+    assert source.exists() is False
+    assert diagnostics is not None
+    assert diagnostics["state"] == "degraded"
+    assert any(
+        warning["code"] == "attachment_discarded_with_source_deleted"
+        for warning in diagnostics["warnings"]
+    )
+
+
+def test_dry_run_delete_does_not_warn_about_discarded_attachments(tmp_path: Path) -> None:
+    source = _write_inline_attachment_email(
+        tmp_path / "dry-run-orphan-image.eml",
+        filename="orphan.png",
+        content_type="image/png",
+        content_id="orphan-image",
+        payload=b"fake-png",
+        html="<html><body><p>No image reference remains.</p></body></html>",
+    )
+
+    result, diagnostics = convert_to_bundle_with_diagnostics(
+        source,
+        bundle_root=tmp_path / "cabinet",
+        source_handling="delete",
+        options=ConvertOptions(
+            dry_run=True, strip_signature_images=True, strip_tracking_pixels=True
+        ),
+    )
+
+    assert result.success is True
+    assert source.exists() is True
+    assert diagnostics is not None
+    assert not any(
+        warning["code"] == "attachment_discarded_with_source_deleted"
+        for warning in diagnostics["warnings"]
+    )
+
+
+def test_convert_to_bundle_retains_large_inline_logo_draft(tmp_path: Path) -> None:
+    source = _write_inline_attachment_email(
+        tmp_path / "logo-draft.eml",
+        filename="logo-draft-v3.png",
+        content_type="image/png",
+        content_id="logo-draft-v3",
+        payload=b"fake-large-png",
+        html=(
+            '<html><body><img src="cid:logo-draft-v3" alt="new logo draft" '
+            'width="800" height="600" /></body></html>'
+        ),
+    )
+
+    result, diagnostics = convert_to_bundle_with_diagnostics(
+        source,
+        bundle_root=tmp_path / "cabinet",
+        source_handling="copy",
+        options=ConvertOptions(strip_signature_images=True),
+    )
+
+    assert result.success is True
+    assert [path.name for path in result.attachments] == ["logo-draft-v3.png"]
+    assert result.attachments[0].read_bytes() == b"fake-large-png"
+    assert diagnostics is not None
+    assert diagnostics["attachments"] == {"referenced": 1, "retained": 1}
+
+
+def test_convert_to_bundle_diagnostics_count_signature_filter_discarded_attachment(
+    tmp_path: Path,
+) -> None:
+    source = _write_inline_attachment_email(
+        tmp_path / "small-logo.eml",
+        filename="logo.gif",
+        content_type="image/gif",
+        content_id="small-logo",
+        payload=b"fake-small-gif",
+        html='<html><body><img src="cid:small-logo" width="16" height="16" /></body></html>',
+    )
+
+    result, diagnostics = convert_to_bundle_with_diagnostics(
+        source,
+        bundle_root=tmp_path / "cabinet",
+        source_handling="delete",
+        options=ConvertOptions(strip_signature_images=True),
+    )
+
+    assert result.success is True
+    assert result.attachments == []
+    assert source.exists() is False
+    assert diagnostics is not None
+    assert diagnostics["attachments"] == {"referenced": 1, "retained": 0}
+    assert diagnostics["state"] == "degraded"
+    assert any(
+        warning["code"] == "attachment_discarded_with_source_deleted"
+        for warning in diagnostics["warnings"]
+    )
+
+
 def test_convert_to_bundle_diagnostics_report_referenced_and_retained_counts(
     copy_fixture, tmp_path: Path
 ) -> None:
@@ -192,7 +383,7 @@ def test_convert_to_bundle_diagnostics_report_referenced_and_retained_counts(
     )
 
     assert diagnostics is not None
-    assert diagnostics["attachments"] == {"referenced": 1, "retained": 1}
+    assert diagnostics["attachments"] == {"referenced": 2, "retained": 1}
 
 
 def test_convert_to_bundle_diagnostics_omit_attachment_counts_when_none_present(

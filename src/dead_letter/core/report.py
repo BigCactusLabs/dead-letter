@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
+import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -106,7 +106,11 @@ def write_report(
     if Path(filename).name != filename:
         raise ValueError("report filename must be a basename")
     target = cabinet_path / filename
-    fd, tmp = tempfile.mkstemp(dir=str(cabinet_path), suffix=".tmp")
+    tmp = str(cabinet_path / f".{filename}.{uuid.uuid4().hex}.tmp")
+    # Create with mode 0o666 so the kernel applies the process umask; the
+    # umask itself is never read or mutated (it is process-wide state shared
+    # with concurrent conversion workers).
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
@@ -114,10 +118,6 @@ def write_report(
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, str(target))
-        # mkstemp creates 0o600; restore umask-derived permissions
-        umask = os.umask(0)
-        os.umask(umask)
-        os.chmod(str(target), 0o666 & ~umask)
     except BaseException:
         try:
             os.unlink(tmp)

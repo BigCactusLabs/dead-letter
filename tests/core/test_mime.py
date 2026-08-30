@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import quopri
 from email import policy
 from email.message import EmailMessage
 from pathlib import Path
@@ -8,7 +10,7 @@ from types import SimpleNamespace
 import dead_letter.core.mime as mime_module
 
 from dead_letter.core.attachments import collect_attachment_names
-from dead_letter.core import convert
+from dead_letter.core import convert, convert_to_bundle
 from dead_letter.core.mime import _normalize_header_value, parse_eml
 
 
@@ -210,3 +212,223 @@ def test_parse_eml_falls_back_when_mailparser_misses_attachments(
     assert len(disagreement) == 1
     assert disagreement[0].severity == "warning"
     assert "mailparser=0" in disagreement[0].message
+
+
+def _forward_as_attachment_bytes(*, html: bool) -> bytes:
+    inner = EmailMessage()
+    inner["From"] = "carol@example.org"
+    inner["To"] = "alice@example.com"
+    inner["Subject"] = "Inner secret message"
+    inner["Date"] = "Mon, 03 Aug 2026 09:00:00 +0000"
+    inner.set_content("INNER PLAIN BODY - a totally different message")
+
+    outer = EmailMessage()
+    outer["From"] = "alice@example.com"
+    outer["To"] = "bob@example.com"
+    outer["Subject"] = "Please review the attached"
+    outer["Date"] = "Tue, 04 Aug 2026 10:00:00 +0000"
+    outer.set_content("OUTER PLAIN BODY - please see attached")
+
+    if html:
+        inner.add_alternative("<html><body><p>INNER HTML BODY</p></body></html>", subtype="html")
+        outer.add_alternative(
+            "<html><body><p>OUTER HTML BODY</p></body></html>", subtype="html"
+        )
+
+    outer.add_attachment(inner)
+    return outer.as_bytes(policy=policy.default)
+
+
+def test_parse_eml_forward_as_attachment_keeps_outer_body(tmp_path: Path) -> None:
+    source = tmp_path / "forward-as-attachment.eml"
+    source.write_bytes(_forward_as_attachment_bytes(html=True))
+
+    parsed = parse_eml(source)
+
+    assert parsed.selected_body_kind == "html"
+    assert parsed.html_body is not None
+    assert "OUTER HTML BODY" in parsed.html_body
+    assert "INNER HTML BODY" not in parsed.html_body
+    assert "INNER PLAIN BODY" not in parsed.text_body
+    assert [candidate.kind for candidate in parsed.body_candidates] == ["html", "plain"]
+
+
+def test_parse_eml_forward_as_attachment_plain_only_keeps_outer_body(tmp_path: Path) -> None:
+    source = tmp_path / "forward-as-attachment-plain.eml"
+    source.write_bytes(_forward_as_attachment_bytes(html=False))
+
+    parsed = parse_eml(source)
+
+    assert parsed.selected_body_kind == "plain"
+    assert parsed.html_body is None
+    assert parsed.text_body.strip() == "OUTER PLAIN BODY - please see attached"
+
+
+def test_parse_eml_forward_as_attachment_records_embedded_message(tmp_path: Path) -> None:
+    source = tmp_path / "forward-as-attachment.eml"
+    source.write_bytes(_forward_as_attachment_bytes(html=True))
+
+    parsed = parse_eml(source)
+
+    assert parsed.attachments == ["inner-secret-message.eml"]
+    assert len(parsed.attachment_parts) == 1
+    embedded = parsed.attachment_parts[0]
+    assert embedded.filename == "inner-secret-message.eml"
+    assert embedded.content_type == "message/rfc822"
+    assert b"Subject: Inner secret message" in embedded.payload
+
+
+def test_parse_eml_base64_embedded_message_round_trips_original_bytes(tmp_path: Path) -> None:
+    inner_raw = (
+        b"From: carol@example.org\r\n"
+        b"To: alice@example.com\r\n"
+        b"Subject: Encoded inner message\r\n"
+        b"\r\n"
+        b"INNER PLAIN BODY - encoded in transit.\r\n"
+    )
+    encoded = base64.encodebytes(inner_raw)
+    outer_raw = (
+        b"From: alice@example.com\r\n"
+        b"To: bob@example.com\r\n"
+        b"Subject: Please review the attached\r\n"
+        b"MIME-Version: 1.0\r\n"
+        b"Content-Type: multipart/mixed; boundary=BOUND\r\n"
+        b"\r\n"
+        b"--BOUND\r\n"
+        b"Content-Type: text/plain\r\n"
+        b"\r\n"
+        b"OUTER PLAIN BODY - please see attached\r\n"
+        b"--BOUND\r\n"
+        b"Content-Type: message/rfc822\r\n"
+        b"Content-Transfer-Encoding: base64\r\n"
+        b"Content-Disposition: attachment\r\n"
+        b"\r\n" + encoded + b"--BOUND--\r\n"
+    )
+    source = tmp_path / "forward-base64.eml"
+    source.write_bytes(outer_raw)
+
+    parsed = parse_eml(source)
+
+    assert parsed.attachments == ["encoded-inner-message.eml"]
+    assert len(parsed.attachment_parts) == 1
+    embedded = parsed.attachment_parts[0]
+    assert embedded.content_type == "message/rfc822"
+    assert embedded.payload == inner_raw
+
+
+def test_parse_eml_quoted_printable_embedded_message_round_trips_original_bytes(
+    tmp_path: Path,
+) -> None:
+    inner_raw = (
+        b"From: carol@example.org\n"
+        b"To: alice@example.com\n"
+        b"Subject: QP inner message\n"
+        b"\n"
+        b"Body with an = equals sign and a raw \xe9 byte.\n"
+    )
+    encoded = quopri.encodestring(inner_raw)
+    outer_raw = (
+        b"From: alice@example.com\r\n"
+        b"To: bob@example.com\r\n"
+        b"Subject: Please review the attached\r\n"
+        b"MIME-Version: 1.0\r\n"
+        b"Content-Type: multipart/mixed; boundary=BOUND\r\n"
+        b"\r\n"
+        b"--BOUND\r\n"
+        b"Content-Type: text/plain\r\n"
+        b"\r\n"
+        b"OUTER PLAIN BODY - please see attached\r\n"
+        b"--BOUND\r\n"
+        b"Content-Type: message/rfc822\r\n"
+        b"Content-Transfer-Encoding: quoted-printable\r\n"
+        b"Content-Disposition: attachment\r\n"
+        b"\r\n" + encoded + b"\r\n--BOUND--\r\n"
+    )
+    source = tmp_path / "forward-quoted-printable.eml"
+    source.write_bytes(outer_raw)
+
+    parsed = parse_eml(source)
+
+    assert parsed.attachments == ["qp-inner-message.eml"]
+    assert len(parsed.attachment_parts) == 1
+    embedded = parsed.attachment_parts[0]
+    assert embedded.content_type == "message/rfc822"
+    assert embedded.payload == inner_raw
+
+
+def test_parse_eml_embedded_message_without_subject_uses_fallback_name(tmp_path: Path) -> None:
+    inner = EmailMessage()
+    inner["From"] = "carol@example.org"
+    inner.set_content("INNER PLAIN BODY")
+
+    outer = EmailMessage()
+    outer["From"] = "alice@example.com"
+    outer["Subject"] = "Cover note"
+    outer.set_content("OUTER PLAIN BODY")
+    outer.add_attachment(inner)
+
+    source = tmp_path / "forward-no-subject.eml"
+    source.write_bytes(outer.as_bytes(policy=policy.default))
+
+    parsed = parse_eml(source)
+
+    assert parsed.attachments == ["forwarded-message.eml"]
+    assert parsed.text_body.strip() == "OUTER PLAIN BODY"
+
+
+def test_parse_eml_caps_derived_embedded_message_filename(tmp_path: Path) -> None:
+    inner = EmailMessage()
+    inner["From"] = "carol@example.org"
+    inner["Subject"] = "extremely verbose forwarded subject line " * 10
+    inner.set_content("INNER PLAIN BODY")
+
+    outer = EmailMessage()
+    outer["From"] = "alice@example.com"
+    outer["Subject"] = "Cover note"
+    outer.set_content("OUTER PLAIN BODY")
+    outer.add_attachment(inner)
+
+    source = tmp_path / "forward-long-subject.eml"
+    source.write_bytes(outer.as_bytes(policy=policy.default))
+
+    parsed = parse_eml(source)
+
+    assert len(parsed.attachments) == 1
+    name = parsed.attachments[0]
+    assert name.endswith(".eml")
+    assert len(name.encode("utf-8")) <= 255
+
+    result = convert_to_bundle(source, bundle_root=tmp_path / "cabinet")
+
+    assert result.success is True
+    assert result.bundle is not None
+    assert (result.bundle / "attachments" / name).exists()
+
+
+def test_parse_eml_keeps_embedded_message_in_source_mime_order(tmp_path: Path) -> None:
+    outer = EmailMessage()
+    outer["From"] = "alice@example.com"
+    outer["Subject"] = "Cover note"
+    outer.set_content("OUTER PLAIN BODY")
+
+    outer.add_attachment(
+        b"before", maintype="application", subtype="octet-stream", filename="before.bin"
+    )
+
+    inner = EmailMessage()
+    inner["From"] = "carol@example.org"
+    inner["Subject"] = "Inner secret message"
+    inner.set_content("INNER PLAIN BODY")
+    outer.add_attachment(inner)
+
+    outer.add_attachment(
+        b"after", maintype="application", subtype="octet-stream", filename="after.bin"
+    )
+
+    source = tmp_path / "forward-between-attachments.eml"
+    source.write_bytes(outer.as_bytes(policy=policy.default))
+
+    parsed = parse_eml(source)
+
+    assert parsed.attachments == ["before.bin", "inner-secret-message.eml", "after.bin"]
+    assert [part.filename for part in parsed.attachment_parts] == parsed.attachments
