@@ -16,7 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Forwarded-as-attachment messages (`message/rfc822` or `multipart/digest`
   parts) no longer leak the embedded message's body into, or replace, the
   outer message body. The embedded message is now recorded as an attachment
-  instead (#92).
+  instead. Parts carrying `Content-Transfer-Encoding: base64` or
+  `quoted-printable` are decoded first, so the recorded `.eml` attachment
+  holds the original embedded message bytes rather than a double-encoded
+  copy (#92).
 - Subjects that slugify to empty, including non-Latin-script subjects with no
   ASCII decomposition, now fall back to the slugified source filename stem
   instead of the generic `email` filename (#95).
