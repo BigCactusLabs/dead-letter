@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import quopri
 from email import policy
 from email.message import EmailMessage
 from pathlib import Path
@@ -309,6 +310,46 @@ def test_parse_eml_base64_embedded_message_round_trips_original_bytes(tmp_path: 
     parsed = parse_eml(source)
 
     assert parsed.attachments == ["encoded-inner-message.eml"]
+    assert len(parsed.attachment_parts) == 1
+    embedded = parsed.attachment_parts[0]
+    assert embedded.content_type == "message/rfc822"
+    assert embedded.payload == inner_raw
+
+
+def test_parse_eml_quoted_printable_embedded_message_round_trips_original_bytes(
+    tmp_path: Path,
+) -> None:
+    inner_raw = (
+        b"From: carol@example.org\n"
+        b"To: alice@example.com\n"
+        b"Subject: QP inner message\n"
+        b"\n"
+        b"Body with an = equals sign and a raw \xe9 byte.\n"
+    )
+    encoded = quopri.encodestring(inner_raw)
+    outer_raw = (
+        b"From: alice@example.com\r\n"
+        b"To: bob@example.com\r\n"
+        b"Subject: Please review the attached\r\n"
+        b"MIME-Version: 1.0\r\n"
+        b"Content-Type: multipart/mixed; boundary=BOUND\r\n"
+        b"\r\n"
+        b"--BOUND\r\n"
+        b"Content-Type: text/plain\r\n"
+        b"\r\n"
+        b"OUTER PLAIN BODY - please see attached\r\n"
+        b"--BOUND\r\n"
+        b"Content-Type: message/rfc822\r\n"
+        b"Content-Transfer-Encoding: quoted-printable\r\n"
+        b"Content-Disposition: attachment\r\n"
+        b"\r\n" + encoded + b"\r\n--BOUND--\r\n"
+    )
+    source = tmp_path / "forward-quoted-printable.eml"
+    source.write_bytes(outer_raw)
+
+    parsed = parse_eml(source)
+
+    assert parsed.attachments == ["qp-inner-message.eml"]
     assert len(parsed.attachment_parts) == 1
     embedded = parsed.attachment_parts[0]
     assert embedded.content_type == "message/rfc822"

@@ -176,20 +176,28 @@ def _embedded_message_content(part: Message) -> tuple[bytes, Message | None]:
         return b"", None
 
     cte = str(part.get("Content-Transfer-Encoding") or "").strip().lower()
-    if cte in {"base64", "quoted-printable"} and not inner.is_multipart():
-        encoded = inner.get_payload()
-        if isinstance(encoded, str):
-            raw_inner = b""
+    if cte in {"base64", "quoted-printable"}:
+        # Decode the whole re-serialized entity, not just its payload: for
+        # quoted-printable the mostly-printable wire text parses into real
+        # headers plus an encoded body, and those wire headers are themselves
+        # still encoded (e.g. "=" as "=3D"), so only a whole-entity decode
+        # recovers the original message.
+        try:
+            wire = inner.as_bytes()
+        except Exception:
+            wire = b""
+        raw_inner = b""
+        if wire:
             try:
                 if cte == "base64":
-                    raw_inner = base64.b64decode(encoded, validate=False)
+                    raw_inner = base64.b64decode(wire, validate=False)
                 else:
-                    raw_inner = quopri.decodestring(encoded.encode("ascii", errors="replace"))
+                    raw_inner = quopri.decodestring(wire)
             except (ValueError, binascii.Error):
                 raw_inner = b""
-            if raw_inner:
-                decoded_inner = BytesParser(policy=policy.default).parsebytes(raw_inner)
-                return raw_inner, decoded_inner
+        if raw_inner:
+            decoded_inner = BytesParser(policy=policy.default).parsebytes(raw_inner)
+            return raw_inner, decoded_inner
 
     try:
         return inner.as_bytes(), inner
