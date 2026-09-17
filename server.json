@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.BigCactusLabs/dead-letter",
   "title": "dead-letter",
-  "description": "Convert .eml email exports to Markdown with YAML front matter",
+  "description": "Convert .eml email exports and archives to clean Markdown for RAG, LLM pipelines, and local knowledge bases",
   "repository": {
     "url": "https://github.com/BigCactusLabs/dead-letter",
     "source": "github"
