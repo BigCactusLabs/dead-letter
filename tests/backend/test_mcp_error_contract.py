@@ -13,7 +13,14 @@ from dead_letter.backend import mcp_server
 
 
 def _text(result) -> str:
-    return "\n".join(block.text for block in result.content if block.type == "text")
+    text = "\n".join(block.text for block in result.content if block.type == "text")
+    # The SDK owns the optional tool-name prefix, not dead-letter's message.
+    # Strip only a known prefix; do not accept an arbitrary substring match.
+    for tool in ("convert_eml", "convert_eml_to_bundle", "convert_directory", "get_diagnostics"):
+        prefix = f"Error executing tool {tool}: "
+        if text.startswith(prefix):
+            return text.removeprefix(prefix)
+    return text
 
 
 @pytest.mark.parametrize(
