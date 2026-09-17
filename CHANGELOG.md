@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- MCP SDK 2.1+ no longer masks dead-letter's intentional missing-input,
+  copy-only, batch-limit, destination, and conversion-failure messages.
+  These errors are explicitly marked as SDK `ToolError` while retaining
+  their direct-call Python exception types. Unexpected exceptions remain
+  masked by the SDK. Clients should match the actionable message after
+  an optional `Error executing tool <name>: ` prefix. Protocol regression
+  tests cover both recovery messages and non-disclosure of unexpected errors.
 - Claude plugin releases now publish an explicit version, release tag, and
   commit SHA to the Big Cactus Labs marketplace before advancing the legacy
   `release` branch. This lets Cowork detect the marketplace commit and keeps
