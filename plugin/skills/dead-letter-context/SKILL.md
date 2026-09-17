@@ -63,7 +63,7 @@ The plugin works in two runtimes that share the plugin format:
 
 ## Path-resolution rule
 
-Always pass the user's path to the MCP server **unchanged**. The MCP server only checks existence and returns an error result whose text is `File not found: <path>` — no rewriting needed. The error text is all you get; the MCP protocol does not carry an exception class name.
+Always pass the user's path to the MCP server **unchanged**. For a missing file, the MCP server returns an error result containing the actionable message `File not found: <path>` — no path rewriting needed. The SDK may prefix this with `Error executing tool <name>: `. Match the actionable message after that optional prefix; do not require the entire error text to start with `File not found:`. The MCP protocol does not carry the original Python exception class name. Unexpected exceptions remain generic tool failures and must not be guessed to mean a missing file.
 
 If you get a `File not found:` error and you're in Cowork:
 
