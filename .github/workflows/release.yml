@@ -9,10 +9,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     permissions:
+      contents: read
       id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
 
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -22,7 +25,9 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          enable-cache: true
+          # Publication must not restore dependency artifacts from a shared
+          # Actions cache. Explicit true overrides setup-uv v10's protection.
+          enable-cache: false
 
       - name: Build
         run: uv build
@@ -32,10 +37,9 @@ jobs:
         with:
           attestations: true
 
-  # Publishes server metadata to the Official MCP Registry
-  # (registry.modelcontextprotocol.io) after the PyPI release is live. From
-  # there it propagates automatically to the GitHub MCP Registry, PulseMCP,
-  # and downstream aggregators. Uses GitHub OIDC to claim the
+  # Publishes server metadata to the Official MCP Registry after PyPI.
+  # Downstream catalogs may ingest it, but curated listing acceptance must
+  # be checked independently. Uses GitHub OIDC to claim the
   # io.github.BigCactusLabs/* namespace, so there is no stored secret. The
   # registry only stores metadata; the package itself lives on PyPI.
   publish-mcp:
@@ -47,6 +51,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
 
       - name: Resolve release version
         id: version
@@ -55,8 +61,10 @@ jobs:
       - name: Wait for PyPI to serve the release
         # The registry validates the mcp-name marker in the package's PyPI
         # description, so the new version (README included) must be live first.
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          v="${{ steps.version.outputs.version }}"
+          v="$RELEASE_VERSION"
           for i in $(seq 1 30); do
             if curl -fsSL "https://pypi.org/pypi/dead-letter/${v}/json" >/dev/null; then
               echo "PyPI is serving dead-letter ${v}"
@@ -69,8 +77,10 @@ jobs:
           exit 1
 
       - name: Stamp server.json with the release version
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          v="${{ steps.version.outputs.version }}"
+          v="$RELEASE_VERSION"
           jq --arg v "$v" '
             .version = $v
             | .packages[0].version = $v
@@ -82,7 +92,7 @@ jobs:
 
       - name: Install mcp-publisher
         run: |
-          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          curl -fLSs "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
 
       - name: Authenticate to the MCP Registry (GitHub OIDC)
         run: ./mcp-publisher login github-oidc
