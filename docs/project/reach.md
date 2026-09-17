@@ -1,281 +1,153 @@
 # Reach & Distribution Plan
 
-_Last updated: 2026-09-17_
+_Last reviewed: 2026-09-17_
 
-This document tracks how dead-letter gets discovered, installed, and recommended. The goal is not generic promotion; it is to make dead-letter show up wherever someone is already expressing the problem it solves.
+Make dead-letter discoverable where people already need email-to-Markdown conversion. This is an execution plan, not a claim that every proposed client, catalog, or artifact is already supported.
 
-## Positioning
-
-Primary promise:
+## Positioning and truthful boundaries
 
 > Turn `.eml` email exports into clean, local, LLM-ready Markdown.
 
-The strongest discovery intents are:
+Lead with email normalization, not only MCP. Target `.eml to Markdown`, local email archives, attachment-aware ingestion, and Markdown knowledge bases. MBOX/Gmail Takeout, PST, and MSG are roadmap inputs, not currently supported inputs.
 
-1. `eml to markdown` / `email to markdown`
-2. `email archive markdown` / `email archive obsidian`
-3. `email rag` / `email llm ingestion`
-4. `eml parser llm` / `email parser markdown`
-5. `email mcp server` / `mcp email archive`
-6. `digital preservation email markdown`
+Normal conversion produces Markdown plus attachment metadata. Bundle workflows additionally retain decoded files; retained binaries are not automatically parsed into searchable text. Describe exactly which operation a demo runs.
 
-Avoid positioning dead-letter as only an MCP server. MCP is an important distribution surface, but the underlying job is broader: reliable email normalization and archival.
+Local conversion does not mean a cloud-connected agent keeps tool results offline. State the converter's privacy boundary and let the user choose the downstream model. Keep synthetic fixtures separate from private archives.
 
-## Current distribution surface
+The project uses [PolyForm Noncommercial 1.0.0](../../LICENSE). Preserve that license in package, image, bundle, skill, and marketplace metadata. Do not label the product unrestricted open source or assume eligibility for a catalog that requires an OSI-approved license. Commercial licensing is a separate maintainer decision; this work does not relicense anything.
 
-| Surface | Status | Notes |
+## Current state and verification vocabulary
+
+Use these states in issue tracking: **implemented**, **published**, **submitted**, **accepted**, **client-tested**, and **unverified**. They mean different things. A Dockerfile is not a published image; a valid manifest is not a tested installer; registry publication is not acceptance by every downstream catalog.
+
+| Surface | Evidence in this repository / remaining verification |
+| --- | --- |
+| CLI, Python API, local UI, stdio MCP | Implemented; keep runtime and install tests current |
+| PyPI / Homebrew tap | Existing distribution paths; verify each release and distinguish core-only Homebrew from optional UI/MCP extras |
+| Official MCP Registry | Publication workflow and `server.json` implemented; verify the released version's registry response after publication |
+| Claude plugin | Existing plugin and release workflow; this is the BCL marketplace, not a claim of first-party catalog acceptance |
+| Glama / other aggregators | Glama was observed in the earlier pass; record a dated listing URL and release version before marking any listing current |
+| Agent install guide | `llms-install.md` added in #106; includes client-specific schemas and non-destructive setup guidance |
+| GitHub / VS Code, Cline, Cursor, curated lists | Separate submission and client-validation work in #104; not implied by Official Registry publication |
+| MCPB desktop bundle | Proposed in #107; no bundle is shipped by #106 |
+| OCI/GHCR / Docker Catalog | Dockerfile exists; publishing, mounts, provenance, and catalog acceptance remain #108 work |
+| Portable skill / ARD | Proposed in #109; the existing Claude-only skill is not a tested cross-client skill |
+| MBOX | Proposed in #103; not implemented by the reach PR |
+| Demo / workflow recipes | #105; favor a real, reproducible conversion over promotional claims |
+
+No reliable acquisition baseline has been collected in this review. Priority below is a product hypothesis, not measured traffic or conversion data.
+
+## Execution order
+
+| Priority | Deliverable | Completion evidence |
 | --- | --- | --- |
-| GitHub | Live | Primary source and documentation surface |
-| PyPI | Live | `dead-letter`; release provenance and Trusted Publishing already in place |
-| Homebrew | Live | BigCactusLabs tap; core CLI |
-| Official MCP Registry | Automated | `server.json` publishes from the release workflow after PyPI |
-| Glama | Live | Indexed; ownership can still be claimed |
-| PulseMCP / downstream registry consumers | Indirect | Official MCP Registry is the canonical upstream; verify propagation after releases |
-| Claude plugin marketplace | Live | Dedicated plugin with convert/summarize/triage/cabinet commands |
-| Claude Desktop / Code | Live | Direct local MCP via `uvx` |
-| Codex | Live | Direct local MCP via `uvx` |
-| Agent-readable install guide | Added in #106 | `llms-install.md` gives agents a short deterministic install path |
-| GitHub MCP Registry / VS Code MCP Gallery | Missing / curated | Official Registry publication is necessary but GitHub's curated catalog may still require onboarding; acceptance would expose `@mcp` discovery in VS Code/Copilot |
-| GitHub Agent Finder / ARD | Missing | New task-level discovery surface: Copilot can search for MCP servers, tools, agents, and skills by natural-language need |
-| Cline Marketplace | Missing | First-party Cline catalog; supports one-click MCP installation and explicitly accepts README / `llms-install.md` based setup |
-| Cursor community directory / plugin | Missing | `cursor.directory` accepts GitHub-backed plugins and auto-detects `.mcp.json` and `skills/*/SKILL.md` |
-| Cursor one-click install link | Missing | Can be generated directly from the stdio MCP config without marketplace acceptance |
-| VS Code one-click install link | Missing | `vscode.dev/redirect/mcp/install` can install a local MCP configuration directly |
-| MCPB bundle | Missing | One-click local bundle format used by Claude Desktop; official MCP Registry can publish MCPB release artifacts |
-| Docker MCP Catalog / Toolkit | Missing | Existing Dockerfile makes this unusually low-friction; accepted servers surface in Docker Desktop MCP Toolkit and Catalog |
-| GHCR / OCI MCP artifact | Missing | Official MCP Registry supports OCI packages from GHCR/Docker Hub; useful for container-first clients and Docker Catalog submission |
-| Portable Agent Skill | Missing | Claude-specific skill exists today; a generic Agent Skills package could reach Copilot, Codex, Claude, Cursor and other skill-aware hosts |
-| punkpeye/awesome-mcp-servers | Missing | Large curated GitHub discovery surface |
-| Smithery | Not confirmed | Publish/index local stdio package if absent |
-| mcp.so | Not confirmed | Separate directory submission if absent |
-| mcpservers.org | Not confirmed | Separate directory submission if absent |
-| Product demo asset | Missing | No 20–30 second visual demo at the top of the funnel |
-| Integration recipes | Thin | Obsidian, local RAG, and archive workflows should have dedicated examples |
-| GitHub topics / social preview | Manual gap | Add high-intent repository topics and a clear social preview image so shared links carry the product story |
+| Now | Repair runtime/onboarding regressions | #102 MCP error-contract fix passes; #106 instructions and metadata pass CI; publishing changes reviewed |
+| Now | Sample-first proof + two useful recipes (#105) | Public synthetic `.eml`, real generated Markdown, attachment bundle where claimed, copyable commands |
+| Next | Client setup and selected listings (#104) | Fresh client installation, four tools discovered, fixture conversion succeeds, listing URL/status recorded |
+| Next | MBOX ingestion (#103) | Bounded-memory archive processing, stable identities, labels, per-message failures, repeatable tests |
+| Next | One packaging pilot (#107 or #108) | Clean-machine install and conversion on the chosen host; only then broaden platform coverage |
+| Later | Portable skill, then ARD (#109) | Reviewed/pinned skill works in named hosts; discovery tested against an explicitly configured registry |
 
-## Highest-leverage next moves
+Do not block useful `.eml` recipes on MBOX or a desktop bundle. Conversely, do not market unsupported formats simply to capture their search queries.
 
-### 1. Win the non-MCP search intent
+## Install and publication contracts
 
-MCP directories are useful, but people usually start with the job rather than the protocol. Keep the README, PyPI description, registry metadata, GitHub topics, and external field notes centered on:
-
-- `.eml` → Markdown
-- local email archive
-- RAG / LLM-ready email
-- attachment-aware conversion
-- thread preservation
-- local-first / no-upload processing
-
-Package/repository metadata should cover `email-archive`, `email-parser`, `email-export`, `mime`, `llm`, `rag`, `mcp`, `digital-preservation`, `knowledge-base`, `local-first`, and `yaml-frontmatter` in addition to generic converter terms.
-
-### 2. Make the first successful run one command
-
-Preferred zero-persistence trial:
+Quick CLI trial, with a user-selected input and a separate output directory:
 
 ```bash
-uvx --python 3.12 dead-letter convert message.eml
+uvx --python 3.12 dead-letter convert message.eml --output converted/
 ```
 
-Preferred MCP launch:
+MCP launch:
 
 ```bash
 uvx --python 3.12 --from 'dead-letter[mcp]' dead-letter-mcp
 ```
 
-These should appear before source-checkout instructions. Pin `--python 3.12` so users with older default interpreters do not fail dependency resolution.
+These avoid a global package install but are **not zero-persistence**: uv caches tools/dependencies and may download Python. Unpinned commands do not promise a fresh latest version on every run. Pin the reviewed package version for deployments; record a resolved dependency lock/artifact for full reproducibility. See [uv's tool documentation](https://docs.astral.sh/uv/guides/tools/).
 
-`llms-install.md` should remain intentionally short and deterministic so Cline and other agents can install dead-letter without parsing the full README.
+Use [the agent installation guide](../../llms-install.md) rather than guessing a universal configuration schema. Merge settings without removing other MCP servers. Keep write destinations explicit, preserve source email, and distinguish host paths from sandbox/container paths.
 
-### 3. Turn MCP into multiple install artifacts, not one protocol listing
+Before release, validate the registry description length, identity marker, package/version pins, Python selector, and executable. #106 adds offline regression checks for these known failure modes; they are not a replacement for the publisher's complete schema validation.
 
-The existing stdio MCP server is already a distribution primitive. Package it in the forms current clients actually discover.
+**Dependency warning:** pinning `dead-letter==0.2.5` alone does not freeze its MCP dependency. The SDK error-visibility regression is fixed on #102, not in an already published package merely because this document exists. Ship and verify the runtime fix through the normal maintainer-owned release process.
 
-#### MCPB — high priority
+## Client-native distribution (#104)
 
-MCP Bundles (`.mcpb`) give local servers a one-click desktop installation path. The format supports `uv`-managed Python servers, so dead-letter does not need to become a Node project or bundle a private Python runtime.
+### GitHub / VS Code / Copilot
 
-Target:
+VS Code supports `@mcp` gallery discovery and separate workspace/user configuration. Its `mcp.json` uses a `servers` map; Claude Desktop-style configuration uses `mcpServers`. The install guide now shows both. [Official VS Code documentation](https://code.visualstudio.com/docs/agent-customization/mcp-servers).
 
-- build a release `.mcpb` artifact from the existing MCP server
-- attach it to GitHub Releases
-- include its SHA-256 in `server.json`
-- publish the MCPB package alongside the PyPI package in the Official MCP Registry
-- document drag/drop or double-click installation for Claude Desktop
+Check the curated catalog independently. Direct configuration is still useful when listing acceptance is pending. Do not infer that every Copilot host supports identical transport, configuration scope, or gallery behavior.
 
-This is a conversion win as much as a distribution win: non-developer users no longer need to edit JSON or know what `uvx` is.
+### Cline, Cursor, and curated directories
 
-#### OCI / Docker — high priority
+Retain Cline marketplace, Cursor deep-link/community-directory, `punkpeye/awesome-mcp-servers`, Smithery, mcp.so, and mcpservers.org as candidates. At submission time read each current contribution policy, license criteria, and local-stdio support. A community directory must not be represented as a first-party marketplace.
 
-The repository already has a dedicated stdio MCP Dockerfile. Extend that path instead of inventing a container architecture:
+Do not submit a remote service URL for this stdio server. Do not add hosted email processing merely to satisfy a directory. Avoid copying manifests by hand; generate or test configuration against `server.json`.
 
-- add the MCP registry identity OCI label to the image
-- publish versioned images to GHCR on release
-- optionally add the OCI package to `server.json`
-- submit the image/server metadata to Docker's MCP Registry
+For each candidate record: policy/source URL, reviewed date, artifact/version, submission URL, status, and the tested client/OS. No automated mass submissions, unsolicited repository comments, or duplicate entries.
 
-Docker acceptance would surface dead-letter in Docker Desktop's MCP Toolkit and MCP Catalog. It also adds isolation and provenance signals that are useful for users evaluating a local email parser.
+## Desktop bundle and container pilots
 
-### 4. Capture client-native marketplaces and deep links
+### MCPB (#107)
 
-Do not assume Official MCP Registry publication reaches every curated client catalog.
+The official MCPB repository includes a [uv runtime example](https://github.com/modelcontextprotocol/mcpb/tree/main/examples/hello-world-uv). This validates the architectural direction, not dead-letter's compatibility with every client or platform.
 
-#### GitHub / VS Code / Copilot
+Acceptance: validate the manifest with a pinned toolchain, install the release artifact on a clean named desktop-client version, complete `initialize` and `tools/list`, convert a fixture with attachments, and verify uninstall/restart behavior. Record macOS architecture and Windows results separately. Test network-restricted first installation, GUI PATH behavior, runtime downloads, and native dependency wheels. Publish only the combinations actually tested.
 
-GitHub has a curated MCP Registry used by Copilot and the VS Code `@mcp` gallery. Check whether dead-letter is present after the next Official Registry publish. If not, use the current GitHub onboarding path for OSS MCP servers.
+### OCI / Docker (#108)
 
-This matters beyond VS Code: GitHub's registry/spec surfaces are consumed across Copilot-capable IDE and CLI experiences.
+Extend the existing Dockerfile. Publish immutable version/digest references with source, revision, license, and MCP identity metadata. Generate provenance/SBOM where supported; do not confuse an attestation with a security audit.
 
-Also add a direct VS Code install link so people do not need to wait for curated catalog acceptance.
+Test with a non-root user, explicit user-selected mounts, read-only source mail and a separate writable output, writable temporary storage, no unnecessary network port, and graceful stdio shutdown. Check that returned container paths are usable/mappable by the host client. A successful handshake alone does not prove access to the user's files.
 
-#### Cline
+A GHCR image and Docker Catalog acceptance are independent deliverables. Follow the current [Docker MCP registry contribution process](https://github.com/docker/mcp-registry); do not assume Docker will ingest a GHCR tag automatically. Docker remains optional for ordinary CLI/MCP use.
 
-Submit to Cline's first-party marketplace after validating that Cline can install the server from the README / `llms-install.md`. The repo now has the short install guide Cline explicitly recommends for deterministic setup.
+## Portable skill and task-level discovery (#109)
 
-#### Cursor
+Use `skills/dead-letter/SKILL.md` as the proposed portable distribution location; avoid putting an installation-oriented skill in an automatically loaded development directory unnecessarily. Keep Claude-specific slash-command/Cowork conventions in the existing plugin.
 
-Two paths are useful:
+The [GitHub CLI manual](https://cli.github.com/manual/gh_skill_install) documents per-host installation and tag/commit pinning. Validate the selected host's behavior, not just its ability to copy `SKILL.md`. Preview skill contents before installation, preserve the untrusted-email rule, and avoid automatic installation or broad filesystem approval merely because a task matches.
 
-1. add an official Cursor MCP deep link to the README for immediate one-click install;
-2. prepare a community plugin submission for `cursor.directory`.
+GitHub [announced Agent Finder on June 17, 2026](https://github.blog/changelog/2026-06-17-agent-finder-for-github-copilot-now-available/). It searches the registry the user/organization configures and does not automatically install matches. Publishing an ARD document therefore does **not** guarantee public indexing or installation.
 
-Cursor's community plugin format can auto-detect a root `.mcp.json` and `skills/*/SKILL.md`. If we add those surfaces, keep them generated or tested against the canonical MCP/skill definitions so they do not drift.
+Once the skill works, validate metadata against a pinned ARD schema and test natural-language retrieval against a named registry: `read an eml file`, `convert exported email to Markdown`, and `prepare email for RAG`. Record the query/result and registry revision; treat discovery effectiveness as an experiment.
 
-### 5. Add a portable Agent Skill distribution path
+## Additional non-catalog avenues
 
-Agent Skills have become a separate discovery/install ecosystem from MCP. GitHub Copilot can search/install/publish skills with `gh skill`, and Codex/Claude/Cursor support the same `SKILL.md` convention.
+### A useful sample page, not another feature list
 
-The existing `plugin/skills/dead-letter-context/SKILL.md` proves the workflow, but it is Claude-plugin-specific. Create a portable skill whose job is narrower:
+Publish a synthetic input/output pair that visitors can inspect without installing anything. Include thread attribution, a retained attachment manifest, and a plain-text fallback case. Offer a local reproduction command. Do not require users to upload private mail to a demo server.
 
-- recognize `.eml` / email archive conversion tasks
-- install or invoke dead-letter locally with `uvx --python 3.12`
-- prefer the MCP server when already configured
-- preserve the untrusted-email-content safety rule
-- never require cloud upload
+### Integration recipes that can earn references
 
-Publish it in a standard `skills/dead-letter/` or `.agents/skills/dead-letter/` shape that can be installed by skill-aware agents. Avoid copying the Claude-only slash-command behavior into the portable version.
+Start with `.eml -> Markdown/Obsidian` and `.eml -> RAG preprocessing`. Show the actual file layout, front matter, attachment boundary, and a worked query. Then add Cabinet/auditing and an agent workflow. A small Python loader example is preferable to maintaining full integrations for every RAG framework before there is demand.
 
-This gives dead-letter two ways to be discovered by an agent: as a tool server and as procedural capability metadata.
+A BCL Field Note can explain a real parser edge case and link to the fixture, regression test, and recipe. Reuse the same canonical example across README, documentation, and launch copy; do not invent adoption statistics.
 
-### 6. Experiment with Agentic Resource Discovery (ARD)
+### Benchmark credibility as distribution
 
-ARD is an emerging federated discovery layer for MCP servers, tools, agents, and skills. GitHub Copilot's Agent Finder already searches this class of resource by natural-language task rather than exact package name.
+Keep comparisons reproducible and versioned. Report input corpus, tokenizer, body/thread fidelity, sender attribution, links, and retained attachments. Token reduction against raw base64 email does not establish superior downstream answer quality, and externalized attachment contents are not represented by the Markdown token count. Avoid universal superiority claims from a synthetic corpus.
 
-Explore publishing a dead-letter ARD catalog entry once the portable MCP/skill surfaces are stable. The target query is not "dead-letter"; it is intent such as:
+### Input-format expansion as a separate product bet
 
-- "convert exported email to markdown"
-- "prepare email for RAG"
-- "read an eml file"
-- "build a local email archive"
+For #103, stream messages through the existing converter, preserve Gmail labels and source identity, bound memory, surface partial failures, and prevent duplicate output on retry. Add a large-mailbox test plus malformed/duplicate/message-with-attachment fixtures. Evaluate PST/MSG separately; neither is promised by the existing `.eml` converter.
 
-If GitHub Agent Finder onboarding remains curated, publish a standards-compliant first-party catalog anyway so other ARD consumers can index it.
+## Measurement without private-email telemetry
 
-### 7. Build a visual proof asset
+Track dated catalog acceptances, reproducible setup results, release downloads, meaningful bug reports, and inbound workflow requests. Downloads and CI/container pulls are not unique users. Record available aggregate GitHub traffic snapshots before they expire; do not add email-content telemetry for acquisition measurement.
 
-Create one short GIF/video that shows:
+Keep a small channel ledger with baseline, artifact/recipe, submission date, verified listing, user-reported outcomes, and next decision. After a few real observations, reprioritize the packaging and content hypotheses rather than accumulating more integrations automatically.
 
-1. a messy `.eml` or folder of messages,
-2. one conversion command or drag/drop,
-3. the clean Markdown + front matter,
-4. extracted attachments / diagnostics,
-5. optional agent use through MCP.
-
-The asset should be understandable with audio off and work in the GitHub README, the BCL site, launch posts, social previews, and directory listings.
-
-### 8. Publish concrete recipes instead of generic feature copy
-
-High-intent recipes:
-
-- Convert an exported message folder into an Obsidian vault
-- Prepare a folder of `.eml` files for RAG / embeddings
-- Give Claude, Codex, Copilot, Cursor, or Cline safe local access to email exports through MCP
-- Build a durable local email archive with Cabinet mode
-- Audit a conversion run using the JSON report and quality diagnostics
-
-Each recipe should have a copy/paste command, expected output layout, and a short explanation of why dead-letter preserves more useful structure than naive text extraction.
-
-### 9. Expand upstream input formats
-
-The largest product-led reach opportunity is still input format coverage.
-
-#### MBOX — highest priority
-
-Google Takeout commonly exports Gmail mailboxes as MBOX, not individual `.eml` files. Supporting MBOX would let dead-letter own the larger intent cluster around:
-
-- Gmail Takeout → Markdown
-- Gmail archive → Obsidian
-- Gmail Takeout → RAG / LLM
-- MBOX → Markdown
-
-A good implementation should stream messages rather than loading a multi-gigabyte mailbox into memory, preserve `X-Gmail-Labels`, expose per-message diagnostics, and feed each extracted RFC 822 message through the existing conversion pipeline.
-
-#### Outlook archive formats — follow-on
-
-Outlook bulk export commonly uses PST, while individual messages can be saved/downloaded as EML or MSG. PST/MSG support would expand Windows and enterprise archival use cases, but MBOX is the cleaner first reach multiplier.
-
-### 10. Keep the Official MCP Registry canonical
-
-The release workflow already publishes `server.json` to the Official MCP Registry. Keep this path authoritative and add package forms (PyPI, MCPB, OCI) to the same server identity rather than creating competing registrations.
-
-For directories that require separate submission, link back to the GitHub repo and use the same one-sentence description.
-
-## Directory / marketplace submission copy
+## Canonical submission copy
 
 **Name:** dead-letter
 
-**Short description:**
-
-> Convert `.eml` email exports to clean Markdown for RAG, LLM pipelines, and local knowledge bases.
-
-**MCP launch:**
-
-```bash
-uvx --python 3.12 --from 'dead-letter[mcp]' dead-letter-mcp
-```
+**Description:** Convert `.eml` email exports to clean Markdown for RAG, LLM pipelines, and local knowledge bases.
 
 **Repository:** https://github.com/BigCactusLabs/dead-letter
 
-## Content angles that can earn durable search traffic
+**License:** PolyForm Noncommercial 1.0.0; commercial use requires separate permission under the project's licensing terms.
 
-Prefer technical field notes over launch-post repetition:
-
-- Why raw `.eml` is terrible LLM input
-- What gets lost when you naively convert email to text
-- Turning an email archive into a local knowledge base
-- How to preserve attachments and thread attribution when ingesting email into RAG
-- A reproducible benchmark: raw EML vs cleaned Markdown vs naive extraction
-- Designing a local-only MCP server for untrusted email content
-- Packaging one local Python MCP server for PyPI, MCPB, OCI, Claude, Copilot, Cursor, Cline, and Codex
-- Gmail Takeout to Markdown once MBOX support lands
-
-The benchmark work already in the repository is particularly useful because it gives other developers something concrete to cite rather than another product claim.
-
-## Repository-native discovery hygiene
-
-A few small surfaces compound everywhere else:
-
-- set GitHub topics such as `eml`, `email`, `markdown`, `email-parser`, `mcp`, `model-context-protocol`, `rag`, `llm`, `local-first`, and `digital-preservation`
-- set a GitHub social preview image that communicates `.eml → Markdown` rather than only the logo
-- keep PyPI project links complete (docs, changelog, source/issues)
-- link the visual demo from README, PyPI, BCL project page, and marketplace submissions
-- keep `llms-install.md` current whenever the runtime/install contract changes
-
-## Success signals
-
-Do not optimize only for stars. Track signals that show the tool is becoming a default answer to the problem:
-
-- PyPI installs / release uptake
-- Homebrew installs
-- MCPB release downloads
-- container pulls once GHCR/Docker distribution exists
-- external links and directory placements
-- GitHub clones / unique visitors when available
-- issues from real archives and edge cases
-- mentions in other repositories, blog posts, and integration guides
-- MCP/client marketplace usage where available
-- skill installs / references if portable Agent Skill distribution lands
-- Agent Finder / ARD search presence
-- inbound requests for new input formats or integrations
-
-## Guardrail
-
-Reach work should not turn dead-letter into a cloud email client. Its strongest differentiation is local, inspectable conversion with high fidelity and multiple interfaces. Expand the set of archives it can ingest, the package forms it can ship, and the places agents/users can discover it without weakening that core.
+Use the tested versioned install contract when a catalog requires one. Do not claim MBOX support, native desktop bundles, OCI availability, or cross-client skill compatibility until those artifacts exist and their acceptance checks pass.
