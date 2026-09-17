@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from dead_letter.core import convert, convert_dir
 from dead_letter.core._pipeline import _iter_source_eml_files, convert_to_bundle_with_diagnostics
@@ -15,6 +16,23 @@ from dead_letter.core.types import ConvertOptions
 
 mcp = MCPServer("dead-letter")
 MCP_MAX_DIRECTORY_FILES = 50
+
+
+# SDK 2.1+ hides unexpected exceptions from clients. Mark only the intentional,
+# actionable messages below as ToolError; never broadly wrap arbitrary exceptions.
+# The builtin bases preserve the documented direct-call exception contract and
+# existing callers, while ToolError preserves the message on the MCP wire.
+class _MCPFileNotFoundError(FileNotFoundError, ToolError):
+    """A requested input does not exist."""
+
+
+class _MCPValueError(ValueError, ToolError):
+    """An explicit MCP argument or safety constraint was violated."""
+
+
+class _MCPRuntimeError(RuntimeError, ToolError):
+    """A conversion result reports an intentional public diagnostic."""
+
 
 PRESETS: dict[str, dict[str, bool]] = {
     "default": {
@@ -70,7 +88,7 @@ def _build_options(local_vars: dict) -> ConvertOptions:
 
 
 def _raise_on_failure(result: object) -> None:
-    """Raise RuntimeError if a ConvertResult or BundleResult indicates failure."""
+    """Raise an actionable RuntimeError/ToolError for a failed conversion result."""
     if getattr(result, "success", True):
         return
     parts = [f"Conversion failed: {getattr(result, 'error', 'unknown error')}"]
@@ -78,7 +96,7 @@ def _raise_on_failure(result: object) -> None:
         parts.append("Plain text fallback is available.")
     if getattr(result, "html_repair_available", None):
         parts.append("HTML repair is available.")
-    raise RuntimeError(" ".join(parts))
+    raise _MCPRuntimeError(" ".join(parts))
 
 
 @mcp.tool()
@@ -114,7 +132,7 @@ def convert_eml(
     options = _build_options(locals())
     source = Path(eml_path)
     if not source.exists():
-        raise FileNotFoundError(f"File not found: {eml_path}")
+        raise _MCPFileNotFoundError(f"File not found: {eml_path}")
 
     if output_path is not None:
         result = convert(source, output=Path(output_path), options=options)
@@ -160,7 +178,7 @@ def convert_eml_to_bundle(
     optional diagnostics.
     """
     if source_handling != "copy":
-        raise ValueError(
+        raise _MCPValueError(
             "MCP convert_eml_to_bundle only supports source_handling='copy'; "
             "use the CLI/API for move/delete."
         )
@@ -168,7 +186,7 @@ def convert_eml_to_bundle(
     options = _build_options(locals())
     source = Path(eml_path)
     if not source.exists():
-        raise FileNotFoundError(f"File not found: {eml_path}")
+        raise _MCPFileNotFoundError(f"File not found: {eml_path}")
 
     bundle_path = Path(bundle_root)
     bundle_path.mkdir(parents=True, exist_ok=True)
@@ -219,13 +237,13 @@ def convert_directory(
     options = _build_options(locals())
     dir_path = Path(directory).expanduser().resolve()
     if not dir_path.is_dir():
-        raise FileNotFoundError(f"Directory not found: {directory}")
+        raise _MCPFileNotFoundError(f"Directory not found: {directory}")
     if output_directory is None:
-        raise ValueError("output_directory is required for MCP directory conversion")
+        raise _MCPValueError("output_directory is required for MCP directory conversion")
 
     files = _iter_source_eml_files(dir_path)
     if len(files) > MCP_MAX_DIRECTORY_FILES:
-        raise ValueError(
+        raise _MCPValueError(
             "MCP directory conversion supports at most "
             f"{MCP_MAX_DIRECTORY_FILES} .eml files; found {len(files)}."
         )
@@ -275,7 +293,7 @@ def get_diagnostics(
     """
     source = Path(eml_path)
     if not source.exists():
-        raise FileNotFoundError(f"File not found: {eml_path}")
+        raise _MCPFileNotFoundError(f"File not found: {eml_path}")
 
     options = _build_options(locals())
 
@@ -289,7 +307,7 @@ def get_diagnostics(
         _raise_on_failure(result)
 
     if diagnostics is None:
-        raise RuntimeError("Diagnostics unavailable for successful conversion.")
+        raise _MCPRuntimeError("Diagnostics unavailable for successful conversion.")
 
     return json.dumps(diagnostics, indent=2, default=str)
 
