@@ -21,10 +21,10 @@ Use it to build a readable email archive, move messages into Markdown-based know
 If you already have [`uv`](https://docs.astral.sh/uv/), run dead-letter without installing it globally:
 
 ```bash
-uvx dead-letter convert message.eml
+uvx --python 3.12 dead-letter convert message.eml
 ```
 
-Or install with Homebrew or pip below.
+Or install with Homebrew or pip below. Agents and MCP clients can use the shorter deterministic setup in [`llms-install.md`](llms-install.md).
 
 ## 🎯 Common use cases
 
@@ -98,8 +98,8 @@ pipx install 'dead-letter[mcp]'   # installs dead-letter and dead-letter-mcp
 Or run individual entrypoints without a persistent install using `uvx`:
 
 ```bash
-uvx dead-letter convert message.eml
-uvx --from 'dead-letter[mcp]' dead-letter-mcp
+uvx --python 3.12 dead-letter convert message.eml
+uvx --python 3.12 --from 'dead-letter[mcp]' dead-letter-mcp
 ```
 
 From source:
@@ -249,7 +249,7 @@ dead-letter ships an [MCP](https://modelcontextprotocol.io/) server so LLM clien
 Launch it directly with `uvx`:
 
 ```bash
-uvx --from 'dead-letter[mcp]' dead-letter-mcp
+uvx --python 3.12 --from 'dead-letter[mcp]' dead-letter-mcp
 ```
 
 Or install the MCP extra first:
@@ -297,7 +297,7 @@ config below or `uvx` directly.
   "mcpServers": {
     "dead-letter": {
       "command": "uvx",
-      "args": ["--from", "dead-letter[mcp]", "dead-letter-mcp"]
+      "args": ["--python", "3.12", "--from", "dead-letter[mcp]", "dead-letter-mcp"]
     }
   }
 }
@@ -319,13 +319,13 @@ live, so Claude Code and Cowork resolve the same reproducible release.
 **Claude Code (manual MCP add — alternative):**
 
 ```bash
-claude mcp add dead-letter -- uvx --from 'dead-letter[mcp]' dead-letter-mcp
+claude mcp add dead-letter -- uvx --python 3.12 --from 'dead-letter[mcp]' dead-letter-mcp
 ```
 
 **Codex:**
 
 ```bash
-codex mcp add dead-letter -- uvx --from 'dead-letter[mcp]' dead-letter-mcp
+codex mcp add dead-letter -- uvx --python 3.12 --from 'dead-letter[mcp]' dead-letter-mcp
 codex mcp list
 ```
 
@@ -373,6 +373,7 @@ same commands, plus
 ## 📚 Docs
 
 - [Docs Index](docs/README.md) — public docs landing page
+- [Agent install guide](llms-install.md) — concise setup instructions for AI agents and MCP clients
 - [Runtime Contracts](docs/reference/v4-runtime-contracts.md) — full API and core behavior spec
 - [Frontend State Model](docs/reference/frontend-state-model.md)
 - [Quality Diagnostics](docs/reference/quality-diagnostics.md)
