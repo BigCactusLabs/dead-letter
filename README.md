@@ -10,9 +10,29 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/dead-letter?label=Python&cacheSeconds=300)](https://pypi.org/project/dead-letter/)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-purple.svg)](LICENSE)
 
-**Your `.eml` files deserve a second life.**
+**Turn `.eml` email exports into clean, local, LLM-ready Markdown.**
 
-dead-letter converts email exports into clean Markdown with YAML front matter — threads split, signatures stripped, attachments extracted, calendars parsed. One file or ten thousand.
+dead-letter converts email exports and archives into clean Markdown with YAML front matter — threads split, signatures stripped, attachments extracted, calendars parsed. One file or ten thousand.
+
+Use it to build a readable email archive, move messages into Markdown-based knowledge systems, or prepare email for RAG and LLM pipelines without feeding raw MIME and base64 into your context window. No account, upload, or API key required.
+
+## ⚡ Try it
+
+If you already have [`uv`](https://docs.astral.sh/uv/), run dead-letter without installing it globally:
+
+```bash
+uvx dead-letter convert message.eml
+```
+
+Or install with Homebrew or pip below.
+
+## 🎯 Common use cases
+
+- **Email → Markdown archives** — turn exported `.eml` collections into readable, portable Markdown with structured metadata
+- **RAG and LLM ingestion** — normalize message text, thread structure, links, and attachment metadata before chunking or indexing
+- **Agent workflows** — expose conversion and diagnostics directly to Claude, Codex, and other MCP clients
+- **Knowledge bases** — move email into Markdown-first systems such as Obsidian, static archives, or local search pipelines
+- **Digital preservation** — retain human-readable content and useful message structure without depending on one mail client
 
 ## ✨ Features
 
@@ -73,6 +93,13 @@ Use [pipx](https://pipx.pypa.io/) for isolated UI or MCP installs:
 ```bash
 pipx install 'dead-letter[ui]'    # installs dead-letter and dead-letter-ui
 pipx install 'dead-letter[mcp]'   # installs dead-letter and dead-letter-mcp
+```
+
+Or run individual entrypoints without a persistent install using `uvx`:
+
+```bash
+uvx dead-letter convert message.eml
+uvx --from 'dead-letter[mcp]' dead-letter-mcp
 ```
 
 From source:
@@ -219,10 +246,16 @@ for r in convert_dir("inbox/", output="out/"):
 
 dead-letter ships an [MCP](https://modelcontextprotocol.io/) server so LLM clients can convert `.eml` files directly without shelling out.
 
-Install and launch:
+Launch it directly with `uvx`:
 
 ```bash
-pip install dead-letter[mcp]
+uvx --from 'dead-letter[mcp]' dead-letter-mcp
+```
+
+Or install the MCP extra first:
+
+```bash
+pip install 'dead-letter[mcp]'
 dead-letter-mcp
 ```
 
@@ -257,14 +290,14 @@ already manages; it needs network access on first launch to fetch the package
 from PyPI. Claude Desktop is macOS and Windows only — on Linux, use the manual
 config below or `uvx` directly.
 
-**Claude Desktop (manual `claude_desktop_config.json` — alternative):**
+**Claude Desktop (manual `claude_desktop_config.json` — alternative)** — launch the published package directly with `uvx`:
 
 ```json
 {
   "mcpServers": {
     "dead-letter": {
-      "command": "uv",
-      "args": ["--directory", "/path/to/dead-letter", "run", "--extra", "mcp", "dead-letter-mcp"]
+      "command": "uvx",
+      "args": ["--from", "dead-letter[mcp]", "dead-letter-mcp"]
     }
   }
 }
@@ -286,13 +319,13 @@ live, so Claude Code and Cowork resolve the same reproducible release.
 **Claude Code (manual MCP add — alternative):**
 
 ```bash
-claude mcp add dead-letter -- uv run --extra mcp dead-letter-mcp
+claude mcp add dead-letter -- uvx --from 'dead-letter[mcp]' dead-letter-mcp
 ```
 
 **Codex:**
 
 ```bash
-codex mcp add dead-letter -- uv run --extra mcp dead-letter-mcp
+codex mcp add dead-letter -- uvx --from 'dead-letter[mcp]' dead-letter-mcp
 codex mcp list
 ```
 
