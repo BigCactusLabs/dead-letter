@@ -46,6 +46,12 @@ the Homebrew tap.
      in sync.
    - `plugin/.claude-plugin/plugin.json` — bump `version` to `X.Y.Z`.
    - `plugin/.mcp.json` — bump the `dead-letter[mcp]==X.Y.Z` pin.
+   - `mcpb/manifest.json` — bump `version` to `X.Y.Z`.
+   - `mcpb/pyproject.toml` — bump `version` and the `dead-letter[mcp]==X.Y.Z`
+     pin. `scripts/build_mcpb.py` refuses to build if `mcpb/manifest.json`,
+     `mcpb/pyproject.toml`, and its dependency pin don't all match
+     `pyproject.toml`; `tests/plugin/test_mcpb_bundle.py` enforces the same
+     sync in CI.
 
    Bump the plugin files **in lockstep with the package by default**: an
    aligned release ships the same version to PyPI and to plugin users, so the
@@ -151,6 +157,33 @@ brew install mcp-publisher   # or download from the registry releases page
 mcp-publisher login github    # browser device-code flow
 mcp-publisher publish
 ```
+
+## MCPB Bundle (Automatic)
+
+The `build-mcpb` job in `.github/workflows/release.yml` runs after the PyPI
+publish; `publish-mcp` now depends on it. It:
+
+- waits for PyPI to serve the new version, then builds the `.mcpb` bundle
+  against that real PyPI pin (`scripts/build_mcpb.py`, no `--local-source`)
+- smoke-tests the built bundle (`scripts/smoke_mcpb.py`)
+- uploads `dead-letter-mcp-X.Y.Z.mcpb` and its `.sha256` sidecar to the GitHub
+  release with `gh release upload --clobber`
+- stamps `server.json`'s `mcpb` package entry: `identifier` becomes the
+  release asset's download URL and `fileSha256` becomes the real hash
+
+The committed `server.json` carries an all-zero `fileSha256` placeholder for
+the `mcpb` package on purpose; the workflow refuses to publish if that
+placeholder is still present at publish time.
+
+Manual build and verify (matches what CI runs):
+
+```bash
+python scripts/build_mcpb.py
+python scripts/smoke_mcpb.py dist/dead-letter-mcp-X.Y.Z.mcpb
+```
+
+`scripts/build_mcpb.py --local-source .` builds against the checkout instead
+of PyPI. That variant is for CI only and is not releasable.
 
 ## Update The Homebrew Tap
 

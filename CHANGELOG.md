@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A one-click MCP Bundle (`.mcpb`) for Claude Desktop and other MCPB-aware
+  clients. The release workflow builds and smoke-tests the bundle against the
+  published PyPI package, then attaches `dead-letter-mcp-X.Y.Z.mcpb` and its
+  `.sha256` checksum to the GitHub release. The registry `server.json` also
+  gains an `mcpb` package entry alongside the existing PyPI entry, stamped
+  with the release asset URL and its SHA-256. CI builds and smoke-tests the
+  bundle on every push, on ubuntu, macOS, and Windows (#107).
+
 ### Fixed
 
 - Claude plugin releases now publish an explicit version, release tag, and

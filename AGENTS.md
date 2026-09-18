@@ -22,6 +22,10 @@ BigCactusLabs/bigcactuslabs-plugins marketplace. The package version lives in
   step)
 - `plugin/` — Claude Code plugin: manifest in `.claude-plugin/plugin.json`,
   slash commands in `commands/`, skill in `skills/`, MCP launcher in `.mcp.json`
+- `mcpb/` — MCP Bundle source: `manifest.json`, `pyproject.toml`,
+  `.python-version`, `.mcpbignore`, `server/main.py`
+- `scripts/build_mcpb.py` — stages and packs the `.mcpb` bundle into `dist/`
+- `scripts/smoke_mcpb.py` — launches a built `.mcpb` and exercises its tools
 - `tests/{core,backend,plugin,frontend}` — suites split by module; `.eml`
   fixtures in `tests/core/fixtures/`
 - `docs/reference/` — public contracts and runbooks; `docs/superpowers/` —
@@ -62,7 +66,11 @@ guidance.
   exact pin in `plugin/.mcp.json` (`dead-letter[mcp]==X.Y.Z`). The pin is enforced by
   `tests/plugin/test_plugin_structure.py::test_mcp_json_pins_exact_dead_letter_version`
   and must stay exact — never a range. Plugin-only patches bump only the
-  `version` in `plugin/.claude-plugin/plugin.json`.
+  `version` in `plugin/.claude-plugin/plugin.json`. A release also bumps
+  `mcpb/manifest.json` (`version`) and `mcpb/pyproject.toml` (`version` and
+  the exact `dead-letter[mcp]==X.Y.Z` pin); `tests/plugin/test_mcpb_bundle.py`
+  enforces that these match the package version, and
+  `scripts/build_mcpb.py` refuses to build the bundle if they don't.
 - **Never advance a release pointer before the PyPI release is live.** The
   package releases via a `vX.Y.Z` tag; the plugin releases via a
   `plugin-vX.Y.Z` tag, an automated marketplace pull request that pins that
