@@ -9,6 +9,7 @@
 - [Quality Diagnostics](reference/quality-diagnostics.md) — conversion grading and warning semantics
 - [html-to-markdown v3 Migration Plan](reference/html-to-markdown-v3-migration.md) — completed migration reference from 2.x visitor APIs
 - [Publishing](reference/publishing.md) — maintainer release and Homebrew tap update runbook
+- [Containers and Docker MCP Catalog](reference/containers.md) — optional isolated MCP launch, gated GHCR releases, and catalog submission requirements
 - [Agent Discovery](reference/agent-discovery.md) — portable Agent Skill install, ARD catalog, and Agent Finder submission
 - [Brand Style Guide](brand/style-guide.md) — canonical visual language and production integration notes
 
