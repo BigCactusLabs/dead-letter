@@ -10,7 +10,7 @@ from dead_letter.core import convert
 from dead_letter.core import mbox_import
 from dead_letter.core.mbox import MboxLimits
 from dead_letter.core.mbox_import import convert_mbox
-from dead_letter.core.types import ConvertOptions
+from dead_letter.core.types import ConvertOptions, ThreadMode
 
 FIXTURE = Path(__file__).parent / "fixtures" / "takeout-synthetic.mbox"
 POSTMARK = b"From sender@example.test Thu Jun 11 00:38:38 2020\n"
@@ -49,18 +49,22 @@ def test_fixture_labels_provenance_attachments_and_malformed_recovery(tmp_path):
     assert rows[2].diagnostics is not None
 
 
-def test_shared_html_thread_pipeline_matches_standalone_eml(tmp_path):
+@pytest.mark.parametrize("mode", [ThreadMode.LATEST, ThreadMode.STRUCTURED])
+def test_shared_html_thread_pipeline_matches_standalone_eml(tmp_path, mode):
     existing = Path(__file__).resolve().parents[2] / "benchmarks" / "fixtures" / "gmail-html__webhook-thread-4.eml"
     raw = existing.read_bytes()
     archive = tmp_path / "thread.mbox"
     archive.write_bytes(POSTMARK + raw)
     eml = tmp_path / "thread.eml"
     eml.write_bytes(raw)
-    options = ConvertOptions(thread_mode="structured")
+    options = ConvertOptions(thread_mode=mode)
     single = convert(eml, output=tmp_path / "single.md", options=options)
     [batch] = list(convert_mbox(archive, output=tmp_path / "batch", options=options))
     assert single.success and batch.success
     assert single.output.read_text().split("---", 2)[2] == batch.output.read_text().split("---", 2)[2]
+    if mode is ThreadMode.STRUCTURED:
+        assert frontmatter(batch.output)["thread_messages"] > 0
+        assert frontmatter(single.output)["thread_messages"] == frontmatter(batch.output)["thread_messages"]
 
 
 def test_duplicate_missing_and_hostile_subjects_never_control_paths(tmp_path):
