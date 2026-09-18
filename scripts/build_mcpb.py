@@ -18,7 +18,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MCPB_SOURCE = REPO_ROOT / "mcpb"
 STAGE_DIR = REPO_ROOT / "build" / "mcpb"
-ICON_SOURCE = REPO_ROOT / "docs" / "brand" / "production" / "favicon-128x128.png"
+# 512x512 is the size the mcpb validator recommends for bundle icons.
+ICON_SOURCE = REPO_ROOT / "docs" / "brand" / "production" / "readme-logo.png"
 MCPB_CLI = "@anthropic-ai/mcpb@2.1.2"
 
 
@@ -63,9 +64,16 @@ def check_versions(package_version: str, manifest: dict, bundle_project: dict) -
 
 
 def run(command: list[str], *, cwd: Path | None = None) -> None:
-    """Run a command, echoing it first and failing the build on a non-zero exit."""
+    """Run a command, echoing it first and failing the build on a non-zero exit.
+
+    The executable is resolved with ``shutil.which`` so that ``npx`` finds its
+    ``npx.cmd`` shim on Windows, where ``CreateProcess`` ignores ``PATHEXT``.
+    """
+    executable = shutil.which(command[0])
+    if executable is None:
+        raise SystemExit(f"error: {command[0]!r} is not on PATH")
     print(f"$ {' '.join(command)}", flush=True)
-    subprocess.run(command, cwd=cwd, check=True)
+    subprocess.run([executable, *command[1:]], cwd=cwd, check=True)
 
 
 def stage_bundle(local_source: Path | None) -> None:
