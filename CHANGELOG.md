@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Streaming `.mbox` / Gmail Takeout conversion via the CLI and lazy Python API,
+  reusing the EML pipeline with source-order byte/hash provenance, preserved
+  Gmail labels, collision-safe names, per-message resource limits, partial
+  failures, and disk-backed JSON reports. `--mbox-bundles` writes Cabinet-style
+  source/attachment bundles. See the [Takeout recipe](docs/reference/gmail-takeout.md).
+  Explicit quoting policies avoid guessing; Content-Length-framed dialects,
+  compressed/live mailboxes and MCP/web ingestion are outside this slice (#103).
 - A one-click MCP Bundle (`.mcpb`) for Claude Desktop and other MCPB-aware
   clients. The release workflow builds and smoke-tests the bundle against the
   published PyPI package, then attaches `dead-letter-mcp-X.Y.Z.mcpb` and its
