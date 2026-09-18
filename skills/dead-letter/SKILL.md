@@ -87,11 +87,11 @@ an isolated environment; on first use it may download Python 3.12 and
 dependencies into uv's cache.
 
 ```bash
-# one file, writes one .md into converted/
-uvx --python 3.12 dead-letter convert message.eml --output converted/
+# one file, writes one .md into a new, empty output directory
+uvx --python 3.12 dead-letter convert message.eml --output converted/run-1/
 
 # a folder (recursive), one .md per .eml
-uvx --python 3.12 dead-letter convert exported-mail/ --output converted/
+uvx --python 3.12 dead-letter convert exported-mail/ --output converted/run-1/
 
 # check the runtime before a big batch
 uvx --python 3.12 dead-letter doctor
@@ -101,7 +101,7 @@ CLI flags are opt-in and default to off. The closest CLI match for the
 `clean` preset is:
 
 ```bash
-uvx --python 3.12 dead-letter convert message.eml --output converted/ \
+uvx --python 3.12 dead-letter convert message.eml --output converted/run-1/ \
   --strip-signatures --strip-tracking-pixels --strip-signature-images \
   --strip-disclaimers --strip-quoted-headers
 ```
@@ -117,12 +117,16 @@ sections), `--include-all-headers`, `--embed-inline-images`, `--dry-run`
 it lands in the input folder, so always pair it with `--output`).
 
 Rules:
-- Always pass `--output` to a separate directory. Never modify the input
-  folder, and never use `--delete-eml` unless the user asks for it by name.
+- Always pass `--output` to a new, empty directory for each run (or snapshot
+  the directory listing before the run and diff it afterwards). Never modify
+  the input folder, and never use `--delete-eml` unless the user asks for it
+  by name.
 - Output filenames come from a slug of the email subject, not the `.eml`
-  filename (`-1`, `-2` suffixes on collision). Do not predict the name: after
-  the command exits 0, list the output directory and read the new `.md` from
-  disk rather than assuming its content.
+  filename (`-1`, `-2` suffixes on collision), and the CLI prints no paths.
+  Do not predict the name: after the command exits 0, list the fresh output
+  directory (or diff your snapshot) and read only the newly created `.md`
+  files. Reusing a directory that already holds Markdown risks summarizing an
+  older email.
 - Attachment bundles (decoded attachment files kept next to the Markdown)
   are only available through the MCP server's `convert_eml_to_bundle`.
   The CLI writes Markdown plus attachment metadata only.
