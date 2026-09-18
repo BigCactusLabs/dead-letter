@@ -839,6 +839,15 @@ Clients must key on the message text:
 - `MCP convert_eml_to_bundle only supports source_handling='copy'; use the CLI/API for move/delete.`
 - `output_directory is required for MCP directory conversion`
 
+### Distribution
+
+The same MCP server ships three ways: as `dead-letter[mcp]` from PyPI (run
+with `uvx` or `uv run`), inside the Claude Code plugin under `plugin/`, and as
+a one-click MCP Bundle (`.mcpb`) for Claude Desktop and other MCPB-aware
+clients, built from `mcpb/`. None of these change the tool contract above —
+the bundle runs the same `dead-letter-mcp` entry point via `uv run` against a
+pinned PyPI version.
+
 ## HTTP Status Mapping
 
 - `200`: settings get/put, filesystem list, watch get/start/stop, job snapshot, open Cabinet folder

@@ -217,7 +217,32 @@ From a source checkout:
 uv run --extra mcp dead-letter-mcp
 ```
 
-**Claude Desktop** — add to `claude_desktop_config.json`:
+**Claude Desktop (recommended: one-click bundle):**
+
+Download the `.mcpb` file from the [latest release](https://github.com/BigCactusLabs/dead-letter/releases/latest), then install it one of three ways:
+
+- double-click the downloaded file
+- drag it onto the Claude Desktop window
+- Settings > Extensions > Advanced settings > Install Extension..., then pick the file
+
+Claude Desktop lists the extension and the four tools below appear in chat.
+Before installing, verify the download against the `.sha256` sidecar published
+alongside it:
+
+```bash
+# macOS
+shasum -a 256 -c dead-letter-mcp-X.Y.Z.mcpb.sha256
+
+# Windows (PowerShell)
+certutil -hashfile dead-letter-mcp-X.Y.Z.mcpb SHA256
+```
+
+The bundle installs nothing else on your machine beyond what Claude Desktop
+already manages; it needs network access on first launch to fetch the package
+from PyPI. Claude Desktop is macOS and Windows only — on Linux, use the manual
+config below or `uvx` directly.
+
+**Claude Desktop (manual `claude_desktop_config.json` — alternative):**
 
 ```json
 {

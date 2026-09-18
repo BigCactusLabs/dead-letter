@@ -39,6 +39,15 @@
           "description": "MCP server console entrypoint"
         }
       ]
+    },
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/BigCactusLabs/dead-letter/releases/download/v0.2.5/dead-letter-mcp-0.2.5.mcpb",
+      "version": "0.2.5",
+      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "transport": {
+        "type": "stdio"
+      }
     }
   ]
 }
