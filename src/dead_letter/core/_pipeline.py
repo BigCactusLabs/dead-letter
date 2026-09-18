@@ -551,17 +551,24 @@ def _convert_error_metadata(exc: Exception) -> tuple[str | None, bool | None, bo
     return None, None, None
 
 
-def _build_rendered_markdown(
+def _build_pipeline_snapshot(
     source: Path,
     options: ConvertOptions,
     *,
     include_attachment_payloads: bool = True,
-) -> tuple[ConvertResult, ParsedEmail, RenderedMarkdown, dict[str, Any] | None]:
-    parsed = parse_eml(
-        source,
-        include_attachment_payloads=include_attachment_payloads,
-        include_inline_data_uris=options.embed_inline_images,
-    )
+    parsed: ParsedEmail | None = None,
+) -> tuple[ConvertResult, ParsedEmail, RenderedMarkdown, dict[str, Any] | None, ThreadedContent]:
+    """Run normalization once, retaining the pre-render zones for local readers.
+
+    A supplied ParsedEmail comes from the shared MIME parser. Conversion callers
+    still use the four-value compatibility wrapper below. Neither path writes.
+    """
+    if parsed is None:
+        parsed = parse_eml(
+            source,
+            include_attachment_payloads=include_attachment_payloads,
+            include_inline_data_uris=options.embed_inline_images,
+        )
     referenced_attachments = len(parsed.attachments)
 
     stripped_images: list[StrippedImage] = []
@@ -746,6 +753,18 @@ def _build_rendered_markdown(
             "retained": len(parsed.attachments),
         }
 
+    return result, parsed, rendered, diagnostics, threaded
+
+
+def _build_rendered_markdown(
+    source: Path,
+    options: ConvertOptions,
+    *,
+    include_attachment_payloads: bool = True,
+) -> tuple[ConvertResult, ParsedEmail, RenderedMarkdown, dict[str, Any] | None]:
+    result, parsed, rendered, diagnostics, _threaded = _build_pipeline_snapshot(
+        source, options, include_attachment_payloads=include_attachment_payloads,
+    )
     return result, parsed, rendered, diagnostics
 
 

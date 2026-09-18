@@ -118,7 +118,7 @@ def parse_attribution_line(text: str) -> AttributionMatch | None:
         while end < len(text) and text[end] == "\n":
             end += 1
         return AttributionMatch(metadata=metadata, consumed_end=end, matched_text=text[:end])
-    _LOGGER.debug("attribution: no pattern matched for input prefix %r", text[:80])
+    _LOGGER.debug("attribution: no pattern matched")
     return None
 
 

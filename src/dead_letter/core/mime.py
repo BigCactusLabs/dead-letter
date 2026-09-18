@@ -322,8 +322,30 @@ def parse_eml(
 ) -> ParsedEmail:
     """Parse a single .eml file into the pipeline ParsedEmail contract."""
     source = Path(path).resolve()
-    raw = source.read_bytes()
+    return parse_eml_bytes(
+        source.read_bytes(),
+        source=source,
+        include_attachment_payloads=include_attachment_payloads,
+        include_inline_data_uris=include_inline_data_uris,
+    )
 
+
+def parse_eml_bytes(
+    raw: bytes,
+    *,
+    source: str | Path,
+    include_attachment_payloads: bool = True,
+    include_inline_data_uris: bool = True,
+) -> ParsedEmail:
+    """Parse already-read bytes using the same MIME path as ``parse_eml``.
+
+    ``source`` is provenance only: its contents are never read here. This lets
+    bounded readers hash exactly the bytes that were parsed, without a second
+    read of a potentially changing file or a second MIME implementation.
+    """
+    if type(raw) is not bytes:
+        raise TypeError("expected_eml_bytes")
+    source = Path(source).resolve()
     parsed = mailparser.parse_from_bytes(raw)
 
     subject = parse_subject(_normalize_header_value(parsed.subject))

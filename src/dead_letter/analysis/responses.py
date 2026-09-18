@@ -13,6 +13,8 @@ import re
 from dead_letter.analysis.contracts import AnalysisError, PreparedRequest
 
 PROBABILITY_SUM_TOLERANCE = 1e-6
+# Numerical serialization tolerance, not a classification/review threshold.
+ANSWER_CONSISTENCY_TOLERANCE = 1e-6
 _METADATA_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,255}\Z")
 
 
@@ -91,20 +93,30 @@ def validate_response(request: PreparedRequest, response: object) -> dict:
             legend = _level_map(answer.get("legend"), keys)
             if legend != expected_legend:
                 raise AnalysisError("unexpected_score_legend")
+            score = _number(answer.get("score"), maximum=len(keys) - 1)
+            probabilities = _probabilities(answer.get("probabilities"), keys, levels=True)
+            expected_score = math.fsum(int(level) * probability
+                                       for level, probability in probabilities.items())
+            if not math.isclose(score, expected_score, rel_tol=0.0,
+                                abs_tol=ANSWER_CONSISTENCY_TOLERANCE * (len(keys) - 1)):
+                raise AnalysisError("inconsistent_score_distribution")
             validated[question_id] = {
-                "type": kind, "score": _number(answer.get("score"), maximum=len(keys) - 1),
+                "type": kind, "score": score,
                 "confidence": _number(answer.get("confidence")), "legend": legend,
-                "probabilities": _probabilities(answer.get("probabilities"), keys, levels=True),
+                "probabilities": probabilities,
             }
         elif kind == "choice":
             keys = set(question["criteria"])
             choice = answer.get("choice")
             if type(choice) is not str or choice not in keys:
                 raise AnalysisError("unexpected_choice")
+            probabilities = _probabilities(answer.get("probabilities"), keys)
+            if max(probabilities.values()) - probabilities[choice] > ANSWER_CONSISTENCY_TOLERANCE:
+                raise AnalysisError("inconsistent_choice_distribution")
             validated[question_id] = {
                 "type": kind, "choice": choice,
                 "confidence": _number(answer.get("confidence")),
-                "probabilities": _probabilities(answer.get("probabilities"), keys),
+                "probabilities": probabilities,
             }
         else:
             raise AnalysisError("unsupported_question_type")
