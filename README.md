@@ -24,6 +24,7 @@ dead-letter converts email exports into clean Markdown with YAML front matter �
 - **Conversion report** — opt-in JSON report with per-file diagnostics, including attachment referenced/retained counts for automation and audit
 - **MCP server** — integrate with Claude Desktop, Claude Code, Codex, and other MCP clients
 - **Claude plugin** — one-command install in Claude Code or Cowork with four slash commands (`/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`)
+- **Portable Agent Skill** — teaches Claude Code, Codex, Copilot, Cursor, and other skill-aware agents when and how to convert `.eml` files
 - **Python API** — `from dead_letter import convert` and you're off
 
 ## 🧠 Built for LLM Pipelines
@@ -83,6 +84,20 @@ uv sync --extra dev     # all extras
 uv sync --extra ui      # UI only
 uv sync --extra mcp     # MCP only
 ```
+
+### Agent Skill (any host)
+
+Install the portable Agent Skill into whichever agent you use:
+
+```bash
+gh skill install BigCactusLabs/dead-letter dead-letter --agent claude-code
+gh skill install BigCactusLabs/dead-letter dead-letter --agent codex
+gh skill install BigCactusLabs/dead-letter dead-letter --agent github-copilot
+```
+
+Needs `gh` 2.90 or newer. The skill is independent of the Claude plugin. For
+other hosts, manual installation, and discovery metadata, see
+[Agent Discovery](docs/reference/agent-discovery.md).
 
 ## 🚀 Quick Start
 

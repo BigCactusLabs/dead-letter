@@ -16,6 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gains an `mcpb` package entry alongside the existing PyPI entry, stamped
   with the release asset URL and its SHA-256. CI builds and smoke-tests the
   bundle on every push, on ubuntu, macOS, and Windows (#107).
+- A portable Agent Skill under `skills/dead-letter/`, written to the
+  agentskills.io spec so any skill-aware host can use it: Claude Code, Codex,
+  GitHub Copilot, Cursor, Amp, and Gemini CLI. It covers the MCP tools and the
+  `uvx` CLI path, states the `.eml`-only input boundary, and carries the
+  untrusted-email-content rule. Install it with
+  `gh skill install BigCactusLabs/dead-letter dead-letter --agent <agent>`.
+  The Claude-specific skill under `plugin/skills/` is unchanged (#109).
+- An Agentic Resource Discovery catalog at `.well-known/ard.json` advertising
+  the MCP server and the portable skill to ARD-aware crawlers. Both entries'
+  `version` fields are a release sync point with `server.json` (#109).
+- CI now validates the portable skill with `gh skill publish --dry-run`, and
+  `tests/plugin/` gates the skill content and the ARD catalog. New reference
+  doc: `docs/reference/agent-discovery.md` (#109).
 
 ### Fixed
 

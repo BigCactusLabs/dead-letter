@@ -46,6 +46,14 @@ jobs:
       - name: Plugin schema validation
         run: npx --yes @anthropic-ai/claude-code@2.1.145 plugin validate plugin/
 
+      # Validates the portable Agent Skill under skills/ against the
+      # agentskills.io spec the same way `gh skill publish` would, without
+      # publishing anything.
+      - name: Agent Skill validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh skill publish --dry-run
+
       # Non-blocking reminder: the plugin MCP pin is *allowed* to lag the package
       # version (plugin releases are decoupled by design), so this warns rather
       # than fails. It exists to make a forgotten plugin follow-up release
