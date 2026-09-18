@@ -5,17 +5,42 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dead-letter"
 version = "0.2.5"
-description = "Convert .eml email exports to Markdown with YAML front matter"
+description = "Convert .eml email exports to clean, LLM-ready Markdown with YAML front matter"
 readme = "README.md"
 license = "PolyForm-Noncommercial-1.0.0"
 requires-python = ">=3.12"
 authors = [{ name = "Big Cactus Labs" }]
-keywords = ["eml", "email", "markdown", "converter", "archive"]
+keywords = [
+  "eml",
+  "eml-to-markdown",
+  "email",
+  "email-export",
+  "email-archive",
+  "email-parser",
+  "mime",
+  "mime-parser",
+  "markdown",
+  "converter",
+  "archive",
+  "knowledge-base",
+  "local-first",
+  "obsidian",
+  "gmail",
+  "outlook",
+  "mcp",
+  "mcp-server",
+  "llm",
+  "rag",
+  "agent",
+  "digital-preservation",
+  "yaml-frontmatter",
+]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
   "Environment :: Web Environment",
   "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
   "Programming Language :: Python :: 3.12",
   "Topic :: Communications :: Email",
   "Topic :: Text Processing :: Markup :: Markdown",
@@ -52,8 +77,10 @@ dev = [
 
 [project.urls]
 Homepage = "https://github.com/BigCactusLabs/dead-letter"
+Documentation = "https://github.com/BigCactusLabs/dead-letter/tree/main/docs"
 Repository = "https://github.com/BigCactusLabs/dead-letter"
 Issues = "https://github.com/BigCactusLabs/dead-letter/issues"
+Changelog = "https://github.com/BigCactusLabs/dead-letter/blob/main/CHANGELOG.md"
 
 [project.scripts]
 dead-letter = "dead_letter.backend.cli:main"
