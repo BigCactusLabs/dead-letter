@@ -13,6 +13,6 @@
 !docker/build-constraints.txt
 **/__pycache__/
 **/*.pyc
-**/*.eml
-**/*.mbox
+**/*.[eE][mM][lL]
+**/*.[mM][bB][oO][xX]
 **/.env*

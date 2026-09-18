@@ -15,8 +15,11 @@ COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY docker/build-constraints.txt ./build-constraints.txt
 COPY src ./src
 ARG SOURCE_DATE_EPOCH=0
-RUN uv sync --locked --no-dev --extra mcp --no-editable \
-    --build-constraint build-constraints.txt
+# Project sync does not accept a build-constraint file. Install only locked
+# dependency wheels, then build the project with uv build's supported flag.
+RUN uv sync --locked --no-dev --extra mcp --no-editable --no-install-project --no-build \
+    && uv build --wheel --out-dir /wheels --build-constraint build-constraints.txt \
+    && uv pip install --python /opt/venv/bin/python --no-deps --no-index /wheels/*.whl
 
 FROM ${PYTHON_IMAGE} AS runtime
 ARG VERSION=dev

@@ -169,13 +169,16 @@ def test_image_build_contract():
     assert 'ENTRYPOINT ["dead-letter-mcp"]' in dockerfile
     assert "COPY . " not in dockerfile
     assert "EXPOSE " not in dockerfile
-    assert "pip install" not in dockerfile
+    assert "RUN pip " not in dockerfile
+    assert "--no-install-project --no-build" in dockerfile
+    assert "uv build --wheel --out-dir /wheels --build-constraint" in dockerfile
+    assert "uv pip install --python /opt/venv/bin/python --no-deps --no-index" in dockerfile
     assert "io.modelcontextprotocol.server.name" in dockerfile
     assert "PolyForm-Noncommercial-1.0.0" in dockerfile
     ignore = [line for line in (ROOT / ".dockerignore").read_text().splitlines()
               if line and not line.startswith("#")]
     assert ignore[0] == "**"
-    assert "!uv.lock" in ignore and "**/*.eml" in ignore and "**/.env*" in ignore
+    assert "!uv.lock" in ignore and "**/*.[eE][mM][lL]" in ignore and "**/.env*" in ignore
 
 
 def test_workflow_separates_untrusted_testing_from_publication():
