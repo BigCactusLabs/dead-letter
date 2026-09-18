@@ -39,6 +39,17 @@ gh skill install BigCactusLabs/dead-letter dead-letter --agent github-copilot
 ```
 
 Add `--scope user` to install for every repository instead of the current one.
+
+`gh skill install` resolves the repository's latest tag before the default
+branch, so a skill added after the newest `vX.Y.Z` tag is invisible to the
+unpinned form until the next release. Until then, or to track main, pin a ref:
+
+```bash
+gh skill install BigCactusLabs/dead-letter dead-letter@main --agent claude-code
+```
+
+The installed frontmatter gains `metadata.github-*` tracking keys, and `gh`
+rewrites the key order; both are expected and `gh skill update` relies on them.
 See [`gh skill install`](https://cli.github.com/manual/gh_skill_install).
 
 With the Vercel skills CLI:

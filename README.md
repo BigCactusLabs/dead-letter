@@ -95,7 +95,7 @@ gh skill install BigCactusLabs/dead-letter dead-letter --agent codex
 gh skill install BigCactusLabs/dead-letter dead-letter --agent github-copilot
 ```
 
-Needs `gh` 2.90 or newer. The skill is independent of the Claude plugin. For
+Needs `gh` 2.90 or newer. Until the first release tag that includes the skill, append `@main` to the skill name (`dead-letter@main`). The skill is independent of the Claude plugin. For
 other hosts, manual installation, and discovery metadata, see
 [Agent Discovery](docs/reference/agent-discovery.md).
 
