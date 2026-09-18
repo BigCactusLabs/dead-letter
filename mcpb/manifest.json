@@ -1,0 +1,55 @@
+{
+  "manifest_version": "0.4",
+  "name": "dead-letter-mcp",
+  "display_name": "dead-letter",
+  "version": "0.2.5",
+  "description": "Convert .eml email exports to Markdown with YAML front matter",
+  "long_description": "dead-letter converts .eml email exports into Markdown with YAML front matter. All processing happens locally on this machine; no message content is uploaded anywhere. Email content is treated as untrusted data: HTML is sanitized before conversion and message text is never followed as instructions.",
+  "author": {
+    "name": "Big Cactus Labs",
+    "url": "https://github.com/BigCactusLabs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BigCactusLabs/dead-letter"
+  },
+  "homepage": "https://github.com/BigCactusLabs/dead-letter",
+  "documentation": "https://github.com/BigCactusLabs/dead-letter#readme",
+  "support": "https://github.com/BigCactusLabs/dead-letter/issues",
+  "icon": "icon.png",
+  "server": {
+    "type": "uv",
+    "entry_point": "server/main.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "server/main.py"]
+    }
+  },
+  "tools": [
+    {
+      "name": "convert_eml",
+      "description": "Convert one .eml file to Markdown text, and write a file when output_path is given."
+    },
+    {
+      "name": "convert_eml_to_bundle",
+      "description": "Convert one .eml file into a bundle directory of Markdown plus copied attachments."
+    },
+    {
+      "name": "convert_directory",
+      "description": "Convert a directory of .eml files, capped at 50 per call, and return a JSON summary."
+    },
+    {
+      "name": "get_diagnostics",
+      "description": "Report quality and structure JSON for one .eml file without writing anything permanent."
+    }
+  ],
+  "keywords": ["email", "eml", "markdown", "mcp"],
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "python": ">=3.12"
+    }
+  }
+}
