@@ -4,6 +4,7 @@
 
 ## Public Docs
 
+- [Gmail Takeout / MBOX](reference/gmail-takeout.md) — local streaming Markdown/Cabinet recipe, metadata, and format boundaries
 - [Runtime Contracts](reference/v4-runtime-contracts.md) — canonical backend and core runtime behavior
 - [Frontend State Model](reference/frontend-state-model.md) — frontend state and interaction contract
 - [Quality Diagnostics](reference/quality-diagnostics.md) — conversion grading and warning semantics
