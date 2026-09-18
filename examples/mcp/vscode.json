@@ -1,0 +1,15 @@
+{
+  "servers": {
+    "dead-letter": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--python",
+        "3.12",
+        "--from",
+        "dead-letter[mcp]",
+        "dead-letter-mcp"
+      ]
+    }
+  }
+}

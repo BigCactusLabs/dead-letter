@@ -10,6 +10,8 @@
 - [html-to-markdown v3 Migration Plan](reference/html-to-markdown-v3-migration.md) — completed migration reference from 2.x visitor APIs
 - [Publishing](reference/publishing.md) — maintainer release and Homebrew tap update runbook
 - [Agent Discovery](reference/agent-discovery.md) — portable Agent Skill install, ARD catalog, and Agent Finder submission
+- [Client Installation](reference/client-installation.md) — generated VS Code/Cursor install links, Cline setup, and verification
+- [MCP Distribution Ledger](reference/mcp-distribution.md) — dated catalog findings, submission candidates, and remaining acceptance checks
 - [Brand Style Guide](brand/style-guide.md) — canonical visual language and production integration notes
 
 ## Integration

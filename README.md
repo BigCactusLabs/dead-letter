@@ -246,6 +246,18 @@ for r in convert_dir("inbox/", output="out/"):
 
 dead-letter ships an [MCP](https://modelcontextprotocol.io/) server so LLM clients can convert `.eml` files directly without shelling out.
 
+**VS Code, Cursor, and Cline:**
+
+<!-- BEGIN GENERATED MCP INSTALL LINKS -->
+[Install in VS Code](https://vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522dead-letter%2522%252C%2522command%2522%253A%2522uvx%2522%252C%2522args%2522%253A%255B%2522--python%2522%252C%25223.12%2522%252C%2522--from%2522%252C%2522dead-letter%255Bmcp%255D%2522%252C%2522dead-letter-mcp%2522%255D%257D) · [Install in Cursor](https://cursor.com/en/install-mcp?name=dead-letter&config=eyJ0eXBlIjoic3RkaW8iLCJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyItLXB5dGhvbiIsIjMuMTIiLCItLWZyb20iLCJkZWFkLWxldHRlclttY3BdIiwiZGVhZC1sZXR0ZXItbWNwIl19)
+<!-- END GENERATED MCP INSTALL LINKS -->
+
+Requires `uv`/`uvx` on the desktop client's PATH. These links configure a local
+stdio server using the published PyPI package; no catalog admission is needed.
+First use may download Python and dependencies. Review the command, scope, and
+tool permissions before accepting. Cline setup, manual JSON examples, and
+verification: [Client installation](docs/reference/client-installation.md).
+
 Launch it directly with `uvx`:
 
 ```bash
