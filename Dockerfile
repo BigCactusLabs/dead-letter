@@ -1,21 +1,44 @@
-# Container image for the dead-letter MCP server.
-#
-# Primary purpose: automated MCP directory checks (e.g. glama.ai), which start
-# this image and issue an MCP introspection handshake (initialize + tools/list)
-# over stdio. Built from the repo source so the image never drifts from the
-# committed package version.
-#
-# dead-letter-mcp is a stdio server: it speaks JSON-RPC over stdin/stdout and
-# exposes no network ports. Run it with an MCP client attached to stdio, e.g.
-#   docker run -i --rm dead-letter-mcp
-FROM python:3.12-slim
+# The release workflow resolves both inputs to immutable multi-platform digests.
+# Override these arguments with the recorded digests to reproduce a release build.
+ARG PYTHON_IMAGE=python:3.12-slim-bookworm
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.12.16
+FROM ${UV_IMAGE} AS uv
+FROM ${PYTHON_IMAGE} AS builder
 
-WORKDIR /app
-COPY . /app
+COPY --from=uv /uv /usr/local/bin/uv
+ENV UV_PYTHON_DOWNLOADS=never \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_NO_CACHE=1
+WORKDIR /build
+COPY pyproject.toml uv.lock README.md LICENSE ./
+COPY docker/build-constraints.txt ./build-constraints.txt
+COPY src ./src
+ARG SOURCE_DATE_EPOCH=0
+RUN uv sync --locked --no-dev --extra mcp --no-editable \
+    --build-constraint build-constraints.txt
 
-# Install the package with the `mcp` extra, which registers the
-# `dead-letter-mcp` console entry point (see [project.scripts] in pyproject.toml).
-RUN pip install --no-cache-dir ".[mcp]"
-
-# Stdio MCP server — communicates over stdin/stdout, binds no ports.
+FROM ${PYTHON_IMAGE} AS runtime
+ARG VERSION=dev
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="dead-letter" \
+    org.opencontainers.image.description="Local .eml email conversion to Markdown over stdio MCP" \
+    org.opencontainers.image.source="https://github.com/BigCactusLabs/dead-letter" \
+    org.opencontainers.image.url="https://github.com/BigCactusLabs/dead-letter" \
+    org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0" \
+    org.opencontainers.image.version="${VERSION}" \
+    org.opencontainers.image.revision="${REVISION}" \
+    io.modelcontextprotocol.server.name="io.github.BigCactusLabs/dead-letter"
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    HOME=/tmp
+RUN groupadd --gid 10001 dead-letter \
+    && useradd --uid 10001 --gid 10001 --no-create-home --no-log-init \
+       --home-dir /tmp --shell /usr/sbin/nologin dead-letter
+COPY --from=builder /opt/venv /opt/venv
+COPY LICENSE /usr/share/doc/dead-letter/LICENSE
+WORKDIR /data
+USER 10001:10001
+# No listener, runtime downloads, or uv resolution. Attach stdin, never a TTY.
 ENTRYPOINT ["dead-letter-mcp"]
