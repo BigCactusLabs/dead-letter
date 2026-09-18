@@ -80,6 +80,24 @@ Choose the appropriate user/workspace scope in the client. Other clients may use
 
 If a desktop client reports `spawn uvx ENOENT`, locate the actual executable (`command -v uvx` on macOS/Linux or `(Get-Command uvx).Source` in PowerShell) and use that absolute path for `command`. Restart the client when required. Resolve user-supplied input paths on the host side; do not assume a desktop client shares a terminal's working directory or host paths with a sandbox/container.
 
+### Cursor and Cline
+
+The README contains generated VS Code and Cursor install links. Manual,
+client-specific configurations live in [examples/mcp/](examples/mcp/), with
+scope and verification details in [Client Installation](docs/reference/client-installation.md).
+Cursor uses `mcpServers` in `.cursor/mcp.json` or `~/.cursor/mcp.json`.
+Cline's example leaves `autoApprove` empty; preserve that approval boundary.
+
+For the current Cline CLI stdio registration format:
+
+```bash
+cline mcp install dead-letter -- uvx --python 3.12 --from 'dead-letter[mcp]' dead-letter-mcp
+```
+
+Do not infer successful GUI installation or marketplace discovery from a
+configuration file alone. Observe registration, tool discovery, and a
+synthetic conversion in the actual target client before reporting success.
+
 ## Verify the install and permissions
 
 ```bash
