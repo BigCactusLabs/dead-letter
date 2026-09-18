@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Offline experimental semantic-analysis contracts: two candidate TypeSafe/JEV
+  triage profiles, normalized-evidence state assembly, redacted-by-default
+  previews, effective-input fingerprints, native-answer validation and a
+  synthetic development seed. This foundation does not enable remote processing
+  or add an EML analysis CLI; conversion remains unchanged (#110). See
+  [experimental analysis](docs/reference/experimental-analysis.md).
 - A one-click MCP Bundle (`.mcpb`) for Claude Desktop and other MCPB-aware
   clients. The release workflow builds and smoke-tests the bundle against the
   published PyPI package, then attaches `dead-letter-mcp-X.Y.Z.mcpb` and its
