@@ -67,3 +67,42 @@ jobs:
 
       - name: Frontend syntax
         run: node --check src/dead_letter/frontend/static/app.js
+
+  # Builds the MCPB bundle from this checkout (not PyPI) and launches it the
+  # way an MCPB host would: unpack, `uv run` the entry point, MCP handshake,
+  # tools/list, and one fixture conversion. Runs on the three platforms Claude
+  # Desktop's uv runtime targets. The release workflow repeats the same smoke
+  # against the real PyPI pin before attaching the asset.
+  mcpb:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22"
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: true
+
+      - name: Build the MCPB bundle from this checkout
+        run: python scripts/build_mcpb.py --local-source . --output-dir build/local-dist
+
+      - name: Smoke test the bundle
+        shell: bash
+        run: python scripts/smoke_mcpb.py build/local-dist/dead-letter-mcp-*.mcpb

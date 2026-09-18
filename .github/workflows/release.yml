@@ -32,6 +32,89 @@ jobs:
         with:
           attestations: true
 
+  # Builds the one-click MCPB bundle (mcpb/ + scripts/build_mcpb.py), smoke
+  # tests it against the PyPI release it pins, and attaches it to the GitHub
+  # release. The bundle does not vendor the package: its pyproject.toml pins
+  # dead-letter[mcp]==X.Y.Z from PyPI, so PyPI must be live before the smoke
+  # test can pass. Runs before publish-mcp because the registry entry needs
+  # the asset URL and SHA-256.
+  build-mcpb:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # upload the .mcpb asset to the release
+    outputs:
+      sha256: ${{ steps.hash.outputs.sha256 }}
+      asset: ${{ steps.hash.outputs.asset }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22"
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: true
+
+      - name: Resolve release version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Assert the tag matches the package version
+        run: |
+          v="${{ steps.version.outputs.version }}"
+          pkg=$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ "$pkg" != "$v" ]; then
+            echo "tag v${v} does not match pyproject.toml version ${pkg}" >&2
+            exit 1
+          fi
+
+      - name: Wait for PyPI to serve the release
+        run: |
+          v="${{ steps.version.outputs.version }}"
+          for i in $(seq 1 30); do
+            if curl -fsSL "https://pypi.org/pypi/dead-letter/${v}/json" >/dev/null; then
+              echo "PyPI is serving dead-letter ${v}"
+              exit 0
+            fi
+            echo "waiting for PyPI dead-letter ${v} (attempt ${i}/30)"
+            sleep 10
+          done
+          echo "PyPI did not serve dead-letter ${v} in time" >&2
+          exit 1
+
+      - name: Build the MCPB bundle
+        run: python scripts/build_mcpb.py
+
+      - name: Smoke test the bundle against PyPI
+        run: python scripts/smoke_mcpb.py "dist/dead-letter-mcp-${{ steps.version.outputs.version }}.mcpb"
+
+      - name: Record the asset hash
+        id: hash
+        run: |
+          v="${{ steps.version.outputs.version }}"
+          asset="dead-letter-mcp-${v}.mcpb"
+          sha=$(cut -d ' ' -f1 "dist/${asset}.sha256")
+          echo "asset=${asset}" >> "$GITHUB_OUTPUT"
+          echo "sha256=${sha}" >> "$GITHUB_OUTPUT"
+          echo "${asset} sha256=${sha}"
+
+      - name: Attach the bundle to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ steps.version.outputs.version }}"
+          gh release upload "v${v}" "dist/dead-letter-mcp-${v}.mcpb" "dist/dead-letter-mcp-${v}.mcpb.sha256" --clobber
+
   # Publishes server metadata to the Official MCP Registry
   # (registry.modelcontextprotocol.io) after the PyPI release is live. From
   # there it propagates automatically to the GitHub MCP Registry, PulseMCP,
@@ -39,7 +122,7 @@ jobs:
   # io.github.BigCactusLabs/* namespace, so there is no stored secret. The
   # registry only stores metadata; the package itself lives on PyPI.
   publish-mcp:
-    needs: publish
+    needs: [publish, build-mcpb]
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC, proves ownership of the io.github.BigCactusLabs namespace
@@ -68,17 +151,34 @@ jobs:
           echo "PyPI did not serve dead-letter ${v} in time" >&2
           exit 1
 
-      - name: Stamp server.json with the release version
+      - name: Stamp server.json with the release version and bundle hash
+        # The committed server.json carries an all-zero fileSha256 placeholder
+        # for the MCPB package; the real hash only exists once build-mcpb has
+        # packed the asset. Refuse to publish if the placeholder survives.
         run: |
           v="${{ steps.version.outputs.version }}"
-          jq --arg v "$v" '
+          sha="${{ needs.build-mcpb.outputs.sha256 }}"
+          asset="${{ needs.build-mcpb.outputs.asset }}"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${v}/${asset}"
+          jq --arg v "$v" --arg sha "$sha" --arg url "$url" '
             .version = $v
-            | .packages[0].version = $v
-            | .packages[0].runtimeArguments |= map(
-                if .name == "--from" then .value = ("dead-letter[mcp]==" + $v) else . end
+            | .packages |= map(
+                if .registryType == "pypi" then
+                  .version = $v
+                  | .runtimeArguments |= map(
+                      if .name == "--from" then .value = ("dead-letter[mcp]==" + $v) else . end
+                    )
+                elif .registryType == "mcpb" then
+                  .version = $v | .identifier = $url | .fileSha256 = $sha
+                else . end
               )
           ' server.json > server.json.tmp && mv server.json.tmp server.json
           cat server.json
+          if jq -e '.packages[] | select(.registryType == "mcpb") | .fileSha256 | test("^[0-9a-f]{64}$") | not' server.json >/dev/null \
+             || jq -e '.packages[] | select(.registryType == "mcpb") | .fileSha256 == ("0" * 64)' server.json >/dev/null; then
+            echo "server.json MCPB fileSha256 is unset or a placeholder" >&2
+            exit 1
+          fi
 
       - name: Install mcp-publisher
         run: |
