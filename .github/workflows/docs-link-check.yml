@@ -25,6 +25,9 @@ jobs:
         with:
           # The excluded HTTPS wrapper is checked above, including its exact
           # custom-protocol Location. Do not accept all redirects or 429s.
+          # The exact Cursor Directory submission form repeatedly returns 429
+          # from Actions; manually verified on 2026-09-18, tracked in #104.
+          # Its owner-facing form remains a manual acceptance check.
           args: >-
             --no-progress
             --verbose
@@ -34,6 +37,7 @@ jobs:
             --exclude '^http://127\\.0\\.0\\.1'
             --exclude '^http://localhost'
             --exclude '^https://vscode\.dev/redirect\?url=vscode%3Amcp%2Finstall%3F'
+            --exclude '^https://cursor\.directory/plugins/new$'
             README.md docs/**/*.md
           fail: true
           failIfEmpty: false
