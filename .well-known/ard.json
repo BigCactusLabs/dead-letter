@@ -1,0 +1,61 @@
+{
+  "entries": [
+    {
+      "identifier": "urn:air:github.com:bigcactuslabs:dead-letter:mcp-server",
+      "displayName": "dead-letter MCP server",
+      "type": "application/mcp-server-card+json",
+      "url": "https://raw.githubusercontent.com/BigCactusLabs/dead-letter/main/server.json",
+      "description": "Local stdio MCP server that converts .eml email files to Markdown with YAML front matter, batch-converts folders, and builds archive bundles with decoded attachments.",
+      "version": "0.2.5",
+      "tags": [
+        "email",
+        "eml",
+        "markdown",
+        "rag",
+        "email-archive",
+        "mcp",
+        "local-first"
+      ],
+      "representativeQueries": [
+        "convert exported email to markdown",
+        "read an eml file",
+        "prepare email for RAG",
+        "build a local email archive",
+        "turn this .eml into markdown with front matter"
+      ],
+      "metadata": {
+        "registry": "https://registry.modelcontextprotocol.io/v0/servers/io.github.BigCactusLabs/dead-letter",
+        "package": "https://pypi.org/project/dead-letter/",
+        "license": "PolyForm-Noncommercial-1.0.0"
+      }
+    },
+    {
+      "identifier": "urn:air:github.com:bigcactuslabs:dead-letter:skill",
+      "displayName": "dead-letter Agent Skill",
+      "type": "application/ai-skill+md",
+      "url": "https://raw.githubusercontent.com/BigCactusLabs/dead-letter/main/skills/dead-letter/SKILL.md",
+      "description": "Portable Agent Skill that teaches an agent when and how to convert .eml email exports to Markdown locally with uvx or the dead-letter MCP server, while treating email content as untrusted.",
+      "version": "0.2.5",
+      "tags": [
+        "email",
+        "eml",
+        "markdown",
+        "rag",
+        "email-archive",
+        "agent-skill",
+        "local-first"
+      ],
+      "representativeQueries": [
+        "convert exported email to markdown",
+        "read an eml file",
+        "prepare email for RAG",
+        "build a local email archive",
+        "summarize this .eml file"
+      ],
+      "metadata": {
+        "install": "gh skill install BigCactusLabs/dead-letter dead-letter@main",
+        "license": "PolyForm-Noncommercial-1.0.0"
+      }
+    }
+  ]
+}

@@ -22,6 +22,12 @@ BigCactusLabs/bigcactuslabs-plugins marketplace. The package version lives in
   step)
 - `plugin/` — Claude Code plugin: manifest in `.claude-plugin/plugin.json`,
   slash commands in `commands/`, skill in `skills/`, MCP launcher in `.mcp.json`
+- `skills/dead-letter/` — portable Agent Skill for any skill-aware host
+  (agentskills.io spec). Not loaded during development: no host auto-loads a
+  root `skills/` directory. Keep it free of slash commands and Cowork
+  references; Claude-specific guidance belongs in `plugin/skills/`
+- `.well-known/ard.json` — Agentic Resource Discovery catalog advertising the
+  MCP server and the portable skill
 - `mcpb/` — MCP Bundle source: `manifest.json`, `pyproject.toml`,
   `.python-version`, `.mcpbignore`, `server/main.py`
 - `scripts/build_mcpb.py` — stages and packs the `.mcpb` bundle into `dist/`
@@ -50,6 +56,13 @@ node --test tests/frontend/*.test.js
 node --check src/dead_letter/frontend/static/app.js
 ```
 
+CI also gates the portable Agent Skill. Run it locally after touching
+`skills/dead-letter/` (needs `gh` 2.90 or newer; it publishes nothing):
+
+```bash
+gh skill publish --dry-run
+```
+
 Advisory only (not enforced in CI): `uv run ruff check .`,
 `uv run ruff format --check .`, `uv run pyright`. Tests are the gate; lint is
 guidance.
@@ -70,7 +83,9 @@ guidance.
   `mcpb/manifest.json` (`version`) and `mcpb/pyproject.toml` (`version` and
   the exact `dead-letter[mcp]==X.Y.Z` pin); `tests/plugin/test_mcpb_bundle.py`
   enforces that these match the package version, and
-  `scripts/build_mcpb.py` refuses to build the bundle if they don't.
+  `scripts/build_mcpb.py` refuses to build the bundle if they don't. A release
+  also bumps both entries' `version` in `.well-known/ard.json`, enforced by
+  `tests/plugin/test_ard_catalog.py` against `server.json`.
 - **Never advance a release pointer before the PyPI release is live.** The
   package releases via a `vX.Y.Z` tag; the plugin releases via a
   `plugin-vX.Y.Z` tag, an automated marketplace pull request that pins that
@@ -94,6 +109,8 @@ guidance.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev workflow, PR process, scope guidance
 - [docs/reference/publishing.md](docs/reference/publishing.md) — release
   runbook (read before any version bump)
+- [docs/reference/agent-discovery.md](docs/reference/agent-discovery.md) —
+  portable Agent Skill, ARD catalog, and Agent Finder submission
 - [plugin/TESTING.md](plugin/TESTING.md) — manual smoke-test checklist for
   plugin releases
 - [docs/brand/style-guide.md](docs/brand/style-guide.md) — frontend design

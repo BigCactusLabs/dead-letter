@@ -52,6 +52,10 @@ the Homebrew tap.
      `mcpb/pyproject.toml`, and its dependency pin don't all match
      `pyproject.toml`; `tests/plugin/test_mcpb_bundle.py` enforces the same
      sync in CI.
+   - `.well-known/ard.json` — bump `version` on both entries.
+     `tests/plugin/test_ard_catalog.py` enforces that they match
+     `server.json`. See
+     [agent-discovery.md](agent-discovery.md).
 
    Bump the plugin files **in lockstep with the package by default**: an
    aligned release ships the same version to PyPI and to plugin users, so the

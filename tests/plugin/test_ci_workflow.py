@@ -13,6 +13,16 @@ def test_ci_includes_plugin_tests_step():
     )
 
 
+def test_ci_includes_agent_skill_validation_step():
+    text = CI_PATH.read_text(encoding="utf-8")
+    assert "- name: Agent Skill validation" in text, (
+        "ci.yml must include an `Agent Skill validation` step."
+    )
+    assert "gh skill publish --dry-run" in text, (
+        "the Agent Skill validation step must run `gh skill publish --dry-run`."
+    )
+
+
 def test_ci_pins_claude_code_plugin_validator():
     text = CI_PATH.read_text(encoding="utf-8")
 
