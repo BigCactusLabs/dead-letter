@@ -65,9 +65,10 @@ cp -R skills/dead-letter .claude/skills/     # Claude Code
 cp -R skills/dead-letter .agents/skills/     # Codex, Cursor, Copilot, Amp, Gemini CLI
 ```
 
-Cursor cannot import a bare skill from a GitHub repository. It needs a Cursor
-plugin marketplace (`.cursor-plugin/marketplace.json`), which this repo does not
-ship. Cursor users should use the manual copy into `.agents/skills/`.
+Cursor reads `.agents/skills/`, so `gh skill install ... --agent cursor` and
+the manual copy both work. Cursor's own "import from GitHub" UI only accepts a
+Cursor plugin marketplace (`.cursor-plugin/marketplace.json`), which this repo
+does not ship.
 
 ## Local validation
 
@@ -77,9 +78,12 @@ Both gates run in CI; run them locally before pushing a skill or catalog change.
 gh skill publish --dry-run
 ```
 
-This discovers `skills/*/SKILL.md`, checks that the frontmatter `name` matches
-the directory name, that `name` and `description` are present, and that
-`allowed-tools` is a string rather than a list. It publishes nothing. CI runs it
+This discovers `skills/*/SKILL.md` and, in this repo, also
+`plugin/skills/dead-letter-context/SKILL.md`, so the gate covers both skills.
+It checks that the frontmatter `name` matches the directory name, that `name`
+and `description` are present, and that `allowed-tools` is a string rather
+than a list. It publishes nothing and needs no usable token. Renaming either
+skill directory without changing its `name` turns this step red. CI runs it
 as the `Agent Skill validation` step in the `test` job of
 [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml). See
 [`gh skill publish`](https://cli.github.com/manual/gh_skill_publish).
@@ -120,8 +124,10 @@ That path is not domain-anchored, so spec-conformant crawlers will not find it
 on their own. Hosting the manifest at an organization root domain is the
 follow-up. Do not enable GitHub Pages for this repository to work around it.
 
-**Release note.** Both entries carry a `version` field, which makes this file a
-version sync point alongside `server.json`. Release prep bumps it; see
+**Release note.** Both entries carry a `version` field that means the package
+release, which makes this file a version sync point alongside `server.json`.
+The first release tag that ships the skill is the first one whose `version`
+is accurate for the skill entry. Release prep bumps it; see
 [publishing.md](publishing.md). `tests/plugin/test_ard_catalog.py` fails if
 either entry drifts from `server.json`.
 

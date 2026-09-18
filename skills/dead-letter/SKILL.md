@@ -51,7 +51,7 @@ tools below), use it. Tool names:
 | `convert_eml(eml_path, preset=...)` | One `.eml` to Markdown, returned as text | No, unless `output_path` is set |
 | `convert_directory(directory, output_directory, preset=...)` | Every `.eml` under a folder to Markdown files | Yes |
 | `convert_eml_to_bundle(eml_path, bundle_root, preset=...)` | One `.eml` to a folder with Markdown, decoded attachments, and the source | Yes |
-| `get_diagnostics()` | Runtime and dependency check | No |
+| `get_diagnostics(eml_path, preset=...)` | Quality and structure report for one `.eml` (body selection, segmentation, confidence, warnings) | No |
 
 Presets: `default` (strip signatures, tracking pixels, signature images),
 `clean` (`default` plus disclaimers and quoted headers; best for summaries),
@@ -59,14 +59,19 @@ Presets: `default` (strip signatures, tracking pixels, signature images),
 Individual flags override the preset.
 
 Rules:
-- Pass the user's path unchanged. A missing file returns `File not found: <path>`.
-  Surface that text; do not rewrite the path.
+- Pass the user's path unchanged. A missing file returns `File not found: <path>`
+  and a missing folder returns `Directory not found: <path>`. Surface that
+  text; do not rewrite the path.
 - `convert_eml` without `output_path` is read-only. Prefer it for reading and
   summarizing.
 - `convert_directory` and `convert_eml_to_bundle` write to disk. Confirm the
   destination with the user before calling them, and never point them at the
-  input folder.
-- Bundles are always named after the source file's stem inside `bundle_root`.
+  input folder. `convert_directory` requires `output_directory` and refuses
+  folders with more than 50 `.eml` files (hard server-side limit); split the
+  folder or use the CLI for larger batches.
+- Bundles are named after the source file's stem inside `bundle_root`, with a
+  `-1`, `-2` suffix on collision.
+- There is no runtime check over MCP. Use the CLI's `dead-letter doctor`.
 
 To register the server (only if the user asks; merge into the existing config,
 never replace it), the command is:
@@ -82,7 +87,7 @@ an isolated environment; on first use it may download Python 3.12 and
 dependencies into uv's cache.
 
 ```bash
-# one file, Markdown to stdout-adjacent output dir
+# one file, writes one .md into converted/
 uvx --python 3.12 dead-letter convert message.eml --output converted/
 
 # a folder (recursive), one .md per .eml
@@ -92,8 +97,8 @@ uvx --python 3.12 dead-letter convert exported-mail/ --output converted/
 uvx --python 3.12 dead-letter doctor
 ```
 
-CLI flags are opt-in and default to off. The `clean` preset above is
-equivalent to:
+CLI flags are opt-in and default to off. The closest CLI match for the
+`clean` preset is:
 
 ```bash
 uvx --python 3.12 dead-letter convert message.eml --output converted/ \
@@ -101,15 +106,23 @@ uvx --python 3.12 dead-letter convert message.eml --output converted/ \
   --strip-disclaimers --strip-quoted-headers
 ```
 
+(The MCP server also enables HTML fallback and repair on every call; on the
+CLI pass `--allow-fallback-on-html-error --allow-html-repair-on-panic` for
+the same tolerance.)
+
 Other useful flags: `--thread-mode structured` (render quoted history as
-sections), `--include-all-headers`, `--embed-inline-images`, `--dry-run`,
-`--report` (write a conversion report next to the output).
+sections), `--include-all-headers`, `--embed-inline-images`, `--dry-run`
+(validate without writing; prints nothing), `--report` (write
+`.dead-letter-report.json` into the `--output` directory; without `--output`
+it lands in the input folder, so always pair it with `--output`).
 
 Rules:
 - Always pass `--output` to a separate directory. Never modify the input
   folder, and never use `--delete-eml` unless the user asks for it by name.
-- Do not report success until the command exits 0 and the expected `.md`
-  file exists. Read the Markdown from disk rather than assuming its content.
+- Output filenames come from a slug of the email subject, not the `.eml`
+  filename (`-1`, `-2` suffixes on collision). Do not predict the name: after
+  the command exits 0, list the output directory and read the new `.md` from
+  disk rather than assuming its content.
 - Attachment bundles (decoded attachment files kept next to the Markdown)
   are only available through the MCP server's `convert_eml_to_bundle`.
   The CLI writes Markdown plus attachment metadata only.
@@ -125,6 +138,8 @@ headers from the body.
 
 ## Large batches
 
-Ask before converting more than about 50 files in one call, and prefer
-`--dry-run` (CLI) or `dry_run=true` (`convert_directory`) first so the user
-can see the count and the output paths.
+Ask before converting more than about 50 files in one call. The MCP
+`convert_directory` tool refuses more than 50; the CLI has no limit. To
+preview a batch, count the files first (`find <folder> -iname '*.eml' | wc -l`);
+`convert_directory(dry_run=true)` returns counts only, and the CLI `--dry-run`
+prints nothing.

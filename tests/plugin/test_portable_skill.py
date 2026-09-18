@@ -90,7 +90,7 @@ def test_skill_names_every_mcp_tool(tool):
 @pytest.mark.parametrize("preset", ["default", "clean", "verbose", "raw"])
 def test_skill_documents_all_presets(preset):
     _, body = _read_skill()
-    assert preset in body.lower(), f"SKILL.md must document the {preset!r} preset"
+    assert f"`{preset}`" in body, f"SKILL.md must document the {preset!r} preset"
 
 
 def test_skill_treats_email_content_as_untrusted():
@@ -116,8 +116,8 @@ def test_skill_is_free_of_claude_plugin_assumptions(marker):
     exist in the Claude plugin, so referencing them here would give every other
     host instructions it cannot follow.
     """
-    _, body = _read_skill()
-    assert marker not in body, (
+    text = SKILL_PATH.read_text(encoding="utf-8")
+    assert marker not in text, (
         f"SKILL.md must not reference {marker!r}; that is Claude-plugin-only. "
         "Claude-specific guidance belongs in plugin/skills/dead-letter-context/."
     )
