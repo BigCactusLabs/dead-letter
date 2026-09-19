@@ -53,7 +53,7 @@ def test_registry_identity_versions_and_entrypoint_are_consistent():
     assert any(argument.get("value") == "dead-letter-mcp" for argument in package["packageArguments"])
 
 
-@pytest.mark.parametrize("path", ["README.md", "llms-install.md", "docs/project/reach.md"])
+@pytest.mark.parametrize("path", ["README.md", "llms-install.md"])
 def test_documented_uvx_launches_select_python(path: str):
     launches = []
     for block in re.findall(r"```(?:bash|sh)\s*\n(.*?)```", _read(path), flags=re.DOTALL):
@@ -66,6 +66,14 @@ def test_documented_uvx_launches_select_python(path: str):
             assert "--python" in arguments, (path, line)
             assert arguments[arguments.index("--python") + 1] == "3.12", (path, line)
     assert launches, f"No tested uvx example found in {path}"
+
+
+def test_reach_plan_routes_to_canonical_installation_instead_of_copying_commands():
+    plan = _read("docs/project/reach.md")
+    assert "../reference/distribution.md" in plan
+    assert "../../llms-install.md" in plan
+    launches = re.findall(r"```(?:bash|sh)\s*\n(.*?)```", plan, flags=re.DOTALL)
+    assert not any("uvx" in shlex.split(line, comments=True) for block in launches for line in block.splitlines())
 
 
 def test_agent_guide_json_uses_client_specific_wrappers():
@@ -81,6 +89,13 @@ def test_agent_guide_json_uses_client_specific_wrappers():
         assert config["args"] == ["--python", "3.12", "--from", "dead-letter[mcp]", "dead-letter-mcp"]
 
 
-def test_agent_guide_versioned_example_matches_registry_pin():
-    arguments = {argument["name"]: argument["value"] for argument in _pypi_package()["runtimeArguments"]}
-    assert f"--from '{arguments['--from']}'" in _read("llms-install.md")
+def test_agent_guide_uses_an_explicit_placeholder_not_a_duplicated_current_pin():
+    guide = _read("llms-install.md")
+    assert "--from 'dead-letter[mcp]==X.Y.Z'" in guide
+    assert "`X.Y.Z` is a placeholder" in guide
+    assert "actually published package version" in guide
+    assert "docs/reference/distribution.md" in guide
+    assert not re.search(r"dead-letter\[mcp\]==\d+\.\d+\.\d+", guide)
+    # The exact runnable source pin is still enforced independently above.
+    # main may contain unreleased metadata; installing its version blindly
+    # would turn a prose example back into another release sync point.
