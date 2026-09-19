@@ -9,6 +9,8 @@ runtime contracts and historical design notes serve different purposes.
 | --- | --- |
 | Understand the product and convert a first email | [README](../README.md) |
 | Convert a Gmail Takeout `.mbox` export locally | [Gmail Takeout / MBOX](reference/gmail-takeout.md) |
+| Contain MBOX parser hangs or crashes with per-message deadlines | [MBOX Workers](reference/mbox-workers.md) |
+| Measure or audit a full MBOX import | [MBOX Validation](reference/mbox-validation.md) |
 | Choose CLI, UI, MCPB, plugin, container, or skill | [Installation and distribution map](reference/distribution.md) |
 | Configure an agent/MCP client safely | [Agent install guide](../llms-install.md) |
 | Install or update the Claude plugin | [Plugin README](../plugin/README.md) |
@@ -27,6 +29,7 @@ runtime contracts and historical design notes serve different purposes.
 | Change UI stores, job handling, or onboarding | [Frontend State Model](reference/frontend-state-model.md) |
 | Prepare, tag, publish, or recover a release | [Publishing](reference/publishing.md) |
 | Validate Claude-specific behavior manually | [Plugin testing](../plugin/TESTING.md) |
+| Triage a CI checkout/source provenance mismatch | [CI Provenance](reference/ci-provenance.md) |
 | Work on the visual identity | [Brand & Style Guide](brand/style-guide.md) |
 | Review shipped changes or report a vulnerability | [Changelog](../CHANGELOG.md) / [Security](../SECURITY.md) |
 

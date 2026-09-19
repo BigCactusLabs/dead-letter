@@ -59,6 +59,10 @@ def _add_convert_flags(parser: argparse.ArgumentParser) -> None:
         "--mbox-bundles", action="store_true",
         help="MBOX: write Cabinet-style message.md, source.eml and attachment bundles.",
     )
+    parser.add_argument(
+        "--mbox-timeout", type=float, default=None, metavar="SECONDS",
+        help="MBOX: opt into a subprocess per message with this worker time budget.",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -187,9 +191,10 @@ def _run_convert(args: argparse.Namespace) -> int:
         return run_mbox(
             input_path, output=args.output, options=options,
             max_message_mib=args.max_message_mib, unescape=args.mbox_unescape,
-            bundles=args.mbox_bundles,
+            bundles=args.mbox_bundles, timeout_seconds=args.mbox_timeout,
         )
-    if args.mbox_bundles or args.mbox_unescape != "preserve" or args.max_message_mib != 64:
+    if (args.mbox_bundles or args.mbox_unescape != "preserve" or args.max_message_mib != 64
+            or args.mbox_timeout is not None):
         print("MBOX-specific options require a .mbox input file", file=sys.stderr)
         return 1
 
