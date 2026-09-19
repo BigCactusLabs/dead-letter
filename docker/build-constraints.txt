@@ -1,0 +1,4 @@
+# Build isolation is separate from uv.lock's runtime dependency resolution.
+# Keep the wheel-building toolchain exact as well; update deliberately in PRs.
+setuptools==80.9.0
+wheel==0.45.1
