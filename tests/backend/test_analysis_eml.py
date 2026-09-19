@@ -158,17 +158,17 @@ def test_cli_show_state_is_explicit(tmp_path, capsys):
     assert preview["source_reference"] == source.name
 
 
-def test_cli_without_dry_run_rejects_before_reading_or_preparing(monkeypatch, capsys):
+def test_cli_live_show_state_rejects_before_reading_or_preparing(monkeypatch, capsys):
     import dead_letter.analysis
     def forbidden(*args, **kwargs):
-        pytest.fail("remote invocation was not rejected before preparation")
+        pytest.fail("invalid live inspection was not rejected before preparation")
     monkeypatch.setattr(dead_letter.analysis, "prepare_eml", forbidden)
     monkeypatch.setenv("TYPESAFE_API_KEY", KEY)
-    result = cli.main(["analyze", "unread-private-file.eml", "--provider", "typesafe"])
+    result = cli.main(["analyze", "unread-private-file.eml", "--provider", "typesafe", "--show-state"])
     captured = capsys.readouterr()
     assert result == 2
     assert captured.out == ""
-    assert json.loads(captured.err)["error_code"] == "remote_analysis_not_implemented"
+    assert json.loads(captured.err)["error_code"] == "show_state_requires_dry_run"
     assert "unread-private-file" not in captured.err
     assert KEY not in captured.err
 
