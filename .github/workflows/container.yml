@@ -62,7 +62,7 @@ jobs:
       python_image: ${{ steps.inputs.outputs.python_image }}
       uv_image: ${{ steps.inputs.outputs.uv_image }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -104,7 +104,7 @@ jobs:
       UV_IMAGE: ${{ needs.prepare.outputs.uv_image }}
       PLATFORM: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
@@ -138,7 +138,7 @@ jobs:
       PYTHON_IMAGE: ${{ needs.prepare.outputs.python_image }}
       UV_IMAGE: ${{ needs.prepare.outputs.uv_image }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.revision }}
           persist-credentials: false
@@ -147,6 +147,8 @@ jobs:
           platforms: arm64
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: false
       - name: Authenticate only the release publishing job
         env:
           GH_TOKEN: ${{ github.token }}
