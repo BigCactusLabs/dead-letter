@@ -1,14 +1,14 @@
 <!-- mcp-name: io.github.BigCactusLabs/dead-letter -->
 
 <p align="center">
-  <img src="docs/brand/production/readme-logo.png" width="128" alt="dead-letter">
+  <img src="https://raw.githubusercontent.com/BigCactusLabs/dead-letter/main/docs/brand/production/readme-logo.png" width="128" alt="dead-letter">
 </p>
 
 # dead-letter
 
 [![PyPI package](https://img.shields.io/pypi/v/dead-letter?label=PyPI%20package&cacheSeconds=300)](https://pypi.org/project/dead-letter/)
 [![Python versions](https://img.shields.io/pypi/pyversions/dead-letter?label=Python&cacheSeconds=300)](https://pypi.org/project/dead-letter/)
-[![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-purple.svg)](LICENSE)
+[![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-purple.svg)](https://github.com/BigCactusLabs/dead-letter/blob/main/LICENSE)
 
 **Turn `.eml` email exports into clean, local, LLM-ready Markdown.**
 
@@ -24,7 +24,7 @@ If you already have [`uv`](https://docs.astral.sh/uv/), run dead-letter without 
 uvx --python 3.12 dead-letter convert message.eml
 ```
 
-Or install with Homebrew or pip below. Agents and MCP clients can use the client-specific setup in [`llms-install.md`](llms-install.md).
+Or install with Homebrew or pip below. Agents and MCP clients can use the client-specific setup in [`llms-install.md`](https://github.com/BigCactusLabs/dead-letter/blob/main/llms-install.md).
 
 ## 🎯 Common use cases
 
@@ -66,19 +66,19 @@ dead-letter's value isn't fewer tokens than every alternative — it's **fidelit
 
 Those counts measure the Markdown representation, not the contents of retained binary attachments or downstream answer quality. The shipping default is latest-message mode; the benchmark uses structured mode for a same-thread comparison.
 
-The benchmark is honest about where it loses: naive extraction is fewer tokens when you don't mind throwing away metadata, links, and thread structure. Full method, the complete table (including those rows), tokenizer disclosure, and a one-command reproduce are in [`benchmarks/`](benchmarks/).
+The benchmark is honest about where it loses: naive extraction is fewer tokens when you don't mind throwing away metadata, links, and thread structure. Full method, the complete table (including those rows), tokenizer disclosure, and a one-command reproduce are in [`benchmarks/`](https://github.com/BigCactusLabs/dead-letter/tree/main/benchmarks/).
 
 ## 📦 Install
 
-Pick one route. The [distribution map](docs/reference/distribution.md) explains how the channels fit together; installing all of them is not necessary.
+Pick one route. The [distribution map](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/distribution.md) explains how the channels fit together; installing all of them is not necessary.
 
 | You want | Start here |
 | --- | --- |
 | Core CLI or Python API | Homebrew / pip below, or the `uvx` quick try |
 | Local web UI | `dead-letter[ui]` below |
 | Claude Desktop extension or another MCP client | [MCP Server](#-mcp-server) |
-| Claude Code / Cowork commands | [Plugin](plugin/README.md) |
-| Container-isolated MCP | [Containers](docs/reference/containers.md) |
+| Claude Code / Cowork commands | [Plugin](https://github.com/BigCactusLabs/dead-letter/blob/main/plugin/README.md) |
+| Container-isolated MCP | [Containers](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/containers.md) |
 | Portable agent instructions | [Agent Skill](#agent-skill-any-host) |
 
 With Homebrew on Apple silicon macOS:
@@ -118,7 +118,7 @@ uvx --python 3.12 --from 'dead-letter[mcp]' dead-letter-mcp
 
 uv caches tools/dependencies and may download Python on first use. These
 unpinned trial commands do not promise a fresh latest version on every run;
-see [version pinning](docs/reference/distribution.md#pin-the-thing-you-actually-install)
+see [version pinning](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/distribution.md#pin-the-thing-you-actually-install)
 for a reviewed deployment.
 
 From source:
@@ -145,7 +145,7 @@ gh skill install BigCactusLabs/dead-letter dead-letter --agent github-copilot
 Needs `gh` 2.90 or newer. The skill is independent of the Claude plugin. Pin a
 reviewed skill tag/commit for reproducibility; the default latest release can
 also be a plugin release. For exact pin syntax, other hosts, manual installation,
-and discovery metadata, see [Agent Discovery](docs/reference/agent-discovery.md).
+and discovery metadata, see [Agent Discovery](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/agent-discovery.md).
 
 ## 🚀 Quick Start
 
@@ -253,7 +253,7 @@ they are written under `attachments/`.
 
 Quality diagnostics include referenced/retained attachment counts when a message
 has attachments eligible for retention, so dropped artifacts are
-machine-detectable. See [Quality Diagnostics](docs/reference/quality-diagnostics.md).
+machine-detectable. See [Quality Diagnostics](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/quality-diagnostics.md).
 
 Batch:
 
@@ -278,7 +278,7 @@ Requires `uv`/`uvx` on the desktop client's PATH. These links configure a local
 stdio server using the published PyPI package; no catalog admission is needed.
 First use may download Python and dependencies. Review the command, scope, and
 tool permissions before accepting. Cline setup, manual JSON examples, and
-verification: [Client installation](docs/reference/client-installation.md).
+verification: [Client installation](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/client-installation.md).
 
 Launch it directly with `uvx`:
 
@@ -328,7 +328,7 @@ The bundle uses a managed uv runtime and an exact package pin. First launch may 
 }
 ```
 
-Merge the entry rather than replacing existing client settings. VS Code and other hosts can use different schemas; see [the agent install guide](llms-install.md).
+Merge the entry rather than replacing existing client settings. VS Code and other hosts can use different schemas; see [the agent install guide](https://github.com/BigCactusLabs/dead-letter/blob/main/llms-install.md).
 
 **Claude Code or Cowork (recommended — Claude plugin):**
 
@@ -337,7 +337,7 @@ Merge the entry rather than replacing existing client settings. VS Code and othe
 /plugin install dead-letter
 ```
 
-The plugin launches the MCP server via `uvx` and adds four slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`. Local Claude Code needs `uv` on `PATH`; see [`plugin/`](plugin/) for runtime-specific setup and updates. Email content is treated as untrusted data, not instructions: embedded requests for tool use, credentials, or exfiltration are not followed.
+The plugin launches the MCP server via `uvx` and adds four slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`. Local Claude Code needs `uv` on `PATH`; see [`plugin/`](https://github.com/BigCactusLabs/dead-letter/tree/main/plugin/) for runtime-specific setup and updates. Email content is treated as untrusted data, not instructions: embedded requests for tool use, credentials, or exfiltration are not followed.
 
 The marketplace pins the plugin tag and commit, and its launcher pins an exact published Python package. Claude Code and Cowork keep separate installed copies; update and verify each client. Those pins do not freeze every transitive dependency.
 
@@ -365,7 +365,7 @@ codex mcp list
 | `convert_directory` | `directory`, `output_directory` | JSON summary. Capped at 50 `.eml` files per call. |
 | `get_diagnostics` | `eml_path` | Quality and structure JSON. Writes nothing permanent. |
 
-All four take a `preset` (`default`, `clean`, `verbose`, `raw`) and per-flag overrides. Full contract, including the MCP-only constraints and the error-text table: [`docs/reference/v4-runtime-contracts.md`](docs/reference/v4-runtime-contracts.md#mcp-server-dead_letterbackendmcp_server).
+All four take a `preset` (`default`, `clean`, `verbose`, `raw`) and per-flag overrides. Full contract, including the MCP-only constraints and the error-text table: [`docs/reference/v4-runtime-contracts.md`](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/v4-runtime-contracts.md#mcp-server-dead_letterbackendmcp_server).
 
 ## 🗂 Project Structure
 
@@ -381,7 +381,7 @@ tests/
 └── frontend/       # JS unit tests
 ```
 
-The [agent guide](AGENTS.md) maps bundle, container, skill, and maintainer tooling without turning this README into a file inventory.
+The [agent guide](https://github.com/BigCactusLabs/dead-letter/blob/main/AGENTS.md) maps bundle, container, skill, and maintainer tooling without turning this README into a file inventory.
 
 ## 🧪 Testing
 
@@ -394,21 +394,21 @@ node --test tests/frontend/*.test.js
 python scripts/release.py check    # offline distribution metadata
 ```
 
-CI also validates plugin/skill schemas, frontend syntax, maintained Markdown links, and cross-platform packaging. Full commands and the distinction between offline contracts and real client tests are in [Contributing](CONTRIBUTING.md).
+CI also validates plugin/skill schemas, frontend syntax, maintained Markdown links, and cross-platform packaging. Full commands and the distinction between offline contracts and real client tests are in [Contributing](https://github.com/BigCactusLabs/dead-letter/blob/main/CONTRIBUTING.md).
 
 ## 📚 Docs
 
-- [Docs Index](docs/README.md) — choose by task, not by filename
-- [Distribution map](docs/reference/distribution.md) — CLI, UI, MCPB, plugin, container, and skill choices
-- [Agent install guide](llms-install.md) — client-specific setup and verification
-- [Runtime Contracts](docs/reference/v4-runtime-contracts.md) — full API and core behavior spec
-- [Frontend State Model](docs/reference/frontend-state-model.md)
-- [Quality Diagnostics](docs/reference/quality-diagnostics.md)
-- [Publishing](docs/reference/publishing.md) — tagging, channel order, and recovery
-- [Brand & Style Guide](docs/brand/style-guide.md)
-- [Changelog](CHANGELOG.md)
-- [Contributing](CONTRIBUTING.md)
-- [Agent Guide](AGENTS.md) — operational guide for AI coding agents working in this repo
+- [Docs Index](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/README.md) — choose by task, not by filename
+- [Distribution map](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/distribution.md) — CLI, UI, MCPB, plugin, container, and skill choices
+- [Agent install guide](https://github.com/BigCactusLabs/dead-letter/blob/main/llms-install.md) — client-specific setup and verification
+- [Runtime Contracts](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/v4-runtime-contracts.md) — full API and core behavior spec
+- [Frontend State Model](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/frontend-state-model.md)
+- [Quality Diagnostics](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/quality-diagnostics.md)
+- [Publishing](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/publishing.md) — tagging, channel order, and recovery
+- [Brand & Style Guide](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/brand/style-guide.md)
+- [Changelog](https://github.com/BigCactusLabs/dead-letter/blob/main/CHANGELOG.md)
+- [Contributing](https://github.com/BigCactusLabs/dead-letter/blob/main/CONTRIBUTING.md)
+- [Agent Guide](https://github.com/BigCactusLabs/dead-letter/blob/main/AGENTS.md) — operational guide for AI coding agents working in this repo
 
 ## 🔧 Tools We Love
 
@@ -423,4 +423,4 @@ CI also validates plugin/skill schemas, frontend syntax, maintained Markdown lin
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE) — free for personal, educational, and nonprofit use. Commercial use requires a separate license from [Big Cactus Labs](https://github.com/BigCactusLabs).
+[PolyForm Noncommercial 1.0.0](https://github.com/BigCactusLabs/dead-letter/blob/main/LICENSE) — free for personal, educational, and nonprofit use. Commercial use requires a separate license from [Big Cactus Labs](https://github.com/BigCactusLabs).

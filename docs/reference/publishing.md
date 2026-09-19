@@ -14,7 +14,7 @@ must not infer permission to perform them.
 | Event | Effect |
 | --- | --- |
 | Push `vX.Y.Z` | Creates a package source tag; does **not** itself publish to PyPI |
-| Publish a stable GitHub release for `vX.Y.Z` | Read-only preflight → PyPI upload → install readiness → MCPB and OCI → resolved MCP Registry metadata |
+| Publish a stable GitHub release for `vX.Y.Z` | Read-only source preflight → build once → packaged-install/README gate → upload those exact bytes to PyPI → install readiness → MCPB and OCI → resolved MCP Registry metadata |
 | Push `plugin-vX.Y.Z` | Plugin checks → exact PyPI pin available → marketplace PR/merge → compatibility `release` branch |
 | Publish a plugin GitHub release or a prerelease | Package publication jobs are skipped |
 | Edit the Homebrew tap | Separate maintainer-owned core-only formula update |
@@ -71,18 +71,20 @@ fabricate release notes from a version bump. Keep the PyPI ownership marker
 in README. The source `server.json` retains a zero MCPB hash and no OCI entry:
 those values are **build-time placeholders**, not publishable metadata.
 
-Run the source checks before merging:
+Run the source and packaged-install checks before merging:
 
 ```bash
 python scripts/release.py check --tag "v$VERSION"
 uv sync --extra dev --locked
-uv run pytest -q tests/core tests/backend tests/plugin
-node --test tests/frontend/*.test.js
-node --check src/dead_letter/frontend/static/app.js
-npx --yes @anthropic-ai/claude-code@2.1.145 plugin validate plugin/
-gh skill publish --dry-run
-uv build
+python scripts/verify.py full
+python scripts/verify.py packaging
 ```
+
+The [verification guide](verification.md) defines the modes and JSON outcomes;
+[Contributing](../../CONTRIBUTING.md#test-commands) retains individual commands.
+`full` includes Python/frontend suites, frontend syntax, plugin schema, Agent
+Skill dry run, and offline release metadata. `packaging` checks the distributions
+independently of the editable development environment.
 
 `gh skill publish --dry-run` requires a CLI version with skill support and
 publishes nothing. CI also runs cross-platform local MCPB smoke tests and,
@@ -93,6 +95,40 @@ validation nor a stdio smoke test proves a GUI client's installation flow.
 Merge the reviewed preparation PR, wait for its checks, and record the exact
 main-branch commit to release. Do not replace that recorded SHA with whatever
 `main` happens to point at later.
+
+## Packaged-artifact gate
+
+Source tests are necessary but cannot prove that a wheel contains its static
+resources or installs without development dependencies. Release jobs therefore
+form a strict chain: `preflight` → `build` → `test-package` → `publish`.
+
+`build` creates one wheel and one sdist with `uv build`, validates their embedded
+name/version/Markdown README metadata, and records SHA-256 checksums outside
+the distribution directory. Both files and `SHA256SUMS` travel together in the
+run-scoped `python-package-<commit>` Actions artifact. The release summary
+records the checksums even when a downstream job fails. Preserve this evidence
+in the completion ledger before the artifact's 30-day retention expires.
+
+`test-package` downloads that artifact and calls `verify.py packaging` with
+`--dist-dir` and `--checksums`; those arguments prohibit rebuilding. It runs
+pinned `twine==7.0.0` with `check --strict` on the actual distribution metadata,
+then installs the wheel core and each documented extra in separate venvs,
+plus the sdist core in another clean venv. Probes run outside the checkout
+with isolated Python and verify import origin/direct-artifact provenance,
+CLI conversion, MCP tool discovery/conversion, UI assets, extra imports, and
+source preservation. Full details and the local command are in [Verification](verification.md).
+
+`publish` has no checkout, dependency setup, or build step. It downloads the
+same artifact, verifies its checksums again, then passes only the distribution
+directory to the PyPI publisher under the existing environment/OIDC boundary.
+It cannot silently build different bytes after the tests.
+
+Use **rerun failed jobs**, retaining the successful build artifact. Do not
+rerun a successful build or overwrite its artifact name to recover a downstream
+failure. Missing/expired evidence requires an explicit maintainer recovery,
+not an untested rebuild labeled as the original package. MCPB and OCI retain
+their separate post-PyPI build/smoke contracts; this gate does not claim those
+channels directly embed the tested wheel or constitute fresh GUI tests.
 
 ## Publish To PyPI
 
@@ -116,9 +152,10 @@ gh release create "v$VERSION" --verify-tag --latest \
 
 Do not reuse or move an existing release tag. The workflow checks the tag
 namespace, every version relationship, dated changelog, tag-to-commit
-identity, main ancestry, and tests **before** PyPI publication. Publishing a
-GitHub release does not mean every downstream channel has succeeded: inspect
-the workflow's channel summary and the individual job steps.
+identity, main ancestry, source tests, and the packaged-artifact gate **before**
+PyPI publication. Publishing a GitHub release does not mean every downstream
+channel has succeeded: inspect the workflow's channel summary and individual
+job steps.
 
 The package upload includes PyPI attestations. Confirm the intended sdist and
 wheel are available, then exercise the published version with synthetic mail.
@@ -295,6 +332,7 @@ several docs:
 | Check | Record |
 | --- | --- |
 | Source | Package tag, exact commit, CI run, dated changelog |
+| Python build | Wheel/sdist filenames and SHA-256, build artifact/run, packaged-install and README outcomes |
 | PyPI | Version, sdist/wheel availability on both indexes, attestation, fixture result |
 | MCPB | Asset/checksum, stdio smoke; GUI client/OS results separately |
 | OCI | Index digest, both platforms, anonymous pull, provenance |
@@ -325,6 +363,8 @@ Reviewed September 19, 2026:
 [GitHub workflow events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows),
 [workflow triggering and token behavior](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow),
 [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/using-a-publisher/),
+[PyPA separated build/publish jobs](https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/),
+[Twine changelog](https://twine.readthedocs.io/en/stable/changelog.html),
 [MCP Registry GitHub Actions](https://modelcontextprotocol.io/registry/github-actions),
 [gh skill pinning](https://cli.github.com/manual/gh_skill_install), and
 [uv locking](https://docs.astral.sh/uv/concepts/projects/sync/).

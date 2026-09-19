@@ -26,6 +26,24 @@ The frontend is static Alpine.js/JavaScript; it has no application build step.
 
 ## Test Commands
 
+Use the shared runner after setup:
+
+```bash
+python scripts/verify.py quick
+python scripts/verify.py full
+python scripts/verify.py packaging
+```
+
+`full` covers the source suites and validators; `packaging` separately builds
+and tests installed artifacts outside the checkout. Independent checks keep
+running after failures. JSON goes to stdout, logs to stderr; exit 0 is all
+passed, 1 is a failure, and 2 is unable to run without a test failure. Missing
+`gh`/Node is never silently skipped. CI reuses `--suite` selections from this
+runner. See [Verification](docs/reference/verification.md) for exact coverage,
+prerequisites, JSON fields, and testing existing artifacts without rebuilding.
+
+Individual commands remain useful for focused debugging:
+
 | Suite | Command |
 | --- | --- |
 | Core | `uv run pytest -q tests/core` |
@@ -37,6 +55,7 @@ The frontend is static Alpine.js/JavaScript; it has no application build step.
 | Agent Skill validation | `gh skill publish --dry-run` |
 | Distribution metadata, offline | `python scripts/release.py check` |
 | Release-helper regressions, no app dependencies | `python -m unittest discover -s tests/plugin -p test_release.py -v` |
+| Packaging-helper regressions, no app dependencies | `python -m unittest discover -s tests/plugin -p test_package_verification.py -v` |
 | Single test | `uv run pytest -k "test_name"` |
 | Stop on first failure | `uv run pytest -x` |
 | Coverage | `uv run pytest --cov` |

@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
@@ -31,13 +31,14 @@ jobs:
         with:
           python-version: "3.12"
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
+          package-manager-cache: false
       - name: Setup uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Validate tag, source, and every version sync point before publication
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
@@ -48,21 +49,19 @@ jobs:
       - name: Validate the exact tagged source
         run: |
           uv sync --extra dev --locked
-          uv run pytest -q tests/core tests/backend tests/plugin
-          node --test tests/frontend/*.test.js
-          node --check src/dead_letter/frontend/static/app.js
+          python scripts/verify.py full
+        env:
+          GH_TOKEN: ${{ github.token }}
 
-  publish:
+  build:
     needs: preflight
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    environment: release
-    permissions:
-      contents: read
-      id-token: write
+    timeout-minutes: 15
+    outputs:
+      checksums: ${{ steps.record.outputs.checksums }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -73,13 +72,75 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
-          enable-cache: true
-      - name: Build
-        run: uv build
+          enable-cache: false
+      - name: Build distributions once
+        run: uv build --out-dir build/package/dist
+      - name: Validate distribution metadata and record exact build checksums
+        id: record
+        run: |
+          python scripts/package_artifacts.py record --dist-dir build/package/dist --checksums build/package/SHA256SUMS --version "${GITHUB_REF_NAME#v}"
+          {
+            echo 'checksums<<BUILD_CHECKSUMS'
+            cat build/package/SHA256SUMS
+            echo BUILD_CHECKSUMS
+          } >> "$GITHUB_OUTPUT"
+      - name: Preserve the complete build for testing and publication
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: python-package-${{ github.sha }}
+          path: build/package/
+          if-no-files-found: error
+          retention-days: 30
+
+  test-package:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout smoke scripts, not an import source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Setup uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: false
+      - name: Download the exact build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: python-package-${{ github.sha }}
+          path: build/package/
+      - name: Check rendered metadata and isolated noneditable installs
+        run: python scripts/verify.py packaging --dist-dir build/package/dist --checksums build/package/SHA256SUMS
+
+  publish:
+    needs: test-package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # This job deliberately has no source checkout, dependency installation,
+      # or build step. It can only upload the already-tested distribution pair.
+      - name: Download the exact tested build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: python-package-${{ github.sha }}
+          path: build/package/
+      - name: Verify exact tested bytes before upload
+        run: cd build/package/dist && sha256sum --check --strict ../SHA256SUMS
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # release/v1
+        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # v1.14.1
         with:
           attestations: true
+          packages-dir: build/package/dist/
 
   # Readiness is a separate read-only job: retrying index propagation must not
   # re-upload an already published Python distribution. Every artifact channel
@@ -90,7 +151,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -112,14 +173,15 @@ jobs:
       asset: ${{ steps.hash.outputs.asset }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
+          package-manager-cache: false
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -127,7 +189,7 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
-          enable-cache: true
+          enable-cache: false
       - name: Build the MCPB bundle or restore the published bytes
         env:
           GH_TOKEN: ${{ github.token }}
@@ -168,7 +230,8 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: ./.github/workflows/container.yml
+    # Job-level reuse resolves at the caller commit, never from runtime workspace files.
+    uses: ./.github/workflows/container.yml # zizmor: ignore[self-repository] Keep the documented same-commit reusable workflow contract; this is not a local step action.
     with:
       publish: true
 
@@ -181,7 +244,7 @@ jobs:
       contents: write # archive the fully resolved registry manifest for recovery
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -242,13 +305,16 @@ jobs:
 
   summary:
     if: always() && needs.preflight.result != 'skipped'
-    needs: [preflight, publish, pypi-ready, build-mcpb, build-container, publish-mcp]
+    needs: [preflight, build, test-package, publish, pypi-ready, build-mcpb, build-container, publish-mcp]
     runs-on: ubuntu-latest
     permissions: {}
     steps:
       - name: Record channel outcomes and remaining maintainer actions
         env:
           PREFLIGHT: ${{ needs.preflight.result }}
+          BUILD: ${{ needs.build.result }}
+          PACKAGE_TEST: ${{ needs.test-package.result }}
+          CHECKSUMS: ${{ needs.build.outputs.checksums }}
           PYPI: ${{ needs.publish.result }}
           READY: ${{ needs.pypi-ready.result }}
           MCPB: ${{ needs.build-mcpb.result }}
@@ -257,7 +323,12 @@ jobs:
         run: |
           {
             echo '## Package release channel outcomes'
-            printf '| Channel | Job result |\n|---|---|\n| Preflight | %s |\n| PyPI upload | %s |\n| PyPI install readiness | %s |\n| MCPB | %s |\n| OCI | %s |\n| MCP Registry | %s |\n' "$PREFLIGHT" "$PYPI" "$READY" "$MCPB" "$OCI" "$REGISTRY"
+            printf '| Channel | Job result |\n|---|---|\n| Preflight | %s |\n| Build | %s |\n| Packaged install and README | %s |\n| PyPI upload | %s |\n| PyPI install readiness | %s |\n| MCPB | %s |\n| OCI | %s |\n| MCP Registry | %s |\n' "$PREFLIGHT" "$BUILD" "$PACKAGE_TEST" "$PYPI" "$READY" "$MCPB" "$OCI" "$REGISTRY"
+            echo '### Recorded Python build checksums'
+            echo '```text'
+            printf '%s\n' "$CHECKSUMS"
+            echo '```'
+            echo 'These are build evidence, not proof of publication. Preserve them in the release completion ledger before the build artifact expires.'
             echo 'A failed PyPI upload job may already have uploaded files. Inspect its steps before retrying.'
             echo 'If only install readiness failed, rerun failed jobs; do not re-upload the successful package.'
             echo 'Still explicit: plugin tag/marketplace, core-only Homebrew update, desktop client smoke tests, and curated catalog outcomes. See docs/reference/publishing.md.'

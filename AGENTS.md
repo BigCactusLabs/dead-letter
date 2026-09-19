@@ -36,6 +36,9 @@ capability in user-facing docs.
   generation, mounted-path and tool checks
 - `scripts/release.py` — offline metadata checks and dry-run version patch;
   explicit network commands check PyPI or upload immutable release assets
+- `scripts/verify.py` — shared quick/full/packaging checks with JSON outcomes
+- `scripts/{package_artifacts,smoke_package,package_probe}.py` — built metadata,
+  checksum evidence, and isolated noneditable wheel/sdist probes
 - `tests/{core,backend,plugin,frontend}/` — suites split by module; synthetic
   `.eml` fixtures under `tests/core/fixtures/`
 - `docs/reference/` — durable public contracts and runbooks
@@ -51,7 +54,22 @@ uv sync --extra dev --locked
 python scripts/release.py check
 ```
 
-Run the targeted suite first, then broaden before declaring work done:
+Use the shared runner after setup; CI selects the same commands with `--suite`:
+
+```bash
+python scripts/verify.py quick
+python scripts/verify.py full
+python scripts/verify.py packaging
+```
+
+`full` checks source; `packaging` independently checks built distributions
+outside the checkout. stdout is JSON; logs go to stderr. Exit 0 means all
+selected checks passed, 1 means a failure, 2 means unable to run without a
+failure. Missing tools are not passes. See [Verification](docs/reference/verification.md)
+for scope and existing-artifact checks that never rebuild the tested bytes.
+
+Run the targeted suite first, then broaden before declaring work done.
+Individual commands remain available:
 
 ```bash
 uv run pytest -q tests/core

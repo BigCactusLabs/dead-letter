@@ -29,13 +29,11 @@ jobs:
             exit 1
           fi
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-          # Compatibility release pushes can carry workflow-file changes;
-          # the built-in GITHUB_TOKEN cannot grant Workflows:write.
-          token: ${{ secrets.RELEASE_PAT }}
+          persist-credentials: false
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -70,12 +68,13 @@ jobs:
           MCP_VERSION: ${{ steps.release.outputs.mcp_version }}
         run: python scripts/release.py wait-pypi "$MCP_VERSION"
       - name: Checkout marketplace
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: BigCactusLabs/bigcactuslabs-plugins
           ref: main
           path: marketplace
           token: ${{ secrets.RELEASE_PAT }}
+          persist-credentials: false
       - name: Publish plugin pointer through the marketplace
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
@@ -107,7 +106,8 @@ jobs:
           git switch -c "$branch"
           git add .claude-plugin/marketplace.json
           git commit -m "chore: publish dead-letter ${PLUGIN_VERSION}"
-          git push origin "HEAD:refs/heads/${branch}"
+          # Use the step token without storing credentials in either checkout.
+          git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin "HEAD:refs/heads/${branch}"
           pr_url=$(gh pr create \
             --repo "$MARKETPLACE_REPO" --base main --head "$branch" \
             --title "chore: publish dead-letter ${PLUGIN_VERSION}" \
@@ -115,9 +115,12 @@ jobs:
           gh pr merge --repo "$MARKETPLACE_REPO" "$pr_url" --squash --delete-branch
       - name: Fast-forward release to the tagged commit
         env:
+          # Compatibility pushes can carry workflow changes: Workflows:write
+          # is needed here, not during source validation or dependency setup.
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           PLUGIN_SHA: ${{ steps.release.outputs.sha }}
         # No force: a concurrent manual branch update must not be overwritten.
-        run: git push origin "$PLUGIN_SHA:refs/heads/release"
+        run: git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin "$PLUGIN_SHA:refs/heads/release"
       - name: Summarize release advance
         env:
           PLUGIN_VERSION: ${{ steps.release.outputs.plugin_version }}
