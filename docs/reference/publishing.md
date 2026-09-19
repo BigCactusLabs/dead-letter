@@ -8,8 +8,9 @@ the Homebrew tap.
 - GitHub releases publish to PyPI through `.github/workflows/release.yml`.
 - The same workflow then publishes server metadata to the Official MCP
   Registry (`registry.modelcontextprotocol.io`) via the `publish-mcp` job,
-  which runs after the PyPI publish succeeds. It authenticates with GitHub
-  OIDC (no stored secret) to claim the `io.github.BigCactusLabs/*` namespace.
+  which runs after the PyPI publish, `build-mcpb`, and `build-container` all
+  succeed. It authenticates with GitHub OIDC (no stored secret) to claim the
+  `io.github.BigCactusLabs/*` namespace.
 - The Homebrew tap is updated manually after PyPI publish succeeds.
 - The Homebrew formula installs the core CLI only: `dead-letter convert` and
   `dead-letter doctor`.
@@ -129,7 +130,8 @@ curl -fsSL https://pypi.org/pypi/dead-letter/X.Y.Z/json
 ## MCP Registry Publish (Automatic)
 
 The `publish-mcp` job in `.github/workflows/release.yml` runs after the PyPI
-publish and pushes `server.json` to the Official MCP Registry. From there the
+publish and after `build-mcpb` and `build-container`, then pushes `server.json`
+to the Official MCP Registry. From there the
 listing propagates automatically to the GitHub MCP Registry (`github.com/mcp`),
 PulseMCP, and other aggregators — no separate submission.
 
@@ -188,6 +190,33 @@ python scripts/smoke_mcpb.py dist/dead-letter-mcp-X.Y.Z.mcpb
 
 `scripts/build_mcpb.py --local-source .` builds against the checkout instead
 of PyPI. That variant is for CI only and is not releasable.
+
+## Container Image (Automatic)
+
+The `build-container` job in `.github/workflows/release.yml` calls
+`.github/workflows/container.yml` with `publish: true` after the PyPI publish;
+`publish-mcp` depends on it, so a container failure blocks the release's
+registry record. GHCR pushes happen only from that release call — pull request
+and `main` runs build and smoke-test the image with no publish credentials.
+It:
+
+- builds `linux/amd64,linux/arm64` from the release commit with provenance and
+  SBOMs and pushes it to GHCR under a `candidate-*` tag
+- re-pulls the published digest and re-runs `scripts/smoke_container.py` per
+  platform, comparing the advertised tool schemas against the live PyPI package
+- requires anonymous (unauthenticated) pulls to succeed, then promotes the
+  `X.Y.Z` version tag without overwriting an existing one
+- hands the verified index digest to `publish-mcp`, which appends the
+  digest-pinned OCI package to `server.json`
+
+The **first** release that includes this path needs one manual step: a newly
+created GHCR package is private by default, so make the new package public and
+then rerun the **failed jobs** (never overwrite a version tag; a full rebuild
+can produce a different digest). At that point the PyPI upload is already live
+and irreversible, and the MCP Registry keeps serving the previous version until
+the rerun succeeds. Launch, verification, and recovery detail:
+[containers.md](containers.md) — see "CI and release behavior" and "First
+publish and recovery".
 
 ## Update The Homebrew Tap
 
