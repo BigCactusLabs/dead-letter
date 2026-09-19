@@ -40,6 +40,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- MBOX import no longer mistakes folded header continuations for a top-level
+  `Content-Length` field. Source-change checks bind the opened file to its path,
+  respect Windows metadata semantics, and stop following appended data. Malformed
+  postmark tails no longer trigger quadratic regex backtracking. Interrupted
+  report appends publish only complete entries, and Ctrl-C during report
+  publication exits cleanly. Import/report tests now run on all three CI platforms (#103).
+- Conversion reports now replace lone surrogates outside surrogateescape's byte
+  range instead of aborting JSON generation, while preserving existing decoded-byte behavior.
 - Claude plugin releases now publish an explicit version, release tag, and
   commit SHA to the Big Cactus Labs marketplace before advancing the legacy
   `release` branch. This lets Cowork detect the marketplace commit and keeps

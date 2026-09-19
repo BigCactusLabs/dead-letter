@@ -20,7 +20,8 @@ Public recipe: [Gmail Takeout to Markdown/Cabinet](../../reference/gmail-takeout
    allocates starts/stops lists and a complete offset dictionary, using uncapped
    `readline()`. A convenient message iterator is not necessarily constant-memory
    in message count. Decision: small independent framing layer; keep the existing
-   MIME parser. Do not copy an entire `mailbox.mbox` into a list/DataFrame.
+   MIME parser. The stdlib reader is useful as a differential-test oracle for
+   its own writer's dialect, not as a universal conformance oracle.
 4. [Benjamin Yolken's first-person Gmail archive analysis](https://yolken.net/blog/six-years-of-emails),
    September 26, 2020. Its Takeout example has a numeric timezone **before** the
    year, X-GM-THRID and X-Gmail-Labels. Decision: include that postmark shape and
@@ -30,6 +31,33 @@ Public recipe: [Gmail Takeout to Markdown/Cabinet](../../reference/gmail-takeout
    Decision: preserve labels/headers/attachment-aware output and document local
    extraction of the downloaded container. Encrypted messages remain encrypted;
    an export capability is not permission to send private mail to another service.
+6. [RFC 5322 section 2.2.3](https://www.rfc-editor.org/rfc/rfc5322.html#section-2.2.3).
+   Folded header continuations belong to the preceding field. The review finding
+   on PR #115 was valid: trimming leading whitespace before identifying
+   Content-Length turned ordinary folded text into an archive-fatal condition.
+   Decision: exclude SP/TAB continuations before testing a storage-header name.
+7. [SQLite authors' testing practice](https://www.sqlite.org/testing.html),
+   especially I/O-error injection and integrity checks after failure. Adapted
+   the method, not a database dependency: inject partial writes, flush failures,
+   pre-commit interruption and final-copy interruption, then parse the produced
+   report and check its counts against actual committed entries. This does not
+   claim SQLite's power-loss durability or transactional guarantees.
+8. [Python 3.12 regex reference](https://docs.python.org/3.12/library/re.html).
+   Possessive quantifiers prevent backtracking through their matched text.
+   A malformed postmark with a long whitespace-only `remote from` tail and lone
+   CR reproduced quadratic time in the original pattern. Making that tail
+   possessive removes the overlapping redistribution against optional padding;
+   valid LF/CRLF/EOF and padding cases retain their behavior. A subprocess timeout
+   bounds the regression test itself if the vulnerable pattern returns.
+9. [Python filesystem APIs](https://docs.python.org/3.12/library/os.html) and
+   the Windows implementations in CPython 3.12.10
+   [fileutils.c](https://github.com/python/cpython/blob/v3.12.10/Python/fileutils.c)
+   and [posixmodule.c](https://github.com/python/cpython/blob/v3.12.10/Modules/posixmodule.c).
+   Bind descriptor bytes to path identity, but compare each metadata API against
+   its own initial timestamp baseline. The Windows path-stat wrapper substitutes
+   birth time for ctime; blindly requiring identical cross-API tuples produced
+   false source-change failures in the new Windows CI tests. No timestamp checks
+   are disabled: identity is compared across APIs and mutation within each API.
 
 ## Architecture
 
@@ -54,48 +82,87 @@ publish a valid schema-1 JSON object atomically with counters. Python callers
 must also consume lazily: accumulating returned results negates that property.
 Source byte limits bound admission, not peak MIME/HTML memory or CPU time.
 
-Per-record parser/render failures continue. Framing ambiguity or read/source
-mutation errors terminate the archive with an explicit fatal result and preserve
-prior outputs. Ctrl-C unwinds generators, cleans only newly created incomplete
-output, and lets the CLI publish an interrupted report. Neither native crashes,
-SIGKILL, nor power loss are claimed recoverable. Temporary EML/report storage is
-private, but normal user-selected outputs remain governed by filesystem policy.
+## Hardening and recovery contract
+
+Source integrity checks use the opened descriptor and the current named path,
+with independent initial metadata baselines. They run before emitting records
+and when resuming after each yield. Reads stop at the initially observed file
+size. Ordinary append, truncation, rewriting or replacement terminates the
+archive rather than silently mixing sources or following a growing spool.
+These are best-effort metadata checks, not an immutable snapshot, content-level
+concurrency protocol or defense against metadata restoration. Already emitted
+results cannot be retracted; callers must still supply immutable exports.
+
+Report append now commits one `(position, counters)` checkpoint only after the
+whole entry is written and flushed. A failed/interrupted append leaves an
+uncommitted tail; the next append or final publication truncates it. Tests cover
+failure during partial write, flush and position capture, with zero/one earlier
+entry, followed by valid JSON publication and another successful append.
+This checkpoint is in-process only; it is not a durable resume journal.
+
+File creation and receipt append are not one transaction. Ctrl-C between them
+can leave a complete output that is absent from the committed report prefix.
+The report's counters describe committed receipts, not all surviving files.
+Final report publication is a separate atomic replacement: interruption before
+replacement keeps the previous report and returns 130 without a traceback.
+Hard kills, native crashes and power loss remain outside this recovery claim.
+
+Shared report sanitization now handles all lone surrogates instead of raising
+UnicodeEncodeError for those outside surrogateescape's supported range. Existing
+round-trip behavior for surrogateescaped UTF-8 is preserved. This repair applies
+to ordinary EML reports too; it does not change the underlying email text.
+
+Temporary EML/report storage is private. User-selected outputs are subject to
+filesystem permissions; report publication remains last-writer-wins for two
+imports targeting the same directory. No version/release pointers were changed.
 
 ## Validation evidence and reproducibility
 
-- Initial isolated scanner suite: **17 passed**, Python 3.13.5 in the editing
-  environment. This does not substitute for the actual EML integration suite.
+- The first slice added 41 tests. The hardening pass adds 60 more cases across
+  framing, report fault injection, actual CLI behavior and platform contracts.
+- Seeded differential tests cover 240 messages written/read independently by
+  CPython. Comparisons include exact stored bytes, hashes and offsets; the
+  stdlib's deliberate removal of one storage blank line is accounted for
+  explicitly, not by stripping arbitrary whitespace. Another 240 generated
+  mboxrd messages round-trip through an independently implemented quoting rule.
 - A 10,000-message test enforces capped reads and confirms the first message is
   yielded after reading only it plus the next envelope, not indexing the archive.
-- `scripts/benchmark_mbox_stream.py --gib 2` reads a sparse synthetic archive
-  containing valid / giant newline-free / valid records. Local observation:
-  **2,147,483,864 bytes scanned; 9.032 seconds; 3,189,272 peak traced Python bytes**.
-  The giant record was rejected and the later record recovered. This is a framing
-  and >2 GiB offset/recovery probe, not a real mailbox or MIME throughput/RSS
-  benchmark. Times are environment-specific; sparse data is not representative
-  disk I/O. Run it with `uv run python scripts/benchmark_mbox_stream.py --gib 2`.
-- Integration tests cover synthetic Takeout labels and a real-format attachment,
-  malformed MIME recovery, collisions, injected per-message exceptions,
-  source preservation, dry run, cancellation, stream-report atomicity and CLI
-  result contracts. An existing long Gmail HTML thread fixture is compared with
-  standalone EML output to guard against a second rendering implementation.
-- Run the complete core/backend/plugin/frontend gates from AGENTS.md. PR check
-  results, not this document, are the authority for the latest test outcome.
+- Local isolated framing/report verification after the hardening fixes:
+  **73 passed** on Python 3.13.5. The local harness bypassed package initialization
+  to load the actual stdlib-only modules; it is not an end-to-end MIME test.
+  The full dependency-backed gates run in GitHub CI.
+- The existing three-OS CI matrix now runs the MBOX/report contract suites on
+  Linux, macOS and Windows before building/smoking the MCP bundle. One POSIX
+  open-file replacement test is explicitly skipped on Windows; a portable
+  identity-mismatch test still checks that invariant there. A pre-existing test
+  now reads UTF-8 report text explicitly rather than using the Windows locale.
+- A rerun of `scripts/benchmark_mbox_stream.py --gib 2` on the first hardening
+  commit scanned **2,147,483,864 bytes**, rejected the giant record and recovered
+  the following valid message: **9.798 seconds; 3,189,384 peak traced Python
+  bytes**. This is a sparse-file framing/offset/overflow probe, not real-mailbox
+  MIME throughput, process RSS or representative disk I/O. Times depend on the
+  environment. Run with `uv run python scripts/benchmark_mbox_stream.py --gib 2`.
+- Synthetic Takeout metadata/attachments, malformed MIME, collision safety,
+  dry run and actual latest/structured EML rendering parity remain covered.
+  PR Checks and linked CI logs are authoritative for each commit's final outcome.
 
-No user's email was used or uploaded. A real, consented multi-GB Takeout corpus
-has not been exercised in this editing session.
+No user's email was used or uploaded. An authorized real multi-GB Takeout corpus
+has not been exercised. Generated testing is useful evidence, not a substitute
+for that corpus or proof of universal dialect compatibility.
 
 ## Focused next experiments, not blockers for this slice
 
 1. Authorized Takeout samples from multiple export dates and label structures;
    compare record counts, attachment checksums and damaged-message diagnostics.
-2. Grammar/property-based framing fuzzing and differential tests against an
-   explicitly chosen dialect implementation. Compare bytes, not only subjects.
-   Include fake postmarks, folded headers and delimiter-adjacent long lines.
+2. Extend the deterministic differential/quoting tests into shrinking property
+   tests and mutation fuzzing for the chosen dialect. Include ambiguous fake
+   postmarks, damaged headers and delimiter-adjacent long lines. Do not compare
+   against a reference implementation on inputs where its dialect differs.
 3. Length-framed dialects require validated endpoints and fixtures before being
    advertised; blindly trusting or ignoring Content-Length is not acceptable.
-4. Source-fingerprint-validated resume/checkpointing and a durable JSONL journal
-   for hard-kill recovery. Do not describe the current suffix behavior as resume.
+4. Source-fingerprint-validated resume/checkpointing and a durable journal for
+   hard-kill recovery. Reconcile complete-but-unreceipted outputs. Do not describe
+   the current suffix behavior or in-process checkpoint as resumability.
 5. Profile single-message MIME/HTML amplification and consider subprocess resource
    budgets when converting hostile archives. Preserve existing EML behavior.
 6. Broaden discovery/portable-skill copy only when release surfaces can actually

@@ -98,6 +98,14 @@ Message exception text is not copied into the report because it can contain
 private content. Use the index, byte range and existing diagnostics to inspect
 the original locally.
 
+The reader binds the opened file handle to the named export and checks file
+identity, size and modification metadata at message boundaries. Reads never
+extend past the size observed when opening the archive. Detected replacement,
+append, truncation or rewriting stops the import with an archive error, rather
+than processing a moving target; earlier outputs are retained. These checks are
+best-effort mutation detection, not a filesystem snapshot or protection against
+an attacker restoring metadata. Always work from an immutable export.
+
 Reports retain schema version 1 with `job.input_mode: mbox`, per-result `mbox`
 provenance, and `mbox_options`. Source-order result entries include successes and
 failures. A fatal archive error has no `mbox` field and is an extra error entry,
@@ -106,12 +114,22 @@ mark the job `failed`, even if earlier outputs succeeded. Otherwise a mix of
 successes and failures is `completed_with_errors`.
 
 Exit status is 0 for success (including an empty mailbox), 1 for errors, and 130
-for Ctrl-C during conversion. With `--report`, Ctrl-C publishes a partial report
+for Ctrl-C. With `--report`, Ctrl-C during conversion publishes a partial report
 with status `interrupted`; completed outputs are retained and incomplete output
-is cleaned up. Report publication is atomic, so a failed final write leaves the
-previous report intact. A hard kill/power loss cannot guarantee a new report or
-cleanup. Reserve disk space for outputs, one staged message, the growing report
-spool, and its final atomic copy; the spool can approach the report size.
+is cleaned up. Only complete, committed report entries are published: a signal
+midway through an append cannot leave a dangling comma or incomplete JSON token.
+File output and report receipts are **not one atomic transaction**. The newest
+completed file can be absent from the report if interruption occurs before its
+receipt commits. Counts describe committed receipts, not a post-interruption
+rescan of the destination. This is not resumability or exactly-once ingestion.
+
+Report publication is atomic. Ctrl-C during the final report copy returns 130
+without a traceback; a failed or interrupted write before replacement leaves a
+previous report intact. A previous report may describe an older run, so inspect
+its timestamps/status and the files on disk. A hard kill/power loss cannot
+guarantee a new report or cleanup. Reserve disk space for outputs, one staged
+message, the growing report spool, and its final atomic copy; the spool can
+approach the report size.
 
 `--dry-run` parses and validates using temporary storage but creates no message
 outputs. `--dry-run --report` explicitly writes a report. Choose separate output
@@ -138,10 +156,11 @@ in this format; there is no universal reliable detector.
 
 Unsupported inputs fail explicitly when detectable: non-empty preambles and
 `Content-Length`-framed mboxcl/mboxcl2 mailboxes are refused, not silently treated
-as another dialect. Content-Length refusal is archive-fatal because continuing
-could misidentify body text as additional messages. Unknown postmark syntaxes,
-compressed files, live mail spools, PST/MSG and Apple Mail bundle directories are
-outside this slice. See the [research and design notes](../superpowers/specs/2026-09-18-mbox-ingestion.md).
+as another dialect. Folded continuation text containing `Content-Length:` is
+not a new storage header. Content-Length refusal is archive-fatal because
+continuing could misidentify body text as additional messages. Unknown postmark
+syntaxes, compressed files, live mail spools, PST/MSG and Apple Mail bundle
+directories are outside this slice. See the [research and design notes](../superpowers/specs/2026-09-18-mbox-ingestion.md).
 
 ## Python: consume lazily
 
@@ -157,4 +176,5 @@ with closing(convert_mbox("archive.mbox", output="markdown")) as results:
 Do not wrap a large import in `list(...)`. The lower-level
 `dead_letter.core.mbox.iter_mbox` exposes one temporary `.eml` at a time; read or
 copy its path before advancing the iterator, and close it when stopping early.
-Python callers can set both resource limits through `MboxLimits`.
+Python callers can set both resource limits through `MboxLimits`; byte counts
+must be integers, not floats or booleans.
