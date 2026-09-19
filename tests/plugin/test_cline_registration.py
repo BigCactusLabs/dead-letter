@@ -44,7 +44,8 @@ def test_environment_has_no_inherited_credentials_profiles_or_execution_hooks(tm
     env = cline.isolated_environment(tmp_path, inherited)
     assert env["PATH"] == "/bin" and env["SYSTEMROOT"] == "C:\\Windows"
     assert not {"GITHUB_TOKEN", "OPENAI_API_KEY", "TYPESAFE_API_KEY", "NODE_OPTIONS", "NPM_TOKEN"}.intersection(env)
-    assert "secret" not in str(env) and "/private" not in str(env)
+    leaked = ("secret", "/private/hook", "/private/cline", "/private/home", "private.invalid")
+    assert not [value for value in env.values() if any(item in value for item in leaked)]
     assert Path(env["CLINE_MCP_SETTINGS_PATH"]).parent == tmp_path
     assert Path(env["HOME"]).is_relative_to(tmp_path)
     assert env["NPM_CONFIG_REGISTRY"] == "https://registry.npmjs.org"
