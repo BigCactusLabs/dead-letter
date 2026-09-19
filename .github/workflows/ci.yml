@@ -34,6 +34,11 @@ jobs:
       - name: Sync workspace
         run: uv sync --extra dev --locked
 
+      # Record the synthetic merge commit and this interpreter's source path.
+      # Keep this in the test job: a separate workflow proves a different checkout.
+      - name: Checkout and import provenance
+        run: uv run python scripts/ci_provenance.py
+
       - name: Core tests
         run: uv run pytest -q tests/core
 
@@ -118,6 +123,12 @@ jobs:
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           enable-cache: true
+
+      - name: Checkout and import provenance
+        run: uv run --extra dev --locked python scripts/ci_provenance.py
+
+      - name: Provenance contracts
+        run: uv run --extra dev --locked python -m unittest discover -s tests/core -p test_ci_provenance.py
 
       - name: MBOX and streamed-report contracts
         shell: bash
