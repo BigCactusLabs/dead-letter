@@ -54,7 +54,7 @@ Individual commands remain useful for focused debugging:
 | Plugin schema | `npx --yes @anthropic-ai/claude-code@2.1.145 plugin validate plugin/` |
 | Agent Skill validation | `gh skill publish --dry-run` |
 | Distribution metadata, offline | `python scripts/release.py check` |
-| Release-helper regressions, no app dependencies | `python -m unittest discover -s tests/plugin -p 'test_release*.py' -v && python -m unittest discover -s tests/plugin -p test_homebrew_prepare.py -v` |
+| Release-helper regressions, no app dependencies | `for t in test_release.py test_release_status.py test_homebrew_prepare.py; do python -m unittest discover -s tests/plugin -p "$t" -v || exit 1; done` |
 | Packaging-helper regressions, no app dependencies | `python -m unittest discover -s tests/plugin -p test_package_verification.py -v` |
 | Single test | `uv run pytest -k "test_name"` |
 | Stop on first failure | `uv run pytest -x` |
