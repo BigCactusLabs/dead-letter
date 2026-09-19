@@ -26,6 +26,21 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("git merge-base --is-ancestor HEAD origin/main", scripts)
         self.assertIn("uv sync --extra dev --locked", scripts)
 
+    def test_privileged_publication_steps_keep_their_guards(self):
+        data = workflow("release.yml")
+        publish = data["jobs"]["publish"]
+        self.assertEqual(publish["environment"], "release")
+        self.assertEqual(publish["permissions"], {"contents": "read", "id-token": "write"})
+        pypi = next(step for step in publish["steps"] if step.get("name") == "Publish to PyPI")
+        self.assertTrue(pypi["with"]["attestations"])
+        registry = data["jobs"]["publish-mcp"]
+        self.assertEqual(registry["permissions"]["id-token"], "write")
+        install = next(step for step in registry["steps"] if step.get("name") == "Install mcp-publisher")
+        self.assertRegex(install["env"]["MCP_PUBLISHER_VERSION"], r"^v\d+\.\d+\.\d+$")
+        self.assertRegex(install["env"]["MCP_PUBLISHER_SHA256"], r"^[0-9a-f]{64}$")
+        self.assertIn("sha256sum --check --strict", install["run"])
+        self.assertNotIn("releases/latest", install["run"])
+
     def test_package_assets_are_reused_and_never_clobbered(self):
         data = workflow("release.yml")
         steps = data["jobs"]["build-mcpb"]["steps"]

@@ -173,9 +173,10 @@ def prepare(sources: dict[str, str], version: str, *, plugin_version: str | None
             package["identifier"] = f"{ASSET_ROOT}/v{version}/dead-letter-mcp-{version}.mcpb"
             package["fileSha256"] = "0" * 64
     result["server.json"] = encode(server)
-    manifest = json.loads(sources["mcpb/manifest.json"])
-    manifest["version"] = version
-    result["mcpb/manifest.json"] = encode(manifest)
+    # Edit the bundle manifest textually: re-encoding would reflow its inline
+    # arrays and bury the version bump in formatting churn.
+    result["mcpb/manifest.json"] = replace_once(
+        sources["mcpb/manifest.json"], r'^  "version": "[^"\n]+",$', f'  "version": "{version}",')
     ard = json.loads(sources[".well-known/ard.json"])
     for entry in ard["entries"]:
         entry["version"] = version

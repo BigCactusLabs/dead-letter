@@ -92,6 +92,9 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertIn('name = "dependency"\nversion = "0.3.1"', after["uv.lock"])
         self.assertIn('[tool.example]\nvalue = "untouched"', after["pyproject.toml"])
         self.assertEqual(json.loads(after["mcpb/manifest.json"])["tools"], [{"name": "convert_eml"}])
+        manifest_only = dict(before, **{"mcpb/manifest.json": after["mcpb/manifest.json"]})
+        hunk = [line for line in release.patch(before, manifest_only).splitlines() if line.startswith(("+ ", "- "))]
+        self.assertEqual(hunk, ['-  "version": "0.3.1",', '+  "version": "0.4.0",'])
 
     def test_prepare_can_defer_plugin_adoption(self):
         before = sources()
