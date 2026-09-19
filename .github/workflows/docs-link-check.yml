@@ -15,18 +15,31 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-
+      - name: Inventory maintained Markdown
+        run: |
+          # Tracked docs only: exclude synthetic mail/output fixtures and caches.
+          git ls-files '*.md' | python3 -c '
+          import sys
+          roots = {"docs", "plugin", "skills", "mcpb", "docker", ".github"}
+          files = [line.rstrip("\n") for line in sys.stdin]
+          docs = [p for p in files if "/" not in p or p.split("/")[0] in roots or p == "benchmarks/README.md"]
+          if not docs:
+              raise SystemExit("No maintained documentation found")
+          print("\n".join(docs))
+          ' > "$RUNNER_TEMP/docs-files.txt"
+          cat "$RUNNER_TEMP/docs-files.txt"
       - name: Check markdown links
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2
         with:
+          lycheeVersion: v0.24.2
           args: >-
             --no-progress
             --verbose
-            --exclude-path 'docs/internal/**'
-            --exclude '^http://127\\.0\\.0\\.1'
+            --root-dir .
+            --exclude '^http://127\.0\.0\.1'
             --exclude '^http://localhost'
-            README.md docs/**/*.md
+            --files-from '${{ runner.temp }}/docs-files.txt'
           fail: true
-          failIfEmpty: false
+          failIfEmpty: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
