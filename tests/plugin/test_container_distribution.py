@@ -7,6 +7,7 @@ import csv
 import importlib.util
 import io
 import json
+import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -106,6 +107,28 @@ def test_oci_is_digest_pinned_and_preserves_other_packages(server):
     user = next(a for a in arguments if a.get("name") == "--user")
     assert user["variables"]["container_user"]["default"] == "10001:10001"
     assert "latest" not in json.dumps(oci)
+
+
+def test_oci_package_omits_the_fields_the_registry_rejects():
+    oci = metadata.oci_package(DIGEST)
+    # The 2025-12-11 schema requires only these three package fields, and the
+    # registry's own OCI validator (internal/validators/registries/oci.go)
+    # rejects an OCI package that carries any of the three below.
+    assert {"registryType", "identifier", "transport"} <= oci.keys()
+    assert not {"version", "registryBaseUrl", "fileSha256"} & oci.keys()
+
+
+def test_server_and_image_identity_are_bound_across_release_inputs():
+    name = json.loads((ROOT / "server.json").read_text())["name"]
+    assert metadata.SERVER_NAME == smoke.SERVER_NAME == name
+    # ValidateOCI compares this label value, case-sensitively, to server.json.
+    label = re.search(
+        r'io\.modelcontextprotocol\.server\.name="([^"]+)"',
+        (ROOT / "Dockerfile").read_text(),
+    )
+    assert label is not None and label[1] == name
+    workflow = yaml.safe_load((ROOT / ".github/workflows/container.yml").read_text())
+    assert workflow["jobs"]["publish"]["env"]["IMAGE"] == metadata.IMAGE
 
 
 @pytest.mark.parametrize("change", [{"name": "wrong"}, {"version": "0.2.4"}, {"packages": []}])
