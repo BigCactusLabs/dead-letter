@@ -65,7 +65,7 @@ def readme(extra=""):
 
 
 def test_awesome_reads_link_targets_not_unrelated_mentions_or_fences():
-    text = readme(f"A mention: {audit.REPO}\n```markdown\n- [example]({audit.REPO})\n```\n- [namesake]({audit.REPO}-fake)\n")
+    text = readme(f"```markdown\n- [example]({audit.REPO})\n```\n- [namesake]({audit.REPO}-fake)\n")
     assert audit.awesome_result(text)["status"] == "not_in_snapshot"
     result = audit.awesome_result(text + f"- [BigCactusLabs/dead-letter]({audit.REPO}) - Local email.\n")
     assert result["status"] == "present" and result["matches"][0]["category"] == "Email"
@@ -133,6 +133,9 @@ def test_audit_preserves_partial_success_and_uses_immutable_readme(monkeypatch):
             raise audit.AuditError("HTTP 429")
         if url == audit.CLINE:
             body = json.dumps(catalog([])).encode()
+        elif "/contents/" in url:
+            content = readme(f"- [dead-letter]({audit.REPO})\n").encode()
+            body = json.dumps(blob_metadata(content)).encode()
         elif "api.github.com" in url:
             body = json.dumps({"sha": "a" * 40}).encode()
         else:
@@ -143,10 +146,44 @@ def test_audit_preserves_partial_success_and_uses_immutable_readme(monkeypatch):
     result = audit.audit()
     assert [r["status"] for r in result["results"]] == ["unknown", "not_in_snapshot", "present"]
     assert result["results"][0]["reason"] == "HTTP 429"
-    assert len(seen) == 4 and len(result["results"][2]["evidence"]) == 2
+    assert len(seen) == 5 and len(result["results"][2]["evidence"]) == 3
 
 
 @pytest.mark.parametrize("title", ["# Awesome MCP servers", '# <img src="logo.svg"> Awesome MCP Servers', '<h1 align="center">Awesome MCP Servers</h1>'])
 def test_awesome_recognizes_decorated_or_html_titles(title):
     text = readme(f"- [dead-letter]({audit.REPO})\n").replace("# Awesome MCP Servers", title)
     assert audit.awesome_result(text)["status"] == "present"
+
+
+def blob_metadata(body):
+    import hashlib
+    sha = hashlib.sha1(f"blob {len(body)}\0".encode() + body, usedforsecurity=False).hexdigest()
+    return {"type": "file", "path": "README.md", "size": len(body), "sha": sha}
+
+
+def test_readme_can_begin_with_language_badges_without_h1():
+    body = f"[English](README.md)\n## Email\n- [dead-letter]({audit.REPO})\n".encode()
+    audit.verify_readme_blob(blob_metadata(body), body)
+    result = audit.awesome_result(body.decode())
+    assert result["status"] == "present" and result["entries_checked"] == 1
+
+
+@pytest.mark.parametrize("change", [{"type": "symlink"}, {"path": "OTHER.md"}, {"size": True}, {"size": 0}, {"sha": "bad"}, {"sha": "0" * 40}, {"size": 1}])
+def test_readme_metadata_or_integrity_mismatch_fails(change):
+    body = b"the complete public README"
+    metadata = blob_metadata(body)
+    metadata.update(change)
+    with pytest.raises(audit.AuditError):
+        audit.verify_readme_blob(metadata, body)
+
+
+def test_truncated_readme_body_fails_even_with_recognizable_title():
+    body = readme(f"- [dead-letter]({audit.REPO})\n").encode()
+    with pytest.raises(audit.AuditError, match="pinned Git blob"):
+        audit.verify_readme_blob(blob_metadata(body), body[:-5])
+
+
+def test_unclassified_repository_reference_is_unknown_not_absence():
+    text = readme(f"- [another](https://github.com/other/project)\nSee {audit.REPO}/tree/main/server\n")
+    with pytest.raises(audit.AuditError, match="review manually"):
+        audit.awesome_result(text)

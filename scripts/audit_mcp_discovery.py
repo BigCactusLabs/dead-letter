@@ -152,16 +152,29 @@ def cline_result(document: dict) -> dict:
     }
 
 
+def verify_readme_blob(metadata: dict, body: bytes) -> None:
+    """Prove the raw response is the entire file from the pinned Git tree."""
+    sha = metadata.get("sha")
+    size = metadata.get("size")
+    if (metadata.get("type") != "file" or metadata.get("path") != "README.md"
+            or not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha)
+            or type(size) is not int or size <= 0 or size > MAX_BYTES):
+        raise AuditError("invalid pinned README metadata")
+    header = f"blob {len(body)}\0".encode("ascii")
+    actual = hashlib.sha1(header + body, usedforsecurity=False).hexdigest()
+    if size != len(body) or sha != actual:
+        raise AuditError("README bytes do not match the pinned Git blob")
+
+
 def awesome_result(text: str) -> dict:
-    # Reject HTML challenges and truncated/unrecognized content before reporting
-    # a miss. Snapshot hash/revision establish the exact README checked.
-    heading = re.search(r"(?im)^(?:#\s+|<h1\b)[^\n]*awesome mcp servers\b", text)
-    if heading is None or len(text.splitlines()) < 100:
-        first_line = text.splitlines()[0][:200] if text else ""
-        raise AuditError(f"unrecognized or incomplete Awesome README (lines={len(text.splitlines())}, first_line={first_line!r})")
+    # Completeness is established by verify_readme_blob(), not a brittle title
+    # or line-count heuristic. Only actual list rows outside code fences count.
     matches = []
     category = ""
     fence = None
+    entries_checked = 0
+    unclassified_reference = False
+    reference = re.compile(r"https://github\.com/BigCactusLabs/dead-letter(?=$|[/#?.)\s>])", re.I)
     for number, line in enumerate(text.splitlines(), 1):
         stripped = line.lstrip()
         fence_match = re.match(r"(`{3,}|~{3,})", stripped)
@@ -177,13 +190,22 @@ def awesome_result(text: str) -> dict:
         if line.startswith("##"):
             category = line.lstrip("# ")[:160]
         listing = re.match(r"^\s*[-*]\s+\[[^\]]+\]\((https://[^\s)]+)\)", line)
+        if listing:
+            entries_checked += 1
         if listing and same_repo(listing[1]):
             matches.append({"line": number, "category": category, "repo": REPO})
+        elif reference.search(line):
+            unclassified_reference = True
     if fence:
         raise AuditError("unterminated README code fence")
+    if not entries_checked:
+        raise AuditError("unrecognized README listing format")
+    if not matches and unclassified_reference:
+        raise AuditError("repository mentioned outside recognized listing rows; review manually")
     return {
         "status": "present" if matches else "not_in_snapshot", "matches": matches,
-        "scope": "exact repository links in the complete upstream README; not open submissions or other lists",
+        "entries_checked": entries_checked,
+        "scope": "exact repository links in verified upstream README list rows; not open submissions or other lists",
     }
 
 
@@ -205,8 +227,12 @@ def audit() -> dict:
                 sha = document.get("sha")
                 if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
                     raise AuditError("missing immutable README source revision")
+                description, receipt = fetch(f"https://api.github.com/repos/{AWESOME}/contents/README.md?ref={sha}")
+                evidence.append(receipt)
+                file_metadata = object_json(description)
                 body, receipt = fetch(f"https://raw.githubusercontent.com/{AWESOME}/{sha}/README.md")
                 evidence.append(receipt)
+                verify_readme_blob(file_metadata, body)
                 result = awesome_result(body.decode("utf-8"))
                 result["revision"] = sha
             results.append({"surface": surface, **result, "evidence": evidence})
