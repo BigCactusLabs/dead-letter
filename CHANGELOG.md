@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The container release job now resolves each platform's child manifest digest
+  from the pushed index and tests and anonymously re-pulls that per-platform
+  digest. One image store cannot hold two platform variants of the same index
+  reference, which failed the `0.3.0` container publish on arm64. The promoted
+  release tag still points at the tested index digest (#108).
+- The release workflow's PyPI wait now also requires the new version in the
+  PyPI simple index, not only the JSON API, and waits up to ten minutes. The
+  JSON API went live first for `0.3.0`, so the MCPB bundle's `uv lock` could
+  not resolve the pin it had just published (#107).
+
 ## [0.3.0] - 2026-09-19
 
 ### Added

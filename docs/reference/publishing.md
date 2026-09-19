@@ -141,8 +141,9 @@ How it works:
   version: the `<!-- mcp-name: io.github.BigCactusLabs/dead-letter -->` marker
   in `README.md` (which becomes the PyPI package description) and GitHub OIDC
   proving the workflow runs under the `BigCactusLabs` org.
-- The job waits for PyPI to serve the new version before publishing, because
-  the registry validates the marker against the live PyPI description.
+- The job waits for PyPI to serve the new version on both the JSON API and the
+  simple index before publishing, because the registry validates the marker
+  against the live PyPI description.
 - Because the marker ships in the package README, the registry publish only
   succeeds for releases cut **after** the marker landed on PyPI. `0.2.3` — the
   last release before the marker — predates it and was never registry-published;
@@ -169,7 +170,8 @@ mcp-publisher publish
 The `build-mcpb` job in `.github/workflows/release.yml` runs after the PyPI
 publish; `publish-mcp` now depends on it. It:
 
-- waits for PyPI to serve the new version, then builds the `.mcpb` bundle
+- waits for PyPI to serve the new version on both the JSON API and the simple
+  index that `uv` resolves against, then builds the `.mcpb` bundle
   against that real PyPI pin (`scripts/build_mcpb.py`, no `--local-source`)
 - smoke-tests the built bundle (`scripts/smoke_mcpb.py`)
 - uploads `dead-letter-mcp-X.Y.Z.mcpb` and its `.sha256` sidecar to the GitHub
