@@ -32,6 +32,12 @@ BigCactusLabs/bigcactuslabs-plugins marketplace. The package version lives in
   `.python-version`, `.mcpbignore`, `server/main.py`
 - `scripts/build_mcpb.py` — stages and packs the `.mcpb` bundle into `dist/`
 - `scripts/smoke_mcpb.py` — launches a built `.mcpb` and exercises its tools
+- `Dockerfile` — optional OCI image: locked multi-stage build, non-root stdio
+  runtime, MCP ownership and OCI labels
+- `docker/` — build constraints and the Docker MCP Catalog submission template
+- `scripts/container_metadata.py` — validates release inputs and generates the
+  digest-pinned OCI package entry and catalog submission
+- `scripts/smoke_container.py` — drives a built image over real stdio MCP
 - `tests/{core,backend,plugin,frontend}` — suites split by module; `.eml`
   fixtures in `tests/core/fixtures/`
 - `docs/reference/` — public contracts and runbooks; `docs/superpowers/` —
@@ -55,6 +61,15 @@ uv run pytest tests/plugin
 node --test tests/frontend/*.test.js
 node --check src/dead_letter/frontend/static/app.js
 ```
+
+CI also gates the container image: `.github/workflows/container.yml` builds the
+image natively on amd64 and arm64 and runs `scripts/smoke_container.py` against
+it on every pull request and `main` push that touches `Dockerfile`, `docker/`,
+`src/**`, the lockfile, or the container scripts and workflows. It needs Docker,
+so it cannot be run on a machine without a Docker daemon; what runs locally is
+the offline contract suite, `uv run pytest
+tests/plugin/test_container_distribution.py`, which covers the metadata,
+catalog, argv, and stdio-client logic without a container.
 
 CI also gates the portable Agent Skill. Run it locally after touching
 `skills/dead-letter/` (needs `gh` 2.90 or newer; it publishes nothing):

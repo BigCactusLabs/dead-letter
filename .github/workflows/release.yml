@@ -115,6 +115,17 @@ jobs:
           v="${{ steps.version.outputs.version }}"
           gh release upload "v${v}" "dist/dead-letter-mcp-${v}.mcpb" "dist/dead-letter-mcp-${v}.mcpb.sha256" --clobber
 
+  # First-class OCI artifact; this reusable workflow tests both architectures
+  # before publishing, then exports only a tested, publicly readable digest.
+  build-container:
+    needs: publish
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/container.yml
+    with:
+      publish: true
+
   # Publishes server metadata to the Official MCP Registry
   # (registry.modelcontextprotocol.io) after the PyPI release is live. From
   # there it propagates automatically to the GitHub MCP Registry, PulseMCP,
@@ -122,7 +133,7 @@ jobs:
   # io.github.BigCactusLabs/* namespace, so there is no stored secret. The
   # registry only stores metadata; the package itself lives on PyPI.
   publish-mcp:
-    needs: [publish, build-mcpb]
+    needs: [publish, build-mcpb, build-container]
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC, proves ownership of the io.github.BigCactusLabs namespace
@@ -179,6 +190,15 @@ jobs:
             echo "server.json MCPB fileSha256 is unset or a placeholder" >&2
             exit 1
           fi
+
+      - name: Add the verified OCI package to the release metadata
+        # Do not advertise an image in the committed manifest before it exists.
+        # Retains PyPI and MCPB; the immutable digest comes only from the gated
+        # container publication, never from a guessed tag or placeholder.
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          DIGEST: ${{ needs.build-container.outputs.digest }}
+        run: python3 scripts/container_metadata.py registry --version "$VERSION" --digest "$DIGEST"
 
       - name: Install mcp-publisher
         run: |

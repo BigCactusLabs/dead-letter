@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Optional OCI container distribution: locked multi-stage builds, non-root
+  stdio runtime, MCP ownership/OCI labels, native amd64/arm64 CI smoke tests,
+  and release-only GHCR publication with provenance and SBOMs. Version tags
+  are promoted only after published-digest tests and anonymous access checks;
+  release metadata then adds a digest-pinned OCI package while retaining PyPI
+  and MCPB. No `latest` tag or existing-version backfill is introduced (#108).
+- A generated Docker MCP Catalog submission candidate and
+  [container launch/release runbook](docs/reference/containers.md), including
+  selected read-only input/writable output mounts, host-user mapping,
+  license-review requirements, and explicit publication/admission gates.
+  Docker Catalog acceptance remains a separate pending step (#108).
 - A one-click MCP Bundle (`.mcpb`) for Claude Desktop and other MCPB-aware
   clients. The release workflow builds and smoke-tests the bundle against the
   published PyPI package, then attaches `dead-letter-mcp-X.Y.Z.mcpb` and its
