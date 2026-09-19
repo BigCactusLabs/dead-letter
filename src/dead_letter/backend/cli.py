@@ -13,7 +13,7 @@ from dead_letter.core import convert_dir as core_convert_dir
 from dead_letter.core.report import ReportEntry, build_report, write_report
 from dead_letter.core.types import ConvertResult, ThreadMode, ThreadOrder
 
-SUBCOMMANDS = frozenset({"convert", "doctor"})
+SUBCOMMANDS = frozenset({"convert", "doctor", "analyze"})
 
 
 def _add_convert_flags(parser: argparse.ArgumentParser) -> None:
@@ -61,6 +61,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor_parser = subs.add_parser("doctor", help="Check runtime environment")
     doctor_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    from dead_letter.backend.analysis_cli import add_arguments
+    analyze_parser = subs.add_parser(
+        "analyze", help="Experimental BYOK message analysis or offline preview",
+        allow_abbrev=False,
+    )
+    add_arguments(analyze_parser)
     return parser
 
 
@@ -201,6 +207,12 @@ def _run_doctor(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
+
+    # Use a dedicated error path: argparse must not echo a mistakenly supplied
+    # credential or private identity when rejecting analysis arguments.
+    if argv and argv[0] == "analyze":
+        from dead_letter.backend.analysis_cli import main as analysis_main
+        return analysis_main(argv[1:])
 
     # Backward compat: bare path → implicit convert
     if argv and argv[0] not in SUBCOMMANDS and not argv[0].startswith("-"):

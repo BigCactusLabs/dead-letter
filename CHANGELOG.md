@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Experimental semantic analysis: two candidate TypeSafe/JEV triage profiles,
+  normalized-evidence state assembly, redacted-by-default previews, effective-input
+  fingerprints, native-answer validation and a synthetic development seed. Real
+  `.eml` files use `prepare_eml` or `dead-letter analyze --provider typesafe --dry-run`
+  through a shared read-only core snapshot. Hashes bind to the exact parsed bytes;
+  pre-render quotes, signature text, unknown attribution and missing timezones
+  remain distinct. `--show-state` explicitly exposes private local evidence (#110).
+- Explicit single-message BYOK execution through the optional, exact TypeSafe SDK
+  0.7.0 uv overlay. CLI provider opt-in and async Python permission gates disclose
+  the validated host before sending normalized evidence. Request-local SDK logging
+  filters, redirect/response-size guards, SDK-owned bounded retries, safe attempt
+  records and versioned result envelopes keep failures distinct from predictions.
+  `doctor` reports SDK/key presence without contacting the provider. Dry-run and
+  ordinary conversion remain local; packaged extra, sidecars/resume and batches
+  remain pending. See [experimental analysis](docs/reference/experimental-analysis.md).
+- A dedicated SDK contract workflow runs the real pinned SDK with synthetic EML
+  and fake HTTP, including import-time DEBUG logging, timeout/cancellation,
+  redirect/auth, response-validation and retry boundaries. No live inference or
+  empirical email-triage quality claim is part of these tests (#110).
 - A one-click MCP Bundle (`.mcpb`) for Claude Desktop and other MCPB-aware
   clients. The release workflow builds and smoke-tests the bundle against the
   published PyPI package, then attaches `dead-letter-mcp-X.Y.Z.mcpb` and its
@@ -33,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Experimental analysis rejects Score values inconsistent with their probability
+  maps and Choice values that do not select a maximum-probability alternative,
+  while preserving native values and allowing numerical tolerance/ties (#110).
+- Quoted-message attribution debug logs no longer include private email prefixes.
 - Claude plugin releases now publish an explicit version, release tag, and
   commit SHA to the Big Cactus Labs marketplace before advancing the legacy
   `release` branch. This lets Cowork detect the marketplace commit and keeps
