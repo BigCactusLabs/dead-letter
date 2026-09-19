@@ -40,7 +40,7 @@ uvx --python 3.12 --from 'dead-letter[mcp]' dead-letter-mcp
 Unversioned examples resolve a published package through uv's cache/resolution behavior; they do not necessarily refresh to the newest release on every run. For a reviewed package release, pin `--from` to that exact version. The currently committed registry manifest pins:
 
 ```bash
-uvx --python 3.12 --from 'dead-letter[mcp]==0.3.0' dead-letter-mcp
+uvx --python 3.12 --from 'dead-letter[mcp]==0.3.1' dead-letter-mcp
 ```
 
 An exact package pin does not freeze transitive dependencies. Full reproducibility needs a resolved dependency lock/artifact and a recorded interpreter version. Do not substitute an unreleased branch or silently upgrade a configured installation.
