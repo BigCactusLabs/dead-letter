@@ -179,6 +179,11 @@ class HomebrewTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "origin"):
             h.tap_state(self.tap, VERSION, clean=True)
 
+    def test_separate_push_url_to_other_repository_refused(self):
+        subprocess.run(["git", "remote", "set-url", "--push", "origin", "https://example.test/wrong"], cwd=self.tap, check=True)
+        with self.assertRaisesRegex(ValueError, "push"):
+            h.tap_state(self.tap, VERSION, clean=True)
+
     def test_style_or_layout_failure_restores_only_formula(self):
         self.fail_style = True
         with self.assertRaises(Unavailable):
@@ -230,6 +235,15 @@ class HomebrewTests(unittest.TestCase):
             with self.assertRaisesRegex(Conflict, "changed after review"):
                 h.open_pr(self.tap, self.output, self.recipe, packet["diff_sha256"])
         self.assertFalse(any("push" in c or "commit" in c for c, _ in self.calls))
+
+    def test_formula_mode_change_after_review_prevents_any_remote_write(self):
+        packet = self.prepare()
+        self.path.chmod(self.path.stat().st_mode | 0o111)
+        self.calls.clear()
+        with patch.object(h, "run", side_effect=self.fake_run):
+            with self.assertRaisesRegex(Conflict, "mode change"):
+                h.open_pr(self.tap, self.output, self.recipe, packet["diff_sha256"])
+        self.assertFalse(any("push" in c or "commit" in c or "add" in c for c, _ in self.calls))
 
     def test_resource_versions_are_exact_for_sdist_and_wheels(self):
         for filename, expected in (("python_dateutil-2.9.0.post0.tar.gz", "2.9.0.post0"),

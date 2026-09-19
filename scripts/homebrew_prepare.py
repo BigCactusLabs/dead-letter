@@ -57,9 +57,11 @@ def tap_state(tap: Path, version: str, *, clean: bool) -> str:
     root = Path(run(["git", "rev-parse", "--show-toplevel"], cwd=tap).strip()).resolve()
     if root != tap.resolve():
         raise ValueError("--tap must identify the checkout root")
-    remote = run(["git", "remote", "get-url", "origin"], cwd=tap).strip()
-    if remote not in {REMOTE, REMOTE.removesuffix(".git"), f"git@github.com:{TAP}.git"}:
-        raise ValueError("tap origin must be BigCactusLabs/homebrew-tap")
+    allowed = {REMOTE, REMOTE.removesuffix(".git"), f"git@github.com:{TAP}.git"}
+    # A separate remote.origin.pushurl is what `git push origin` actually uses.
+    for flag in ((), ("--push",)):
+        if run(["git", "remote", "get-url", *flag, "origin"], cwd=tap).strip() not in allowed:
+            raise ValueError("tap origin fetch and push URLs must both be BigCactusLabs/homebrew-tap")
     branch = run(["git", "branch", "--show-current"], cwd=tap).strip()
     if branch != f"prepare/dead-letter-{stable(version)}":
         raise ValueError(f"create/switch to prepare/dead-letter-{version} before editing; main is never modified")
@@ -234,6 +236,9 @@ def open_pr(tap: Path, output: Path, recipe: dict, reviewed: str) -> dict:
         raise Conflict("staged or untracked tap files require review")
     if run(["git", "diff", "--name-only"], cwd=tap).splitlines() != [FORMULA]:
         raise Conflict("only the prepared formula may be dirty")
+    # The reviewed patch and hash cover bytes only; a mode change is unreviewed.
+    if run(["git", "diff", "--summary", "--", FORMULA], cwd=tap).strip():
+        raise Conflict("formula mode change after review requires a new preparation")
     current = (tap / FORMULA).read_bytes()
     parsed = formula(current.decode("utf-8"))
     if (parsed["version"] != recipe["version"] or parsed["url"] != recipe["sdist_url"]
