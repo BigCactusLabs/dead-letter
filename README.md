@@ -117,12 +117,12 @@ uv sync --extra mcp     # MCP only
 Install the portable Agent Skill into whichever agent you use:
 
 ```bash
-gh skill install BigCactusLabs/dead-letter dead-letter@main --agent claude-code
-gh skill install BigCactusLabs/dead-letter dead-letter@main --agent codex
-gh skill install BigCactusLabs/dead-letter dead-letter@main --agent github-copilot
+gh skill install BigCactusLabs/dead-letter dead-letter --agent claude-code
+gh skill install BigCactusLabs/dead-letter dead-letter --agent codex
+gh skill install BigCactusLabs/dead-letter dead-letter --agent github-copilot
 ```
 
-Needs `gh` 2.90 or newer. The `@main` pin is required until the first release tag that includes the skill; after that, `dead-letter` alone resolves the latest release. The skill is independent of the Claude plugin. For
+Needs `gh` 2.90 or newer. The skill is independent of the Claude plugin. For
 other hosts, manual installation, and discovery metadata, see
 [Agent Discovery](docs/reference/agent-discovery.md).
 

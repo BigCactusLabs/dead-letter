@@ -33,18 +33,16 @@ the plugin, and the plugin does not install it.
 With the GitHub CLI (`gh` 2.90 or newer), pick the agent you want:
 
 ```bash
-gh skill install BigCactusLabs/dead-letter dead-letter@main --agent claude-code
-gh skill install BigCactusLabs/dead-letter dead-letter@main --agent codex
-gh skill install BigCactusLabs/dead-letter dead-letter@main --agent github-copilot
+gh skill install BigCactusLabs/dead-letter dead-letter --agent claude-code
+gh skill install BigCactusLabs/dead-letter dead-letter --agent codex
+gh skill install BigCactusLabs/dead-letter dead-letter --agent github-copilot
 ```
 
 Add `--scope user` to install for every repository instead of the current one.
 
-The `@main` pin is there because `gh skill install` resolves the repository's
-latest tag before the default branch, so a skill added after the newest
-`vX.Y.Z` tag is invisible to the unpinned form until the next release. Once a
-release tag includes `skills/dead-letter/`, drop the pin to get the latest
-release, or keep it to track main.
+`gh skill install` resolves the repository's latest tag before the default
+branch, so the unpinned form installs the skill as of the newest `vX.Y.Z`
+release. Add a `@main` pin to track the default branch instead.
 
 The installed frontmatter gains `metadata.github-*` tracking keys, and `gh`
 rewrites the key order; both are expected and `gh skill update` relies on them.
