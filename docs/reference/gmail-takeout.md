@@ -181,7 +181,7 @@ as another dialect. Folded continuation text containing `Content-Length:` is
 not a new storage header. Content-Length refusal is archive-fatal because
 continuing could misidentify body text as additional messages. Unknown postmark
 syntaxes, compressed files, live mail spools, PST/MSG and Apple Mail bundle
-directories are outside this slice. See the [research and design notes](../superpowers/specs/2026-09-18-mbox-ingestion.md).
+directories are outside this slice. See the [research and design notes](../project/2026-09-18-mbox-ingestion.md).
 
 ## Python: consume lazily
 

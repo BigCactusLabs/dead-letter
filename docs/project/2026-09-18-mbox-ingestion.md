@@ -2,7 +2,7 @@
 
 Reviewed September 18, 2026. This is an implementation/design record, not a
 claim of universal MBOX conformance or empirical coverage of every Gmail export.
-Public recipe: [Gmail Takeout to Markdown/Cabinet](../../reference/gmail-takeout.md).
+Public recipe: [Gmail Takeout to Markdown/Cabinet](../reference/gmail-takeout.md).
 
 ## Sources that changed the implementation
 

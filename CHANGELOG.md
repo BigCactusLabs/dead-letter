@@ -22,6 +22,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   source/attachment bundles. See the [Takeout recipe](docs/reference/gmail-takeout.md).
   Explicit quoting policies avoid guessing; Content-Length-framed dialects,
   compressed/live mailboxes and MCP/web ingestion are outside this slice (#103).
+
+### Fixed
+
+- MBOX import no longer mistakes folded header continuations for a top-level
+  `Content-Length` field. Source-change checks bind the opened file to its path,
+  respect Windows metadata semantics, and stop following appended data. Malformed
+  postmark tails no longer trigger quadratic regex backtracking. Interrupted
+  report appends publish only complete entries, and Ctrl-C during report
+  publication exits cleanly. Import/report tests now run on all three CI platforms (#103).
+- Conversion reports now replace lone surrogates outside surrogateescape's byte
+  range instead of aborting JSON generation, while preserving existing decoded-byte behavior.
+
+## [0.3.1] - 2026-09-19
+
+### Fixed
+
+- The container release job now resolves each platform's child manifest digest
+  from the pushed index and tests and anonymously re-pulls that per-platform
+  digest. One image store cannot hold two platform variants of the same index
+  reference, which failed the `0.3.0` container publish on arm64. The promoted
+  release tag still points at the tested index digest (#108).
+- The release workflow's PyPI wait now also requires the new version in the
+  PyPI simple index, not only the JSON API, and waits up to ten minutes. The
+  JSON API went live first for `0.3.0`, so the MCPB bundle's `uv lock` could
+  not resolve the pin it had just published (#107).
+
+## [0.3.0] - 2026-09-19
+
+### Added
+
+- Optional OCI container distribution: locked multi-stage builds, non-root
+  stdio runtime, MCP ownership/OCI labels, native amd64/arm64 CI smoke tests,
+  and release-only GHCR publication with provenance and SBOMs. Version tags
+  are promoted only after published-digest tests and anonymous access checks;
+  release metadata then adds a digest-pinned OCI package while retaining PyPI
+  and MCPB. No `latest` tag or existing-version backfill is introduced (#108).
+- A generated Docker MCP Catalog submission candidate and
+  [container launch/release runbook](docs/reference/containers.md), including
+  selected read-only input/writable output mounts, host-user mapping,
+  license-review requirements, and explicit publication/admission gates.
+  Docker Catalog acceptance remains a separate pending step (#108).
 - A one-click MCP Bundle (`.mcpb`) for Claude Desktop and other MCPB-aware
   clients. The release workflow builds and smoke-tests the bundle against the
   published PyPI package, then attaches `dead-letter-mcp-X.Y.Z.mcpb` and its
@@ -34,8 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GitHub Copilot, Cursor, Amp, and Gemini CLI. It covers the MCP tools and the
   `uvx` CLI path, states the `.eml`-only input boundary, and carries the
   untrusted-email-content rule. Install it with
-  `gh skill install BigCactusLabs/dead-letter dead-letter@main --agent <agent>`
-  (the `@main` pin is needed until a release tag includes the skill).
+  `gh skill install BigCactusLabs/dead-letter dead-letter --agent <agent>`.
   The Claude-specific skill under `plugin/skills/` is unchanged (#109).
 - An Agentic Resource Discovery catalog at `.well-known/ard.json` advertising
   the MCP server and the portable skill to ARD-aware crawlers. Both entries'
@@ -46,14 +86,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- MBOX import no longer mistakes folded header continuations for a top-level
-  `Content-Length` field. Source-change checks bind the opened file to its path,
-  respect Windows metadata semantics, and stop following appended data. Malformed
-  postmark tails no longer trigger quadratic regex backtracking. Interrupted
-  report appends publish only complete entries, and Ctrl-C during report
-  publication exits cleanly. Import/report tests now run on all three CI platforms (#103).
-- Conversion reports now replace lone surrogates outside surrogateescape's byte
-  range instead of aborting JSON generation, while preserving existing decoded-byte behavior.
 - Claude plugin releases now publish an explicit version, release tag, and
   commit SHA to the Big Cactus Labs marketplace before advancing the legacy
   `release` branch. This lets Cowork detect the marketplace commit and keeps
@@ -70,7 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of the generic `email` filename (#95).
 - `JobManager` now retains references to background job tasks so a running
   job can no longer be garbage-collected mid-run; exceptions escaping the job
-  runner are now logged instead of silently lost (#96).
+  runner are now logged (#96).
 - Nested HTML lists now preserve indentation and use `-` bullets at every
   level instead of cycling markers by depth, so converted Markdown nests
   correctly under CommonMark instead of splitting into sibling lists (#89).

@@ -1,354 +1,330 @@
 # Publishing
 
-This is the maintainer runbook for cutting a dead-letter release and updating
-the Homebrew tap.
+The maintainer runbook for package releases, Claude plugin releases, and
+channel recovery. For user-facing installation choices, use the
+[distribution map](distribution.md).
 
 ## Policy
 
-- GitHub releases publish to PyPI through `.github/workflows/release.yml`.
-- The same workflow then publishes server metadata to the Official MCP
-  Registry (`registry.modelcontextprotocol.io`) via the `publish-mcp` job,
-  which runs after the PyPI publish succeeds. It authenticates with GitHub
-  OIDC (no stored secret) to claim the `io.github.BigCactusLabs/*` namespace.
-- The Homebrew tap is updated manually after PyPI publish succeeds.
-- The Homebrew formula installs the core CLI only: `dead-letter convert` and
-  `dead-letter doctor`.
-- Do not bundle the optional UI or MCP dependency stacks in the tap. Users who
-  need those should install `dead-letter[ui]` or `dead-letter[mcp]` with
-  `pipx`, or run them from source with `uv`.
-- Cowork detects personal-marketplace updates from commits to the marketplace
-  repository. Moving a branch in a downstream plugin repository does not make
-  that marketplace stale. Each plugin release must therefore update the
-  marketplace entry's `version`, tag `ref`, and commit `sha` together.
-- A Claude community marketplace listing must not track this repository's
-  default-branch `HEAD`. The community catalog pins plugins to a SHA and its
-  current updater follows upstream `HEAD` by default. Before submission, record
-  the source repository, plugin path, source ref, initial SHA, and automatic
-  update target; submit only when ordinary `main` pushes cannot advance the
-  catalog pin. A `ref: release` field alone is not proof that the catalog's
-  updater honors the release pointer. As of August 11, 2026, the existing
-  candidate source (`BigCactusLabs/dead-letter`, path `plugin`, ref `release`)
-  is blocked from submission because the community workflow resolves repository
-  `HEAD` and does not wire its available release-only tracking option.
+Release preparation is reviewable source work. Tagging, GitHub release
+publication, marketplace updates, and Homebrew changes are separate,
+intentional maintainer actions. An agent doing development or a docs audit
+must not infer permission to perform them.
+
+| Event | Effect |
+| --- | --- |
+| Push `vX.Y.Z` | Creates a package source tag; does **not** itself publish to PyPI |
+| Publish a stable GitHub release for `vX.Y.Z` | Read-only preflight → PyPI upload → install readiness → MCPB and OCI → resolved MCP Registry metadata |
+| Push `plugin-vX.Y.Z` | Plugin checks → exact PyPI pin available → marketplace PR/merge → compatibility `release` branch |
+| Publish a plugin GitHub release or a prerelease | Package publication jobs are skipped |
+| Edit the Homebrew tap | Separate maintainer-owned core-only formula update |
+
+Only stable `X.Y.Z` package releases are supported by the publication gate.
+Do not sneak a prerelease, build suffix, or plugin tag into that channel. Add
+a separately reviewed prerelease policy before expanding it. Plugin asset
+versions are independent of package versions; see [the model below](#plugin-versioning-model).
+
+PyPI and the MCP Registry use job-scoped OIDC. The existing `release` GitHub
+environment remains the PyPI boundary. PR checks never receive publication
+credentials. The registry publisher is pinned to a reviewed version and
+archive checksum in the workflow; upgrade both together, not `latest`.
+
+Do not enable a HEAD-tracking community marketplace while merging unreleased
+plugin assets to `main`. The previous review of Anthropic's community updater
+found a HEAD-tracking blocker. Recheck its current policy before submission;
+a separate catalog's automation must not bypass this repo's release-only
+contract. No catalog enrollment or license change is implied by this runbook.
 
 ## Prepare The Release
 
-1. Choose the next semantic version.
-2. Update release metadata:
-   - `pyproject.toml`
-   - `uv.lock`
-   - `src/dead_letter/__init__.py`
-   - `CHANGELOG.md`
-   - `server.json` — bump `version`, `packages[0].version`, and the
-     `dead-letter[mcp]==X.Y.Z` pin in `packages[0].runtimeArguments`. The
-     `publish-mcp` job re-stamps these from the release tag, so this is
-     belt-and-suspenders for local `mcp-publisher publish` runs, but keep it
-     in sync.
-   - `plugin/.claude-plugin/plugin.json` — bump `version` to `X.Y.Z`.
-   - `plugin/.mcp.json` — bump the `dead-letter[mcp]==X.Y.Z` pin.
-   - `mcpb/manifest.json` — bump `version` to `X.Y.Z`.
-   - `mcpb/pyproject.toml` — bump `version` and the `dead-letter[mcp]==X.Y.Z`
-     pin. `scripts/build_mcpb.py` refuses to build if `mcpb/manifest.json`,
-     `mcpb/pyproject.toml`, and its dependency pin don't all match
-     `pyproject.toml`; `tests/plugin/test_mcpb_bundle.py` enforces the same
-     sync in CI.
-   - `.well-known/ard.json` — bump `version` on both entries.
-     `tests/plugin/test_ard_catalog.py` enforces that they match
-     `server.json`. See
-     [agent-discovery.md](agent-discovery.md).
-
-   Bump the plugin files **in lockstep with the package by default**: an
-   aligned release ships the same version to PyPI and to plugin users, so the
-   plugin bump belongs in this same release-prep commit. The only reason to
-   skip them here is a deliberate plugin-only patch or an intentional decision
-   *not* to adopt this package version into the plugin yet — see
-   [Plugin Versioning Model](#plugin-versioning-model). Forgetting them is what
-   left the marketplace on a stale version before; CI now emits a warning when
-   the plugin pin lags `pyproject.toml` (see `.github/workflows/ci.yml`).
-3. Verify the version import:
-
-   ```bash
-   uv run python -c "import dead_letter; print(dead_letter.__version__)"
-   ```
-
-4. Run local validation. This block mirrors the `ci.yml` job steps so a local
-   pass implies a CI pass; if you intentionally skip a step (for example, the
-   pinned plugin validator cannot be downloaded), note that in the release-prep
-   PR description so reviewers know CI is the first place that step runs.
-
-   ```bash
-   uv sync --extra dev --locked
-   uv run pytest -q tests/core
-   uv run pytest -q tests/backend
-   uv run pytest -q tests/plugin
-   npx --yes @anthropic-ai/claude-code@2.1.145 plugin validate plugin/
-   node --test tests/frontend/*.test.js
-   node --check src/dead_letter/frontend/static/app.js
-   uv build
-   ```
-
-5. Commit and push the release-prep change to `main`.
-6. Wait for the `main` CI and docs-link-check workflows to pass.
-
-If dead-letter is listed in Anthropic's community marketplace, inspect its
-catalog entry before step 5. Stop if the entry follows default-branch `HEAD` or
-if its update target cannot be proven release-only: pushing release-prep to
-`main` could otherwise publish a plugin whose exact PyPI pin is not live yet.
+Start from a reviewed working branch. Choose the next package version
+explicitly; the helper does not choose a version, create tags, or publish a
+package. Python 3.12+ is sufficient for the offline commands:
 
 ```bash
-gh api -H 'Accept: application/vnd.github.raw+json' \
-  repos/anthropics/claude-plugins-community/contents/.claude-plugin/marketplace.json \
-  | jq -e '.plugins[] | select(.name == "dead-letter")'
+python scripts/release.py check
+
+VERSION=X.Y.Z # replace with the intended next stable package version
+python scripts/release.py prepare "$VERSION" > /tmp/dead-letter-release.patch
+git apply --check /tmp/dead-letter-release.patch
+# Review the patch before this deliberate source edit:
+git apply /tmp/dead-letter-release.patch
+uv lock --check
 ```
+
+`prepare` prints a patch and changes **no files**. `git apply` applies it only
+after review. It updates the project and import versions, the editable root
+lock record, PyPI/MCPB registry metadata, bundle metadata and exact dependency,
+ARD entries, and (by default) the plugin asset version and exact runtime pin.
+Dependency versions and checksums in `uv.lock` are not refreshed by this
+operation. Dependency changes require their own reviewed lock update.
+
+Use `prepare "$VERSION" --keep-plugin` to defer plugin adoption explicitly,
+or `--plugin-version A.B.C` when the plugin's independent sequence is ahead.
+The helper rejects version reuse/rollback. A deliberately different exact
+plugin pin is a warning, not a package-release failure; record the deferral.
+For a plugin-only release, change its manifest version and, only when needed,
+its exact `.mcp.json` package pin; do not bump every package artifact.
+
+Finalize a dated `## [X.Y.Z] - YYYY-MM-DD` entry in `CHANGELOG.md`. Do not
+fabricate release notes from a version bump. Keep the PyPI ownership marker
+in README. The source `server.json` retains a zero MCPB hash and no OCI entry:
+those values are **build-time placeholders**, not publishable metadata.
+
+Run the source checks before merging:
+
+```bash
+python scripts/release.py check --tag "v$VERSION"
+uv sync --extra dev --locked
+uv run pytest -q tests/core tests/backend tests/plugin
+node --test tests/frontend/*.test.js
+node --check src/dead_letter/frontend/static/app.js
+npx --yes @anthropic-ai/claude-code@2.1.145 plugin validate plugin/
+gh skill publish --dry-run
+uv build
+```
+
+`gh skill publish --dry-run` requires a CLI version with skill support and
+publishes nothing. CI also runs cross-platform local MCPB smoke tests and,
+for container-related paths, native amd64/arm64 container checks. The docs
+link check and the fast `release-check` metadata job must pass. Neither CLI
+validation nor a stdio smoke test proves a GUI client's installation flow.
+
+Merge the reviewed preparation PR, wait for its checks, and record the exact
+main-branch commit to release. Do not replace that recorded SHA with whatever
+`main` happens to point at later.
 
 ## Publish To PyPI
 
-Create and publish the GitHub release from the verified release-prep commit:
+From the recorded, reviewed release checkout, replace the placeholders below:
 
 ```bash
-git tag -a vX.Y.Z -m "vX.Y.Z"
-git push origin vX.Y.Z
-gh release create vX.Y.Z --verify-tag --title vX.Y.Z --notes-file /path/to/release-notes.md
+VERSION=X.Y.Z
+RELEASE_SHA=FULL_40_CHARACTER_REVIEWED_MAIN_COMMIT
+
+git fetch origin main --tags
+git switch --detach "$RELEASE_SHA"
+python scripts/release.py check --tag "v$VERSION"
+git merge-base --is-ancestor HEAD origin/main
+# No local changes may be left in the release checkout.
+test -z "$(git status --porcelain)"
+git tag -a "v$VERSION" "$RELEASE_SHA" -m "dead-letter $VERSION"
+git push origin "refs/tags/v$VERSION"
+gh release create "v$VERSION" --verify-tag --latest \
+  --notes-file /absolute/path/outside-the-repo/release-notes.md
 ```
 
-Publishing the GitHub release triggers `.github/workflows/release.yml`, which
-builds the package and publishes it to PyPI with attestations. Confirm the
-release workflow succeeds:
+Do not reuse or move an existing release tag. The workflow checks the tag
+namespace, every version relationship, dated changelog, tag-to-commit
+identity, main ancestry, and tests **before** PyPI publication. Publishing a
+GitHub release does not mean every downstream channel has succeeded: inspect
+the workflow's channel summary and the individual job steps.
+
+The package upload includes PyPI attestations. Confirm the intended sdist and
+wheel are available, then exercise the published version with synthetic mail.
+A successful upload can precede availability on the simple index used by
+installers. The separate, read-only `pypi-ready` job uses the same bounded
+helper as plugin publication, checking the JSON API, unyanked distribution
+availability, and simple index before MCPB, container, or registry work starts:
 
 ```bash
-gh run list --all --limit 10 --json databaseId,status,conclusion,workflowName,event,headBranch,headSha,url
-gh run watch RUN_ID --compact --exit-status
+python scripts/release.py wait-pypi "$VERSION"
 ```
 
-Confirm PyPI has the new version:
+If `publish` succeeds but `pypi-ready` fails, rerun **failed jobs**. The
+readiness retry does not re-upload the successful package. The readiness gate
+also protects the container's comparison against the exact PyPI tool schemas;
+it must not be removed just because a local container build needs no PyPI
+release. Avoid duplicating readiness checks in separate shell loops.
 
-```bash
-curl -fsSL https://pypi.org/pypi/dead-letter/X.Y.Z/json
-```
+Use a maintainer-authorized CLI/session for the release event. A release
+created by another workflow's default `GITHUB_TOKEN` generally does not start
+a new release-triggered workflow; do not add an unattended tag/release bot
+without designing its authorization and event chain.
 
 ## MCP Registry Publish (Automatic)
 
-The `publish-mcp` job in `.github/workflows/release.yml` runs after the PyPI
-publish and pushes `server.json` to the Official MCP Registry. From there the
-listing propagates automatically to the GitHub MCP Registry (`github.com/mcp`),
-PulseMCP, and other aggregators — no separate submission.
+The registry job waits for successful PyPI readiness, MCPB, and OCI jobs. It
+stamps the bundle's actual SHA-256 and URL, adds the tested OCI index digest,
+archives `dead-letter-server-X.Y.Z.json` plus its checksum, then publishes
+using GitHub OIDC. The archived manifest is the exact input to the publisher,
+not proof that registry publication succeeded; verify the registry's exact version.
 
-How it works:
+The committed `server.json` is a source template. **Never manually publish it
+with a zero bundle hash or invent an OCI digest.** The resolved manifest
+assets are produced only by releases using this refreshed workflow; do not
+expect them on older releases such as `0.3.1`.
 
-- Ownership is proven by two things that must both be true for a given
-  version: the `<!-- mcp-name: io.github.BigCactusLabs/dead-letter -->` marker
-  in `README.md` (which becomes the PyPI package description) and GitHub OIDC
-  proving the workflow runs under the `BigCactusLabs` org.
-- The job waits for PyPI to serve the new version before publishing, because
-  the registry validates the marker against the live PyPI description.
-- Because the marker ships in the package README, the registry publish only
-  succeeds for releases cut **after** the marker landed on PyPI. `0.2.3` — the
-  last release before the marker — predates it and was never registry-published;
-  the first successful MCP publish landed with the `0.2.4` release. No backfill
-  is possible for `0.2.3`.
-- The MCP Registry is in preview and may reset its data. Because every release
-  re-publishes, a reset self-heals on the next release; to force a re-publish
-  without a version bump, run the steps below locally.
+For a registry-only recovery, prefer rerunning the failed registry job with
+its successful upstream outputs. For a maintainer-authorized manual recovery,
+download the matching archived manifest and sidecar into an isolated working
+directory, verify the checksum, inspect the package version, bundle URL/hash,
+and OCI digest against the successful run, and use that file as `server.json`
+with the workflow's pinned/checksummed publisher. Do not overwrite an existing
+registry version to hide a mismatch. For older releases without an archive,
+recover the exact original artifact/digest evidence from the successful jobs;
+absence of that evidence is not permission to reconstruct guessed metadata.
 
-Manual publish (only if you need to re-publish outside a release, e.g. after a
-registry data reset):
-
-```bash
-# One-time: install the CLI
-brew install mcp-publisher   # or download from the registry releases page
-
-# From a checkout whose server.json version matches a version already on PyPI:
-mcp-publisher login github    # browser device-code flow
-mcp-publisher publish
-```
+Ownership depends on the README/PyPI MCP marker and repository identity. The
+initial publication was `0.2.4`; do not treat pre-marker releases as
+backfillable simply because today's template is valid. Aggregators and
+curated directories can lag or require separate review.
 
 ## MCPB Bundle (Automatic)
 
-The `build-mcpb` job in `.github/workflows/release.yml` runs after the PyPI
-publish; `publish-mcp` now depends on it. It:
+The source lives in `mcpb/`; `scripts/build_mcpb.py` validates matching versions
+and packages the exact published Python dependency. `scripts/smoke_mcpb.py`
+checks a real stdio session before upload. CI's `--local-source` bundles are
+local test artifacts, not release downloads.
 
-- waits for PyPI to serve the new version, then builds the `.mcpb` bundle
-  against that real PyPI pin (`scripts/build_mcpb.py`, no `--local-source`)
-- smoke-tests the built bundle (`scripts/smoke_mcpb.py`)
-- uploads `dead-letter-mcp-X.Y.Z.mcpb` and its `.sha256` sidecar to the GitHub
-  release with `gh release upload --clobber`
-- stamps `server.json`'s `mcpb` package entry: `identifier` becomes the
-  release asset's download URL and `fileSha256` becomes the real hash
+The release attaches the `.mcpb` and `.sha256` sidecar. On retry, a published
+bundle is downloaded, checked against its sidecar, and smoke-tested again
+instead of silently rebuilt and replaced. Asset upload compares existing
+bytes first: identical assets are reused; different bytes fail closed.
+Missing or invalid sidecars need explicit recovery of the original bytes.
+Never repair a published registry hash with `--clobber`.
 
-The committed `server.json` carries an all-zero `fileSha256` placeholder for
-the `mcpb` package on purpose; the workflow refuses to publish if that
-placeholder is still present at publish time.
+A CLI smoke test is distinct from opening the extension in a named Claude
+Desktop version on macOS/Windows. Record fresh install, restart/update,
+four-tool discovery, conversion, and source preservation separately. First
+launch can download Python/dependencies; an exact direct dependency pin alone
+does not freeze every transitive dependency.
 
-Manual build and verify (matches what CI runs):
+## Container Image (Automatic)
 
-```bash
-python scripts/build_mcpb.py
-python scripts/smoke_mcpb.py dist/dead-letter-mcp-X.Y.Z.mcpb
-```
+The optional reusable [container workflow](../../.github/workflows/container.yml)
+tests native Linux amd64/arm64, publishes a run-specific candidate, verifies
+both platform child digests and PyPI tool-schema parity, proves anonymous
+pull access, and only then promotes the tested index digest to `X.Y.Z`.
+There is no `latest` alias. The registry advertises that digest, not a mutable
+candidate name. See [Containers](containers.md) for mount safety, provenance,
+platform tests, and Docker Catalog submission requirements.
 
-`scripts/build_mcpb.py --local-source .` builds against the checkout instead
-of PyPI. That variant is for CI only and is not releasable.
+A first GHCR package may need a maintainer to enable public visibility. That
+step is recorded as complete for dead-letter's `0.3.1` image; the workflow
+continues to verify anonymous access on each release. Do not infer Docker
+Catalog acceptance from GHCR publication.
+
+Rebuilding can change attestation/index digests even with unchanged source.
+Rerun failed jobs, not successful publication jobs. Never overwrite a different
+existing version digest to make a retry pass.
 
 ## Update The Homebrew Tap
 
-Update `BigCactusLabs/homebrew-tap` only after the PyPI release is live.
+Homebrew remains a manual, core-CLI-only channel after PyPI succeeds. In a
+checkout of `BigCactusLabs/homebrew-tap` (installed as `BigCactusLabs/tap`),
+update `Formula/dead-letter.rb` to the exact released sdist URL and SHA-256
+from PyPI. Review its dependency resources; do not accidentally add the
+UI/MCP extras or unrelated development packages.
 
-1. Get the new sdist URL and SHA from PyPI:
+```bash
+# In the tap checkout, after editing and reviewing the formula:
+brew fetch --build-from-source dead-letter
+brew style Formula/dead-letter.rb
+brew install --build-from-source BigCactusLabs/tap/dead-letter
+brew test BigCactusLabs/tap/dead-letter
+dead-letter doctor
+```
 
-   ```bash
-   curl -fsSL https://pypi.org/pypi/dead-letter/X.Y.Z/json
-   ```
-
-2. Update `Formula/dead-letter.rb` in `BigCactusLabs/homebrew-tap`:
-   - set the formula URL and SHA to the new PyPI sdist
-   - update Python resource URLs and SHAs for the core CLI dependency set
-   - keep `dead-letter-ui` and `dead-letter-mcp` removed from `bin`
-   - keep the formula core CLI only
-
-3. Validate the formula from the tap checkout:
-
-   ```bash
-   HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_DEVELOPER=1 HOMEBREW_NO_INSTALL_FROM_API=1 brew fetch --formula Formula/dead-letter.rb
-   HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_DEVELOPER=1 HOMEBREW_NO_INSTALL_FROM_API=1 brew style Formula/dead-letter.rb
-   HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_DEVELOPER=1 HOMEBREW_NO_INSTALL_FROM_API=1 brew install --formula Formula/dead-letter.rb
-   HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_DEVELOPER=1 HOMEBREW_NO_INSTALL_FROM_API=1 brew test dead-letter
-   ```
-
-4. Push the tap update:
-
-   ```bash
-   git add Formula/dead-letter.rb
-   git commit -m "dead-letter X.Y.Z"
-   git push origin main
-   ```
-
-5. Verify GitHub sees the tap formula:
-
-   ```bash
-   gh api repos/BigCactusLabs/homebrew-tap/contents/Formula/dead-letter.rb --jq .download_url
-   ```
+Use `brew reinstall --build-from-source` instead of `install` on a test machine
+where the formula is already installed. Convert a synthetic fixture, then
+commit/push the reviewed formula. Record the tap commit and version in the
+release checklist. A successful Python release does not update the tap.
 
 ## Plugin Release
 
-These are the closing **ship** steps of an aligned release: the plugin's
-`version` and MCP pin were already bumped in [Prepare The Release](#prepare-the-release)
-(lockstep by default), so all that remains is to tag the plugin and advance the
-marketplace pointer. If you are instead cutting a plugin-only patch, do the
-version bump here in a small standalone commit first.
+The normal plugin release adopts an already-published exact package version.
+A plugin-only instruction/command update can keep the prior exact package
+pin. Both cases require a new plugin asset version and reviewed main commit.
+For a lockstep release, use the recorded package release commit, not a later
+unreviewed `main` tip.
 
-The Claude plugin under [`plugin/`](../../plugin/) has its own release tag,
-which is *permitted* to diverge from the package version (see
-[Plugin Versioning Model](#plugin-versioning-model)) even though the two are
-aligned today. The
-[`BigCactusLabs/bigcactuslabs-plugins`](https://github.com/BigCactusLabs/bigcactuslabs-plugins)
-marketplace points at this directory via `git-subdir` and pins the plugin's
-explicit version, `plugin-vX.Y.Z` tag, and commit SHA. This makes Claude Code
-and Cowork resolve the same immutable plugin assets. The `release` branch is
-also advanced for compatibility with marketplace copies created before this
-pinning model was adopted.
+```bash
+PLUGIN_VERSION=A.B.C
+PLUGIN_SHA=FULL_40_CHARACTER_REVIEWED_MAIN_COMMIT
 
-Release the plugin only after the PyPI release the plugin's `.mcp.json` is
-pinned to has been published (verify with the PyPI `curl` check —
-`https://pypi.org/pypi/dead-letter/X.Y.Z/json` — under Publish To PyPI above). The MCP launcher pin in `plugin/.mcp.json` is the
-runtime contract — see `tests/plugin/test_plugin_structure.py` for the
-enforced shape.
+git switch --detach "$PLUGIN_SHA"
+python scripts/release.py check --plugin-tag "plugin-v$PLUGIN_VERSION"
+# Check the exact package version in plugin/.mcp.json before tagging:
+MCP_VERSION=$(python scripts/release.py check | python -c 'import json,sys; print(json.load(sys.stdin)["plugin_pin"])')
+python scripts/release.py wait-pypi "$MCP_VERSION"
+git tag -a "plugin-v$PLUGIN_VERSION" "$PLUGIN_SHA" -m "dead-letter plugin $PLUGIN_VERSION"
+git push origin "refs/tags/plugin-v$PLUGIN_VERSION"
+```
 
-1. Confirm `main` CI is green and includes the `Plugin tests` and
-   `Plugin schema validation` steps:
+The workflow serializes pointer changes, validates the tag and peeled commit,
+and rejects a commit behind the compatibility `release` branch **before**
+editing the marketplace. It checks the exact package pin on both PyPI JSON
+and simple indexes, then updates marketplace `version`, `source.ref`, and
+`source.sha` together through a PR. Finally it fast-forwards `release` without
+force. Annotated tags use their commit SHA, not a tag-object SHA.
 
-   ```bash
-   gh run list --branch main --workflow ci.yml --limit 1
-   ```
+Do not queue a burst of plugin tags: GitHub concurrency is not a durable FIFO
+queue. Wait for each pointer update and record the result. A concurrent manual
+branch update can still cause the final non-forced push to stop safely.
 
-2. Tag the plugin release on the current `main` commit. The tag name is
-   `plugin-vX.Y.Z` (note the `plugin-` prefix; the package's own release tag is
-   plain `vX.Y.Z`). The `X.Y.Z` is the plugin's asset version — independent of
-   the package version, though they're aligned today. The tag exists for the
-   changelog, humans, and emergency rollback:
+`RELEASE_PAT` must be configured on dead-letter with access to both repositories:
+Contents read/write and Workflows write for dead-letter; Contents and Pull
+requests read/write for `bigcactuslabs-plugins`. Keep the existing repository
+approval/protection model. Do not print, commit, or replace credentials as a
+release shortcut. A future GitHub App migration is separate work.
 
-   ```bash
-   git tag -a plugin-vX.Y.Z -m "Plugin release vX.Y.Z"
-   git push origin plugin-vX.Y.Z
-   ```
+After the marketplace update, use [the plugin update instructions](../../plugin/README.md)
+and [manual tests](../../plugin/TESTING.md) in **both** Claude Code and Cowork.
+They retain separate installed copies. Matching source/pins does not prove
+matching client caches or successful runtime resolution.
 
-3. Pushing the `plugin-v*` tag automatically runs
-   [`.github/workflows/plugin-release.yml`](../../.github/workflows/plugin-release.yml).
-   It verifies the package version pinned in `.mcp.json` is live on PyPI, then
-   opens and merges a marketplace pull request that pins the plugin version,
-   tag, and SHA. The merged marketplace commit is what makes the update visible
-   to Cowork. The workflow then fast-forwards `release` for older marketplace
-   copies. If the workflow needs a manual fallback or an emergency advance,
-   first update the marketplace entry, then use the `^{}` suffix because the
-   tag is annotated:
+## Plugin Versioning Model
 
-   ```bash
-   git push origin 'plugin-vX.Y.Z^{}:release'
-   ```
+| Field | Meaning | Relationship |
+| --- | --- | --- |
+| `pyproject.toml` / `vX.Y.Z` | Python package release | All package, MCPB, and ARD sync points match |
+| `plugin/.claude-plugin/plugin.json` / `plugin-vA.B.C` | Plugin assets and instructions | Independent, increasing sequence |
+| `plugin/.mcp.json` | Exact package the plugin launches | Must be published; may deliberately lag |
+| Marketplace `version`, `source.ref`, `source.sha` | What plugin clients resolve | Same plugin release and peeled commit |
+| Community catalog source SHA | Third-party accepted snapshot | Separate review and update policy |
 
-   > **One-time setup — `RELEASE_PAT` secret.** The workflow authenticates with
-   > a repository secret named `RELEASE_PAT`, not the built-in `GITHUB_TOKEN`.
-   > Create a **fine-grained PAT** that can access both
-   > `BigCactusLabs/dead-letter` and `BigCactusLabs/bigcactuslabs-plugins`.
-   > Grant **Contents: write** and **Workflows: write** on `dead-letter`, plus
-   > **Contents: write** and **Pull requests: write** on
-   > `bigcactuslabs-plugins`. Add it under *Settings → Secrets and variables →
-   > Actions* as `RELEASE_PAT`. The workflow stops before advancing `release`
-   > if it cannot publish the marketplace pointer, preventing Claude Code and
-   > Cowork from splitting again.
+Do not solve version drift by forcing these independent concepts to be equal.
+Do not leave a plugin pin floating. Document adoption or deferral at release.
 
-   Rollback, if ever needed:
-   `git push --force origin 'plugin-vOLD.X.Y^{}:release'` — or, in an
-   emergency, temporarily re-pin the marketplace
-   [`marketplace.json`](https://github.com/BigCactusLabs/bigcactuslabs-plugins/blob/main/.claude-plugin/marketplace.json)
-   `ref` to an old tag.
+## Release completion and recovery
 
-4. Smoke-test the live install in a fresh Claude Code session:
+Keep one ledger in the release notes/issue, not duplicate version claims in
+several docs:
 
-   ```
-   /plugin marketplace add BigCactusLabs/bigcactuslabs-plugins
-   /plugin install dead-letter
-   /dead-letter:convert <path-to-fixture>.eml
-   ```
+| Check | Record |
+| --- | --- |
+| Source | Package tag, exact commit, CI run, dated changelog |
+| PyPI | Version, sdist/wheel availability on both indexes, attestation, fixture result |
+| MCPB | Asset/checksum, stdio smoke; GUI client/OS results separately |
+| OCI | Index digest, both platforms, anonymous pull, provenance |
+| Registry | Resolved manifest checksum and actual published version |
+| Plugin | Asset tag/commit, exact package pin, marketplace PR; or explicit deferral |
+| Homebrew | Formula version, tap commit, test result; or explicit deferral |
+| Discovery | Submission/listing URL and status, tested client/version; no inferred acceptance |
 
-   Use `claude plugin details dead-letter` from the shell to inspect what was
-   resolved.
-
-5. In Cowork, open **Customize → Plugins → Personal**, open the
-   `bigcactuslabs-plugins` marketplace options, and select **Check for
-   updates**. Confirm the marketplace's synced commit is the merge commit from
-   step 3 and that Dead letter shows version `X.Y.Z` before running the MCP
-   smoke test.
-
-6. Run the full manual checklist in [`plugin/TESTING.md`](../../plugin/TESTING.md).
-
-7. If the Claude community marketplace listing exists, wait for its nightly
-   catalog update and run the catalog query from [Prepare The Release](#prepare-the-release).
-   Record the listed `source.sha`, source path, and source ref. Confirm that the
-   SHA resolves to the released plugin content only after the pinned PyPI
-   version is live. If the SHA advanced early, stop distribution work and ask
-   Anthropic to freeze or correct the entry.
-
-### Plugin Versioning Model
-
-There are four independent versions to keep straight:
-
-| Version | Source of truth | When it bumps |
-|---|---|---|
-| Package | `pyproject.toml` `version` field | Per package release (PyPI tag `vX.Y.Z`) |
-| Plugin asset | `plugin/.claude-plugin/plugin.json` `version` | Per plugin-only change (tag `plugin-vX.Y.Z`) |
-| MCP pin | `plugin/.mcp.json` `--from dead-letter[mcp]==X.Y.Z` | Per package release the plugin should adopt |
-| Community catalog pin | Anthropic catalog entry `source.sha` plus its recorded update target | Only after an approved plugin release whose MCP pin is live on PyPI |
-
-A plugin-only patch (skill copy, command wording) bumps the plugin asset
-version without touching the MCP pin. A new package release bumps the
-package version and may bump the MCP pin in a follow-up plugin release. The
-exact-pin rule in `tests/plugin/test_plugin_structure.py::test_mcp_json_pins_exact_dead_letter_version`
-forbids unpinned or range pins so a future PyPI release cannot silently break
-installed plugins.
+For partial failure, first identify the last successful external write. A red
+job is not proof that nothing was published. Retry a failed downstream job
+with the existing artifacts; do not rerun PyPI blindly, move tags, rewrite
+checksums, or replace OCI digests. If the marketplace merged but the final
+branch push failed, inspect both pointers and ancestry before retrying. A
+new forward plugin version can select an older known-good exact package pin;
+that is preferable to silently rewinding release history. Missing evidence or
+conflicting published bytes calls for an explicit maintainer recovery/new
+release, not automatic deletion.
 
 ## Do Not Automate The Tap Yet
 
-Do not expand `.github/workflows/release.yml` to update the tap in this pass.
-Cross-repository tap automation would require credentials, secret management,
-and a rollback policy. Keep tap updates manual until that workflow is designed
-deliberately.
+Do not extend package publication to modify the tap in this pass. Cross-repo
+credentials, tests, approval, and rollback need their own design. Keep the
+manual core-only update visible in the completion ledger.
+
+## Primary references
+
+Reviewed September 19, 2026:
+[GitHub workflow events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows),
+[workflow triggering and token behavior](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow),
+[PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/using-a-publisher/),
+[MCP Registry GitHub Actions](https://modelcontextprotocol.io/registry/github-actions),
+[gh skill pinning](https://cli.github.com/manual/gh_skill_install), and
+[uv locking](https://docs.astral.sh/uv/concepts/projects/sync/).

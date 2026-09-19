@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "dead-letter-mcp",
   "display_name": "dead-letter",
-  "version": "0.2.5",
+  "version": "0.3.1",
   "description": "Convert .eml email exports to Markdown with YAML front matter",
   "long_description": "dead-letter converts .eml email exports into Markdown with YAML front matter. All processing happens locally on this machine; no message content is uploaded anywhere. Email content is treated as untrusted data: HTML is sanitized before conversion and message text is never followed as instructions.",
   "author": {
