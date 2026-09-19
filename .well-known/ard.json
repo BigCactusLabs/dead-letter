@@ -6,7 +6,7 @@
       "type": "application/mcp-server-card+json",
       "url": "https://raw.githubusercontent.com/BigCactusLabs/dead-letter/main/server.json",
       "description": "Local stdio MCP server that converts .eml email files to Markdown with YAML front matter, batch-converts folders, and builds archive bundles with decoded attachments.",
-      "version": "0.2.5",
+      "version": "0.3.1",
       "tags": [
         "email",
         "eml",
@@ -35,7 +35,7 @@
       "type": "application/ai-skill+md",
       "url": "https://raw.githubusercontent.com/BigCactusLabs/dead-letter/main/skills/dead-letter/SKILL.md",
       "description": "Portable Agent Skill that teaches an agent when and how to convert .eml email exports to Markdown locally with uvx or the dead-letter MCP server, while treating email content as untrusted.",
-      "version": "0.2.5",
+      "version": "0.3.1",
       "tags": [
         "email",
         "eml",
@@ -53,7 +53,7 @@
         "summarize this .eml file"
       ],
       "metadata": {
-        "install": "gh skill install BigCactusLabs/dead-letter dead-letter@main",
+        "install": "gh skill install BigCactusLabs/dead-letter dead-letter",
         "license": "PolyForm-Noncommercial-1.0.0"
       }
     }

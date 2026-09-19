@@ -1,20 +1,69 @@
-# Docs
+# dead-letter docs
 
-`docs/` is the public documentation surface for `dead-letter`.
+Start with the task. There is one installation map and one publishing runbook;
+runtime contracts and historical design notes serve different purposes.
 
-## Public Docs
+## Use dead-letter
 
-- [Runtime Contracts](reference/v4-runtime-contracts.md) — canonical backend and core runtime behavior
-- [Frontend State Model](reference/frontend-state-model.md) — frontend state and interaction contract
-- [Quality Diagnostics](reference/quality-diagnostics.md) — conversion grading and warning semantics
-- [html-to-markdown v3 Migration Plan](reference/html-to-markdown-v3-migration.md) — completed migration reference from 2.x visitor APIs
-- [Publishing](reference/publishing.md) — maintainer release and Homebrew tap update runbook
-- [Agent Discovery](reference/agent-discovery.md) — portable Agent Skill install, ARD catalog, and Agent Finder submission
-- [Client Installation](reference/client-installation.md) — generated VS Code/Cursor install links, Cline setup, and verification
-- [MCP Distribution Ledger](reference/mcp-distribution.md) — dated catalog findings, submission candidates, and remaining acceptance checks
-- [Brand Style Guide](brand/style-guide.md) — canonical visual language and production integration notes
+| Task | Read |
+| --- | --- |
+| Understand the product and convert a first email | [README](../README.md) |
+| Convert a Gmail Takeout `.mbox` export locally | [Gmail Takeout / MBOX](reference/gmail-takeout.md) |
+| Contain MBOX parser hangs or crashes with per-message deadlines | [MBOX Workers](reference/mbox-workers.md) |
+| Measure or audit a full MBOX import | [MBOX Validation](reference/mbox-validation.md) |
+| Install the MCP server in VS Code, Cursor, or Cline | [Client Installation](reference/client-installation.md) |
+| Choose CLI, UI, MCPB, plugin, container, or skill | [Installation and distribution map](reference/distribution.md) |
+| Configure an agent/MCP client safely | [Agent install guide](../llms-install.md) |
+| Install or update the Claude plugin | [Plugin README](../plugin/README.md) |
+| Install a portable skill or understand discovery | [Agent Discovery](reference/agent-discovery.md) |
+| Run isolated MCP with selected mounts | [Containers](reference/containers.md) |
+| Interpret conversion quality and retained attachments | [Quality Diagnostics](reference/quality-diagnostics.md) |
+| Reproduce the token/fidelity comparison | [Benchmarks](../benchmarks/README.md) |
 
-## Integration
+## Develop and maintain
 
-- [MCP Server](../README.md#-mcp-server) — Claude Desktop, Claude Code, and Codex integration paths
-- [Claude plugin](../plugin/README.md) — one-command install for Claude Code and Cowork (recommended for those clients); distributed via the [`BigCactusLabs/bigcactuslabs-plugins`](https://github.com/BigCactusLabs/bigcactuslabs-plugins) marketplace
+| Task | Read |
+| --- | --- |
+| Set up development and run the required checks | [Contributing](../CONTRIBUTING.md) |
+| Orient a coding agent | [AGENTS.md](../AGENTS.md) |
+| Change core, CLI, API, or MCP behavior | [Runtime Contracts](reference/v4-runtime-contracts.md) |
+| Change UI stores, job handling, or onboarding | [Frontend State Model](reference/frontend-state-model.md) |
+| Prepare, tag, publish, or recover a release | [Publishing](reference/publishing.md) |
+| Check catalog listings and pending marketplace submissions | [MCP Distribution Ledger](reference/mcp-distribution.md) |
+| Validate Claude-specific behavior manually | [Plugin testing](../plugin/TESTING.md) |
+| Triage a CI checkout/source provenance mismatch | [CI Provenance](reference/ci-provenance.md) |
+| Work on the visual identity | [Brand & Style Guide](brand/style-guide.md) |
+| Review shipped changes or report a vulnerability | [Changelog](../CHANGELOG.md) / [Security](../SECURITY.md) |
+
+“v4” in the runtime/state document names refers to the interface generation,
+not the PyPI package version. Do not infer a package release from a document
+filename. Machine-readable versions live in package/distribution metadata;
+`python scripts/release.py check` verifies their relationships.
+
+## Project decisions and history
+
+[Reach & Distribution](project/reach.md) retains the product/discovery
+strategy and outstanding evidence requirements. The
+[MBOX ingestion design notes](project/2026-09-18-mbox-ingestion.md) record the
+research and boundaries behind streaming Takeout import. The
+[docs and release audit](project/docs-release-audit.md) records this refresh,
+its scope, and remaining validation boundaries. The completed
+[html-to-markdown v3 migration](reference/html-to-markdown-v3-migration.md)
+remains at its original URL for design history, not as a new implementation
+queue.
+
+## Keep the map useful
+
+Give each topic a canonical home. Link to install commands and release policy
+rather than copying version pins into every guide. Put durable contracts in
+`docs/reference/`, plans and audit records in `docs/project/`, and brand work
+in `docs/brand/`. Preserve existing URLs and heading anchors when practical.
+Label completed or superseded plans explicitly; never present pending PRs as
+released features.
+
+Update the relevant docs in the same PR as a contract/workflow change. The
+link-check workflow inventories tracked root guides, docs, plugin/skill
+instructions, container/bundle docs, and the benchmark guide; test fixtures
+are not public documentation. `release-check` catches version drift without
+installing application dependencies. A green link check is not proof that a
+client install, catalog listing, or runtime claim has been tested.

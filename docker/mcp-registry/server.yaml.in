@@ -1,0 +1,44 @@
+# Submission candidate, not a claim of catalog acceptance.
+# Render with scripts/container_metadata.py catalog after a tested release.
+name: dead-letter
+image: mcp/dead-letter
+type: server
+meta:
+  category: productivity
+  tags:
+    - email
+    - markdown
+    - local
+about:
+  title: dead-letter
+  description: Convert local .eml email exports to Markdown, bundles, and diagnostics. No account or upload service required.
+  icon: https://avatars.githubusercontent.com/u/42389343?s=200&v=4
+source:
+  project: https://github.com/BigCactusLabs/dead-letter
+  commit: __SOURCE_COMMIT__
+  dockerfile: Dockerfile
+run:
+  user: '{{dead-letter.container_user}}'
+  volumes:
+    - '{{dead-letter.input_directory}}:/input:ro'
+    - '{{dead-letter.output_directory}}:/output:rw'
+  disableNetwork: true
+config:
+  description: Choose only the email input and conversion output directories. Use /input and /output in tool calls. Linux users should enter their own numeric UID:GID; never use root.
+  parameters:
+    type: object
+    properties:
+      input_directory:
+        type: string
+        description: Existing absolute host email directory, mounted read-only at /input.
+      output_directory:
+        type: string
+        description: Separate existing absolute host directory, writable at /output.
+      container_user:
+        type: string
+        default: '10001:10001'
+        description: Numeric UID:GID. On Linux use the output of id -u and id -g so private folders remain private. Docker Desktop users may use 10001:10001 when permitted by file sharing.
+    required:
+      - input_directory
+      - output_directory
+      - container_user

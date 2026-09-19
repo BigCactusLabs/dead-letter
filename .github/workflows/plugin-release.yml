@@ -1,74 +1,74 @@
 name: plugin release
 
-# Deliberately trigger only on plugin asset tags: plugin releases are decoupled
-# from package releases, whose tags use the separate v* namespace.
 on:
   push:
     tags:
       - "plugin-v*"
 
+# One pointer update at a time. GitHub does not guarantee queued-run order;
+# ancestry checks also reject stale tags before the marketplace can change.
+concurrency:
+  group: dead-letter-plugin-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
   advance-release:
+    if: github.repository == 'BigCactusLabs/dead-letter'
     runs-on: ubuntu-latest
-    # The push to `release` is authenticated with RELEASE_PAT, a fine-grained
-    # PAT with Contents:write + Workflows:write in this repo and
-    # Contents:write + Pull requests:write in the marketplace repo — NOT the
-    # built-in GITHUB_TOKEN.
-    # Advancing `release` carries .github/workflows/* changes (always on the
-    # first run, since release lacks this file, and whenever a workflow changed
-    # on main), and GitHub refuses GITHUB_TOKEN pushes that create or update
-    # workflow files: the `workflows` scope cannot be granted to GITHUB_TOKEN.
-    # See docs/reference/publishing.md -> Plugin Release.
-    permissions:
-      contents: read
+    timeout-minutes: 30
     steps:
       - name: Verify release token is configured
         env:
           RELEASE_PAT: ${{ secrets.RELEASE_PAT }}
         run: |
           if [ -z "$RELEASE_PAT" ]; then
-            echo "::error::RELEASE_PAT secret is not set. Create a fine-grained PAT scoped to dead-letter and bigcactuslabs-plugins with the permissions documented in docs/reference/publishing.md -> Plugin Release, then add it as the RELEASE_PAT repository secret." >&2
+            echo "::error::RELEASE_PAT is required. See docs/reference/publishing.md -> Plugin Release for repository and permission scopes." >&2
             exit 1
           fi
-
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
-          # PAT with workflow-file write permission; persisted by checkout for
-          # the fast-forward push below.
+          # Compatibility release pushes can carry workflow-file changes;
+          # the built-in GITHUB_TOKEN cannot grant Workflows:write.
           token: ${{ secrets.RELEASE_PAT }}
-
-      - name: Extract release versions
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Validate plugin tag and target before any pointer update
         id: release
-        # The .mcp.json pin is the package version to ship, independent of the
-        # plugin asset version. Read both manifests, then prove that the tag
-        # identifies the plugin asset version before publishing either pointer.
         run: |
-          mcp_version=$(python3 -c "import json, re; a = json.load(open('plugin/.mcp.json'))['mcpServers']['dead-letter']['args']; f = a[a.index('--from') + 1]; print(re.search(r'==([0-9][^\"]*)', f).group(1))")
-          plugin_version=$(python3 -c "import json; print(json.load(open('plugin/.claude-plugin/plugin.json'))['version'])")
-          tag_version="${GITHUB_REF_NAME#plugin-v}"
-          if [ "$tag_version" != "$plugin_version" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match plugin version $plugin_version." >&2
-            exit 1
+          python scripts/release.py check --plugin-tag "$GITHUB_REF_NAME"
+          sha=$(git rev-parse HEAD)
+          test "$(git rev-parse "refs/tags/${GITHUB_REF_NAME}^{commit}")" = "$sha"
+          git merge-base --is-ancestor "$sha" origin/main
+          if git rev-parse --verify origin/release >/dev/null 2>&1; then
+            git merge-base --is-ancestor origin/release "$sha" || {
+              echo '::error::Tagged commit would move release backwards. Marketplace remains unchanged.' >&2
+              exit 1
+            }
           fi
-          echo "mcp_version=$mcp_version" >> "$GITHUB_OUTPUT"
-          echo "plugin_version=$plugin_version" >> "$GITHUB_OUTPUT"
-
-      - name: Wait for PyPI to serve the pinned package
-        run: |
-          v="${{ steps.release.outputs.mcp_version }}"
-          for i in $(seq 1 6); do
-            if curl -fsSL "https://pypi.org/pypi/dead-letter/${v}/json" >/dev/null; then
-              echo "PyPI is serving dead-letter ${v}"
-              exit 0
-            fi
-            echo "waiting for PyPI dead-letter ${v} (attempt ${i}/6)"
-            sleep 10
-          done
-          echo "PyPI did not serve dead-letter ${v} in time" >&2
-          exit 1
-
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, "scripts")
+          from release import check, read_sources
+          versions = check(read_sources(Path(".")))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"mcp_version={versions['plugin_pin']}\nplugin_version={versions['plugin']}\n")
+          PY
+      - name: Wait for both PyPI indexes to serve the pinned package
+        env:
+          MCP_VERSION: ${{ steps.release.outputs.mcp_version }}
+        run: python scripts/release.py wait-pypi "$MCP_VERSION"
       - name: Checkout marketplace
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
@@ -76,20 +76,18 @@ jobs:
           ref: main
           path: marketplace
           token: ${{ secrets.RELEASE_PAT }}
-
       - name: Publish plugin pointer through the marketplace
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           MARKETPLACE_REPO: BigCactusLabs/bigcactuslabs-plugins
           PLUGIN_VERSION: ${{ steps.release.outputs.plugin_version }}
           PLUGIN_REF: ${{ github.ref_name }}
-          PLUGIN_SHA: ${{ github.sha }}
+          PLUGIN_SHA: ${{ steps.release.outputs.sha }}
         run: |
           python3 - <<'PY'
           import json
           import os
           from pathlib import Path
-
           path = Path("marketplace/.claude-plugin/marketplace.json")
           data = json.loads(path.read_text())
           plugin = next(item for item in data["plugins"] if item["name"] == "dead-letter")
@@ -98,13 +96,11 @@ jobs:
           plugin["source"]["sha"] = os.environ["PLUGIN_SHA"]
           path.write_text(json.dumps(data, indent=2) + "\n")
           PY
-
           cd marketplace
           if git diff --quiet -- .claude-plugin/marketplace.json; then
             echo "Marketplace already points at dead-letter ${PLUGIN_VERSION}."
             exit 0
           fi
-
           branch="release/dead-letter-${PLUGIN_VERSION}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -112,31 +108,20 @@ jobs:
           git add .claude-plugin/marketplace.json
           git commit -m "chore: publish dead-letter ${PLUGIN_VERSION}"
           git push origin "HEAD:refs/heads/${branch}"
-
           pr_url=$(gh pr create \
-            --repo "$MARKETPLACE_REPO" \
-            --base main \
-            --head "$branch" \
+            --repo "$MARKETPLACE_REPO" --base main --head "$branch" \
             --title "chore: publish dead-letter ${PLUGIN_VERSION}" \
             --body "Pins dead-letter ${PLUGIN_VERSION} to ${PLUGIN_REF} at ${PLUGIN_SHA}. Generated by the dead-letter plugin release workflow.")
           gh pr merge --repo "$MARKETPLACE_REPO" "$pr_url" --squash --delete-branch
-
       - name: Fast-forward release to the tagged commit
-        # Uses the RELEASE_PAT credential persisted by checkout above (the
-        # built-in GITHUB_TOKEN cannot push workflow-file changes). A non-forced
-        # push is fast-forward-only. Manual emergency rollback by re-pointing
-        # release to an older tag, or temporarily re-pinning the marketplace
-        # manifest, remains available and is not obstructed here.
-        run: |
-          git fetch origin release || true
-          if git rev-parse --verify origin/release >/dev/null 2>&1; then
-            if ! git merge-base --is-ancestor origin/release "$GITHUB_SHA"; then
-              echo "::error::release ($(git rev-parse --short origin/release)) is not an ancestor of $GITHUB_SHA — refusing non-fast-forward advance." >&2
-              exit 1
-            fi
-          fi
-          git push origin "$GITHUB_SHA:refs/heads/release"
-
+        env:
+          PLUGIN_SHA: ${{ steps.release.outputs.sha }}
+        # No force: a concurrent manual branch update must not be overwritten.
+        run: git push origin "$PLUGIN_SHA:refs/heads/release"
       - name: Summarize release advance
+        env:
+          PLUGIN_VERSION: ${{ steps.release.outputs.plugin_version }}
+          MCP_VERSION: ${{ steps.release.outputs.mcp_version }}
+          PLUGIN_SHA: ${{ steps.release.outputs.sha }}
         run: |
-          echo "Published dead-letter plugin ${{ steps.release.outputs.plugin_version }} to the marketplace, verified dead-letter[mcp]==${{ steps.release.outputs.mcp_version }} is live on PyPI, and fast-forwarded release to tagged commit $GITHUB_SHA." >> "$GITHUB_STEP_SUMMARY"
+          printf 'Published plugin %s at %s; exact PyPI MCP pin %s was available on both indexes. Marketplace pointer updated and compatibility release branch fast-forwarded.\n' "$PLUGIN_VERSION" "$PLUGIN_SHA" "$MCP_VERSION" >> "$GITHUB_STEP_SUMMARY"
