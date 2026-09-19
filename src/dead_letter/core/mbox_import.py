@@ -115,6 +115,7 @@ def convert_mbox(
     limits: MboxLimits | None = None,
     unescape: UnescapeMode = "preserve",
     bundles: bool = False,
+    timeout_seconds: float | None = None,
 ) -> Iterator[MboxConversion]:
     """Lazily convert an immutable exported mailbox; never delete the archive.
 
@@ -122,7 +123,13 @@ def convert_mbox(
     message. Otherwise failures are isolated to that record. Consume results as
     an iterator, not ``list(convert_mbox(...))``, to keep memory bounded. Close
     the iterator with ``contextlib.closing`` when cancelling/ending early.
+    A positive ``timeout_seconds`` opts into a fresh subprocess per admitted
+    message, including dry runs. This is a worker wall-time budget, not a memory
+    limit, security sandbox, or deadline for framing/final output publication.
     """
+    if timeout_seconds is not None:
+        from dead_letter.core.mbox_isolation import convert_record_isolated, validate_timeout
+        validate_timeout(timeout_seconds)
     source = Path(path).expanduser().resolve()
     opts = options or ConvertOptions()
     if opts.delete_eml:
@@ -136,7 +143,13 @@ def convert_mbox(
     try:
         with closing(iter_mbox(source, limits=limits, unescape=unescape)) as records:
             for record in records:
-                yield _convert_record(record, source, root, opts, bundles=bundles, unescape=unescape)
+                if timeout_seconds is not None and record.path is not None:
+                    yield convert_record_isolated(
+                        record, source, root, opts, bundles=bundles,
+                        unescape=unescape, timeout=timeout_seconds,
+                    )
+                else:
+                    yield _convert_record(record, source, root, opts, bundles=bundles, unescape=unescape)
     except (MboxFormatError, OSError, ValueError) as exc:
         yield MboxConversion(
             source.name, None, False,
