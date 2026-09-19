@@ -66,6 +66,9 @@ def run_mbox(
                                     "max_message_bytes": limits.max_message_bytes,
                                     "max_line_bytes": limits.max_line_bytes},
                 )
+            except KeyboardInterrupt:
+                print("MBOX report publication interrupted; previous report retained if present", file=sys.stderr)
+                return 130
             except OSError as exc:
                 print(f"MBOX report could not be written: {exc}", file=sys.stderr)
                 return 1

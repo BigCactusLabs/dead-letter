@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import stat
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -32,6 +34,8 @@ class MboxLimits:
     max_line_bytes: int = 1024 * 1024
 
     def __post_init__(self) -> None:
+        if type(self.max_message_bytes) is not int or type(self.max_line_bytes) is not int:
+            raise ValueError("MBOX limits must be integer byte counts")
         if self.max_message_bytes < 1 or self.max_line_bytes < 128:
             raise ValueError("MBOX limits require message bytes >= 1 and line bytes >= 128")
 
@@ -69,6 +73,31 @@ class MboxRecord:
         }
 
 
+def _source_signature(value: os.stat_result) -> tuple[int, ...]:
+    return (
+        value.st_dev, value.st_ino, value.st_size,
+        value.st_mtime_ns, value.st_ctime_ns,
+    )
+
+
+def _check_source(fd: int, source: Path, initial: os.stat_result) -> None:
+    """Bind the opened bytes to the named export, not just two path stats.
+
+    These metadata checks detect ordinary mutation/replacement, not malicious
+    metadata restoration or a filesystem snapshot. Callers still need an
+    immutable export. Previously emitted results cannot be retracted.
+    """
+    try:
+        unchanged = (
+            _source_signature(os.fstat(fd)) == _source_signature(initial)
+            and _source_signature(source.stat()) == _source_signature(initial)
+        )
+    except OSError:
+        unchanged = False
+    if not unchanged:
+        raise MboxFormatError("MBOX changed during import; use an immutable export and rerun")
+
+
 def iter_mbox(
     path: str | Path,
     *,
@@ -92,7 +121,11 @@ def iter_mbox(
         raise ValueError(f"Expected a regular exported MBOX file: {source}")
 
     with source.open("rb") as stream, TemporaryDirectory(prefix="dead-letter-mbox-") as temp:
-        initial = source.stat()
+        fd = stream.fileno()
+        initial = os.fstat(fd)
+        if not stat.S_ISREG(initial.st_mode):
+            raise MboxFormatError("Expected a regular exported MBOX file")
+        _check_source(fd, source, initial)
         staged = Path(temp) / "message.eml"
         index = 0
         offset = 0
@@ -105,7 +138,9 @@ def iter_mbox(
         with staged.open("wb") as output:
             while True:
                 start = offset
-                fragment = stream.readline(limits.max_line_bytes + 1)
+                # Never follow an export that is being appended indefinitely.
+                remaining = initial.st_size - offset
+                fragment = stream.readline(min(limits.max_line_bytes + 1, remaining)) if remaining else b""
                 offset += len(fragment)
                 complete_line = fragment.endswith(b"\n")
                 envelope = (
@@ -113,6 +148,9 @@ def iter_mbox(
                     and bool(_ENVELOPE.fullmatch(fragment))
                 )
                 if envelope or not fragment:
+                    _check_source(fd, source, initial)
+                    if not fragment and offset != initial.st_size:
+                        raise MboxFormatError("MBOX ended before its original size")
                     if index:
                         output.flush()
                         yield MboxRecord(
@@ -120,6 +158,7 @@ def iter_mbox(
                             digest.hexdigest(), staged if error is None and size else None,
                             error or ("mbox_empty_message" if not size else None),
                         )
+                        _check_source(fd, source, initial)
                         output.seek(0)
                         output.truncate()
                     if not fragment:
@@ -141,11 +180,12 @@ def iter_mbox(
                     error = error or "mbox_message_too_large"
                 if len(fragment) > limits.max_line_bytes or not line_start:
                     error = error or "mbox_line_too_long"
-                if in_headers and line_start:
+                if in_headers and line_start and not fragment.startswith((b" ", b"\t")):
+                    # RFC 5322 section 2.2.3: WSP starts a continuation, not a new field.
                     # Header names are ASCII and case-insensitive. Do not trust a
                     # Content-Length received from a sender or silently ignore it.
                     name, colon, _ = fragment.partition(b":")
-                    if colon and name.strip().lower() == b"content-length":
+                    if colon and name.rstrip(b" \t").lower() == b"content-length":
                         raise MboxFormatError(
                             f"Message {index} at byte {envelope_offset} uses Content-Length; "
                             "mboxcl/mboxcl2 framing is not supported"
@@ -161,8 +201,4 @@ def iter_mbox(
                 if in_headers and fragment in {b"\n", b"\r\n"} and line_start:
                     in_headers = False
                 line_start = complete_line
-        final = source.stat()
-        if (initial.st_size, initial.st_mtime_ns, initial.st_ino) != (
-            final.st_size, final.st_mtime_ns, final.st_ino
-        ):
-            raise MboxFormatError("MBOX changed during import; use an immutable export and rerun")
+        _check_source(fd, source, initial)

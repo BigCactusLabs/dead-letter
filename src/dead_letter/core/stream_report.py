@@ -22,7 +22,25 @@ class StreamingReport:
 
     def __init__(self) -> None:
         self._entries = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
-        self.total = self.written = self.skipped = self.errors = 0
+        # One assignment commits the byte position and its counters together.
+        # A signal or write error before it leaves only an uncommitted tail.
+        self._checkpoint = (0, {"total": 0, "written": 0, "skipped": 0, "errors": 0})
+
+    @property
+    def total(self) -> int:
+        return self._checkpoint[1]["total"]
+
+    @property
+    def written(self) -> int:
+        return self._checkpoint[1]["written"]
+
+    @property
+    def skipped(self) -> int:
+        return self._checkpoint[1]["skipped"]
+
+    @property
+    def errors(self) -> int:
+        return self._checkpoint[1]["errors"]
 
     def __enter__(self) -> StreamingReport:
         return self
@@ -32,16 +50,19 @@ class StreamingReport:
 
     def append(self, entry: dict[str, Any]) -> None:
         encoded = json.dumps(_sanitize_value(entry), ensure_ascii=False)
-        if self.total:
-            self._entries.write(",\n")
-        self._entries.write(encoded)
-        self.total += 1
+        summary = dict(self._checkpoint[1])
+        summary["total"] += 1
         if not entry["success"]:
-            self.errors += 1
+            summary["errors"] += 1
         elif entry["output"] is None:
-            self.skipped += 1
+            summary["skipped"] += 1
         else:
-            self.written += 1
+            summary["written"] += 1
+        self._entries.seek(self._checkpoint[0])
+        self._entries.truncate()
+        self._entries.write((",\n" if self.total else "") + encoded)
+        self._entries.flush()
+        self._checkpoint = (self._entries.tell(), summary)
 
     def finish(
         self,
@@ -53,6 +74,10 @@ class StreamingReport:
         status: str | None = None,
         import_options: dict[str, Any] | None = None,
     ) -> Path:
+        # Ctrl-C may have stopped an append halfway through a JSON token/comma.
+        # Publish the committed prefix, never arbitrary bytes beyond it.
+        self._entries.seek(self._checkpoint[0])
+        self._entries.truncate()
         if status is None:
             status = (
                 "completed_with_errors" if self.errors and self.errors < self.total

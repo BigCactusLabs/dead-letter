@@ -137,6 +137,8 @@ def test_all_reads_are_bounded_and_first_result_does_not_index_archive(tmp_path,
             return self
         def __exit__(self, *args):
             self.stream.close()
+        def fileno(self):
+            return self.stream.fileno()
         def readline(self, size=-1):
             nonlocal bytes_read
             assert 0 < size <= 129
