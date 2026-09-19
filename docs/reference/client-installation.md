@@ -75,6 +75,12 @@ For the extension, open its MCP server settings and merge
 `mcpServers` map. The example explicitly leaves `autoApprove` empty. Do not
 replace the entire settings file or enable blanket auto-approval.
 
+**CLI and extension settings are not interchangeable.** The tested Cline CLI
+3.0.62 writes the command and arguments inside
+`mcpServers.dead-letter.transport`, with `type: stdio`. The extension example
+uses a flat server entry. Use the CLI's registration command for its own
+settings rather than pasting the extension example into an assumed CLI file.
+
 For an agent-guided install, provide [llms-install.md](../../llms-install.md)
 and specify the desired user/project scope. Observe what Cline changes and
 verify it preserves existing settings. This is a separate acceptance test from
@@ -118,6 +124,16 @@ an MCP handshake, lists tools, and converts synthetic mail. CI repeats it on
 Linux, macOS, and Windows. It tests the generated executable configuration,
 **not** browser deep-link handling, a named GUI release, or Cline's autonomous
 README installation. Record those client/version/OS observations separately.
+
+The additional `scripts/smoke_cline_registration.py` harness tests actual
+registration, the persisted transport, and removal in a disposable profile.
+It passed on Linux x64 with the official native
+`@cline/cli-linux-x64@3.0.62` package. It excludes inherited credentials and
+execution hooks, never calls a model, and never modifies a real user profile.
+Its noninteractive `--yes` is confined to that test; it does not change normal
+user approval guidance. The `cline@3.0.62` npm wrapper probe failed to expose
+an executable, so native-package success does not establish wrapper-install
+success. See [distribution evidence and limitations](mcp-distribution.md).
 
 Primary references reviewed September 18, 2026:
 [VS Code MCP developer guide](https://code.visualstudio.com/api/extension-guides/ai/mcp),

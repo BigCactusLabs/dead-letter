@@ -1,10 +1,10 @@
 # MCP distribution ledger
 
 Issue [#104](https://github.com/BigCactusLabs/dead-letter/issues/104) tracks
-catalog reach independently of local client installation. This snapshot was
-reviewed **September 18, 2026**. A candidate file, a submission, an accepted
-listing, and an observed client install are different states. None of the new
-submission candidates below is represented as submitted or accepted.
+catalog reach independently of local client installation. Reviewed
+**September 18, 2026 (America/New_York)**; machine receipts use UTC. A
+candidate, a submission, an accepted listing, and an observed client install
+are different states. No new external submission is claimed in this sweep.
 
 ## Source of truth and evidence
 
@@ -14,69 +14,125 @@ runtime server or account requirement. Direct VS Code/Cursor links bypass the
 need for catalog admission without bypassing client consent.
 
 **Do not read older publication prose as a guarantee of downstream admission.**
-The release workflow publishes to the Official MCP Registry. That is not
-proof of a listing in GitHub's curated MCP Registry, a particular Copilot
-host, PulseMCP, or another directory. Check each exact identity and version.
-The exact live Official Registry entry and downstream searches could not all
-be retrieved in this audit; successful repo automation is not substituted for
-that missing evidence.
+Official Registry publication is not proof of a listing in GitHub's curated
+catalog, every Copilot host, PulseMCP, or another directory.
+
+The follow-up audit now has a [preserved public evidence report](../project/discovery/2026-09-19T030205Z.json),
+produced by [Actions run 35417383963](https://github.com/BigCactusLabs/dead-letter/actions/runs/35417383963)
+at source commit `1c4a3cc`. The receipt time, September 19 at 03:02 UTC, is
+September 18 at 23:02 in New York. It supersedes the first pass's unknown
+Official Registry and Awesome states, not the unresolved other directories.
 
 | Surface | Observed state | Next concrete step |
 | --- | --- | --- |
-| Official MCP Registry | Publication is wired in the existing release workflow; latest live entry was not independently fetched in this audit. | After the next release, record its identity/version and live response. |
-| Glama | [dead-letter listing exists](https://glama.ai/mcp/servers/BigCactusLabs/dead-letter); ownership claim not completed. | Sign in as the repository owner on the [claim page](https://glama.ai/mcp/servers/BigCactusLabs/dead-letter/admin). |
-| GitHub MCP Registry / VS Code gallery | [Public catalog](https://github.com/mcp) reachable; targeted listing/complete search not verified. | Verify the exact `io.github.BigCactusLabs/dead-letter` identity, then use the current catalog onboarding route if absent. |
-| PulseMCP | Targeted search fetch did not succeed; presence remains unknown. | Check the exact repository/registry identity and record a listing URL/version after release. |
-| Cline `marketplace` | Current PR format reviewed; generated candidate and pinned upstream-validation CI prepared. | Validate, create a fork branch, submit the entry, and record the PR URL/outcome. |
-| Cline `mcp-marketplace` | Legacy issue submission remains documented; actual Cline README-only setup has not been observed. | Complete the named-client install test before making its required confirmation; avoid duplicate submissions. |
-| `punkpeye/awesome-mcp-servers` | Contribution policy reviewed; code search found no match, but the full large README was unavailable. | Recheck for duplicates in the full README, add one alphabetized line in the appropriate category, and open a fork PR. |
-| Smithery | Local MCPB distribution is supported; dead-letter listing/publication not verified. | Use a tested released MCPB and owner-authenticated publishing; no hosted mail service. |
-| mcp.so | Current submit page offers a $39 publishing flow. No payment or submission performed. | Owner decision on paid distribution; recheck terms before any charge. |
-| mcpservers.org | Submit form offers free review and optional paid promotion. No form submitted. | Use the free path with a real maintainer contact email and canonical copy below. |
-| cursor.directory | Current form is a community plugin submission using Open Plugins; not a confirmed dead-letter listing. | Evaluate an intentional plugin package/manual entry separately; do not auto-enable an unreleased MCP server for contributors. |
-| Agent Finder / ARD | Portable skill and ARD metadata exist in main; live natural-language retrieval not tested. | Follow [Agent Discovery](agent-discovery.md), record configured catalog/revision and results for the four queries below. |
+| Official MCP Registry | Exact identity verified active at **0.2.5**, with its PyPI package. No MCPB or OCI package appears in this response. | Recheck after a maintainer release; do not advertise unreleased artifacts as already published. |
+| Glama | [Listing exists](https://glama.ai/mcp/servers/BigCactusLabs/dead-letter); claim not completed. Its generated directory-tool summary incorrectly calls output optional. | Owner sign-in on the [claim page](https://glama.ai/mcp/servers/BigCactusLabs/dead-letter/admin), then request a metadata correction/re-sync. |
+| GitHub MCP Registry / VS Code gallery | [Public catalog](https://github.com/mcp) reachable; targeted listing/complete search not verified. | Verify the exact identity, then use the current onboarding route if absent. |
+| PulseMCP | Targeted lookup did not succeed; presence remains unknown. | Check exact repository/registry identity and record a listing URL/version. |
+| Cline `marketplace` | No matching MCP repository in the complete **203-entry** published catalog checked; generated candidate passes its pinned upstream validator. Native Linux CLI registration also passes. | Recheck open submissions, submit the prepared entry from an authorized fork, and record review/outcome. |
+| Cline `mcp-marketplace` | Legacy issue route still requests an observed autonomous README-only install; that has not been done. | Complete that specific named-client test before making the required confirmation; avoid duplicate submissions. |
+| `punkpeye/awesome-mcp-servers` | **Already listed** under Communication, line 890 at `393b4e9fafb0348e5a1c2a4ef5a8719b0d85e061`. Full README length and Git blob identity verified before scanning. | Do not submit a duplicate. Verify the existing entry when its description or install contract changes. |
+| Smithery | Local MCPB distribution is supported; dead-letter publication not verified. | Use a tested released MCPB and owner-authenticated publishing; no hosted mail service. |
+| mcp.so | Initial September 18 form review offered a $39 publishing flow. No payment or submission performed. | Owner decision; recheck terms before any charge. |
+| mcpservers.org | Initial form review offered free review and optional paid promotion. No form submitted. | Use the free path with real maintainer contact details and canonical copy below. |
+| cursor.directory | Community plugin submission uses Open Plugins; dead-letter listing not verified. | Evaluate an intentional plugin package/manual entry separately; do not auto-enable an unreleased MCP server for contributors. |
+| Agent Finder / ARD | Portable skill and ARD metadata exist in main; natural-language retrieval not tested. | Follow [Agent Discovery](agent-discovery.md), recording configured catalog/revision and the four queries below. |
 
-The connected GitHub actions available for this audit can edit this repository
+The connected GitHub actions available for this sweep can edit this repository
 but expose no fork-creation action; no existing Cline marketplace fork was
-found. Interactive directory/account forms were not authenticated. The
-prepared candidate files are a handoff, not an invented upstream submission.
-No versions, release pointers, licenses, account permissions, or billing
-settings were changed as part of this sweep.
+found. Interactive directory/account forms were not authenticated. Prepared
+files are a handoff, not an invented upstream submission. No versions, release
+pointers, licenses, account permissions, or billing settings were changed.
+
+## Repeatable public discovery audit
+
+```bash
+python scripts/audit_mcp_discovery.py --output build/discovery-evidence.json
+uv run pytest -q tests/plugin/test_discovery_audit.py
+```
+
+The audit makes bounded, unauthenticated HTTPS reads to fixed public endpoints.
+It does not follow redirects, authenticate, install, submit, or touch mail.
+Each received response has a URL, UTC time, byte length, and SHA-256 receipt.
+For Awesome, it resolves a full source commit, fetches the README's metadata
+at that commit, and verifies the downloaded bytes against both the expected
+size and Git blob hash. A missing title is not evidence that the file is
+incomplete; an HTTP-success response alone is not evidence that it is complete.
+
+Results are `present`, `not_in_snapshot`, or `unknown`. A 404, rate limit,
+timeout, schema failure, partial catalog, or integrity mismatch is **unknown**,
+never absence. Exact repository matching excludes namesakes. A repository
+reference outside recognized listing rows is sent for manual review rather
+than silently reported absent. A checked README does not reveal open PRs.
+
+The `discovery-evidence` CI job saves an artifact for 30 days; the report linked
+above is a deliberate permanent checkpoint copied from the actual artifact.
+New `--output` files never overwrite prior evidence. There is no scheduled
+crawler. This is an observational job: a green job means a report was written,
+not that every directory accepted the project. Read each result and its scope.
 
 ## Glama: claim, don't duplicate
 
-The current claim page distinguishes repository-owner sign-in from organization
-maintainer delegation. Signing in as the owning GitHub account is the direct
-route. `glama.json` is for declaring delegated maintainers when needed; do not
-add it solely to imitate a completed claim. After sign-in, verify admin access
-and request a re-sync. Do not turn on hosted email processing as a side effect.
+The claim page distinguishes repository-owner sign-in from organization
+maintainer delegation. Owner sign-in is the direct route. `glama.json` declares
+delegated maintainers when needed; do not add it to imitate a completed claim.
+After sign-in, verify admin access and request a re-sync. Do not enable hosted
+email processing as a side effect.
 
-## Cline submission package
+Correction to request, observed September 18: the overview says
+`convert_directory` has an optional output directory. The actual MCP tool
+requires `output_directory` and permits at most 50 `.eml` files per call. Its
+README tool table already states that requirement, so the generated overview
+and the contract disagree. Correct the overview; do not weaken the server to
+match stale directory prose. No upstream listing edit was made here.
+
+## Cline submission package and tested path
 
 Candidate: [entry.json](../project/submissions/cline/entry.json). Copy it to
-`registry/mcps/dead-letter/entry.json` in a fork of `cline/marketplace`.
-The `$schema` path is correct at that **upstream destination**, not this
-staging directory. The entry uses the current stdio argv contract, explicit
+`registry/mcps/dead-letter/entry.json` in an authorized fork of
+`cline/marketplace`. Its `$schema` path is correct at that **upstream
+destination**, not this staging directory. The entry uses stdio argv, explicit
 license disclosure, and `verified: false` / `featured: false`; only Cline's
 reviewers may grant those statuses.
 
-The `cline-catalog` CI job stages this exact generated file in upstream commit
-`e59b03e4f8904073b43b40e93d975f639d1fa694` and runs `npm run validate` using
-Cline's own dependency-free validator. It refuses to overwrite an existing
-upstream directory. Passing it proves metadata acceptance by that validator,
-not reviewer approval or a successful Cline GUI install. Refresh the pinned
-upstream revision in a reviewed PR when its schema/process changes.
+`cline-catalog` stages the exact generated file at upstream commit
+`e59b03e4f8904073b43b40e93d975f639d1fa694`, refuses to overwrite an entry, and
+runs Cline's own dependency-free validator. Refresh that pin in a reviewed PR
+when the schema/process changes. Validator success is not reviewer approval.
 
-In the fork checkout, after copying the file and rechecking duplicates:
+The new `cline-registration` job passed using **`@cline/cli-linux-x64@3.0.62`**
+on Linux x64. It registers the candidate through Cline's real CLI in a
+throwaway profile, checks that unrelated settings and approvals survive,
+executes the exact saved transport for MCP initialization/tool discovery and
+synthetic conversion, then uninstalls and checks the original settings remain.
+No model request, private email, or user's real configuration is involved.
+Inherited credentials and execution hooks are excluded from that profile.
+
+Reproduce on Linux x64 with Node/npm and uv available:
+
+```bash
+python scripts/smoke_cline_registration.py
+uv run pytest -q tests/plugin/test_cline_registration.py
+```
+
+**Packaging limitation:** the clean probe of
+`npx --yes --package=cline@3.0.62 cline --version` installed dependencies but
+failed with `cline: not found` in [run 35416973610](https://github.com/BigCactusLabs/dead-letter/actions/runs/35416973610).
+The native package used above is explicitly published by Cline's
+[source build](https://github.com/cline/cline/blob/d48afb3542b07cbb6d17b40d7c536aadc9cbf041/apps/cli/script/build.ts).
+It is not a silent fallback or proof that the wrapper, global npm install,
+other architectures, or GUI installation work. The internal workspace name
+`@cline/cli` is also not the public wrapper. Preserve those distinctions.
+
+In the fork checkout, after rechecking existing entries and open PRs:
 
 ```bash
 npm run validate
 npm run generate
 ```
 
-Open a PR containing the new entry according to the
-[current contribution guide](https://github.com/cline/marketplace/blob/main/CONTRIBUTING.md).
-Use this description:
+Follow the [current contribution guide](https://github.com/cline/marketplace/blob/main/CONTRIBUTING.md)
+and describe the candidate accurately:
 
 > Adds dead-letter, a local stdio MCP server for converting .eml exports to
 > Markdown, retaining attachments in bundles, and inspecting diagnostics.
@@ -86,11 +142,10 @@ Use this description:
 > Tool results may be sent to the MCP client's model provider. This entry
 > leaves verification and featured status false for maintainer review.
 
-Attach the actual validation run and client observations. Never assert that
-Cline autonomously installed from README merely because the stdio smoke test
-passed. The [legacy repository](https://github.com/cline/mcp-marketplace)
-explicitly asks for that observed install plus a 400×400 PNG; its issue route
-must not be used to bypass those requirements.
+Attach actual validator and native-CLI evidence. Do not claim autonomous
+README installation: the [legacy repository](https://github.com/cline/mcp-marketplace)
+requires that observation plus a 400×400 PNG, and its issue route must not
+bypass those requirements.
 
 ## Other submission copy and boundaries
 
@@ -103,53 +158,45 @@ pipelines, and local knowledge bases. Supports attachment bundles and
 conversion diagnostics without a mailbox account or upload service.  
 **License:** PolyForm Noncommercial 1.0.0; commercial use requires separate permission.
 
-For Awesome MCP Servers, a proposed single-line description is:
+Awesome already has an entry. When updating it, match the existing category
+and alphabetical conventions. Do not label the project unrestricted open
+source or claim native MBOX/PST/MSG support based on installation metadata.
 
-```markdown
-- [BigCactusLabs/dead-letter](https://github.com/BigCactusLabs/dead-letter) - Convert local .eml email exports to Markdown with YAML front matter, attachment bundles, and conversion diagnostics. PolyForm Noncommercial 1.0.0.
-```
-
-Match the current category conventions and alphabetic order after checking
-the full README. Do not label the project unrestricted open source or claim
-native support for MBOX/PST/MSG.
-
-Smithery's current [publishing guide](https://smithery.ai/docs/build/publish)
-accepts local MCPB uploads:
+Smithery's [publishing guide](https://smithery.ai/docs/build/publish) supports
+local MCPB uploads:
 
 ```bash
 smithery mcp publish ./dead-letter-mcp-X.Y.Z.mcpb -n OWNER_NAMESPACE/dead-letter
 ```
 
 Resolve the authenticated namespace, inspect the bundle/manifest, verify its
-checksum and live PyPI pin, and test Smithery's supported runtime before
-publication. The repo's uv-style MCPB may need host-specific compatibility
-validation; generic MCPB support alone does not establish it. Do not use the
-remote URL tab for this local server.
+checksum and live PyPI pin, and test Smithery's supported runtime first.
+Generic MCPB support does not establish support for this uv-style bundle.
+Do not use a remote URL entry for the local server.
 
-For [mcpservers.org](https://mcpservers.org/submit), use the free-review option,
-enter the exact registry identity when requested, leave remote-server status
-unchecked, and supply a real contact email. A GitHub noreply address is not a
-substitute for maintainer contact. The [mcp.so form](https://mcp.so/submit?type=server)
-currently requests payment; no budget has been approved here.
+For [mcpservers.org](https://mcpservers.org/submit), use free review, supply
+real maintainer contact details and the exact registry identity, and leave
+remote-server status unchecked. A GitHub noreply address is not a substitute
+for a contact email. The [mcp.so form](https://mcp.so/submit?type=server)
+requested payment in the initial review; no budget has been approved here.
 
 ## Remaining observed-client acceptance
 
 Record client version, OS/architecture, configuration scope, package version,
-command, date, tool inventory, and one synthetic conversion result. Keep
-private paths or email bodies out of public evidence. Separately record each
-catalog's exact listing URL and submission outcome. For VS Code verify
-`@mcp dead-letter` only after locating the catalog entry; direct installation
-is a different success condition.
+command, date, tool inventory, and a synthetic conversion. Keep private paths
+and mail out of public evidence. Catalog listing URLs and submission outcomes
+remain separate. `@mcp dead-letter` discovery in VS Code is not established by
+the working direct-install link or by a native Cline registration test.
 
-Agent Finder queries to run against a named configured registry/catalog:
+Agent Finder queries against a named configured registry/catalog:
 `convert exported email to markdown`, `read an eml file`,
 `prepare email for RAG`, and `build a local email archive`.
-The existing ARD file is not domain-anchored; neither publishing it nor
-installing a skill proves task-level public discovery.
+The ARD file is not domain-anchored; publishing it or installing a skill does
+not prove task-level public discovery.
 
-Keep #104 open until the remaining submissions and client/catalog observations
-are recorded. The separate [container issue #108](https://github.com/BigCactusLabs/dead-letter/issues/108)
-and MCPB release work remain independent release gates.
+Keep #104 open for remaining account claims, submissions, and named-client
+observations. [Container issue #108](https://github.com/BigCactusLabs/dead-letter/issues/108)
+and MCPB publication retain their separate release gates.
 
 ## Primary process references
 
