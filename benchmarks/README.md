@@ -1,44 +1,43 @@
 # Token-cost benchmarks
 
 How many LLM tokens does an email cost, depending on how you hand it to the
-model? This benchmark measures that across four representations of the same
-message and reports the honest spread — including the cases where a naive
-approach is *cheaper* than dead-letter.
+model? This benchmark compares four representations of the same message and
+reports the spread—including cases where a naive approach is *cheaper*.
 
-> **TL;DR** dead-letter is **~88% smaller than the raw `.eml`** (median), and it
-> is the only representation that keeps thread structure, sender attribution,
-> links, and attachment metadata intact. It is **not** the fewest possible
-> tokens — lossy text extraction is cheaper because it throws those things away.
-> dead-letter is the cheapest representation that keeps the email **whole**.
+> dead-letter's value is **fidelity per token**. In the stored synthetic-corpus
+> results below, its aggregate Markdown count is about 88% below raw `.eml`.
+> Naive extraction is often smaller, but discards useful structure and metadata.
+> These results are a comparison of these representations, not a claim of
+> universal optimality or downstream answer quality.
 
 ## What it measures
 
 For every email in [`fixtures/`](fixtures/), [`run.py`](run.py) counts tokens for:
 
-| Representation | What it is | Honest caveat |
-|---|---|---|
-| **Raw `.eml`** | the file bytes, verbatim | the "just paste the file" ceiling; nobody *should* do this, but people do |
-| **Naive (plain)** | stdlib `email` `get_body()`, prefers `text/plain` | clean when a good plain part exists, a useless stub when it doesn't; **drops attachments** |
-| **Naive (HTML)** | the `text/html` part, tags crudely regex-stripped | what you reach for when the plain part is junk; **drops links and attachments** |
-| **dead-letter** | real `convert()` output, `STRUCTURED` thread mode | adds YAML front matter + per-message thread headers + preserves links |
+| Representation | What it is | Caveat |
+| --- | --- | --- |
+| **Raw `.eml`** | File bytes, verbatim | Includes MIME/base64 rather than just readable message text |
+| **Naive (plain)** | stdlib `email` `get_body()`, prefers `text/plain` | A good plain part can be compact; a stub can omit most useful content |
+| **Naive (HTML)** | HTML body with tags crudely regex-stripped | Loses markup structure and link targets embedded only in tags |
+| **dead-letter** | Real `convert()` output in `STRUCTURED` mode | Adds front matter and per-message thread headers; preserves useful links/metadata |
 
-It also records **attachment retention**: does the attachment filename survive
-into each representation?
+The attachment-retention metric checks whether **attachment filenames**
+survive into each representation. It is not a measurement of decoded binary
+retention, attachment text extraction, or the tokens those files would cost
+in another parser/model. Bundle extraction is a separate workflow.
 
 ### Why `STRUCTURED` thread mode
 
-dead-letter's shipping default is `LATEST` — it renders only the newest message
-and drops the quoted history. That is a real token saving, but it is **not a
-same-information comparison** against the naive baselines, which include the
-whole quoted chain. To keep the comparison fair, the benchmark uses
-`STRUCTURED` mode, which reconstructs the full thread (deduplicated, one section
-per message). The shipping `LATEST` default would score *lower* than the numbers
-below.
+The shipping default is `LATEST`, which renders the newest message rather
+than reconstructing the full quoted history. Comparing that default directly
+to a baseline containing the whole thread would not be a same-information
+comparison. The benchmark therefore uses `STRUCTURED` mode: deduplicated
+thread sections with attribution where it can be parsed. Do not present these
+numbers as a measurement of the default mode or every real-world thread.
 
 ## Results
 
-Run on the synthetic corpus, tokenizer `o200k_base` (GPT-4o-class), medians per
-category:
+Stored synthetic-corpus results, tokenizer `o200k_base`, medians per category:
 
 <!-- BENCHMARK-TABLE:START (regenerate with: uv run python benchmarks/run.py --markdown-only) -->
 | Category | N | Raw `.eml` | Naive (plain) | Naive (HTML) | dead-letter | vs raw | Attachments kept |
@@ -52,67 +51,65 @@ category:
 | **all** | **11** | **1,539** | **72** | **113** | **178** | **88%** | — |
 <!-- BENCHMARK-TABLE:END -->
 
-_Counts are model-relative; absolute numbers shift across tokenizers but the
-ratios hold. Corpus is synthetic-but-representative — see
-[`fixtures/generate.py`](fixtures/generate.py)._
+“Attachments kept” means filenames retained. “100%” is rounded, not zero
+tokens or complete elimination of the message. This audit preserves the
+stored table; it does not claim a fresh benchmark run. When regenerating,
+record source commit, dependency lock, tokenizer, and command. Different
+corpora, package versions, and tokenizers can change both counts and ratios.
 
 ## How to read this
 
-**The big, always-true win is vs raw `.eml`.** Real `.eml` files are dominated
-by MIME headers, multipart boundaries, duplicated HTML/plain bodies, and
-base64-encoded attachments. A single email with a modest PDF attachment is
-~126k tokens raw; dead-letter renders it in ~200. If anything in your pipeline
-ever sees a raw `.eml`, that is a 10–600× cliff.
+**The large measured saving is against raw MIME.** The attachment category
+contains base64-heavy messages: its median is 126,393 raw tokens versus 178
+Markdown tokens. The decoded attachment content is outside that Markdown
+count; this is not equivalent to compressing the same binary information
+into 178 tokens.
 
-**dead-letter is not the cheapest possible representation, and we don't pretend
-it is.** Naive text extraction is consistently fewer tokens — *because it is
-lossy*. It drops attachments entirely (0/2 retained vs dead-letter's 2/2),
-flattens or duplicates quoted threads, and (for the HTML strip) discards every
-link. The newsletter row is the starkest: naive-plain is 26 tokens because the
-`text/plain` part is a "view in browser" stub — it threw the entire newsletter
-away.
+**dead-letter is not the cheapest possible representation.** The naive plain
+and HTML baselines can be smaller, partly because they discard information.
+For example, the newsletter's plain part is a “view in browser” stub: its low
+count does not mean the newsletter body was preserved. Plain-text messages
+show the other side: front matter and structure add meaningful overhead.
 
-**dead-letter's token premium buys fidelity:**
+**The token premium buys useful structure:**
 
-| What survives | Raw `.eml` | Naive extraction | dead-letter |
-|---|:--:|:--:|:--:|
-| Readable body text | buried in MIME | ✅ | ✅ |
-| Thread structure & order | raw quoted blocks | ❌ flattened | ✅ structured |
-| Per-message sender + date | in quoted headers | ❌ | ✅ |
-| Links / URLs | ✅ (in HTML) | ❌ stripped | ✅ |
-| Attachment presence | base64 blob | ❌ dropped | ✅ name + type |
-| Structured metadata (subject/sender/date) | ❌ parse yourself | ❌ | ✅ front matter |
+| Information | Raw `.eml` | Naive extraction | dead-letter's measured representation |
+| --- | --- | --- | --- |
+| Readable body | Encoded/mixed with MIME | Body text, subject to selected part | Markdown body |
+| Thread order/attribution | Raw quote markup/headers | May flatten or duplicate | Structured sections where parsed |
+| Link targets | Present in source HTML | Tag stripping can lose targets | Markdown links |
+| Attachment presence | MIME parts and encoded payload | Not represented by these body-only baselines | Filenames in metadata |
+| Subject/sender/date | Headers requiring parsing | Not added by these baselines | YAML front matter |
 
-So the value proposition the data supports is **fidelity per token**: the
-cheapest representation that keeps the email intact, not the cheapest
-representation full stop.
+That supports **fidelity per token** as the product tradeoff, not a theorem
+that no other representation can do better. The raw source, rendered text,
+metadata, and retained binaries are different artifacts with different uses.
 
 ## Corpus honesty
 
-The corpus is **synthetic-but-representative**, generated by
-[`fixtures/generate.py`](fixtures/generate.py) — which doubles as the
-disclosure. We use synthetic fixtures deliberately:
+The 11-message corpus is synthetic, generated by
+[`fixtures/generate.py`](fixtures/generate.py). It deliberately exercises
+HTML, quoted threads, attachments, newsletters, and plain text. It is not a
+random sample of users' inboxes, and category weighting influences the
+aggregate. Do not infer a universal traffic distribution from it.
 
-- **For the cost axis, synthetic is honest.** Token cost driven by MIME headers,
-  base64 encoding, and Outlook/Gmail HTML bloat is *deterministic structure*,
-  independent of content. A synthetic Outlook email with a real base64 PDF has
-  the same byte overhead as a real one.
-- **We do not use it to claim parse quality** on real-world mess. That is a
-  different question, covered by the test suite in `tests/core/fixtures/`.
-- **No PII**, so it can live in a public repo, and it is byte-stable so anyone
-  can regenerate and verify.
-
-We skew the corpus toward HTML, attachments, and multi-message threads because
-that is what real corporate mail looks like — plain-text-only mail is rare. The
-two `plaintext__*` fixtures are included as an honesty anchor: they are the case
-where dead-letter's structure adds the most relative overhead.
+Synthetic fixtures expose MIME/base64 overhead without publishing private
+email. Real-world parsing robustness and retention belong to the regression
+suite and additional explicitly evaluated corpora; token counts alone do not
+establish either. No email-content telemetry is needed to reproduce this test.
 
 ## Reproduce
 
+From a source checkout, use the project's committed dependency context:
+
 ```bash
-uv pip install -e '.[benchmark]'        # adds tiktoken
-uv run python benchmarks/fixtures/generate.py   # regenerate the corpus (optional)
-uv run python benchmarks/run.py                  # full report
-uv run python benchmarks/run.py --encoding cl100k_base   # different tokenizer
-uv run python benchmarks/run.py --markdown-only          # just the table
+uv sync --extra benchmark --locked
+uv run python benchmarks/fixtures/generate.py         # optional regeneration
+uv run python benchmarks/run.py                       # full report
+uv run python benchmarks/run.py --encoding cl100k_base # compare a tokenizer
+uv run python benchmarks/run.py --markdown-only       # generated table
 ```
+
+Review regenerated fixtures/output before committing. Keep the table markers
+so the report remains reproducible, and preserve the rows where a simpler
+representation is cheaper.

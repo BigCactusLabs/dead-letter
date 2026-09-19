@@ -2,7 +2,7 @@
 title: html-to-markdown v3 Migration Plan
 doc_type: reference
 status: completed
-last_updated: 2026-06-27
+last_updated: 2026-09-19
 audience:
   - maintainers
 scope:
@@ -13,106 +13,88 @@ scope:
 
 # html-to-markdown v3 Migration Plan
 
-This document defines the migration from `html-to-markdown` 2.x to 3.x.
+Completed migration record, retained at its original URL. The implementation
+phases below are history, not a request to restart the migration. For current
+behavior, use the [runtime contract](v4-runtime-contracts.md).
 
 ## Current State
 
-- Runtime now depends on `html-to-markdown>=3.1.0,<4.0`.
-- `src/dead_letter/core/quotes.py` uses DOM-based quote-pattern detection and no longer imports `convert_with_visitor`.
-- `src/dead_letter/core/html.py` calls the internal adapter in `src/dead_letter/core/html_to_markdown_adapter.py`.
-- The lockfile currently resolves `html-to-markdown==3.8.2`; compatibility
+- Runtime depends on `html-to-markdown>=3.1.0,<4.0`.
+- `src/dead_letter/core/quotes.py` uses DOM-based quote detection rather than
+  importing `convert_with_visitor`.
+- `src/dead_letter/core/html.py` calls the internal
+  `src/dead_letter/core/html_to_markdown_adapter.py` adapter.
+- `uv.lock` is the authority for the resolved dependency version; do not copy
+  a moving lock version into this completed migration record. Compatibility
   checks still include the lower bound `html-to-markdown==3.1.0`.
 
 ## Migration Goal
 
-Upgrade to `html-to-markdown` v3 without changing user-facing conversion contracts:
-
-- No breaking change to output schema (`message.md` front matter/runtime contracts).
-- Existing quote/client-hint behavior remains at parity or improves measurably.
-- Core and backend suites remain green.
+Upgrade to v3 without changing user-facing conversion contracts: retain the
+output schema, preserve or improve quote/client-hint behavior, and keep core
+and backend regression suites green.
 
 ## Strategy
 
-1. Decouple quote detection from `html-to-markdown` visitor APIs.
-2. Keep markdown conversion behind an internal adapter boundary.
-3. Validate parity and resilience before removing the `<3.0` guardrail.
+Decouple quote detection from visitor APIs, isolate Markdown conversion behind
+an adapter, and validate parity/resilience before replacing the old `<3.0`
+guardrail. The current runtime range is `>=3.1.0,<4.0`.
 
 ## Completion Notes
 
-- Quote detection now traverses sanitized HTML with `selectolax` and preserves
-  the existing `gmail`, `outlook`, `yahoo`, `generic`, `thunderbird`, and
-  `apple_mail` signals.
-- The conversion adapter normalizes v2 string results, early v3 dict results,
-  and current v3 `ConversionResult.content` results into the string expected by
-  the pipeline.
-- The guardrail has been removed in favor of `html-to-markdown>=3.1.0,<4.0`.
+Quote detection traverses sanitized HTML with `selectolax`, preserving the
+existing Gmail, Outlook, Yahoo, generic, Thunderbird, and Apple Mail signals.
+The conversion adapter normalizes older string/dict results and v3
+`ConversionResult.content` into the pipeline's string contract. This adapter
+boundary remains useful for future dependency changes.
 
 ## Implementation Plan
 
+The following phases document the completed work.
+
 ### Phase 1: Decouple quote detection
 
-- Replace `convert_with_visitor` usage in `src/dead_letter/core/quotes.py` with DOM-based scanning using `selectolax`.
-- Preserve existing rule signals:
-  - `gmail`, `outlook`, `yahoo`, `generic`, `thunderbird`, `apple_mail`
-- Keep `detect_quote_patterns(html: str) -> set[str]` public behavior unchanged.
-- Re-run/adjust quote and HTML tests to assert unchanged outputs.
-
-Exit criteria:
-
-- `tests/core/test_quotes.py` and `tests/core/test_html.py` pass with identical expected pattern sets.
-- No import of `convert_with_visitor` remains in source.
+Replace visitor usage in `quotes.py` with DOM scanning. Preserve
+`detect_quote_patterns(html: str) -> set[str]` and the provider signals.
+Exit evidence: quote/HTML tests preserve expected pattern sets, with no
+`convert_with_visitor` import remaining in runtime source.
 
 ### Phase 2: Introduce conversion adapter
 
-- Add an internal adapter module wrapping `html-to-markdown` calls (single entrypoint for convert options/output).
-- Move direct `ConversionOptions`/`convert` references behind this adapter.
-- Keep `dead_letter.core.html.html_to_markdown(...)` behavior unchanged for callers.
-
-Exit criteria:
-
-- `src/dead_letter/core/html.py` depends on internal adapter only.
-- Core regression and panic-repair tests still pass.
+Route direct conversion options/calls through the internal adapter. Preserve
+`dead_letter.core.html.html_to_markdown(...)` for callers and keep dependency
+API differences out of the rest of the pipeline.
 
 ### Phase 3: v3 trial and compatibility checks
 
-- In isolated env, run:
-  - `uv run --with html-to-markdown==3.1.0 pytest -q tests/core tests/backend`
-  - `uv run pytest -q tests/core`
-  - `uv run pytest -q tests/backend`
-- Fix API or behavior differences in adapter only (avoid broad pipeline rewrites).
-- Keep diagnostics semantics stable (`html_markdown_failed`, repair/fallback behavior).
+Exercise the lower bound and locked context independently:
 
-Exit criteria:
+```bash
+uv run --with html-to-markdown==3.1.0 pytest -q tests/core tests/backend
+uv run pytest -q tests/core
+uv run pytest -q tests/backend
+```
 
-- Core + backend suites green under v3 trial.
-- No contract doc updates required for end users.
+Keep diagnostics semantics stable, including `html_markdown_failed` and the
+explicit repair/fallback paths. A trial dependency override is not a request
+to rewrite the committed lockfile.
 
 ### Phase 4: Remove guardrail and finalize
 
-- Update dependency constraint from `<3.0` to `>=3.1.0,<4.0`.
-- Refresh lockfile.
-- Add changelog entry declaring v3 migration complete.
-
-Exit criteria:
-
-- Standard CI jobs pass on locked v3 dependency.
-- Dependency refresh workflow no longer reintroduces v2-only assumptions.
+Replace the v2 constraint with `>=3.1.0,<4.0`, refresh the reviewed lock,
+record completion, and ensure dependency-refresh automation does not restore
+v2-only assumptions.
 
 ## Risks and Mitigations
 
-- Risk: quote-pattern drift from visitor removal.
-  - Mitigation: preserve existing tests and add fixtures for Gmail/Outlook/Yahoo cite patterns.
-- Risk: markdown output diffs in edge HTML.
-  - Mitigation: use adapter-layer normalization and quality regression tests before rollout.
-- Risk: platform packaging gaps for newer v3 releases.
-  - Mitigation: first target `3.1.0`, then expand once wheel/sdist support is confirmed for supported runtimes.
+Provider quote drift is covered by fixtures; edge HTML/output changes by
+adapter and panic-repair regression tests. Platform wheel/sdist compatibility
+still needs testing when dependency versions change. Completion of this
+migration is not evidence that every later upstream version is compatible.
 
 ## Rollback Plan
 
-If a post-migration v3 dependency regression appears:
-
-- Narrow the `html-to-markdown>=3.1.0,<4.0` range or pin the last known-good
-  v3 release, then refresh `uv.lock`.
-- Keep the adapter boundary in place while fixing or isolating the regression.
-- Re-run the lower-bound and locked-version compatibility checks before
-  widening the range again.
+Narrow the v3 range or pin the last known-good v3 release, refresh `uv.lock`,
+and retain the adapter while fixing the regression. Run lower-bound and
+locked-version checks before widening the range. Do not silently roll back
+to the old architecture based on a completed phase checklist.
