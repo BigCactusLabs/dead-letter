@@ -14,7 +14,7 @@ must not infer permission to perform them.
 | Event | Effect |
 | --- | --- |
 | Push `vX.Y.Z` | Creates a package source tag; does **not** itself publish to PyPI |
-| Publish a stable GitHub release for `vX.Y.Z` | Read-only preflight → PyPI → MCPB and OCI → resolved MCP Registry metadata |
+| Publish a stable GitHub release for `vX.Y.Z` | Read-only preflight → PyPI upload → install readiness → MCPB and OCI → resolved MCP Registry metadata |
 | Push `plugin-vX.Y.Z` | Plugin checks → exact PyPI pin available → marketplace PR/merge → compatibility `release` branch |
 | Publish a plugin GitHub release or a prerelease | Package publication jobs are skipped |
 | Edit the Homebrew tap | Separate maintainer-owned core-only formula update |
@@ -122,13 +122,20 @@ the workflow's channel summary and the individual job steps.
 
 The package upload includes PyPI attestations. Confirm the intended sdist and
 wheel are available, then exercise the published version with synthetic mail.
-A successful upload response can precede availability on the simple index
-used by installers. The bundle/registry jobs retain bounded readiness checks;
-plugin publication checks both indexes as well:
+A successful upload can precede availability on the simple index used by
+installers. The separate, read-only `pypi-ready` job uses the same bounded
+helper as plugin publication, checking the JSON API, unyanked distribution
+availability, and simple index before MCPB, container, or registry work starts:
 
 ```bash
 python scripts/release.py wait-pypi "$VERSION"
 ```
+
+If `publish` succeeds but `pypi-ready` fails, rerun **failed jobs**. The
+readiness retry does not re-upload the successful package. The readiness gate
+also protects the container's comparison against the exact PyPI tool schemas;
+it must not be removed just because a local container build needs no PyPI
+release. Avoid duplicating readiness checks in separate shell loops.
 
 Use a maintainer-authorized CLI/session for the release event. A release
 created by another workflow's default `GITHUB_TOKEN` generally does not start
@@ -137,11 +144,11 @@ without designing its authorization and event chain.
 
 ## MCP Registry Publish (Automatic)
 
-The registry job waits for successful PyPI, MCPB, and OCI jobs. It stamps the
-bundle's actual SHA-256 and URL, adds the tested OCI index digest, archives
-`dead-letter-server-X.Y.Z.json` plus its checksum, then publishes using GitHub
-OIDC. The archived manifest is the exact input to the publisher, not proof
-that registry publication succeeded; verify the registry's exact version.
+The registry job waits for successful PyPI readiness, MCPB, and OCI jobs. It
+stamps the bundle's actual SHA-256 and URL, adds the tested OCI index digest,
+archives `dead-letter-server-X.Y.Z.json` plus its checksum, then publishes
+using GitHub OIDC. The archived manifest is the exact input to the publisher,
+not proof that registry publication succeeded; verify the registry's exact version.
 
 The committed `server.json` is a source template. **Never manually publish it
 with a zero bundle hash or invent an OCI digest.** The resolved manifest
@@ -205,9 +212,10 @@ existing version digest to make a retry pass.
 ## Update The Homebrew Tap
 
 Homebrew remains a manual, core-CLI-only channel after PyPI succeeds. In a
-checkout of `BigCactusLabs/tap`, update `Formula/dead-letter.rb` to the exact
-released sdist URL and SHA-256 from PyPI. Review its dependency resources;
-do not accidentally add the UI/MCP extras or unrelated development packages.
+checkout of `BigCactusLabs/homebrew-tap` (installed as `BigCactusLabs/tap`),
+update `Formula/dead-letter.rb` to the exact released sdist URL and SHA-256
+from PyPI. Review its dependency resources; do not accidentally add the
+UI/MCP extras or unrelated development packages.
 
 ```bash
 # In the tap checkout, after editing and reviewing the formula:
@@ -287,7 +295,7 @@ several docs:
 | Check | Record |
 | --- | --- |
 | Source | Package tag, exact commit, CI run, dated changelog |
-| PyPI | Version, sdist/wheel availability, attestation, fixture result |
+| PyPI | Version, sdist/wheel availability on both indexes, attestation, fixture result |
 | MCPB | Asset/checksum, stdio smoke; GUI client/OS results separately |
 | OCI | Index digest, both platforms, anonymous pull, provenance |
 | Registry | Resolved manifest checksum and actual published version |

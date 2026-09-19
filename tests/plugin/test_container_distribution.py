@@ -261,14 +261,25 @@ def test_platform_verification_pulls_child_manifests_not_the_index():
 
 
 def test_release_waits_for_both_pypi_surfaces_before_resolving():
-    jobs = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())["jobs"]
-    for job in ("build-mcpb", "publish-mcp"):
-        wait = next(step for step in jobs[job]["steps"]
-                    if step.get("name") == "Wait for PyPI to serve the release")
-        # The JSON API serves a release before the simple index uv resolves against.
-        assert "https://pypi.org/pypi/dead-letter/${v}/json" in wait["run"]
-        assert "https://pypi.org/simple/dead-letter/" in wait["run"]
-        assert "$(seq 1 60)" in wait["run"]
+    workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    jobs = workflow["jobs"]
+    # All channels share the same tested helper, not duplicated curl loops.
+    # Its JSON/simple-index, yank, network-error and retry behavior is covered
+    # by PyPIReadinessTests in test_release.py.
+    ready = jobs["pypi-ready"]
+    assert ready["needs"] == "publish"
+    assert ready.get("permissions", workflow["permissions"]) == {"contents": "read"}
+    assert "environment" not in ready
+    wait = next(step for step in ready["steps"]
+                if step.get("name") == "Wait for both PyPI indexes to serve the release")
+    assert wait["run"] == 'python scripts/release.py wait-pypi "${GITHUB_REF_NAME#v}"'
+    for job in ("build-mcpb", "build-container", "publish-mcp"):
+        dependencies = jobs[job]["needs"]
+        if isinstance(dependencies, str):
+            dependencies = [dependencies]
+        assert "pypi-ready" in dependencies
+        assert "if" not in jobs[job]  # Default success gate; no always() bypass.
+    assert "pypi-ready" in jobs["summary"]["needs"]
 
 
 def response(result, request_id=1):
@@ -404,7 +415,8 @@ def test_output_symlink_escape_fails(tmp_path):
 
 def test_release_registry_waits_for_live_container_and_retains_existing_stamp():
     jobs = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())["jobs"]
-    assert jobs["build-container"]["needs"] == "publish"
+    assert jobs["build-container"]["needs"] == "pypi-ready"
+    assert jobs["pypi-ready"]["needs"] == "publish"
     assert jobs["build-container"]["uses"] == "./.github/workflows/container.yml"
     assert jobs["build-container"]["with"]["publish"] is True
     assert "build-container" in jobs["publish-mcp"]["needs"]
