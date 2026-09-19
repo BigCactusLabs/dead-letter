@@ -63,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--json", action="store_true", help="Output as JSON")
     from dead_letter.backend.analysis_cli import add_arguments
     analyze_parser = subs.add_parser(
-        "analyze", help="Preview experimental message analysis locally (dry-run only)",
+        "analyze", help="Experimental BYOK message analysis or offline preview",
         allow_abbrev=False,
     )
     add_arguments(analyze_parser)

@@ -1,207 +1,249 @@
-# Experimental semantic-analysis preparation
+# Experimental BYOK semantic analysis
 
 Tracking: [issue #110](https://github.com/BigCactusLabs/dead-letter/issues/110).
+Implementation: [PR #117](https://github.com/BigCactusLabs/dead-letter/pull/117).
 
-**Status: offline EML/Python/CLI preparation, not a released remote-analysis
-feature.** The development checkout can read a real `.eml`, prepare a candidate
-request and preview it locally. It cannot yet invoke TypeSafe, write analysis
-sidecars, resume analyses or process directories. Neither profile has empirical
-email-triage quality results. Existing conversion defaults, MCP tools and UI stay
-local; there is no `dead-letter[typesafe]` extra or provider SDK dependency yet.
+**Status: development-checkout single-message analysis, not a released feature.**
+Local EML preparation now connects to an explicitly enabled TypeSafe SDK adapter.
+CLI and async Python consumers receive versioned JSON results. Neither candidate
+profile has empirical email-triage quality results. Ordinary conversion, bundles,
+MCP tools and UI remain local and do not enable analysis when a key is present.
 
-## Preview an EML from the development checkout
+There is **no `dead-letter[typesafe]` package extra yet**. The tested SDK is an
+optional exact `typesafe-sdk==0.7.0` uv overlay. The base dependency lock and release
+versions are unchanged. Packaging the extra with a regenerated, verified lock is
+still tracked under #110. Do not use the commands below with the older PyPI release.
 
-These commands are available on the implementation branch, not in the currently
-published package. Use the repository's normal uv setup:
+## Start with a local preview
+
+Run from the implementation checkout with its normal dependencies installed:
 
 ```bash
-uv sync --extra dev
+uv sync --extra dev --locked
 uv run dead-letter analyze message.eml --provider typesafe --dry-run
 
-# Scope recipient-directed questions to one person and their aliases.
+# Scope requests to one recipient and their aliases; still no inference.
 uv run dead-letter analyze message.eml --provider typesafe --dry-run \
   --identity me@example.com --identity "My Name" --profile triage-choice-v1
 
-# Explicit sensitive LOCAL inspection. Do not paste private state into public logs.
+# Explicit private LOCAL inspection, without an SDK or key.
 uv run dead-letter analyze message.eml --provider typesafe --dry-run --show-state
 ```
 
-The default JSON preview on stdout omits email body, subject, addresses and source
-path. It reports scope, destination host, coverage, source hash/byte count,
-normalization/runtime versions, profile/model, effective-input fingerprint and
-byte limits. `execution_status: skipped` and `remote_enabled: false` mean **no
-inference happened**. The default host describes the prepared destination; no DNS
-lookup or network request is made. `--show-state` adds normalized text/metadata and
-a local source basename explicitly. The preview itself is not a result sidecar.
+The default preview omits body, subject, addresses and source path. It reports
+scope, destination host, coverage, source hash/size, normalization versions,
+profile/model, effective-input fingerprint and byte limits. `execution_status:
+skipped` and `remote_enabled: false` mean no inference happened. The host is a
+proposed destination, not evidence that a DNS lookup or connection succeeded.
+`--show-state` adds normalized evidence and the local source basename; treat this
+output as private. It is rejected without `--dry-run`.
 
-`--provider typesafe` and `--dry-run` are both required in this slice. Omitting
-`--dry-run` returns `remote_analysis_not_implemented` before reading the email.
-A present `TYPESAFE_API_KEY` never enables anything; this code does not read it.
-Unknown flags, including an accidentally supplied credential flag, fail without
-echoing their values. Errors are safe JSON codes on stderr: exit 2 for arguments
-or unavailable remote execution, 1 for preparation failure, 130 for interruption.
-Successful preparation returns 0. Ordinary bare-path conversion still dispatches
-to `convert`, never to analysis.
+## Explicit remote execution
 
-The CLI honors an explicit process `TYPESAFE_BASE_URL`, validates it and reports
-its host. Python APIs instead take explicit `base_url=` parameters and ignore
-that environment variable. HTTPS is required except for literal loopback test
-servers. URL credentials, queries/fragments and ambiguous paths are rejected.
-Neither email content nor a profile can choose a destination.
+First supply `TYPESAFE_API_KEY` through the process environment or a trusted secret
+manager. Never put the actual key in an argument, profile, source email, repository,
+log, or saved JSON. A populated environment variable is not consent by itself.
 
-## Python consumer recipe
+**The following command sends normalized email text and selected metadata to
+TypeSafe and may incur provider charges:**
+
+```bash
+uv run --locked --with typesafe-sdk==0.7.0 dead-letter analyze message.eml \
+  --provider typesafe --profile triage-choice-v1 --identity me@example.com
+```
+
+Selecting `--provider typesafe` without `--dry-run` is the CLI opt-in. Before the
+request, a JSON disclosure on stderr identifies the effective destination host,
+scope and experimental profile. If the disclosure sink fails, nothing is sent.
+Results are JSON on stdout. No file is written, no email is moved/deleted, and
+front matter is not changed. Directory input, `--output`, sidecars and resume are
+not implemented yet. Shell redirection is not an atomic sidecar/cache contract.
+
+Results can still be sensitive: they contain local source basenames, configured
+identity aliases, provenance and judgments. They do not contain raw body text,
+full headers, attachment contents, SDK/HTTP objects or the API key. Restrict access
+to any result you retain. Classifications never authorize replies, payments,
+link-following, file reads, mailbox mutations or additional tool access.
+
+Exit codes: 0 for success or a documented skip; 1 for preparation/provider failure;
+2 for invalid arguments; 130 for interruption. Preflight failures return safe
+stderr JSON. Provider failures return a failed result envelope on stdout with a
+safe error code. Always inspect `execution_status` and `assessment_status`; a
+zero exit alone does not mean a semantic assessment occurred.
+
+## Python consumer recipes
+
+Preparation remains entirely local and takes an explicit endpoint parameter;
+it does not read provider environment variables:
 
 ```python
 from dead_letter.analysis import prepare_eml
 
 prepared = prepare_eml("message.eml", focus_identity=("me@example.com",))
-print(prepared.preview())                 # No body, subject, addresses or path.
-
-# Explicit sensitive local access; none of these calls sends anything:
-# state = prepared.preview(include_state=True)
-# payload = prepared.request.payload()    # Selected evidence plus questions.
+print(prepared.preview())
+# Explicit sensitive local access:
+# payload = prepared.request.payload()
 # diagnostics = prepared.snapshot.diagnostics
 ```
 
-`prepared.snapshot` holds local provenance and detached diagnostics separately
-from `prepared.request`. Source paths/hashes, full diagnostics, raw MIME/HTML,
-attachment payloads, calendar contents and arbitrary headers are not request
-fields. The EML is never moved, deleted or rewritten; no output file is created.
-
-For an already-normalized export, the lower-level API remains available:
+The execution API requires an explicit provider and `allow_remote=True`. Its
+configuration can be read from the process environment, or supplied separately
+as a trusted `TypeSafeConfig`. Keys always come from the environment:
 
 ```python
-from dead_letter.analysis import NormalizedMessage, Segment, prepare_request
+import asyncio
+from dead_letter.analysis import analyze_eml
 
-message = NormalizedMessage(
-    subject="Draft approval", sender="author@example.test",
-    to=("Alex <alex@example.test>",), sent_at="2001-01-02T10:30:00-05:00",
-    normalization_version="my-normalized-export-v1",
-    segments=(Segment("current-1", "authored", "Review the draft and reply with approval."),),
-)
-request = prepare_request(message, focus_identity=("Alex", "alex@example.test"))
-print(request.preview())
+result = asyncio.run(analyze_eml(
+    "message.eml", provider="typesafe", allow_remote=True,
+    profile_name="triage-choice-v1", focus_identity=("me@example.com",),
+))
+print(result["execution_status"], result["assessment_status"])
 ```
 
-`NormalizedMessage` is a caller-supplied evidence contract, not a sanitizer,
-credential scrubber or attachment extractor. EML consumers should use the shared
-snapshot path instead of constructing another MIME parser.
+Inside an existing event loop, await `analyze_eml` directly. `analyze_prepared`
+executes a `PreparedEmail` with the same explicit permission and disclosure.
+Endpoint configuration must agree with the prepared request; changing the
+process endpoint after preparation cannot silently redirect a previously
+prepared payload. Applications replacing `on_disclosure` must display the
+provided disclosure in their own trusted interface; it is not email-supplied code.
 
-## Snapshot, authorship and coverage contract
+The lower-level `NormalizedMessage`, `Segment`, `prepare_request` and
+`validate_response` APIs remain available for already-normalized exports.
+`NormalizedMessage` is not a sanitizer or secret scrubber. EML consumers should
+use the shared snapshot rather than build another MIME parser.
 
-`dead_letter.core.snapshot.read_snapshot` reads one regular `.eml` through a
-bounded descriptor and feeds the **same immutable byte buffer** to both SHA-256
-and the shared MIME parser. A file replaced after the read cannot change the
-content bound to that hash. This does not promise a filesystem transaction against
-an external writer modifying bytes during the read. The maximum raw input is
-100,000,000 bytes; the helper accepts a smaller explicit bound. FIFOs and other
-non-regular inputs are rejected. This is a bounded per-message operation, not a
-streaming mailbox reader or a strict process-memory limit.
+## Provider, credentials and privacy
 
-The snapshot reuses image filtering, HTML/plain segmentation, attribution,
-cleanup, rendering and diagnostics. Conversion retains its existing wrapper and
-defaults. Analysis consumes the **pre-render zones**, not a Markdown body whose
-quote-only fallback might look like a new authored request. Unknown quoted or
-forwarded authors stay unknown. Known attribution is still an untrusted claim.
+The adapter lazily imports exactly SDK 0.7.0. Missing or different versions fail
+preflight rather than silently using an untested API. Normal conversion, previews,
+help and imports do not load the SDK. `dead-letter doctor` reports only installed
+and configured booleans and does not contact TypeSafe or validate a real key.
+Absence of this optional setup does not make a local-only installation unhealthy.
 
-Signature/disclaimer text is retained, including possible P.S. requests. Tracking
-and signature images are filtered using existing core rules; inline image data
-URIs, raw-HTML output and calendar summaries are disabled. Parser internals may
-inspect/decode MIME parts locally; attachment/calendar contents are never selected
-as analysis evidence. No URLs, remote images or external parent messages are
-fetched, and no OCR is performed.
+`TYPESAFE_BASE_URL` is trusted process configuration for the CLI/execution API,
+never an email/profile field. The default is `https://api.typesafe.ai`. HTTPS is
+required except for literal loopback test servers. Credentials, query/fragment
+components and ambiguous paths are rejected. Only POST to the configured API root
+plus `/v1/systemone` is permitted; redirects, including same-host redirects, are
+rejected. Implicit HTTP(S) proxy environment configuration is not honored. Use an
+explicit validated API-root proxy when needed and assess its privacy policy too.
 
-The source Date header is retained as temporal evidence instead of manufacturing
-a timezone from a normalized datetime or today's processing environment. Missing
-dates remain unknown. Segment IDs are deterministic normalized-zone positions,
-not offsets into raw MIME. Context stays in pipeline order, which is not a
-verified chronology. A forward marker and its immediately following forwarded
-body share one context slot. The default selects the first three context segments;
-excluded context is reported. Authored text is not silently shortened.
+The SDK can log unredacted request/response bodies at DEBUG. The adapter installs
+source-logger filters before importing it, including under `TYPESAFE_LOG_LEVEL`,
+and suppresses SDK/HTTP logs for the private call's context. Filters are inert
+outside that context; unrelated SDK requests retain their logging. No global
+logger level or environment value is overwritten. This is integration-level
+logging containment, not protection from a hostile host, custom instrumentation
+or application code deliberately dumping in-memory state. Raw SDK exceptions are
+never printed or returned. Tests include a fresh interpreter with verbose logging.
 
-No focus identity means requests to intended recipients generally, not “you need
-to act.” Aliases scope recipient-directed questions without proving ownership.
-Sender commitments concern the current author. The timestamp anchors message-time
-interpretation, not current outstanding-task or overdue calculations. Missing
-parent/attachment evidence remains a coverage fact, not a negative prediction.
+TypeSafe's [privacy policy](https://typesafe.ai/legal/privacy-policy), checked
+September 18, 2026, states that Input is not used to train/fine-tune models. The
+policy also describes retention and service providers: this is **not zero
+retention or local processing**. Confirm authorization before submitting any
+email; public availability of an archive alone is not permission to upload it.
 
-## Two candidates, neither stable
+## Retry, timeout and response boundaries
 
-`triage-v1` contains reply request, non-reply action request, sender commitment,
-action deadline and expressed urgency. `triage-choice-v1` replaces the first two
-Nouls with one response-expectation Choice that includes insufficient context.
-Each profile has a revision, exact hash and `experimental: true`; each question
-repeats its own scope/evidence/trust instructions. There are no priority weights,
-action cutoffs, retention decisions or assumed independence between signals.
+Defaults: 15-second HTTP operation timeout, 45-second total execution budget,
+and up to two SDK retries after the first attempt. CLI options are
+`--timeout-seconds`, `--budget-seconds` and `--max-retries`; budgets must be positive
+and at most 300 seconds, retries 0–3. The SDK is the only retry owner. There is no
+outer retry multiplier, silent alternate model or alternate provider. The async
+wall-clock budget also bounds a hanging request or long retry delay.
 
-## Fingerprints and limits
+Authentication/permission/validation failures fail fast. Rate limits, overload,
+connection failures and operation timeouts follow the bounded SDK policy. HTTP
+operation timeouts have `provider_timeout`; total wall-clock expiry has
+`provider_budget_exceeded`. External task cancellation propagates after client
+cleanup. Attempt records include sequence, status, safe request ID, actual wire
+hash and observed duration. They are not evidence that a request was unbilled.
+`billing_status` stays `unknown` once an HTTP attempt has begun. Returned usage is
+only what the successful response actually supplies; missing retry usage is not
+estimated or turned into a total-cost claim.
 
-The request fingerprint covers state, profile revision/questions, requested model,
-normalized endpoint and schema version. State includes identity, context policy
-and a normalization fingerprint covering effective options and installed parser
-versions. Moving identical EML bytes to a different filename does not change the
-request fingerprint. Canonically equivalent endpoint spellings or alias ordering
-do not create new effective inputs. Exported dictionaries are detached copies.
+Responses are streamed with a 512,000-byte decompressed-content limit. Non-JSON,
+duplicate JSON keys, non-finite numbers, missing/extra answer IDs, unknown answer
+kinds and inconsistent distributions are rejected, not converted to negatives.
+A strict custom response projection preserves answer objects until dead-letter's
+validator checks them; the SDK cannot silently skip an unknown answer kind.
 
-This is **not an implemented cache**. Atomic sidecars, successful-result reuse,
-attempt records, evaluated-at timestamps and alias-age handling remain service
-work. The default model `jev-1.13.0` is a documented identifier, not a model that
-has been evaluated on these profiles.
+## Result and assessment semantics
 
-Local UTF-8-byte guards remain 24,000 for state, 28,000 for state plus the longest
-question, and 48,000 for the full request. Over-limit input raises a safe error
-rather than being truncated. These are not provider-token measurements. Reverify
-TypeSafe's documented token limits with the selected SDK during transport work.
+Version 1 `message_analysis` envelopes preserve requested/returned model,
+profile/revision/hash, source/state/request hashes, normalization/runtime versions,
+identity scope, message-time policy, coverage, timestamps, attempts, usage and
+native answers. Missing returned model/request ID/token data remain unknown.
+Source hash alone is never presented as sufficient input identity.
 
-## Native-answer validation
+`execution_status` is `succeeded`, `failed` or `skipped`. A failed call has no
+assessment or filled-in answers. A message with no authored evidence is skipped
+locally as `insufficient_context`, without asking about quoted text as though it
+were newly authored. Successful candidate results are `review_suggested` under
+named policy `experimental_review-v1`, because profile quality is not yet
+validated. This is not a probability cutoff or calibration claim. A returned
+response-expectation Choice of `insufficient_context` preserves that assessment.
 
-`validate_response(request, supplied_response)` accepts an allowlisted JSON
-projection, not a raw SDK/client/HTTP object. It requires exactly the requested
-question IDs, correct kinds, complete distributions and the requested Score
-legend. Noul retains only yes-probability; no confidence is invented.
+Noul remains a yes-probability, never an invented confidence score. Score/Choice
+retain their full distributions and native confidence. Score must agree with its
+weighted level mean within `1e-6 * maximum_level`; Choice must select a
+maximum-probability alternative within `1e-6`, with ties allowed. These tolerances
+address numeric serialization, not semantic correctness. There are no universal
+priority weights or assumptions of statistical independence between questions.
 
-Score must match its probability-weighted level within `1e-6 * maximum_level`.
-Choice must select a maximum-probability alternative within `1e-6`; ties are
-allowed. Probability sums must be within `1e-6` of one. These are numerical
-serialization tolerances, not semantic cutoffs. Native scores, distributions and
-supplied confidence are preserved, not rounded or recalibrated. Contradictory
-responses fail with `inconsistent_score_distribution` or
-`inconsistent_choice_distribution`.
+## Snapshot and context contract
 
-Missing answers, invalid numbers and incomplete maps fail closed. Extra raw/debug
-fields are discarded. Missing model/request/token metadata remains unknown.
-Structural validation does not establish inference execution, sufficient evidence,
-calibration, correctness, legitimacy or permission to act. Future service code
-must maintain separate execution/assessment statuses; valid-looking model outputs
-can still be semantically manipulated.
+`core.snapshot.read_snapshot` uses the existing MIME/normalization pipeline and
+hashes the same immutable byte buffer passed to `parse_eml_bytes`. It rejects
+non-regular inputs and bounds raw input to 100,000,000 bytes by default. It is not
+a streaming mailbox reader, strict process-memory bound, or filesystem transaction
+against an external process changing a file during the read.
 
-## Evaluation and remaining transport work
+Analysis consumes pre-render zones. Quote-only rendering fallback cannot promote
+old requests to new authored text. Signature/disclaimer/P.S. text is retained;
+known quoted attribution remains an untrusted claim and missing attribution is
+unknown. Original Date headers anchor message-time interpretation without invented
+time zones or current-overdue arithmetic. Inline data URIs, raw HTML and calendar
+summaries are excluded. Parser internals can inspect MIME parts locally, but
+attachment/calendar text, arbitrary headers and full diagnostics are never sent.
+No email URLs, images, external parents or unrelated files are fetched; no OCR.
 
-The 22 cases in `tests/backend/fixtures/analysis_cases.json` remain synthetic,
-unreviewed development material. New synthetic EML tests exercise the actual
-preparation path, not JEV accuracy. Human-review/expand the seed, create a
-family-separated held-out set and compare both formulations, context/cleanup
-policies and a baseline before declaring stable semantics. Do not tune on the
-held-out set or treat ambiguous human labels as certain ground truth.
+First-N context follows pipeline order, not verified chronology or semantic
+retrieval. Default: three quoted/forwarded segments; a forward marker shares its
+following body's slot. Exclusions are visible; authored text is not silently
+shortened. Local guards are 24,000 UTF-8 state bytes, 28,000 state plus longest
+question bytes, and 48,000 total request bytes. These are not provider-token
+measurements. State identity includes normalization, identity and context policy;
+model, endpoint and exact profile participate in the request fingerprint.
 
-Still pending: optional pinned SDK and explicit BYOK remote invocation; transport
-body-log and redirect/auth safeguards; service envelopes, sidecars and resume;
-bounded batch/retry/cancellation behavior; transport-aware doctor checks and
-privacy/setup guidance. No private-email upload or live inference is part of this
-implementation. The updated [implementation checkpoint](../superpowers/specs/2026-09-18-issue-110-analysis-foundation.md)
-records the next work without implying that #110 is complete.
+No focus identity means intended recipients generally, not “you need to act.”
+Aliases scope judgments without proving ownership. Commitments concern the current
+author. Missing attachment/parent content is coverage, not an assessed absence.
+`triage-v1` and competing `triage-choice-v1` concern requests communicated at
+message time, not unresolved obligations or today's user priority.
 
-## First-party references checked September 18, 2026
+## Evaluation and remaining work
 
-- [SDK changelog](https://docs.typesafe.ai/sdk/python/changelog): version 0.7.0
-  changes serialization to Pydantic; pin/test the SDK rather than using old examples.
-- [SDK usage](https://docs.typesafe.ai/sdk/python/usage): body logging and skipped
-  unknown answer kinds make logging isolation and completeness checks necessary.
-- [Models](https://docs.typesafe.ai/models): preserve returned identifiers and do
-  not invent alias resolution.
-- [Noul](https://docs.typesafe.ai/primitives/noul),
-  [Score](https://docs.typesafe.ai/primitives/score), and
-  [Choice](https://docs.typesafe.ai/primitives/choice): native answer semantics,
-  weighted Score mean and highest-probability Choice selection.
-- [Jev limitations](https://docs.typesafe.ai/model-jaggedness/jev-1.13): adversarial
-  content and numeric/date reasoning limitations remain relevant.
+The 22 synthetic seed cases remain unreviewed development material. Tests exercise
+actual core/SDK contracts with synthetic EML and fake HTTP; they are not empirical
+JEV inference, accuracy, calibration or latency benchmarks. No real key or private
+email was submitted during this implementation. Human-review/expand the seed and
+compare both profiles on a family-separated held-out set before freezing semantics.
+
+Still pending: packaged optional extra plus verified lock, atomic collision-safe
+sidecars, valid-result-only resume/alias-age handling, directory concurrency and
+partial-success persistence. See the [implementation checkpoint](../superpowers/specs/2026-09-18-issue-110-analysis-foundation.md).
+
+## First-party implementation references
+
+Checked September 18, 2026:
+
+- [SDK 0.7.0 source](https://github.com/typesafe-ai/typesafe-sdk-python/tree/v0.7.0)
+  and [changelog](https://docs.typesafe.ai/sdk/python/changelog).
+- [SDK usage](https://docs.typesafe.ai/sdk/python/usage),
+  [retry policy](https://docs.typesafe.ai/sdk/python/api/retries), and
+  [response types](https://docs.typesafe.ai/sdk/python/api/types/responses).
+- [Models](https://docs.typesafe.ai/models), [Noul](https://docs.typesafe.ai/primitives/noul),
+  [Score](https://docs.typesafe.ai/primitives/score), [Choice](https://docs.typesafe.ai/primitives/choice),
+  and [Jev limitations](https://docs.typesafe.ai/model-jaggedness/jev-1.13).

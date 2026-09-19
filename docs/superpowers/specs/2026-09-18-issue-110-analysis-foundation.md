@@ -1,116 +1,127 @@
 # Issue #110 — implementation checkpoint
 
-Updated September 18, 2026. Working PR: #117. This checkpoint supersedes the
-initial contracts-only handoff; the issue's complete first usable slice remains
-open. Public usage/limits: [experimental analysis](../../reference/experimental-analysis.md).
+Updated September 18, 2026. Working PR: #117, open and unmerged at this checkpoint.
+Public contract: [experimental analysis](../../reference/experimental-analysis.md).
+This supersedes the earlier offline-only handoff; the full issue remains open.
 
-## Implemented
+## Implemented so far
 
-The first commit (`a341f028`) added immutable normalized-evidence records,
-deterministic state assembly, two experimental profiles, default-private previews,
-effective-input fingerprints and native-answer validation. Its 22-case synthetic
-seed remains unreviewed and development-only.
+`a341f028` established immutable normalized evidence, deterministic state, two
+experimental profiles, redacted-by-default previews, effective-input fingerprints
+and native-answer validation. The 22-case synthetic seed is still unreviewed and
+not held-out evaluation data.
 
-The continuation (`dd33a2f`) connects that foundation to real EML:
+`dd33a2f` connected real EML through shared `parse_eml_bytes`, pre-render zones and
+`core.snapshot.read_snapshot`. Hashes bind to the exact immutable bytes parsed,
+not a later reread. Original dates, unknown attribution, quotes, signature/P.S.
+text and coverage are preserved. The original conversion wrapper/defaults remain.
+`prepare_eml` and CLI dry-run expose this locally. Score/Choice consistency and
+quoted-prefix debug logging were corrected. `7ea9ab4` recorded that checkpoint.
 
-- `core.mime.parse_eml_bytes` is the shared implementation used by both the
-  existing file parser and the new read-only path; no second MIME stack.
-- `_build_pipeline_snapshot` retains pre-render zones. Existing conversion uses
-  the original four-value `_build_rendered_markdown` compatibility wrapper, with
-  unchanged normalization/rendering behavior and writer defaults.
-- `core.snapshot.read_snapshot` opens a bounded regular file, hashes the exact
-  immutable bytes it parses and never rereads it during normalization. It returns
-  frozen text-only records and detached local diagnostics/provenance.
-- The source Date header remains evidence, without invented timezone/current-time
-  arithmetic. Quotes are not promoted to authored content by rendering fallback.
-  Signature/P.S. text remains available; attachment/calendar text is not evidence.
-- `analysis.prepare_eml` projects core zones to the existing state builder. A
-  forward marker shares its following body's context slot. Unknown zone kinds
-  fail closed; unknown authors remain unknown. Installed normalizer versions and
-  effective options participate in input identity.
-- `analyze --provider typesafe --dry-run` emits local JSON; `--show-state` explicitly
-  exposes sensitive state. Non-dry-run requests fail before source reading. Keys
-  are never read, nor are SDKs imported. The CLI validates/discloses an explicit
-  environment endpoint; Python APIs use explicit endpoint arguments instead.
-- Score/probability means and Choice/maximum-probability consistency are checked
-  without replacing native values or manufacturing confidence. This addresses the
-  Codex review finding on PR #117. The existing attribution-prefix DEBUG payload
-  was also removed, with a regression test.
+`b3f0c94` adds the remote execution path:
 
-This implementation does not write sidecars, run batches, move/delete source mail,
-change MCP/UI tools, add dependencies or change releases. A raw-source bound is
-not a streaming mailbox implementation or a total process-memory guarantee.
+- `analysis/providers/typesafe.py`: exact SDK 0.7.0, imported lazily only after
+  explicit opt-in, key/version preflight, endpoint agreement and disclosure.
+  Credentials come only from process `TYPESAFE_API_KEY`; no key parameters or flags.
+- An injected public `httpx2.AsyncClient` subclass constrains requests to the exact
+  configured system-one endpoint, refuses redirects, streams bounded responses,
+  strips nonessential response headers and records safe attempt metadata.
+- SDK-owned bounded retries plus an async total budget; no retry multiplication,
+  implicit environment proxy or automatic fallback provider/model.
+- Request-local ContextVar logging filters installed before SDK import contain
+  private wire logs even with SDK DEBUG environment/direct handlers. They do not
+  change global logger levels and are inert for unrelated contexts.
+- Strict custom Pydantic response projection, then existing completeness/native
+  validation. Unknown SDK answer kinds cannot silently become absent negatives.
+  Duplicate JSON keys/non-finite values fail; missing model/usage stays unknown.
+- `service.analyze_eml` / `analyze_prepared` provide versioned result envelopes,
+  separate execution/assessment, provenance, usage and attempts without raw state
+  or SDK objects. No authored text skips; successful experimental candidates
+  suggest review, independently of any confidence cutoff. Failures have no answers.
+- CLI live provider selection is explicit opt-in; stderr disclosure, stdout JSON.
+  Dry-run remains keyless, offline and SDK-free. `--show-state` requires dry-run.
+- `typesafe-contracts` CI installs the real exact SDK in an optional uv overlay
+  and exercises it against fake HTTP. Base CI can omit this optional dependency.
 
-## Next implementation order
+`f6a6714` distinguishes SDK operation timeouts from total-budget expiry and adds
+installed/configured-only doctor reporting with five tests. The SDK timeout also
+inherits built-in TimeoutError, so exception-handler ordering is significant.
 
-1. Add the optional TypeSafe adapter with a verified/pinned SDK range. The SDK
-   changelog reports breaking 0.7.0 serialization changes on September 18. Read
-   BYOK only from the environment, require explicit consent and disclose the
-   effective validated host. Prevent SDK request/response body logging even when
-   imported under verbose logging; disable redirects/auth forwarding. Test the
-   actual pinned SDK with fake HTTP responses, including 401/422/429/overload,
-   timeout, connection errors and missing/unknown answer kinds. No incidental
-   paid/private inference in installation, doctor or CI.
-2. Add service execution/assessment envelopes, provenance, no-clobber atomic
-   sidecars and valid-result-only reuse. Store requested/returned model,
-   evaluated-at time, coverage, usage/request ID and attempts, not raw SDK dumps.
-   Input fingerprints alone do not make a cache. Do not use source hash alone or
-   treat a failed/timed-out attempt as a successful/unbilled result.
-3. Enable the explicit remote CLI/Python execution path only through that service.
-   Add directory output, bounded concurrency, one-layer retry/time budgets,
-   cancellation and partial-success tests. Add installed/configured-only doctor
-   checks and current provider privacy/setup guidance. Keep all existing local
-   conversion/MCP/UI entrypoints local; a key is not consent.
-4. Human-review/expand the seed; add authorized examples and a family-separated
-   held-out set. Compare both profiles, relevant context/cleanup policies and a
-   deterministic baseline. The proposed 250–500-example starting target remains
-   open. Contract tests cannot establish classification quality or calibration.
+**Not implemented:** `dead-letter[typesafe]` packaging/lock update, atomic sidecars,
+resume, directory processing, batch scheduling or empirical inference evaluation.
+The executable checkout recipe is currently `uv run --locked --with
+typesafe-sdk==0.7.0 dead-letter analyze ... --provider typesafe`. Do not document
+an unavailable published extra or claim the base dependency lock pins this overlay.
+Core conversion, bundles, existing four MCP tools, UI, release versions and the
+base dependency graph are unchanged by this continuation.
 
-## Boundaries that still matter
+## Next work, in implementation order
 
-- `NormalizedMessage` also supports caller-supplied normalized exports; it is not
-  a sanitizer, secret scrubber or license to build an alternate parser.
-- The snapshot records the bytes read, not a filesystem transaction against a
-  concurrently writing process. Actual inode changes after reading do not alter
-  the immutable buffer/hash. Preserve this same-buffer property in future MBOX work.
-- The snapshot currently uses strict existing HTML-conversion behavior, with no
-  new fallback/repair override. Degraded conversion is coverage, not an assessed no.
-- First-N context follows supplied/pipeline order, not a chronology or semantic
-  retrieval guarantee. No external parent messages or attachment text are fetched.
-- `validate_response` is structural only. Missing evidence, failed execution and
-  an assessed negative must remain separate in service/result envelopes.
-- No profile-defined endpoints, executable custom profiles, dynamic templates,
-  environment expansion or automatic transfer to another model provider.
+1. Package `typesafe = ["typesafe-sdk==0.7.0"]` as an optional extra and regenerate
+   `uv.lock` with uv in a resolver-capable environment. Do not hand-invent wheel
+   hashes or modify unrelated dependency versions. Test base installs without
+   the SDK and the extra-enabled path. The current exact overlay is an executable
+   development path, not a substitute for completing packaging acceptance.
+2. Add atomic, no-clobber sidecars and validated-result-only reuse. Bind source,
+   effective inputs, schema/profile/normalizer/model/endpoint to the saved artifact.
+   Keep successful results separate from attempts. Reject corrupted, incomplete,
+   failed, mismatched or stale-alias cached artifacts. Expose age/returned model;
+   do not call an alias cache entry fresh inference. No raw SDK/body dumps.
+3. Add directory output and bounded worker scheduling, safe collision handling,
+   auth fail-fast, cancellation and partial-success persistence. The adapter
+   already owns retries: do not introduce a second retry loop in batch code.
+   External cancellation currently propagates and cleans up the current client;
+   persisting completed work/attempts across interruption is still batch work.
+4. Review/expand the synthetic seed with authorized data; create a family-separated
+   held-out set. Compare separate Nouls and response-expectation Choice, context
+   and cleanup variants and a simple baseline. Optional live runs require separate
+   authorization, never an incidental CI/install/doctor request. Measure per-label
+   quality, calibration, attribution, abstention, observed usage and timing before
+   freezing profile semantics. No invented universal thresholds or priority scores.
+
+## Engineering boundaries
+
+The source snapshot records immutable bytes read, not a filesystem transaction
+against a concurrent writer. Pre-render zones, original dates and unknown context
+must survive future MBOX integration. No inferred current-task status from an old
+request. No body/attachment text in sidecars by default; local result identities
+and source basenames are still sensitive.
+
+The transport uses the actual public SDK client and custom response-model hooks,
+not a copied SDK or guessed REST request. Pin upgrades deliberately: rerun wire,
+logging, retry and schema tests. Request/response body logging is contained at
+known source loggers, but a hostile application can still inspect memory or
+remove instrumentation. Do not claim a universal sandbox. Custom test transports
+and disclosure callbacks are trusted Python seams, never profile/email inputs.
+
+Keep raw provider error bodies out of normal errors/logs. `billing_status: unknown`
+means attempts may have been billed even when no validated response was returned.
+Usage currently reports only fields supplied by the successful response, not
+unknown failed-attempt usage. A future cost report must disclose this coverage.
+
+The named `experimental_review-v1` policy marks successful candidate answers for
+review without pretending probabilities are calibrated. The Choice formulation
+can explicitly select insufficient_context. Missing coverage alone does not
+become a negative result, and no classification authorizes mailbox actions.
 
 ## Verification record
 
-Original foundation: 103 component tests passed locally in an isolated package
-harness; GitHub CI subsequently passed core/backend/plugin/frontend tests and
-plugin/skill validation for `a341f028`.
-
-Continuation: Python compilation was checked locally. The working container
-cannot install the repository dependency graph, so real EML execution was verified
-in GitHub CI, not by a stubbed parser. Run
+Earlier EML implementation: CI run
 [35387757900](https://github.com/BigCactusLabs/dead-letter/actions/runs/35387757900)
-tested the merge of `dd33a2f` into base `b28d643` and passed:
+passed 316 core, 354 backend, 92 plugin and 87 frontend tests (849 total), plus
+plugin/skill/syntax validation, docs links and Windows/macOS/Ubuntu bundle tests.
+The subsequent docs-only `7ea9ab4` full rerun also passed.
 
-- Core: 316 tests; backend: 354 tests; plugin: 92 tests; frontend: 87 tests.
-- Plugin schema, Agent Skill validation and frontend syntax.
-- MCPB build/smoke tests on Windows, macOS and Ubuntu.
-- The separate documentation-link run for the implementation commit also passed.
+Initial SDK integration run
+[35416008774](https://github.com/BigCactusLabs/dead-letter/actions/runs/35416008774)
+installed actual typesafe-sdk 0.7.0 and ran 192 focused tests: 191 passed and one
+caught the operation-timeout/total-budget error-labeling bug. `f6a6714` fixes that
+production exception ordering without weakening the failing assertion. Final
+head-specific CI results are recorded on PR #117; do not infer a pass from this
+historical initial result.
 
-That is 849 passing suite tests, including 59 new parametrized cases in:
-
-- `tests/core/test_snapshot.py` — 29 cases.
-- `tests/backend/test_analysis_eml.py` — 20 cases.
-- `tests/backend/test_analysis_response_consistency.py` — 10 cases.
-
-The original `tests/backend/test_analysis_contracts.py` also remains in the
-successful backend suite. New cases cover exact-byte provenance under source
-replacement, parser equivalence, no-write/no-network behavior, quote-only
-fallbacks, adopted forwards, P.S. text, missing timezones/parents, attachment
-exclusion, bounds/FIFO rejection, default-private previews, CLI argument/endpoint
-redaction, conversion dispatch and native answer consistency. All inputs are
-synthetic. No key, live inference, private-email submission, cost/latency benchmark
-or classifier-quality measurement is claimed. Later docs-only heads and their
-checks are recorded in the PR rather than implying a new model evaluation.
+The working container cannot install the repository/SDK dependency graph, so
+local checks are Python compilation, not a substituted parser/SDK test harness.
+Actual EML and SDK tests run in GitHub CI. Every request fixture and credential is
+synthetic, transport is fake HTTP, and no private mailbox or real API key is used.
+No live quality, calibration, cost, provider-latency or stable-profile claim.
