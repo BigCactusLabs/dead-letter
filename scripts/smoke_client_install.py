@@ -57,13 +57,16 @@ def stop(process: subprocess.Popen[str]) -> None:
         process.stdout.close()
 
 
-def check() -> None:
-    command = command_from_examples()
+def check(command: list[str] | None = None, *, environment: dict[str, str] | None = None) -> None:
+    # Registration harnesses can test the exact transport persisted by a client.
+    # With no overrides, keep exercising the generated examples as before.
+    if command is None:
+        command = command_from_examples()
     with tempfile.TemporaryDirectory(prefix="dead-letter-client-smoke-") as temporary:
         directory = Path(temporary)
         fixture = directory / "message.eml"
         fixture.write_text(MESSAGE, encoding="utf-8")
-        env = dict(os.environ)
+        env = dict(os.environ if environment is None else environment)
         env.pop("PYTHONPATH", None)
         env["UV_NO_CONFIG"] = "1"
         env["UV_CACHE_DIR"] = str(directory / "uv-cache")
