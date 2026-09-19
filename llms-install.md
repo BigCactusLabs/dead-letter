@@ -106,6 +106,24 @@ or `(Get-Command uvx).Source` in PowerShell) and use that absolute path for
 paths are not interchangeable, and GUI processes may not share terminal PATH
 or the current working directory.
 
+### Cursor and Cline
+
+The README contains generated VS Code and Cursor install links. Manual,
+client-specific configurations live in [examples/mcp/](examples/mcp/), with
+scope and verification details in [Client Installation](docs/reference/client-installation.md).
+Cursor uses `mcpServers` in `.cursor/mcp.json` or `~/.cursor/mcp.json`.
+Cline's example leaves `autoApprove` empty; preserve that approval boundary.
+
+For the current Cline CLI stdio registration format:
+
+```bash
+cline mcp install dead-letter -- uvx --python 3.12 --from 'dead-letter[mcp]' dead-letter-mcp
+```
+
+Do not infer successful GUI installation or marketplace discovery from a
+configuration file alone. Observe registration, tool discovery, and a
+synthetic conversion in the actual target client before reporting success.
+
 ## Verify the install and permissions
 
 ```bash

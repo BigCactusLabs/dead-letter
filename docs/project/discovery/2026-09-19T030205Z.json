@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-09-19T03:02:05.101088+00:00",
+  "identity": "io.github.BigCactusLabs/dead-letter",
+  "results": [
+    {
+      "surface": "official-registry",
+      "status": "present",
+      "identity": "io.github.BigCactusLabs/dead-letter",
+      "version": "0.2.5",
+      "registry_status": "active",
+      "packages": [
+        {
+          "registryType": "pypi",
+          "identifier": "dead-letter",
+          "version": "0.2.5"
+        }
+      ],
+      "scope": "exact Official Registry latest-version endpoint; not downstream admission or runtime validation",
+      "evidence": [
+        {
+          "url": "https://registry.modelcontextprotocol.io/v0.1/servers/io.github.BigCactusLabs%2Fdead-letter/versions/latest",
+          "checked_at": "2026-09-19T03:02:04.015071+00:00",
+          "sha256": "4b0661372af22cab2a923e9106359b5df85bc2f3c430d6d692e32ce3114bdd95",
+          "bytes": 1115
+        }
+      ]
+    },
+    {
+      "surface": "cline-marketplace",
+      "status": "not_in_snapshot",
+      "matches": [],
+      "entries_checked": 203,
+      "generated_at": "2026-09-18T20:15:28.359Z",
+      "scope": "complete published Cline marketplace catalog response; not legacy marketplace or GUI discovery",
+      "evidence": [
+        {
+          "url": "https://cline.github.io/marketplace/catalog.json",
+          "checked_at": "2026-09-19T03:02:04.141910+00:00",
+          "sha256": "187ebe2b130e25f261a805cc5930a19e275ece2c34ab21bd9df966a566b9848c",
+          "bytes": 198279
+        }
+      ]
+    },
+    {
+      "surface": "awesome-mcp-servers",
+      "status": "present",
+      "matches": [
+        {
+          "line": 890,
+          "category": "\ud83d\udcac <a name=\"communication\"></a>Communication",
+          "repo": "https://github.com/BigCactusLabs/dead-letter"
+        }
+      ],
+      "entries_checked": 4123,
+      "scope": "exact repository links in verified upstream README list rows; not open submissions or other lists",
+      "revision": "393b4e9fafb0348e5a1c2a4ef5a8719b0d85e061",
+      "evidence": [
+        {
+          "url": "https://api.github.com/repos/punkpeye/awesome-mcp-servers/commits/main",
+          "checked_at": "2026-09-19T03:02:04.449457+00:00",
+          "sha256": "40c0e013aa0a14d09b885e004d04b8aefdce82c3b5002eb5d3a63a56bb9b72c2",
+          "bytes": 6282
+        },
+        {
+          "url": "https://api.github.com/repos/punkpeye/awesome-mcp-servers/contents/README.md?ref=393b4e9fafb0348e5a1c2a4ef5a8719b0d85e061",
+          "checked_at": "2026-09-19T03:02:04.771231+00:00",
+          "sha256": "b1b79846370b177d4e3d2bfb1e66bfbef134a22c3e30d9a7b744b7483df76644",
+          "bytes": 1019
+        },
+        {
+          "url": "https://raw.githubusercontent.com/punkpeye/awesome-mcp-servers/393b4e9fafb0348e5a1c2a4ef5a8719b0d85e061/README.md",
+          "checked_at": "2026-09-19T03:02:05.069972+00:00",
+          "sha256": "9b6a1ee410fde8132c92444f15cc153c2d6c4866dd74c4ac8b428981d49f777c",
+          "bytes": 1756337
+        }
+      ]
+    }
+  ]
+}

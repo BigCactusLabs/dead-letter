@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Generated VS Code and Cursor MCP install links, client-specific VS Code,
+  Cursor, and Cline configurations, and a Cline marketplace submission
+  candidate derived from the canonical `server.json` launch contract. Public
+  convenience links do not advance to unpublished release-prep pins (#104).
+- Cross-platform public-PyPI launcher smoke checks and pinned upstream Cline
+  catalog validation, plus client installation guidance and a dated
+  [MCP distribution ledger](docs/reference/mcp-distribution.md). Catalog
+  submissions, ownership claims, and named-client GUI checks remain separate
+  acceptance steps; generated metadata does not claim admission (#104).
 - Optional timed MBOX message workers via `--mbox-timeout SECONDS` and Python
   `timeout_seconds`. A fresh subprocess runs the existing conversion pipeline;
   timeouts and abnormal exits are isolated to one message, and the parent only

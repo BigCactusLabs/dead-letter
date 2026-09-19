@@ -10,6 +10,7 @@ on:
 jobs:
   link-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -28,16 +29,27 @@ jobs:
           print("\n".join(docs))
           ' > "$RUNNER_TEMP/docs-files.txt"
           cat "$RUNNER_TEMP/docs-files.txt"
+      - name: Verify the live VS Code install redirect and command payload
+        run: python3 scripts/check_install_redirect.py
       - name: Check markdown links
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2
         with:
           lycheeVersion: v0.24.2
+          # The excluded HTTPS wrapper is checked above, including its exact
+          # custom-protocol Location. Do not accept all redirects or 429s.
+          # The exact Cursor Directory submission form repeatedly returns 429
+          # from Actions; manually verified on 2026-09-18, tracked in #104.
+          # Its owner-facing form remains a manual acceptance check.
           args: >-
             --no-progress
             --verbose
+            --max-retries 4
+            --retry-wait-time 5
             --root-dir .
             --exclude '^http://127\.0\.0\.1'
             --exclude '^http://localhost'
+            --exclude '^https://vscode\.dev/redirect\?url=vscode%3Amcp%2Finstall%3F'
+            --exclude '^https://cursor\.directory/plugins/new$'
             --files-from '${{ runner.temp }}/docs-files.txt'
           fail: true
           failIfEmpty: true
