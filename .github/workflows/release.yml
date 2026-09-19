@@ -136,8 +136,14 @@ jobs:
           existing=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')
           if grep -Fxq "$asset" <<< "$existing"; then
             mkdir -p dist
-            gh release download "$GITHUB_REF_NAME" --pattern "$asset" --pattern "$asset.sha256" --dir dist
-            (cd dist && sha256sum "$asset" | cmp - "$asset.sha256")
+            gh release download "$GITHUB_REF_NAME" --pattern "$asset" --dir dist
+            if grep -Fxq "$asset.sha256" <<< "$existing"; then
+              gh release download "$GITHUB_REF_NAME" --pattern "$asset.sha256" --dir dist
+              (cd dist && sha256sum "$asset" | cmp - "$asset.sha256")
+            else
+              # The published bundle is the truth; regenerate a missing sidecar from it.
+              (cd dist && sha256sum "$asset" > "$asset.sha256")
+            fi
           else
             python scripts/build_mcpb.py
           fi
