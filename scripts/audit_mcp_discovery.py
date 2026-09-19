@@ -155,7 +155,8 @@ def cline_result(document: dict) -> dict:
 def awesome_result(text: str) -> dict:
     # Reject HTML challenges and truncated/unrecognized content before reporting
     # a miss. Snapshot hash/revision establish the exact README checked.
-    if "# Awesome MCP Servers" not in text or len(text.splitlines()) < 100:
+    heading = re.search(r"(?im)^(?:#\s+|<h1\b)[^\n]*awesome mcp servers\b", text)
+    if heading is None or len(text.splitlines()) < 100:
         raise AuditError("unrecognized or incomplete Awesome README")
     matches = []
     category = ""

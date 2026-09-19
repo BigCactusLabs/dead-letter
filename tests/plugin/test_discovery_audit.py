@@ -3,7 +3,7 @@ import importlib.util
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 
 import pytest
 
@@ -144,3 +144,9 @@ def test_audit_preserves_partial_success_and_uses_immutable_readme(monkeypatch):
     assert [r["status"] for r in result["results"]] == ["unknown", "not_in_snapshot", "present"]
     assert result["results"][0]["reason"] == "HTTP 429"
     assert len(seen) == 4 and len(result["results"][2]["evidence"]) == 2
+
+
+@pytest.mark.parametrize("title", ["# Awesome MCP servers", '# <img src="logo.svg"> Awesome MCP Servers', '<h1 align="center">Awesome MCP Servers</h1>'])
+def test_awesome_recognizes_decorated_or_html_titles(title):
+    text = readme(f"- [dead-letter]({audit.REPO})\n").replace("# Awesome MCP Servers", title)
+    assert audit.awesome_result(text)["status"] == "present"

@@ -16,6 +16,8 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# The published wrapper is `cline`; @cline/cli is an internal workspace name.
+# See cline/cline apps/cli/script/publish-npm.ts at d48afb3542b07cbb6d17b40d7c536aadc9cbf041.
 CLINE_VERSION = "3.0.62"
 
 
@@ -93,7 +95,7 @@ def check() -> dict:
         settings = Path(env["CLINE_MCP_SETTINGS_PATH"])
         before = {"mcpServers": {"preserve-me": {"transport": {"type": "stdio", "command": "do-not-execute-this-sentinel"}, "disabled": True, "autoApprove": []}}, "auditSentinel": "preserve"}
         settings.write_text(json.dumps(before), encoding="utf-8")
-        cli = [npx, "--yes", f"--package=@cline/cli@{CLINE_VERSION}", "cline"]
+        cli = [npx, "--yes", f"--package=cline@{CLINE_VERSION}", "cline"]
         version = run([*cli, "--version"], directory, env)
         if not re.search(r"(?<![\d.])" + re.escape(CLINE_VERSION) + r"(?![\d.])", version):
             raise RegistrationFailure("unexpected published Cline CLI version")
@@ -109,7 +111,7 @@ def check() -> dict:
                 run([*cli, "mcp", "uninstall", "dead-letter"], directory, env)
         if json.loads(settings.read_text(encoding="utf-8")) != before:
             raise RegistrationFailure("uninstall failed to preserve original settings")
-    return {"client": "@cline/cli", "version": CLINE_VERSION, "registration": "passed", "saved_transport_smoke": "passed", "uninstall_preserves_settings": "passed", "scope": "disposable CLI profile; no GUI, model request, or marketplace submission"}
+    return {"client": "cline", "version": CLINE_VERSION, "registration": "passed", "saved_transport_smoke": "passed", "uninstall_preserves_settings": "passed", "scope": "disposable CLI profile; no GUI, model request, or marketplace submission"}
 
 
 def main() -> int:
