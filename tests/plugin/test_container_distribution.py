@@ -305,6 +305,18 @@ def test_unexpected_tool_error_fails():
     assert client_for([response({"isError": True})]).call("convert_eml", {}, error=True)["isError"]
 
 
+def test_tool_contract_ignores_sdk_additions_but_not_schema_drift():
+    tools = {name: tool(name) for name in ("b", "a")}
+    extended = {name: {**value, "title": name, "_meta": {}} for name, value in tools.items()}
+    assert smoke.tool_contract(extended) == smoke.tool_contract(tools)
+    assert [row["name"] for row in smoke.tool_contract(tools)] == ["a", "b"]
+    for field, value in (("inputSchema", {"type": "object", "required": ["eml_path"]}),
+                         ("description", "renamed"), ("name", "renamed")):
+        drifted = copy.deepcopy(tools)
+        drifted["a"][field] = value
+        assert smoke.tool_contract(drifted) != smoke.tool_contract(tools)
+
+
 def test_mount_csv_handles_spaces_and_commas(tmp_path):
     source = tmp_path / "mail, with spaces"
     value = smoke.mount(source, "/input", readonly=True)

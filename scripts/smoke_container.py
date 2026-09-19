@@ -225,6 +225,19 @@ def check_config(image: str, platform: str, version: str, revision: str) -> None
     ], check=True, timeout=60)
 
 
+def tool_contract(tools: dict[str, dict]) -> list[dict]:
+    """Project the tool inventory onto the fields clients actually consume.
+
+    The image freezes the MCP SDK through uv.lock while the PyPI reference runs
+    an unpinned `mcp` 2.x, so an optional field a newer SDK adds must not abort
+    a release after the irreversible upload. EXPECTED_TOOLS stays the hard gate.
+    """
+    return [
+        {field: tool.get(field) for field in ("name", "description", "inputSchema")}
+        for _, tool in sorted(tools.items())
+    ]
+
+
 def persisted_path(value: str, output: Path) -> Path:
     path = Path(value)
     if not path.is_absolute() or ".." in path.parts:
@@ -296,7 +309,7 @@ def check(image: str, platform: str, timeout: float, compare_pypi: str | None) -
                     "uvx", "--python", "3.12", "--from",
                     f"dead-letter[mcp]=={compare_pypi}", "dead-letter-mcp",
                 ], max(timeout, 120)) as reference:
-                    if reference.initialize() != tools:
+                    if tool_contract(reference.initialize()) != tool_contract(tools):
                         raise SmokeFailure("container tool schemas differ from the released PyPI package")
                     text = result_text(reference.call("convert_eml", {"eml_path": str(source / "message.eml")}))
                     if MARKER not in text:
