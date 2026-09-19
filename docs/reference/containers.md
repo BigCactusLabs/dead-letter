@@ -7,15 +7,13 @@ local tools: `convert_eml`, `convert_eml_to_bundle`, `convert_directory`, and
 
 ## Availability
 
-The release automation added for #108 takes effect for a **future maintainer
-release that includes it**. Adding this code does not backfill an image for
-`0.2.5`, publish a release, or establish a Docker Catalog listing. Until a
-successful container release is recorded, use the local build below.
-
-The `0.3.0` release attempted the first container publish and failed in CI on
-the second platform pull: one image store cannot hold two platform variants of
-the same index digest. No `0.3.0` image and no `0.3.0` MCP OCI entry were
-published; the first published image is expected with `0.3.1`.
+The first published image is `0.3.1` (2026-09-19). The `0.3.0` release
+attempted the first container publish and failed in CI on the second platform
+pull: one image store cannot hold two platform variants of the same index
+digest. No `0.3.0` image and no `0.3.0` MCP OCI entry exist, and no image is
+backfilled for `0.2.5` or earlier. The GHCR package is public; the one-time
+visibility step in [publishing.md](publishing.md) is done. A Docker Catalog
+listing is still a separate submission.
 
 Published images use `ghcr.io/bigcactuslabs/dead-letter:X.Y.Z`. There is no
 `latest`, major, or minor alias. The release summary also supplies the stronger
