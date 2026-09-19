@@ -185,7 +185,7 @@ class IsolationTests(unittest.TestCase):
         self.assertIn("--no-config", install.args[0])
         self.assertIn("--no-sources", install.args[0])
         self.assertNotIn("--editable", install.args[0])
-        self.assertIn(f"dead-letter[ui] @ {artifact.as_uri()}", install.args[0])
+        self.assertIn(f"dead-letter[ui] @ {artifact.resolve().as_uri()}", install.args[0])
         self.assertEqual(probe.args[0][1], "-I")
         self.assertTrue(Path(probe.args[0][2]).is_absolute())
 
