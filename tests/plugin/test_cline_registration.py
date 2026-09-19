@@ -76,7 +76,7 @@ def test_orchestration_uses_saved_launcher_and_uninstalls_even_after_failure(tmp
     commands = []
     def run(command, directory, env):
         assert "OPENAI_API_KEY" not in env
-        assert f"--package=cline@{cline.CLINE_VERSION}" in command
+        assert f"--package={cline.CLINE_PACKAGE}@{cline.CLINE_VERSION}" in command
         commands.append(command)
         settings = Path(env["CLINE_MCP_SETTINGS_PATH"])
         if command[-1] == "--version": return cline.CLINE_VERSION

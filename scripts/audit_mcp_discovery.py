@@ -157,7 +157,8 @@ def awesome_result(text: str) -> dict:
     # a miss. Snapshot hash/revision establish the exact README checked.
     heading = re.search(r"(?im)^(?:#\s+|<h1\b)[^\n]*awesome mcp servers\b", text)
     if heading is None or len(text.splitlines()) < 100:
-        raise AuditError("unrecognized or incomplete Awesome README")
+        first_line = text.splitlines()[0][:200] if text else ""
+        raise AuditError(f"unrecognized or incomplete Awesome README (lines={len(text.splitlines())}, first_line={first_line!r})")
     matches = []
     category = ""
     fence = None
