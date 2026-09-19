@@ -157,8 +157,19 @@ def test_compare_valid_zero_and_positive_timings(tmp_path):
     assert bench.compare(first, second)["right_over_left_conversion_ratio"] is None
 
 
-@pytest.mark.parametrize("payload", [b"{}", b"[]", b"not JSON", b"{" * (bench.SUMMARY_LIMIT + 1),
-    b'{"schema_version": 1, "schema_version": 1}', b'{"number": NaN}'])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"{}",
+        b"[]",
+        b"not JSON",
+        # Short id: the raw payload would overflow the Windows environment limit
+        # when pytest exports PYTEST_CURRENT_TEST.
+        pytest.param(b"{" * (bench.SUMMARY_LIMIT + 1), id="oversized"),
+        b'{"schema_version": 1, "schema_version": 1}',
+        b'{"number": NaN}',
+    ],
+)
 def test_invalid_summary_rejected(tmp_path, payload):
     path = tmp_path / "bad.json"
     path.write_bytes(payload)
