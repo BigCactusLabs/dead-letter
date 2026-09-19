@@ -101,8 +101,11 @@ def test_oci_is_digest_pinned_and_preserves_other_packages(server):
     assert {"type": "positional", "value": "-i"} in arguments
     assert {"type": "named", "name": "--network", "value": "none"} in arguments
     assert {"type": "positional", "value": "--read-only"} in arguments
-    mounts = [a for a in arguments if a.get("name") == "--volume"]
-    assert [m["value"] for m in mounts] == ["{input_directory}:/input:ro", "{output_directory}:/output:rw"]
+    mounts = [a for a in arguments if a.get("name") == "--mount"]
+    assert [m["value"] for m in mounts] == [
+        "type=bind,source={input_directory},target=/input,readonly",
+        "type=bind,source={output_directory},target=/output",
+    ]
     assert all(next(iter(m["variables"].values()))["isRequired"] for m in mounts)
     user = next(a for a in arguments if a.get("name") == "--user")
     assert user["variables"]["container_user"]["default"] == "10001:10001"

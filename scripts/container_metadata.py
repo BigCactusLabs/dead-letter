@@ -93,14 +93,17 @@ def oci_package(digest: str) -> dict:
         return {"type": "named", "name": name, "value": value}
 
     mounts = []
-    for variable, target, mode in (
-        ("input_directory", "/input", "ro"),
-        ("output_directory", "/output", "rw"),
+    # Publish the bind-mount form the smoke test exercises. --volume silently
+    # creates a missing host source directory; --mount fails, which is what the
+    # "existing absolute host directory" contract below promises.
+    for variable, target, mode, suffix in (
+        ("input_directory", "/input", "read-only", ",readonly"),
+        ("output_directory", "/output", "writable", ""),
     ):
-        mount = named("--volume", f"{{{variable}}}:{target}:{mode}")
+        mount = named("--mount", f"type=bind,source={{{variable}}},target={target}{suffix}")
         mount["variables"] = {
             variable: {
-                "description": f"Existing absolute host directory mounted at {target} ({mode})",
+                "description": f"Existing absolute host directory bind-mounted at {target} ({mode})",
                 "isRequired": True,
             }
         }
