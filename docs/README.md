@@ -29,6 +29,8 @@ runtime contracts and historical design notes serve different purposes.
 | Change core, CLI, API, or MCP behavior | [Runtime Contracts](reference/v4-runtime-contracts.md) |
 | Change UI stores, job handling, or onboarding | [Frontend State Model](reference/frontend-state-model.md) |
 | Prepare, tag, publish, or recover a release | [Publishing](reference/publishing.md) |
+| Reconcile shipped channels or prepare a reviewed tap PR | [Release operations](reference/release-operations.md) |
+| Track the draft-first immutable-release redesign | [Immutable sequencing plan](project/immutable-release-sequencing.md) |
 | Check catalog listings and pending marketplace submissions | [MCP Distribution Ledger](reference/mcp-distribution.md) |
 | Validate Claude-specific behavior manually | [Plugin testing](../plugin/TESTING.md) |
 | Triage a CI checkout/source provenance mismatch | [CI Provenance](reference/ci-provenance.md) |

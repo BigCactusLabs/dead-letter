@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Maintainer release helpers: `release.py status --version X.Y.Z` reads PyPI,
+  GitHub release assets, GHCR, the MCP Registry, the plugin marketplace, and
+  the Homebrew tap and reports each channel as verified, missing, deferred,
+  conflicting, or unable-to-verify without repairing anything (#125).
+  `release.py homebrew-prepare` prints a tap formula plan by default, edits
+  only the formula with `--write`, and opens a draft tap PR with `--open-pr`
+  after the reviewed patch hash matches; it never merges (#129). See the
+  [release operations guide](docs/reference/release-operations.md).
+
 ## [0.4.0] - 2026-09-19
 
 ### Added

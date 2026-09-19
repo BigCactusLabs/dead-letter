@@ -155,7 +155,10 @@ namespace, every version relationship, dated changelog, tag-to-commit
 identity, main ancestry, source tests, and the packaged-artifact gate **before**
 PyPI publication. Publishing a GitHub release does not mean every downstream
 channel has succeeded: inspect the workflow's channel summary and individual
-job steps.
+job steps. `python scripts/release.py status --version X.Y.Z` is the read-only
+way to check every channel after a release; PyPI is only reported verified when
+the run's original `SHA256SUMS` is supplied with `--checksums`. See
+[Release Operations](release-operations.md) for details.
 
 The package upload includes PyPI attestations. Confirm the intended sdist and
 wheel are available, then exercise the published version with synthetic mail.
@@ -253,6 +256,13 @@ checkout of `BigCactusLabs/homebrew-tap` (installed as `BigCactusLabs/tap`),
 update `Formula/dead-letter.rb` to the exact released sdist URL and SHA-256
 from PyPI. Review its dependency resources; do not accidentally add the
 UI/MCP extras or unrelated development packages.
+
+`scripts/release.py homebrew-prepare` can generate the formula change and open
+the draft tap PR, and it requires the original build's checksums. It never
+merges: a maintainer still reviews the generated diff,
+runs the manual `brew` install and test steps below, and records the tap commit
+in the release checklist. See [Release Operations](release-operations.md) for
+the full flag reference and the plan/write/open-pr phases.
 
 ```bash
 # In the tap checkout, after editing and reviewing the formula:

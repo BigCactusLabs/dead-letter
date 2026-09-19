@@ -3,7 +3,8 @@
 Use Python 3.12+. `check` and `prepare` are offline; preparation prints a patch
 for review and `git apply`. `wait-pypi` reads the network; `upload-assets` can
 write GitHub release assets. No command tags or publishes a Python package.
-See docs/reference/publishing.md.
+`status` is GET-only. `homebrew-prepare` prints a plan unless --write or
+--open-pr is explicitly selected; it never merges. See docs/reference/publishing.md.
 """
 from __future__ import annotations
 
@@ -282,8 +283,34 @@ def main(argv: list[str] | None = None) -> int:
     assets = commands.add_parser("upload-assets", help="publish missing assets; reject replacement with different bytes")
     assets.add_argument("tag")
     assets.add_argument("paths", type=Path, nargs="+")
+    status = commands.add_parser("status", help="read-only cross-channel release evidence; never repair or retry")
+    status.add_argument("--version", required=True)
+    status.add_argument("--json", action="store_true")
+    status.add_argument("--checksums", type=Path, help="original build SHA256SUMS, not regenerated from PyPI")
+    status.add_argument("--oci-digest", help="expected sha256 index digest from the release ledger")
+    brew = commands.add_parser("homebrew-prepare", help="print a reviewed tap preparation plan; no unattended publish")
+    brew.add_argument("--version", required=True)
+    brew.add_argument("--checksums", required=True, type=Path)
+    brew.add_argument("--tap", type=Path)
+    brew.add_argument("--output-dir", type=Path, help="new external review packet directory; reuse only for --open-pr")
+    operations = brew.add_mutually_exclusive_group()
+    operations.add_argument("--write", action="store_true", help="edit only the formula in a clean preparation branch")
+    operations.add_argument("--open-pr", action="store_true", help="commit/push reviewed formula and open a draft PR; never merge")
+    brew.add_argument("--reviewed-diff-sha256", help="explicit approval of an existing preparation packet's patch")
     args = parser.parse_args(argv)
     try:
+        if args.command in {"status", "homebrew-prepare"}:
+            stable(args.version)
+            sys.dont_write_bytecode = True
+            if args.command == "homebrew-prepare":
+                from homebrew_prepare import execute
+                return execute(args)
+            from release_evidence import read_checksums
+            from release_status import collect, print_report
+            recorded = read_checksums(args.checksums, args.version) if args.checksums else None
+            report = collect(args.version, checksums=recorded, expected_oci=args.oci_digest)
+            print_report(report, as_json=args.json)
+            return report["exit_code"]
         if args.command == "upload-assets":
             upload_assets(args.tag, args.paths)
             return 0
