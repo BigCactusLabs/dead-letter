@@ -8,6 +8,7 @@ runtime contracts and historical design notes serve different purposes.
 | Task | Read |
 | --- | --- |
 | Understand the product and convert a first email | [README](../README.md) |
+| Convert a Gmail Takeout `.mbox` export locally | [Gmail Takeout / MBOX](reference/gmail-takeout.md) |
 | Choose CLI, UI, MCPB, plugin, container, or skill | [Installation and distribution map](reference/distribution.md) |
 | Configure an agent/MCP client safely | [Agent install guide](../llms-install.md) |
 | Install or update the Claude plugin | [Plugin README](../plugin/README.md) |
@@ -38,6 +39,8 @@ filename. Machine-readable versions live in package/distribution metadata;
 
 [Reach & Distribution](project/reach.md) retains the product/discovery
 strategy and outstanding evidence requirements. The
+[MBOX ingestion design notes](project/2026-09-18-mbox-ingestion.md) record the
+research and boundaries behind streaming Takeout import. The
 [docs and release audit](project/docs-release-audit.md) records this refresh,
 its scope, and remaining validation boundaries. The completed
 [html-to-markdown v3 migration](reference/html-to-markdown-v3-migration.md)

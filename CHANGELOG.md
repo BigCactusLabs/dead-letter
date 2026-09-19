@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Streaming `.mbox` / Gmail Takeout conversion via the CLI and lazy Python API,
+  reusing the EML pipeline with source-order byte/hash provenance, preserved
+  Gmail labels, collision-safe names, per-message resource limits, partial
+  failures, and disk-backed JSON reports. `--mbox-bundles` writes Cabinet-style
+  source/attachment bundles. See the [Takeout recipe](docs/reference/gmail-takeout.md).
+  Explicit quoting policies avoid guessing; Content-Length-framed dialects,
+  compressed/live mailboxes and MCP/web ingestion are outside this slice (#103).
+
+### Fixed
+
+- MBOX import no longer mistakes folded header continuations for a top-level
+  `Content-Length` field. Source-change checks bind the opened file to its path,
+  respect Windows metadata semantics, and stop following appended data. Malformed
+  postmark tails no longer trigger quadratic regex backtracking. Interrupted
+  report appends publish only complete entries, and Ctrl-C during report
+  publication exits cleanly. Import/report tests now run on all three CI platforms (#103).
+- Conversion reports now replace lone surrogates outside surrogateescape's byte
+  range instead of aborting JSON generation, while preserving existing decoded-byte behavior.
+
 ## [0.3.1] - 2026-09-19
 
 ### Fixed

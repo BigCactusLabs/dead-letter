@@ -18,8 +18,8 @@ capability in user-facing docs.
 
 ## Repo map
 
-- `src/dead_letter/core/` — MIME parse → sanitize → thread/zone → Markdown render
-- `src/dead_letter/backend/` — CLI, FastAPI API, job runner, watch, MCP, doctor
+- `src/dead_letter/core/` — MIME parse → sanitize → thread/zone → Markdown render; `mbox*.py` and `stream_report.py` stream `.mbox` imports through the same pipeline
+- `src/dead_letter/backend/` — CLI (`mbox_cli.py` for MBOX), FastAPI API, job runner, watch, MCP, doctor
 - `src/dead_letter/frontend/` — static Alpine.js ES modules; no build step
 - `plugin/` — Claude manifest, commands, context skill, exact MCP launcher pin
 - `skills/dead-letter/` — portable Agent Skill; keep Claude slash commands and

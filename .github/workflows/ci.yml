@@ -108,6 +108,10 @@ jobs:
         with:
           enable-cache: true
 
+      - name: MBOX and streamed-report contracts
+        shell: bash
+        run: uv run --extra dev --locked pytest -q tests/core/test_mbox*.py tests/core/test_stream_report*.py tests/backend/test_mbox*.py
+
       - name: Build the MCPB bundle from this checkout
         run: python scripts/build_mcpb.py --local-source . --output-dir build/local-dist
 
