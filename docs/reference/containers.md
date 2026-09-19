@@ -12,6 +12,11 @@ release that includes it**. Adding this code does not backfill an image for
 `0.2.5`, publish a release, or establish a Docker Catalog listing. Until a
 successful container release is recorded, use the local build below.
 
+The `0.3.0` release attempted the first container publish and failed in CI on
+the second platform pull: one image store cannot hold two platform variants of
+the same index digest. No `0.3.0` image and no `0.3.0` MCP OCI entry were
+published; the first published image is expected with `0.3.1`.
+
 Published images use `ghcr.io/bigcactuslabs/dead-letter:X.Y.Z`. There is no
 `latest`, major, or minor alias. The release summary also supplies the stronger
 pin `ghcr.io/bigcactuslabs/dead-letter@sha256:<digest>`; use that for repeatable
@@ -129,10 +134,13 @@ publication**. Only its release publishing job receives `packages: write`:
    use the same source SHA, lockfile, inputs, and source timestamp in all jobs.
 2. After native tests succeed, push a run-specific `candidate-*` multi-platform
    image with BuildKit provenance (`mode=max`) and SBOM attestations.
-3. Pull and test the resulting registry digest on both platforms. Compare the
-   complete advertised tool schemas against the exact PyPI release version.
-4. Pull both platforms without Docker credentials. Only then promote the
-   tested digest to `X.Y.Z`. Do not overwrite an existing different digest.
+3. Resolve each platform's child manifest digest from the pushed index, then
+   pull and test each platform by that immutable per-platform digest. One image
+   store cannot hold two platform variants of the same index reference. Compare
+   the complete advertised tool schemas against the exact PyPI release version.
+4. Re-pull both per-platform child digests without Docker credentials. Only
+   then promote the tested index digest to `X.Y.Z`. Do not overwrite an
+   existing different digest.
 5. The MCP Registry job waits for both MCPB and container success, then adds a
    digest-pinned OCI package to its release copy of `server.json`, retaining
    PyPI and MCPB. The committed manifest does not advertise a nonexistent
@@ -151,8 +159,9 @@ blocks promotion and registry metadata until that is true. The workflow does
 not pretend to change account/package settings automatically.
 
 After correcting a failure, rerun **failed jobs**, not an already successful
-publication. A full rebuild can have different attestation metadata and thus a
-different index digest even when application inputs are unchanged. Existing
+publication. A full rebuild can have different attestation metadata and thus
+different index and child manifest digests even when application inputs are
+unchanged. Existing
 version tags must not be overwritten to make a rerun pass. Inspect the prior
 verified digest or cut a new maintainer release instead. Failed candidates
 are not endorsed releases; retain them for investigation and clean them up

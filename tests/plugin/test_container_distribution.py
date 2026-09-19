@@ -234,6 +234,43 @@ def test_workflow_separates_untrusted_testing_from_publication():
                 assert len(step["uses"].rsplit("@", 1)[1]) == 40
 
 
+def publish_steps():
+    workflow = yaml.safe_load((ROOT / ".github/workflows/container.yml").read_text())
+    return {step["name"]: step for step in workflow["jobs"]["publish"]["steps"] if "name" in step}
+
+
+def test_platform_verification_pulls_child_manifests_not_the_index():
+    # One image store cannot hold two platform variants of the same index
+    # reference (moby/moby#43188); v0.3.0's release failed on the arm64 pull.
+    steps = publish_steps()
+    for name in ("Verify published digest and PyPI tool-schema parity on both platforms",
+                 "Require anonymous access before advertising the image"):
+        run = steps[name]["run"]
+        assert 'pull --platform "$platform" "$IMAGE@$DIGEST"' not in run
+        assert """imagetools inspect "$IMAGE@$DIGEST" --format '{{json .Manifest}}'""" in run
+        assert "attestation-manifest" in run
+        assert 'pull --platform "$platform" "$IMAGE@$child"' in run
+        assert "^sha256:[0-9a-f]{64}$" in run
+    verify = steps["Verify published digest and PyPI tool-schema parity on both platforms"]["run"]
+    assert 'smoke_container.py "$IMAGE@$child"' in verify
+    assert '--compare-pypi "$VERSION"' in verify
+    # Per-platform digests are a test detail; the promoted artifact is the index.
+    promote = steps["Promote without overwriting an existing release tag"]["run"]
+    assert 'imagetools create --tag "$IMAGE:$VERSION" "$IMAGE@$DIGEST"' in promote
+    assert "$child" not in promote
+
+
+def test_release_waits_for_both_pypi_surfaces_before_resolving():
+    jobs = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())["jobs"]
+    for job in ("build-mcpb", "publish-mcp"):
+        wait = next(step for step in jobs[job]["steps"]
+                    if step.get("name") == "Wait for PyPI to serve the release")
+        # The JSON API serves a release before the simple index uv resolves against.
+        assert "https://pypi.org/pypi/dead-letter/${v}/json" in wait["run"]
+        assert "https://pypi.org/simple/dead-letter/" in wait["run"]
+        assert "$(seq 1 60)" in wait["run"]
+
+
 def response(result, request_id=1):
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
 

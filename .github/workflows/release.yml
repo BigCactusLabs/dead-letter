@@ -79,14 +79,19 @@ jobs:
           fi
 
       - name: Wait for PyPI to serve the release
+        # The JSON API goes live before the simple index that uv resolves
+        # against, so require both before any step that runs `uv lock`.
         run: |
           v="${{ steps.version.outputs.version }}"
-          for i in $(seq 1 30); do
-            if curl -fsSL "https://pypi.org/pypi/dead-letter/${v}/json" >/dev/null; then
-              echo "PyPI is serving dead-letter ${v}"
+          for i in $(seq 1 60); do
+            if curl -fsSL "https://pypi.org/pypi/dead-letter/${v}/json" >/dev/null \
+              && curl -fsSL -H 'Accept: application/vnd.pypi.simple.v1+json' \
+                   "https://pypi.org/simple/dead-letter/" \
+                 | jq -e --arg v "$v" '.versions | index($v)' >/dev/null; then
+              echo "PyPI JSON API and simple index are serving dead-letter ${v}"
               exit 0
             fi
-            echo "waiting for PyPI dead-letter ${v} (attempt ${i}/30)"
+            echo "waiting for PyPI dead-letter ${v} (attempt ${i}/60)"
             sleep 10
           done
           echo "PyPI did not serve dead-letter ${v} in time" >&2
@@ -149,14 +154,18 @@ jobs:
       - name: Wait for PyPI to serve the release
         # The registry validates the mcp-name marker in the package's PyPI
         # description, so the new version (README included) must be live first.
+        # Both the JSON API and the later simple index must serve it.
         run: |
           v="${{ steps.version.outputs.version }}"
-          for i in $(seq 1 30); do
-            if curl -fsSL "https://pypi.org/pypi/dead-letter/${v}/json" >/dev/null; then
-              echo "PyPI is serving dead-letter ${v}"
+          for i in $(seq 1 60); do
+            if curl -fsSL "https://pypi.org/pypi/dead-letter/${v}/json" >/dev/null \
+              && curl -fsSL -H 'Accept: application/vnd.pypi.simple.v1+json' \
+                   "https://pypi.org/simple/dead-letter/" \
+                 | jq -e --arg v "$v" '.versions | index($v)' >/dev/null; then
+              echo "PyPI JSON API and simple index are serving dead-letter ${v}"
               exit 0
             fi
-            echo "waiting for PyPI dead-letter ${v} (attempt ${i}/30)"
+            echo "waiting for PyPI dead-letter ${v} (attempt ${i}/60)"
             sleep 10
           done
           echo "PyPI did not serve dead-letter ${v} in time" >&2

@@ -167,9 +167,22 @@ jobs:
         env:
           DIGEST: ${{ steps.staging.outputs.digest }}
         run: |
+          # One image store cannot hold two platform variants of the same index
+          # reference (moby/moby#43188), so test each platform's own immutable
+          # child manifest digest. Attestation manifests are not platforms.
+          manifest=$(docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .Manifest}}')
           for platform in linux/amd64 linux/arm64; do
-            docker pull --platform "$platform" "$IMAGE@$DIGEST"
-            python3 scripts/smoke_container.py "$IMAGE@$DIGEST" \
+            child=$(printf '%s' "$manifest" | jq -r --arg platform "$platform" '
+              .manifests[]
+              | select((.annotations // {})["vnd.docker.reference.type"] != "attestation-manifest")
+              | select((.platform.os + "/" + .platform.architecture) == $platform)
+              | .digest')
+            if [[ ! "$child" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::No single child manifest for $platform under $IMAGE@$DIGEST"
+              exit 1
+            fi
+            docker pull --platform "$platform" "$IMAGE@$child"
+            python3 scripts/smoke_container.py "$IMAGE@$child" \
               --platform "$platform" --version "$VERSION" --revision "$REVISION" \
               --timeout 120 --compare-pypi "$VERSION"
           done
@@ -179,8 +192,20 @@ jobs:
         run: |
           config=$(mktemp -d)
           trap 'rm -rf "$config"' EXIT
+          # Resolution reuses the authenticated client; only the pulls are
+          # anonymous. Child digests again, for the same image-store reason.
+          manifest=$(docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .Manifest}}')
           for platform in linux/amd64 linux/arm64; do
-            if ! docker --config "$config" pull --platform "$platform" "$IMAGE@$DIGEST"; then
+            child=$(printf '%s' "$manifest" | jq -r --arg platform "$platform" '
+              .manifests[]
+              | select((.annotations // {})["vnd.docker.reference.type"] != "attestation-manifest")
+              | select((.platform.os + "/" + .platform.architecture) == $platform)
+              | .digest')
+            if [[ ! "$child" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::No single child manifest for $platform under $IMAGE@$DIGEST"
+              exit 1
+            fi
+            if ! docker --config "$config" pull --platform "$platform" "$IMAGE@$child"; then
               echo '::error::GHCR image is not anonymously pullable. Set the package visibility to public, then rerun failed jobs. No release tag or MCP OCI entry has been promoted.'
               exit 1
             fi
