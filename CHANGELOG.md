@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-19
+
 ### Added
 
 - Generated VS Code and Cursor MCP install links, client-specific VS Code,
