@@ -49,7 +49,12 @@ consistency, not independent cryptographic attestation of the publisher.
 
 Each channel includes `status`, `detail`, `next_action`, and bounded selected
 `evidence`. JSON also includes `schema_version: 1`, target `version`, UTC
-`checked_at`, counts, and `exit_code`.
+`checked_at`, counts, and `exit_code`. The exit code is 0 only when every
+channel is `verified` or `deferred`; `missing`, `conflicting`, and
+`unable-to-verify` exit 1. An `unable-to-verify` channel records the failure
+class and message under `evidence` so a parser defect is distinguishable from
+an endpoint outage. GitHub returns HTTP 404 for resources the caller cannot
+access, so `missing` on a GitHub-hosted channel can also mean lost access.
 
 | Status | Meaning |
 | --- | --- |

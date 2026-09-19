@@ -260,9 +260,10 @@ def guarded(function, *args) -> dict:
                       "Inspect prior publication and the channel recovery runbook; absence does not authorize a retry.")
     except Conflict as exc:
         return result("conflicting", str(exc), "Stop. Recover original evidence or prepare a new release; never replace published bytes or rewind pointers.")
-    except (Unavailable, OSError, ValueError, KeyError, TypeError, IndexError, AttributeError):
+    except (Unavailable, OSError, ValueError, KeyError, TypeError, IndexError, AttributeError) as exc:
         return result("unable-to-verify", "Network, authorization, or malformed/incomplete evidence prevented verification.",
-                      "Check endpoint access and evidence, then rerun explicitly; no retry was attempted.")
+                      "Check endpoint access and evidence, then rerun explicitly; no retry was attempted.",
+                      error_type=type(exc).__name__, error=str(exc)[:200])
 
 
 def collect(version: str, *, checksums: dict | None = None, expected_oci: str | None = None,
@@ -291,7 +292,8 @@ def collect(version: str, *, checksums: dict | None = None, expected_oci: str | 
     channels["homebrew"] = guarded(homebrew, client, version, checksums)
     counts = {state: sum(c["status"] == state for c in channels.values()) for state in STATES}
     return {"schema_version": 1, "version": version, "checked_at": now.isoformat(), "channels": channels,
-            "counts": counts, "exit_code": 0 if counts["verified"] == len(channels) else 1}
+            "counts": counts,
+            "exit_code": 0 if counts["verified"] + counts["deferred"] == len(channels) else 1}
 
 
 def print_report(report: dict, *, as_json: bool) -> None:

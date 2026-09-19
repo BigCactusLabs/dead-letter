@@ -227,7 +227,7 @@ class StatusTests(unittest.TestCase):
         report = self.report()
         self.assertEqual(report["channels"]["plugin-marketplace"]["status"], "deferred")
         self.assertEqual(report["channels"]["homebrew"]["status"], "deferred")
-        self.assertEqual(report["exit_code"], 1)
+        self.assertEqual(report["exit_code"], 0)
 
     def test_nonexistent_plugin_pin_is_not_deferred(self):
         self.client, _, _ = fixture(pin="1.2.2")
@@ -334,3 +334,14 @@ class EvidenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GuardedEvidenceTests(unittest.TestCase):
+    def test_unable_to_verify_records_failure_class(self):
+        def broken():
+            raise AttributeError("'list' object has no attribute 'get'")
+        outcome = s.guarded(broken)
+        self.assertEqual(outcome["status"], "unable-to-verify")
+        self.assertEqual(outcome["evidence"]["error_type"], "AttributeError")
+        self.assertIn("no attribute", outcome["evidence"]["error"])
+
