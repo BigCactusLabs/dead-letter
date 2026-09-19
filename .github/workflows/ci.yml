@@ -7,96 +7,160 @@ on:
       - main
       - feat/**
 
+permissions:
+  contents: read
+
 jobs:
-  test:
+  core:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-
-      - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
-          node-version: "22"
-
+          persist-credentials: false
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-
       - name: Setup uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           enable-cache: true
-
       - name: Sync workspace
         run: uv sync --extra dev --locked
-
-      # Record the synthetic merge commit and this interpreter's source path.
-      # Keep this in the test job: a separate workflow proves a different checkout.
       - name: Checkout and import provenance
-        run: uv run python scripts/ci_provenance.py
+        run: uv run --locked --no-sync python scripts/ci_provenance.py
+      - name: Verify core
+        run: python scripts/verify.py full --suite core
 
-      - name: Core tests
-        run: uv run pytest -q tests/core
-
-      - name: Backend tests
-        run: uv run pytest -q tests/backend
-
-      # Correctness gate and observational timings, never a noisy speed threshold.
-      # Generated mail only: do not add user archives or private validation summaries.
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Setup uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: true
+      - name: Sync workspace
+        run: uv sync --extra dev --locked
+      - name: Checkout and import provenance
+        run: uv run --locked --no-sync python scripts/ci_provenance.py
+      - name: Verify backend
+        run: python scripts/verify.py full --suite backend
+      # Independent of the pytest outcome; generated mail only.
       - name: MBOX full-import audit smoke (synthetic)
+        if: success() || failure()
         run: |
           mkdir -p build/mbox-validation
           for mode in direct worker; do
-            uv run python scripts/benchmark_mbox_import.py --mode "$mode" --messages 8 --attachment-kib 64 --bundles > "build/mbox-validation/$mode.json"
+            uv run --locked --no-sync python scripts/benchmark_mbox_import.py --mode "$mode" --messages 8 --attachment-kib 64 --bundles > "build/mbox-validation/$mode.json"
             cat "build/mbox-validation/$mode.json"
           done
-          uv run python scripts/benchmark_mbox_import.py --compare build/mbox-validation/direct.json build/mbox-validation/worker.json
+          uv run --locked --no-sync python scripts/benchmark_mbox_import.py --compare build/mbox-validation/direct.json build/mbox-validation/worker.json
 
-      - name: Plugin tests
-        run: uv run pytest -q tests/plugin
-
-      - name: Plugin schema validation
-        run: npx --yes @anthropic-ai/claude-code@2.1.145 plugin validate plugin/
-
-      # Validates the portable Agent Skill under skills/ against the
-      # agentskills.io spec the same way `gh skill publish` would, without
-      # publishing anything.
-      - name: Agent Skill validation
+  plugin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22"
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Setup uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: true
+      - name: Sync workspace
+        run: uv sync --extra dev --locked
+      - name: Checkout and import provenance
+        run: uv run --locked --no-sync python scripts/ci_provenance.py
+      - name: Verify plugin
+        run: python scripts/verify.py full --suite plugin
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh skill publish --dry-run
-
-      # Non-blocking reminder: the plugin MCP pin is *allowed* to lag the package
-      # version (plugin releases are decoupled by design), so this warns rather
-      # than fails. It exists to make a forgotten plugin follow-up release
-      # visible instead of silently shipping a stale plugin to the marketplace.
+      # Plugin adoption may intentionally lag. The canonical metadata helper
+      # reports that warning without turning independent versions into an error.
       - name: Plugin pin drift reminder (non-blocking)
         if: always()
         continue-on-error: true
+        run: python scripts/release.py check
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22"
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Verify frontend
+        run: python scripts/verify.py full --suite frontend
+
+  packaging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+        with:
+          persist-credentials: false
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Setup uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: false
+      - name: Build and verify isolated distribution installs
+        run: python scripts/verify.py packaging
+
+  # Preserve the old required status name without hiding independent failures.
+  test:
+    if: always()
+    needs: [core, backend, plugin, frontend, packaging]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require every independent suite
+        env:
+          CORE: ${{ needs.core.result }}
+          BACKEND: ${{ needs.backend.result }}
+          PLUGIN: ${{ needs.plugin.result }}
+          FRONTEND: ${{ needs.frontend.result }}
+          PACKAGING: ${{ needs.packaging.result }}
         run: |
-          pkg=$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
-          pin=$(python -c "import json, re; a = json.load(open('plugin/.mcp.json'))['mcpServers']['dead-letter']['args']; f = a[a.index('--from') + 1]; print(re.search(r'==([0-9][^\"]*)', f).group(1))")
-          if [ "$pkg" != "$pin" ]; then
-            echo "::warning title=Plugin pin lags package::plugin/.mcp.json pins dead-letter[mcp]==$pin but pyproject.toml is $pkg. If this package release should reach plugin/Cowork users, cut a plugin follow-up release (docs/reference/publishing.md)."
-          else
-            echo "Plugin pin ($pin) matches package version ($pkg)."
-          fi
+          for result in "$CORE" "$BACKEND" "$PLUGIN" "$FRONTEND" "$PACKAGING"; do
+            test "$result" = success || exit 1
+          done
 
-      - name: Frontend tests
-        run: node --test tests/frontend/*.test.js
-
-      - name: Frontend syntax
-        run: node --check src/dead_letter/frontend/static/app.js
-
-  # Builds the MCPB bundle from this checkout (not PyPI) and launches it the
-  # way an MCPB host would: unpack, `uv run` the entry point, MCP handshake,
-  # tools/list, and one fixture conversion. Runs on the three platforms Claude
-  # Desktop's uv runtime targets. The release workflow repeats the same smoke
-  # against the real PyPI pin before attaching the asset.
+  # Local-source bundle checks remain distinct from the installed wheel gate
+  # and from a fresh GUI-client installation.
   mcpb:
     strategy:
       fail-fast: false
@@ -108,35 +172,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-
+        with:
+          persist-credentials: false
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: "22"
-
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-
       - name: Setup uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           enable-cache: true
-
       - name: Checkout and import provenance
         run: uv run --extra dev --locked python scripts/ci_provenance.py
-
       - name: Provenance contracts
         run: uv run --extra dev --locked python -m unittest discover -s tests/core -p test_ci_provenance.py
-
       - name: MBOX and streamed-report contracts
         shell: bash
         run: uv run --extra dev --locked pytest -q tests/core/test_mbox*.py tests/core/test_stream_report*.py tests/backend/test_mbox*.py
-
       - name: Build the MCPB bundle from this checkout
         run: python scripts/build_mcpb.py --local-source . --output-dir build/local-dist
-
       - name: Smoke test the bundle
         shell: bash
         run: python scripts/smoke_mcpb.py build/local-dist/dead-letter-mcp-*.mcpb
