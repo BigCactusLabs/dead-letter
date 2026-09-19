@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import os
-import stat
 import re
+import stat
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,13 +15,15 @@ from typing import Literal
 UnescapeMode = Literal["preserve", "mboxrd", "mboxo"]
 # ctime-style postmarks, plus Gmail's numeric timezone before the year.
 # Requiring a full postmark avoids splitting ordinary prose beginning "From ".
+# The remote-host tail is possessive: its trailing whitespace must not be
+# redistributed quadratically against the optional padding on malformed input.
 _ENVELOPE = re.compile(
     rb"From [^\s]+[ \t]+(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[ \t]+"
     rb"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[ \t]+"
     rb"[0-3]?\d[ \t]+[0-2]\d:[0-5]\d:[0-6]\d[ \t]+"
     rb"(?:(?:[+-]\d{4}|[A-Z]{1,5})[ \t]+)?\d{4}"
     rb"(?:[ \t]+(?:[+-]\d{4}|[A-Z]{1,5}))?"
-    rb"(?:[ \t]+remote from [^\r\n]+)?[ \t]*(?:\r?\n)?\Z"
+    rb"(?:[ \t]+remote from [^\r\n]++)?[ \t]*(?:\r?\n)?\Z"
 )
 _RD_QUOTE = re.compile(rb"^>+From ")
 
@@ -80,7 +82,9 @@ def _source_signature(value: os.stat_result) -> tuple[int, ...]:
     )
 
 
-def _check_source(fd: int, source: Path, initial: os.stat_result) -> None:
+def _check_source(
+    fd: int, source: Path, initial: os.stat_result, initial_path: os.stat_result,
+) -> None:
     """Bind the opened bytes to the named export, not just two path stats.
 
     These metadata checks detect ordinary mutation/replacement, not malicious
@@ -89,8 +93,9 @@ def _check_source(fd: int, source: Path, initial: os.stat_result) -> None:
     """
     try:
         unchanged = (
-            _source_signature(os.fstat(fd)) == _source_signature(initial)
-            and _source_signature(source.stat()) == _source_signature(initial)
+            os.path.samestat(initial, initial_path)
+            and _source_signature(os.fstat(fd)) == _source_signature(initial)
+            and _source_signature(source.stat()) == _source_signature(initial_path)
         )
     except OSError:
         unchanged = False
@@ -123,9 +128,12 @@ def iter_mbox(
     with source.open("rb") as stream, TemporaryDirectory(prefix="dead-letter-mbox-") as temp:
         fd = stream.fileno()
         initial = os.fstat(fd)
+        # Keep independent baselines: Windows stat/fstat can expose different
+        # ctime semantics. Compare identity across APIs, timestamps within each.
+        initial_path = source.stat()
         if not stat.S_ISREG(initial.st_mode):
             raise MboxFormatError("Expected a regular exported MBOX file")
-        _check_source(fd, source, initial)
+        _check_source(fd, source, initial, initial_path)
         staged = Path(temp) / "message.eml"
         index = 0
         offset = 0
@@ -148,7 +156,7 @@ def iter_mbox(
                     and bool(_ENVELOPE.fullmatch(fragment))
                 )
                 if envelope or not fragment:
-                    _check_source(fd, source, initial)
+                    _check_source(fd, source, initial, initial_path)
                     if not fragment and offset != initial.st_size:
                         raise MboxFormatError("MBOX ended before its original size")
                     if index:
@@ -158,7 +166,7 @@ def iter_mbox(
                             digest.hexdigest(), staged if error is None and size else None,
                             error or ("mbox_empty_message" if not size else None),
                         )
-                        _check_source(fd, source, initial)
+                        _check_source(fd, source, initial, initial_path)
                         output.seek(0)
                         output.truncate()
                     if not fragment:
@@ -201,4 +209,4 @@ def iter_mbox(
                 if in_headers and fragment in {b"\n", b"\r\n"} and line_start:
                     in_headers = False
                 line_start = complete_line
-        _check_source(fd, source, initial)
+        _check_source(fd, source, initial, initial_path)

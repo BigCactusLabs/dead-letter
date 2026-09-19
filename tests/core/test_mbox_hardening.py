@@ -144,3 +144,67 @@ def test_mboxrd_quoting_roundtrips_generated_body_bytes(tmp_path, seed):
     rows = snapshots(path, unescape="mboxrd")
     assert [data for _, data in rows] == originals
     assert [r.sha256 for r, _ in rows] == [hashlib.sha256(raw).hexdigest() for raw in stored]
+
+
+@pytest.mark.parametrize("ending", [b"", b"\n", b"\r\n"])
+@pytest.mark.parametrize("host", [b"relay.example.test", b"relay.example.test \t", b" \t"])
+def test_remote_postmark_padding_remains_supported(tmp_path, ending, host):
+    from dead_letter.core.mbox import _ENVELOPE
+
+    envelope = POSTMARK.rstrip(b"\n") + b" remote from " + host + ending
+    assert _ENVELOPE.fullmatch(envelope) is not None
+
+
+def test_malformed_remote_postmark_cannot_backtrack_quadratically():
+    import subprocess
+    import sys
+
+    from dead_letter.core import mbox
+
+    # Bound the whole child process so a regex regression fails rather than
+    # hanging the test runner. Load the actual production module, not a copy
+    # of its pattern; no MIME dependencies are needed for this framing test.
+    probe = r"""
+import importlib.util
+import sys
+spec = importlib.util.spec_from_file_location("mbox_probe", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+prefix = b"From sender@example.test Thu Jun 11 00:38:38 2020 remote from "
+for padding in (b" " * 100_000, b"\t" * 100_000):
+    assert module._ENVELOPE.fullmatch(prefix + padding + b"\r") is None
+"""
+    subprocess.run(
+        [sys.executable, "-c", probe, str(Path(mbox.__file__).resolve())],
+        check=True, capture_output=True, timeout=10,
+    )
+
+
+@pytest.mark.parametrize("change", [None, "descriptor", "path", "identity"])
+def test_stat_and_fstat_use_separate_timestamp_baselines(tmp_path, monkeypatch, change):
+    from types import SimpleNamespace
+    from dead_letter.core import mbox
+
+    source = tmp_path / "mail.mbox"
+    # Model the platform API difference without changing global os.name or
+    # dropping timestamp checks. Each API must still detect its own changes.
+    common = dict(st_dev=7, st_ino=11, st_size=200, st_mtime_ns=900)
+    initial = SimpleNamespace(**common, st_ctime_ns=800)
+    initial_path = SimpleNamespace(**common, st_ctime_ns=500)
+    current_fd = SimpleNamespace(**vars(initial))
+    current_path = SimpleNamespace(**vars(initial_path))
+    if change == "descriptor":
+        current_fd.st_ctime_ns += 1
+    elif change == "path":
+        current_path.st_ctime_ns += 1
+    elif change == "identity":
+        initial_path.st_ino += 1
+        current_path.st_ino += 1
+    monkeypatch.setattr(mbox.os, "fstat", lambda fd: current_fd)
+    monkeypatch.setattr(Path, "stat", lambda path, **kwargs: current_path)
+    if change is None:
+        mbox._check_source(123, source, initial, initial_path)
+    else:
+        with pytest.raises(MboxFormatError, match="changed during import"):
+            mbox._check_source(123, source, initial, initial_path)
