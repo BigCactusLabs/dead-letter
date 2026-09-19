@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Optional timed MBOX message workers via `--mbox-timeout SECONDS` and Python
+  `timeout_seconds`. A fresh subprocess runs the existing conversion pipeline;
+  timeouts and abnormal exits are isolated to one message, and the parent only
+  publishes validated completed artifacts. Default conversion is unchanged.
+  This is not a memory/security sandbox or durable resume. See the
+  [worker contract](docs/reference/mbox-workers.md) (#103, follow-up to #115).
 - Streaming `.mbox` / Gmail Takeout conversion via the CLI and lazy Python API,
   reusing the EML pipeline with source-order byte/hash provenance, preserved
   Gmail labels, collision-safe names, per-message resource limits, partial
@@ -64,7 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of the generic `email` filename (#95).
 - `JobManager` now retains references to background job tasks so a running
   job can no longer be garbage-collected mid-run; exceptions escaping the job
-  runner are now logged (#96).
+  runner are now logged instead of silently lost (#96).
 - Nested HTML lists now preserve indentation and use `-` bullets at every
   level instead of cycling markers by depth, so converted Markdown nests
   correctly under CommonMark instead of splitting into sibling lists (#89).

@@ -135,6 +135,27 @@ approach the report size.
 outputs. `--dry-run --report` explicitly writes a report. Choose separate output
 directories for simultaneous imports: report publication is last-writer-wins.
 
+## Optional timed message workers
+
+Byte limits do not stop a stuck parser or a native-library crash. A checkout
+containing the worker follow-up (PR #118) supports an opt-in per-message budget:
+
+```bash
+dead-letter convert archive.mbox --output markdown/ --report --mbox-timeout 30
+```
+
+Each admitted message runs in a fresh subprocess using the same conversion
+pipeline. A timed-out or abnormally exited worker yields a named message failure;
+later messages can continue, and that worker's partial files are never published
+to the final destination. Default conversion stays in-process. The setting is
+recorded in `mbox_options.timeout_seconds`, including `null` when disabled.
+
+This is **not a memory cap or an OS security sandbox**. It adds process startup
+and temporary-copy overhead and does not time-limit framing or final publication.
+Hard-killed-parent recovery and durable resume remain unimplemented. See the
+[worker contract and practitioner sources](mbox-workers.md) for error codes,
+Python usage, tests, and precise limits.
+
 ## Dialects: do not guess away quoting
 
 By default `--mbox-unescape preserve` retains `>From ` body text. When the export

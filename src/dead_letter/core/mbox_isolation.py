@@ -16,6 +16,7 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import monotonic
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -61,7 +62,16 @@ def _run_worker(request: Path, timeout: float) -> int:
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
     )
     try:
-        return process.wait(timeout=timeout)
+        deadline = monotonic() + timeout
+        while True:
+            # Windows waits use bounded integer milliseconds. Chunking avoids
+            # overflow for a valid but large budget without imposing a new cap.
+            remaining = max(0.0, deadline - monotonic())
+            try:
+                return process.wait(timeout=min(remaining, 60.0))
+            except subprocess.TimeoutExpired:
+                if monotonic() >= deadline:
+                    raise subprocess.TimeoutExpired(process.args, timeout) from None
     finally:
         # Popen's context manager alone waits forever on an uncooperative child.
         # Reap before the scanner can reuse the source EML or staging is removed.
@@ -80,13 +90,29 @@ def _directory(path: Path) -> None:
         raise ValueError("Expected a non-linked worker directory")
 
 
+def _json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate worker receipt field")
+        result[key] = value
+    return result
+
+
+def _json_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("Non-finite worker receipt number")
+    return parsed
+
+
 def _read_receipt(path: Path, record: MboxRecord) -> dict[str, Any]:
     _regular(path)
     with path.open("rb") as stream:
         raw = stream.read(MAX_RECEIPT_BYTES + 1)
     if len(raw) > MAX_RECEIPT_BYTES:
         raise ValueError("Oversized worker receipt")
-    data = json.loads(raw)
+    data = json.loads(raw, object_pairs_hook=_json_object, parse_float=_json_float, parse_constant=_json_float)
     if not isinstance(data, dict) or set(data) != {
         "schema_version", "index", "sha256", "success", "diagnostics", "error_code",
     }:
