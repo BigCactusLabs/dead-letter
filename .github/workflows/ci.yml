@@ -40,6 +40,17 @@ jobs:
       - name: Backend tests
         run: uv run pytest -q tests/backend
 
+      # Correctness gate and observational timings, never a noisy speed threshold.
+      # Generated mail only: do not add user archives or private validation summaries.
+      - name: MBOX full-import audit smoke (synthetic)
+        run: |
+          mkdir -p build/mbox-validation
+          for mode in direct worker; do
+            uv run python scripts/benchmark_mbox_import.py --mode "$mode" --messages 8 --attachment-kib 64 --bundles > "build/mbox-validation/$mode.json"
+            cat "build/mbox-validation/$mode.json"
+          done
+          uv run python scripts/benchmark_mbox_import.py --compare build/mbox-validation/direct.json build/mbox-validation/worker.json
+
       - name: Plugin tests
         run: uv run pytest -q tests/plugin
 

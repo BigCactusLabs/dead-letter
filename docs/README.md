@@ -5,6 +5,8 @@
 ## Public Docs
 
 - [Gmail Takeout / MBOX](reference/gmail-takeout.md) — local streaming Markdown/Cabinet recipe, metadata, and format boundaries
+- [MBOX Workers](reference/mbox-workers.md) — optional per-message deadlines and precise crash-containment limits
+- [MBOX Validation](reference/mbox-validation.md) — full-import measurements, byte-level audits, and a local real-archive validation procedure
 - [Runtime Contracts](reference/v4-runtime-contracts.md) — canonical backend and core runtime behavior
 - [Frontend State Model](reference/frontend-state-model.md) — frontend state and interaction contract
 - [Quality Diagnostics](reference/quality-diagnostics.md) — conversion grading and warning semantics
