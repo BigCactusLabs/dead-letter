@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-19
+
 ### Added
 
 - Optional OCI container distribution: locked multi-stage builds, non-root
@@ -32,8 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GitHub Copilot, Cursor, Amp, and Gemini CLI. It covers the MCP tools and the
   `uvx` CLI path, states the `.eml`-only input boundary, and carries the
   untrusted-email-content rule. Install it with
-  `gh skill install BigCactusLabs/dead-letter dead-letter@main --agent <agent>`
-  (the `@main` pin is needed until a release tag includes the skill).
+  `gh skill install BigCactusLabs/dead-letter dead-letter --agent <agent>`.
   The Claude-specific skill under `plugin/skills/` is unchanged (#109).
 - An Agentic Resource Discovery catalog at `.well-known/ard.json` advertising
   the MCP server and the portable skill to ARD-aware crawlers. Both entries'

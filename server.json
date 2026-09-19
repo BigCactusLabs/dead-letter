@@ -7,13 +7,13 @@
     "url": "https://github.com/BigCactusLabs/dead-letter",
     "source": "github"
   },
-  "version": "0.2.5",
+  "version": "0.3.0",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "dead-letter",
-      "version": "0.2.5",
+      "version": "0.3.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
@@ -28,7 +28,7 @@
         {
           "type": "named",
           "name": "--from",
-          "value": "dead-letter[mcp]==0.2.5",
+          "value": "dead-letter[mcp]==0.3.0",
           "description": "Install the pinned package with the MCP server extra"
         }
       ],
@@ -42,8 +42,8 @@
     },
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/BigCactusLabs/dead-letter/releases/download/v0.2.5/dead-letter-mcp-0.2.5.mcpb",
-      "version": "0.2.5",
+      "identifier": "https://github.com/BigCactusLabs/dead-letter/releases/download/v0.3.0/dead-letter-mcp-0.3.0.mcpb",
+      "version": "0.3.0",
       "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "transport": {
         "type": "stdio"
