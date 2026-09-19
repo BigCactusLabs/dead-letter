@@ -287,6 +287,10 @@ class TypeSafeProvider:
                             if isinstance(raw.get("model"), str) and key in raw["model"]:
                                 raise AnalysisError("invalid_response_metadata")
                             checked = validate_response(request, raw)
+            except sdk.TypeSafeAPITimeoutError:
+                # The SDK timeout is also a built-in TimeoutError. Catch it
+                # first so one HTTP timeout is not mislabeled as budget expiry.
+                error_code = "provider_timeout"
             except TimeoutError:
                 error_code = "provider_budget_exceeded"
             except Exception as exc:
