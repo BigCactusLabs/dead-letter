@@ -1,7 +1,9 @@
-"""Offline release metadata checks and dry-run preparation; never tags or publishes.
+"""Release metadata checks, dry-run preparation, and immutable asset uploads.
 
-Use Python 3.12+. `prepare` prints a patch for review and `git apply`; only the
-explicit `wait-pypi` and `upload-assets` commands access the network. See docs/reference/publishing.md.
+Use Python 3.12+. `check` and `prepare` are offline; preparation prints a patch
+for review and `git apply`. `wait-pypi` reads the network; `upload-assets` can
+write GitHub release assets. No command tags or publishes a Python package.
+See docs/reference/publishing.md.
 """
 from __future__ import annotations
 
