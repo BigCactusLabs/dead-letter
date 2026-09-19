@@ -24,6 +24,17 @@ def executable(name: str) -> str:
     return str(Path(sys.executable).with_name(name + (".exe" if sys.platform == "win32" else "")))
 
 
+def cli_probe(fixture: Path) -> None:
+    help_result = subprocess.run([executable("dead-letter"), "--help"], capture_output=True, text=True, timeout=30, check=True)
+    require("convert" in help_result.stdout, "CLI help is missing convert")
+    # Default output naming may use the message subject. Choose the destination
+    # explicitly rather than assuming the source stem is the output contract.
+    output = fixture.with_suffix(".md")
+    require(not output.exists(), "CLI probe destination must be fresh")
+    subprocess.run([executable("dead-letter"), "convert", str(fixture), "--output", str(output)], check=True, timeout=60)
+    require(BODY in output.read_text(encoding="utf-8"), "CLI conversion lost the body")
+
+
 async def mcp_probe(fixture: Path) -> None:
     process = await asyncio.create_subprocess_exec(
         executable("dead-letter-mcp"), stdin=asyncio.subprocess.PIPE,
@@ -95,10 +106,7 @@ def main() -> int:
                "Subject: Packaged smoke test\nMIME-Version: 1.0\n"
                "Content-Type: text/plain; charset=utf-8\n\n" + BODY + "\n").encode()
     fixture.write_bytes(content)
-    help_result = subprocess.run([executable("dead-letter"), "--help"], capture_output=True, text=True, timeout=30, check=True)
-    require("convert" in help_result.stdout, "CLI help is missing convert")
-    subprocess.run([executable("dead-letter"), "convert", str(fixture)], check=True, timeout=60)
-    require(BODY in fixture.with_suffix(".md").read_text(encoding="utf-8"), "CLI conversion lost the body")
+    cli_probe(fixture)
 
     if args.extra == "core":
         for module in ("watchfiles", "mcp", "fastapi", "tiktoken"):
