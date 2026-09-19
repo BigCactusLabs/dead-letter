@@ -130,8 +130,10 @@ publication**. Only its release publishing job receives `packages: write`:
 
 1. Resolve Python and uv image indices to immutable digests once for the run;
    use the same source SHA, lockfile, inputs, and source timestamp in all jobs.
-2. After native tests succeed, push a run-specific `candidate-*` multi-platform
-   image with BuildKit provenance (`mode=max`) and SBOM attestations.
+2. After native tests succeed, wait until PyPI serves the release on both the
+   JSON API and the simple index, then push a run-specific `candidate-*`
+   multi-platform image with BuildKit provenance (`mode=max`) and SBOM
+   attestations.
 3. Resolve each platform's child manifest digest from the pushed index, then
    pull and test each platform by that immutable per-platform digest. One image
    store cannot hold two platform variants of the same index reference. Compare

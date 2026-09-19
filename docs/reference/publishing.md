@@ -88,7 +88,9 @@ the Homebrew tap.
    uv build
    ```
 
-5. Commit and push the release-prep change to `main`.
+5. Commit the release-prep change and land it on `main`. If you open a pull
+   request for it, name the branch `release-X.Y.Z`, not `release/X.Y.Z`: the
+   long-lived `release` branch makes any `release/...` ref unpushable.
 6. Wait for the `main` CI and docs-link-check workflows to pass.
 
 If dead-letter is listed in Anthropic's community marketplace, inspect its
@@ -202,6 +204,9 @@ registry record. GHCR pushes happen only from that release call — pull request
 and `main` runs build and smoke-test the image with no publish credentials.
 It:
 
+- waits for PyPI to serve the new version on both the JSON API and the simple
+  index, like `build-mcpb`, because the digest retest resolves the package
+  through `uv`
 - builds `linux/amd64,linux/arm64` from the release commit with provenance and
   SBOMs and pushes it to GHCR under a `candidate-*` tag
 - re-pulls the published digest and re-runs `scripts/smoke_container.py` per
@@ -211,12 +216,16 @@ It:
 - hands the verified index digest to `publish-mcp`, which appends the
   digest-pinned OCI package to `server.json`
 
-The **first** release that includes this path needs one manual step: a newly
-created GHCR package is private by default, so make the new package public and
-then rerun the **failed jobs** (never overwrite a version tag; a full rebuild
-can produce a different digest). At that point the PyPI upload is already live
-and irreversible, and the MCP Registry keeps serving the previous version until
-the rerun succeeds. Launch, verification, and recovery detail:
+The GHCR package `ghcr.io/bigcactuslabs/dead-letter` was created private by
+the `0.3.0` run and made public by hand before `0.3.1` promoted the first
+image, so that one-time step is done. If the anonymous-pull gate ever fails
+again, check the package visibility, then rerun the **failed jobs** (never
+overwrite a version tag; a full rebuild can produce a different digest). At
+that point the PyPI upload is already live and irreversible, and the MCP
+Registry keeps serving the previous version until the rerun succeeds. A
+workflow fix cannot reach an already-tagged run: `0.3.0` hit a Docker
+image-store bug in this job and had to be superseded by `0.3.1` rather than
+rerun. Launch, verification, and recovery detail:
 [containers.md](containers.md) — see "CI and release behavior" and "First
 publish and recovery".
 

@@ -151,6 +151,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Wait for PyPI to serve the release
+        # The verify step compares the image against `dead-letter[mcp]==VERSION`
+        # resolved by uv, and the JSON API goes live minutes before the simple
+        # index uv reads. Waiting here spares a manual rerun of failed jobs.
+        run: |
+          v="$VERSION"
+          for i in $(seq 1 60); do
+            if curl -fsSL "https://pypi.org/pypi/dead-letter/${v}/json" >/dev/null \
+              && curl -fsSL -H 'Accept: application/vnd.pypi.simple.v1+json' \
+                   "https://pypi.org/simple/dead-letter/" \
+                 | jq -e --arg v "$v" '.versions | index($v)' >/dev/null; then
+              echo "PyPI JSON API and simple index are serving dead-letter ${v}"
+              exit 0
+            fi
+            echo "waiting for PyPI dead-letter ${v} (attempt ${i}/60)"
+            sleep 10
+          done
+          echo "PyPI did not serve dead-letter ${v} in time" >&2
+          exit 1
       - name: Build a staging image with provenance and SBOMs
         id: staging
         run: |

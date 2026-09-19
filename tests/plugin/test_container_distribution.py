@@ -271,6 +271,19 @@ def test_release_waits_for_both_pypi_surfaces_before_resolving():
         assert "$(seq 1 60)" in wait["run"]
 
 
+def test_container_publish_waits_for_pypi_before_comparing_schemas():
+    # 0.3.1 needed a manual rerun because `--compare-pypi` resolved the version
+    # through uv before the simple index served it.
+    steps = yaml.safe_load((ROOT / ".github/workflows/container.yml").read_text())["jobs"]["publish"]["steps"]
+    names = [step.get("name") for step in steps]
+    wait = names.index("Wait for PyPI to serve the release")
+    assert wait < names.index("Verify published digest and PyPI tool-schema parity on both platforms")
+    run = steps[wait]["run"]
+    assert "https://pypi.org/pypi/dead-letter/${v}/json" in run
+    assert "https://pypi.org/simple/dead-letter/" in run
+    assert "$(seq 1 60)" in run
+
+
 def response(result, request_id=1):
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
 

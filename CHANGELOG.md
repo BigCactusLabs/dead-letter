@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The release container publish job now waits for PyPI's JSON API and simple
+  index to serve the new version before comparing the image's tool schemas
+  against the PyPI package, so a release no longer needs a manual rerun of
+  failed jobs when the simple index lags (#108).
+
 ## [0.3.1] - 2026-09-19
 
 ### Fixed
