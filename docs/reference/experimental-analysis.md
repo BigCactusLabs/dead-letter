@@ -1,7 +1,8 @@
 # Experimental BYOK semantic analysis
 
 Tracking: [issue #110](https://github.com/BigCactusLabs/dead-letter/issues/110).
-Implementation: [PR #117](https://github.com/BigCactusLabs/dead-letter/pull/117).
+Implementation: [PR #117](https://github.com/BigCactusLabs/dead-letter/pull/117),
+merged to `main` on September 21, 2026 and not yet in a PyPI release.
 
 **Status: development-checkout single-message analysis, not a released feature.**
 Local EML preparation now connects to an explicitly enabled TypeSafe SDK adapter.
@@ -233,7 +234,7 @@ compare both profiles on a family-separated held-out set before freezing semanti
 
 Still pending: packaged optional extra plus verified lock, atomic collision-safe
 sidecars, valid-result-only resume/alias-age handling, directory concurrency and
-partial-success persistence. See the [implementation checkpoint](../superpowers/specs/2026-09-18-issue-110-analysis-foundation.md).
+partial-success persistence. See the [implementation checkpoint](../project/2026-09-18-issue-110-analysis-foundation.md).
 
 ## First-party implementation references
 

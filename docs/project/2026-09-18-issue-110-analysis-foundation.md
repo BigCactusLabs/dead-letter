@@ -1,8 +1,10 @@
 # Issue #110 — implementation checkpoint
 
-Updated September 18, 2026. Working PR: #117, open and unmerged at this checkpoint.
-Public contract: [experimental analysis](../../reference/experimental-analysis.md).
-This supersedes the earlier offline-only handoff; the full issue remains open.
+Written September 18, 2026; PR #117 merged to `main` on September 21, 2026
+(merge commit `70b8e2f`). The workflow-pin follow-up landed as #134. Nothing
+below is released; the full issue remains open.
+Public contract: [experimental analysis](../reference/experimental-analysis.md).
+This supersedes the earlier offline-only handoff.
 
 ## Implemented so far
 
