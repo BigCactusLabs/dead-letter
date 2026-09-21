@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -20,7 +21,9 @@ BODY = b"synthetic wheel; never imported or installed"
 WHEEL_HASH = hashlib.sha256(BODY).hexdigest()
 WHEEL = "six-1.17.0-py3-none-any.whl"
 BASE_URL = "https://files.pythonhosted.org/packages/fixture/"
-SDIST = {"url": BASE_URL + f"dead_letter-{VERSION}.tar.gz", "digests": {"sha256": "b" * 64}}
+NOW = datetime(2026, 9, 21, 16, 0, tzinfo=timezone.utc)
+SDIST = {"url": BASE_URL + f"dead_letter-{VERSION}.tar.gz", "digests": {"sha256": "b" * 64},
+         "upload_time_iso_8601": (NOW - timedelta(days=2)).isoformat()}
 TEXT = f'''class DeadLetter < Formula
   include Language::Python::Virtualenv
   url "{BASE_URL}dead_letter-1.2.2.tar.gz"
@@ -130,7 +133,7 @@ class HomebrewTests(unittest.TestCase):
         raise AssertionError("unexpected command: " + repr(command))
 
     def prepare(self):
-        with patch.object(h, "run", side_effect=self.fake_run), patch.object(h.platform, "system", return_value="Darwin"), patch.object(h.platform, "machine", return_value="arm64"):
+        with patch.object(h, "_utc_now", return_value=NOW), patch.object(h, "run", side_effect=self.fake_run), patch.object(h.platform, "system", return_value="Darwin"), patch.object(h.platform, "machine", return_value="arm64"):
             return h.prepare_tap(self.tap, self.output, self.recipe, client=self.client)
 
     def test_default_plan_has_no_execution_and_no_publish(self):
@@ -141,6 +144,109 @@ class HomebrewTests(unittest.TestCase):
         self.assertIn("--package-name=dead-letter", recipe["commands"]["fallback"])
         self.assertNotIn("--commit", recipe["commands"]["bump"])
         self.assertNotIn("--python-extra-packages", json.dumps(recipe))
+        self.assertEqual(recipe["sdist_upload_time_utc"], "2026-09-19T16:00:00Z")
+        self.assertEqual(recipe["homebrew_earliest_prepare_utc"], "2026-09-20T16:00:00Z")
+
+    def test_fresh_plan_works_but_prepare_refuses_before_subprocess_or_write(self):
+        fresh = deepcopy(SDIST)
+        fresh["upload_time_iso_8601"] = (NOW - timedelta(hours=23, minutes=59)).isoformat()
+        recipe = h.plan(VERSION, fresh)
+        self.assertEqual(recipe["homebrew_earliest_prepare_utc"], "2026-09-21T16:01:00Z")
+        with patch.object(h, "_utc_now", return_value=NOW), patch.object(h, "run", side_effect=AssertionError("must not run")):
+            with self.assertRaisesRegex(Unavailable, rf"{VERSION}.*24-hour.*2026-09-21T16:01:00Z"):
+                h.prepare_tap(self.tap, self.output, recipe, client=self.client)
+        self.assertEqual(self.path.read_text(), TEXT)
+        self.assertFalse(self.output.exists())
+
+    def test_exact_boundary_and_older_uploads_can_prepare(self):
+        for age in (timedelta(hours=24), timedelta(days=3)):
+            with self.subTest(age=age):
+                recipe = h.plan(VERSION, {**SDIST, "upload_time_iso_8601": (NOW - age).isoformat()})
+                with patch.object(h, "_utc_now", return_value=NOW), patch.object(h, "tap_state", return_value="branch"), \
+                        patch.object(h.platform, "system", return_value="Linux"), patch.object(h, "run", side_effect=AssertionError("must not run")):
+                    with self.assertRaisesRegex(Unavailable, "native Apple-silicon"):
+                        h.prepare_tap(self.tap, self.output, recipe, client=self.client)
+
+    def test_offset_upload_time_is_normalized_to_utc(self):
+        recipe = h.plan(VERSION, {**SDIST, "upload_time_iso_8601": "2026-09-20T13:00:00-04:00"})
+        self.assertEqual(recipe["sdist_upload_time_utc"], "2026-09-20T17:00:00Z")
+        self.assertEqual(recipe["homebrew_earliest_prepare_utc"], "2026-09-21T17:00:00Z")
+
+    def test_bad_upload_times_fail_as_unavailable(self):
+        for label, value, message in (("missing", None, "missing"), ("malformed", "not-a-time", "malformed"),
+                                      ("naive", "2026-09-20T12:00:00", "timezone")):
+            with self.subTest(label=label), self.assertRaisesRegex(Unavailable, message):
+                sdist = deepcopy(SDIST)
+                if value is None:
+                    sdist.pop("upload_time_iso_8601")
+                else:
+                    sdist["upload_time_iso_8601"] = value
+                h.plan(VERSION, sdist)
+
+    def test_extreme_upload_times_fail_before_subprocess_or_write(self):
+        for value in ("9999-12-31T00:00:00Z", "0001-01-01T00:00:00+01:00"):
+            with self.subTest(value=value), patch.object(h, "run", side_effect=AssertionError("must not run")):
+                with self.assertRaisesRegex(Unavailable, "out of range"):
+                    h.plan(VERSION, {**SDIST, "upload_time_iso_8601": value})
+                recipe = {**self.recipe, "sdist_upload_time_utc": value}
+                with self.assertRaisesRegex(Unavailable, "out of range"):
+                    h.prepare_tap(self.tap, self.output, recipe, client=self.client)
+                self.assertEqual(self.path.read_text(), TEXT)
+                self.assertFalse(self.output.exists())
+
+    def test_prepare_rejects_missing_or_inconsistent_recipe_time_before_subprocess(self):
+        for key in ("sdist_upload_time_utc", "homebrew_earliest_prepare_utc"):
+            with self.subTest(key=key):
+                recipe = deepcopy(self.recipe)
+                recipe.pop(key)
+                with patch.object(h, "run", side_effect=AssertionError("must not run")):
+                    with self.assertRaises(Unavailable):
+                        h.prepare_tap(self.tap, self.output, recipe, client=self.client)
+        self.assertEqual(self.path.read_text(), TEXT)
+        self.assertFalse(self.output.exists())
+
+    def test_public_brew_failure_reports_only_sanitized_final_stderr_line(self):
+        completed = subprocess.CompletedProcess([], 7, "ignored stdout", "first line\n\x1b[31mfinal problem\x1b[0m\n")
+        with patch.object(h.subprocess, "run", return_value=completed):
+            with self.assertRaisesRegex(Unavailable, r"brew style failed \(exit 7\): final problem$"):
+                h.run(["brew", "style"], cwd=self.tap)
+
+    def test_brew_failure_ignores_trailing_control_only_lines(self):
+        completed = subprocess.CompletedProcess([], 7, "", "first line\nfinal problem\n\x1b[0m\n\x00\x07\n")
+        with patch.object(h.subprocess, "run", return_value=completed):
+            with self.assertRaisesRegex(Unavailable, r"brew style failed \(exit 7\): final problem$"):
+                h.run(["brew", "style"], cwd=self.tap)
+
+    def test_brew_failure_empty_stderr_uses_local_fallback(self):
+        completed = subprocess.CompletedProcess([], 2, "secret stdout", "\n")
+        with patch.object(h.subprocess, "run", return_value=completed):
+            with self.assertRaisesRegex(Unavailable, r"brew style failed \(exit 2\); inspect locally$"):
+                h.run(["brew", "style"], cwd=self.tap)
+
+    def test_brew_failure_detail_is_bounded_control_free_and_redacted(self):
+        secret = "known-secret-value"
+        stderr = ("old\n\x00failure https://alice:password@example.test/x?token=visible "
+                  "ghp_abcdefghijklmnopqrstuvwxyz xoxb-123456-secret api_key=also-visible "
+                  "Authorization: Basic dXNlcjpwYXNz Bearer bearer-value " + secret + " " + "x" * 500)
+        completed = subprocess.CompletedProcess([], 3, "", stderr)
+        with patch.dict(h.os.environ, {"SERVICE_PASSWORD": secret}), patch.object(h.subprocess, "run", return_value=completed):
+            with self.assertRaises(Unavailable) as caught:
+                h.run(["brew", "style"], cwd=self.tap)
+        message = str(caught.exception)
+        detail = message.split(": ", 1)[1]
+        self.assertLessEqual(len(detail), h.BREW_ERROR_DETAIL_LIMIT)
+        self.assertFalse(any(ord(char) < 32 or ord(char) == 127 for char in detail))
+        for leaked in (secret, "alice", "password", "visible", "ghp_abcdefghijklmnopqrstuvwxyz", "xoxb-123456-secret", "also-visible", "dXNlcjpwYXNz", "bearer-value"):
+            self.assertNotIn(leaked, detail)
+
+    def test_authenticated_and_non_brew_failures_hide_stderr(self):
+        completed = subprocess.CompletedProcess([], 4, "", "credential must stay hidden")
+        with patch.object(h.subprocess, "run", return_value=completed):
+            for command, public in ((["brew", "style"], False), (["git", "status"], True)):
+                with self.subTest(command=command, public=public), self.assertRaises(Unavailable) as caught:
+                    h.run(command, cwd=self.tap, public=public)
+                self.assertIn("inspect locally", str(caught.exception))
+                self.assertNotIn("credential", str(caught.exception))
 
     def test_preparation_restores_wheel_layout_and_writes_review_packet_only(self):
         packet = self.prepare()
@@ -159,8 +265,8 @@ class HomebrewTests(unittest.TestCase):
         self.assertTrue(any(c[:2] == ["brew", "update-python-resources"] for c, _ in self.calls))
 
     def test_native_platform_required_before_brew_writes(self):
-        with patch.object(h.platform, "system", return_value="Linux"):
-            with self.assertRaises(Unavailable):
+        with patch.object(h, "_utc_now", return_value=NOW), patch.object(h.platform, "system", return_value="Linux"):
+            with self.assertRaisesRegex(Unavailable, "native Apple-silicon"):
                 h.prepare_tap(self.tap, self.output, self.recipe, client=self.client)
         self.assertEqual(self.path.read_text(), TEXT)
 

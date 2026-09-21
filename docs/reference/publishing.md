@@ -264,6 +264,14 @@ runs the manual `brew` install and test steps below, and records the tap commit
 in the release checklist. See [Release Operations](release-operations.md) for
 the full flag reference and the plan/write/open-pr phases.
 
+Allow at least 24 hours after the target sdist's PyPI upload before running
+`homebrew-prepare --write`. Homebrew's Python resolver excludes newer uploads;
+its resource-updater fallback has the same delay. The helper's plan reports the
+earliest preparation time in UTC, and `--write` refuses an earlier attempt with
+that retry time before changing the tap. See
+[Homebrew preparation](release-operations.md#prepare-a-homebrew-update) for the
+age check and command-error diagnostics.
+
 ```bash
 # In the tap checkout, after editing and reviewing the formula:
 brew fetch --build-from-source dead-letter

@@ -6,7 +6,9 @@ remote write accepting only the reviewed patch hash from that preparation.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 import difflib
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -15,6 +17,7 @@ import platform
 import re
 import subprocess
 import tempfile
+import unicodedata
 from urllib.parse import quote, urlsplit
 
 from release_evidence import (RESOURCE, TAP, Client, Conflict, Unavailable, formula,
@@ -23,6 +26,63 @@ from release_evidence import (RESOURCE, TAP, Client, Conflict, Unavailable, form
 FORMULA = "Formula/dead-letter.rb"
 BREW_NAME = "BigCactusLabs/tap/dead-letter"
 REMOTE = f"https://github.com/{TAP}.git"
+HOMEBREW_UPLOAD_DELAY = timedelta(hours=24)
+BREW_ERROR_DETAIL_LIMIT = 240
+
+
+def _utc_text(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _upload_times(value: object) -> tuple[datetime, datetime]:
+    if not isinstance(value, str) or not value.strip():
+        raise Unavailable("PyPI sdist upload_time_iso_8601 is missing; Homebrew eligibility cannot be determined")
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        raise Unavailable("PyPI sdist upload_time_iso_8601 is malformed; Homebrew eligibility cannot be determined") from None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise Unavailable("PyPI sdist upload_time_iso_8601 must include a timezone; Homebrew eligibility cannot be determined")
+    try:
+        uploaded = parsed.astimezone(timezone.utc)
+        return uploaded, uploaded + HOMEBREW_UPLOAD_DELAY
+    except OverflowError:
+        raise Unavailable("PyPI sdist upload_time_iso_8601 is out of range; Homebrew eligibility cannot be determined") from None
+
+
+def _brew_retry_time(recipe: dict) -> datetime:
+    _, retry = _upload_times(recipe.get("sdist_upload_time_utc"))
+    if recipe.get("homebrew_earliest_prepare_utc") != _utc_text(retry):
+        raise Unavailable("Homebrew eligibility time does not match the verified sdist upload time")
+    return retry
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _brew_error_detail(stderr: str, env: Mapping[str, str]) -> str | None:
+    detail = ""
+    for line in reversed(stderr.splitlines()):
+        line = re.sub(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))", "", line)
+        detail = "".join(char for char in line if not unicodedata.category(char).startswith("C")).strip()
+        if detail:
+            break
+    secret_keys = ("TOKEN", "SECRET", "PASSWORD", "PASSWD", "API_KEY", "APIKEY", "CREDENTIAL")
+    for key, value in env.items():
+        if value and any(marker in key.upper() for marker in secret_keys):
+            detail = detail.replace(value, "[REDACTED]")
+    detail = re.sub(r"(?i)(https?://)[^\s/@]+(?::[^\s/@]*)?@", r"\1[REDACTED]@", detail)
+    detail = re.sub(
+        r"(?i)\b(?:github_pat_[A-Za-z0-9_]+|gh[pousr]_[A-Za-z0-9_]+|xox[baprs]-[A-Za-z0-9-]+|"
+        r"npm_[A-Za-z0-9]+|pypi-[A-Za-z0-9_-]+|AKIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9_-]{8,})\b",
+        "[REDACTED]", detail)
+    detail = re.sub(r"(?i)\b((?:Bearer|Basic)\s+)[A-Za-z0-9._~+/=-]+", r"\1[REDACTED]", detail)
+    detail = re.sub(r"(?i)([?&](?:access_token|token|api[_-]?key|password)=)[^\s&#]+", r"\1[REDACTED]", detail)
+    detail = re.sub(r"(?i)\b((?:access[_-]?token|api[_-]?key|password|secret)\s*[:=]\s*)[^\s,;]+", r"\1[REDACTED]", detail)
+    if not detail:
+        return None
+    return detail[:BREW_ERROR_DETAIL_LIMIT]
 
 
 def run(command: list[str], *, cwd: Path, public: bool = True) -> str:
@@ -34,15 +94,21 @@ def run(command: list[str], *, cwd: Path, public: bool = True) -> str:
         env.update(HOMEBREW_NO_AUTO_UPDATE="1", HOMEBREW_NO_ANALYTICS="1", PIP_CONFIG_FILE=os.devnull)
     completed = subprocess.run(command, cwd=cwd, env=env, text=True, capture_output=True, timeout=600, check=False)
     if completed.returncode:
-        # Never echo subprocess output that may contain inherited auth material.
-        raise Unavailable(f"{Path(command[0]).name} {command[1]} failed (exit {completed.returncode}); inspect locally")
+        name = Path(command[0]).name
+        context = f"{name} {command[1]} failed (exit {completed.returncode})"
+        # Authenticated and non-brew output stays hidden to protect credentials.
+        detail = _brew_error_detail(completed.stderr, os.environ) if public and name == "brew" else None
+        raise Unavailable(f"{context}: {detail}" if detail else f"{context}; inspect locally")
     return completed.stdout
 
 
 def plan(version: str, sdist: dict) -> dict:
     branch = f"prepare/dead-letter-{stable(version)}"
+    uploaded, earliest = _upload_times(sdist.get("upload_time_iso_8601"))
     return {"schema_version": 1, "version": version, "branch": branch, "formula": BREW_NAME,
             "sdist_url": sdist["url"], "sdist_sha256": sdist["digests"]["sha256"],
+            "sdist_upload_time_utc": _utc_text(uploaded),
+            "homebrew_earliest_prepare_utc": _utc_text(earliest),
             "commands": {
                 "branch": ["git", "switch", "-c", branch],
                 "bump": ["brew", "bump-formula-pr", "--write-only", "--no-browse", "--python-package-name=dead-letter",
@@ -115,6 +181,9 @@ def wheel_resources(client: Client, items: list[dict], wheels: Path) -> dict[str
 
 def prepare_tap(tap: Path, output: Path, recipe: dict, *, client: Client) -> dict:
     version = recipe["version"]
+    retry = _brew_retry_time(recipe)
+    if _utc_now() < retry:
+        raise Unavailable(f"dead-letter {version} is too new for Homebrew's 24-hour PyPI cutoff; retry at {_utc_text(retry)}")
     tap_state(tap, version, clean=True)
     if platform.system() != "Darwin" or platform.machine() != "arm64":
         raise Unavailable("this tap's wheel layout requires a native Apple-silicon Mac for --write")

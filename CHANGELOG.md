@@ -37,6 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after the reviewed patch hash matches; it never merges (#129). See the
   [release operations guide](docs/reference/release-operations.md).
 
+### Fixed
+
+- Homebrew preparation reports when a released sdist clears Homebrew's 24-hour
+  PyPI upload delay and refuses early `--write` attempts before changing the tap.
+  Failed public Homebrew commands include a bounded, sanitized stderr detail
+  to help diagnose resolver failures (#133).
+
 ## [0.4.0] - 2026-09-19
 
 ### Added

@@ -119,11 +119,22 @@ arrays for `brew bump-formula-pr --write-only --python-package-name=dead-letter`
 and the `brew update-python-resources --package-name=dead-letter` fallback.
 It never passes `--commit`, extras, or an ignore-errors option to Homebrew.
 
+Homebrew's Python resource resolver excludes PyPI uploads from the last
+24 hours (`--uploaded-prior-to=P1D`). The plan remains available during this
+delay and includes `homebrew_earliest_prepare_utc`, calculated from the
+target sdist's PyPI upload timestamp and shown in UTC. Missing or invalid upload
+timestamps stop the helper because it cannot establish that time.
+
 ### 2. Generate the formula diff on a native Apple-silicon Mac
 
 Use the installed tap checkout and a dedicated, clean local preparation branch.
 No staged, unstaged, or untracked work may be present. The tap's declared Python
 must already be installed; preparation checks its native architecture/version.
+Wait until the plan's earliest preparation time before running `--write`.
+An earlier attempt stops before running subprocesses or changing the tap and
+reports the exact UTC retry time. The resource-updater fallback uses the same
+Homebrew resolver, so it does not avoid this delay. Passing the age check does
+not guarantee that dependency resolution will succeed.
 
 ```bash
 TAP=$(brew --repo BigCactusLabs/tap)
@@ -155,6 +166,11 @@ installation, conversion, and `brew test` are **not** claimed. Failure restores
 only the known formula output when it still matches this invocation's recorded
 state; unrelated or concurrent edits are left for inspection. Inspect the tap
 and any partial review packet before rerunning.
+For a failed public `brew` command, the error includes the final nonempty stderr
+line, with known credential values and common token patterns redacted, control
+characters removed, and length limited.
+Empty stderr retains the instruction to inspect locally. Output from other
+commands and authenticated operations remains hidden.
 
 ### 3. Review, then explicitly open a draft PR
 
