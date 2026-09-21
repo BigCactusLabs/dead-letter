@@ -18,8 +18,9 @@ capability in user-facing docs.
 
 ## Repo map
 
-- `src/dead_letter/core/` — MIME parse → sanitize → thread/zone → Markdown render; `mbox*.py` and `stream_report.py` stream `.mbox` imports through the same pipeline
-- `src/dead_letter/backend/` — CLI (`mbox_cli.py` for MBOX), FastAPI API, job runner, watch, MCP, doctor
+- `src/dead_letter/core/` — MIME parse → sanitize → thread/zone → Markdown render; `mbox*.py` and `stream_report.py` stream `.mbox` imports through the same pipeline; `snapshot.py` exposes a read-only parsed snapshot for analysis
+- `src/dead_letter/analysis/` — experimental, unreleased BYOK semantic analysis: normalized evidence, profiles, result envelopes, and the opt-in TypeSafe provider; see [Experimental analysis](docs/reference/experimental-analysis.md) before widening it
+- `src/dead_letter/backend/` — CLI (`mbox_cli.py` for MBOX, `analysis_cli.py` for `analyze`), FastAPI API, job runner, watch, MCP, doctor
 - `src/dead_letter/frontend/` — static Alpine.js ES modules; no build step
 - `plugin/` — Claude manifest, commands, context skill, exact MCP launcher pin
 - `skills/dead-letter/` — portable Agent Skill; keep Claude slash commands and
@@ -87,6 +88,11 @@ metadata and the stdlib release-helper regressions without app dependencies.
 The docs-link workflow inventories maintained, tracked Markdown, including
 root, plugin, skill, container/bundle, and benchmark guides; it excludes mail
 fixtures rather than relying on a stale directory glob.
+
+The separate `typesafe-contracts` workflow installs the exact optional SDK
+overlay and runs the analysis contract tests with fake HTTP only; they are not
+part of `verify.py`. Locally:
+`uv run --locked --with typesafe-sdk==0.7.0 pytest -q tests/backend/test_typesafe_provider.py tests/backend/test_analysis_contracts.py tests/backend/test_analysis_eml.py`.
 
 CI also builds/smokes MCPB on Linux, macOS, and Windows. Container-related
 paths trigger native amd64/arm64 Docker checks. With no Docker daemon, run

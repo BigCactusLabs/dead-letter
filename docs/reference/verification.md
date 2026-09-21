@@ -23,7 +23,9 @@ python scripts/verify.py packaging
 For a shared-interface or release-preparation change, run `full` **and**
 `packaging`. `full` is not an assertion that every possible distribution or
 client was tested. MCPB's three-OS matrix, native Docker architectures, docs
-links, workflow lint, and fresh GUI-client installation remain separate checks.
+links, workflow lint, the optional-SDK
+[analysis contract workflow](../../.github/workflows/typesafe-contracts.yml),
+and fresh GUI-client installation remain separate checks.
 Missing a Docker daemon is not a passing container test; record it as unverified.
 
 CI calls the same command definitions rather than copying them into shell:

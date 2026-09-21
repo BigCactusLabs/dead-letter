@@ -50,6 +50,7 @@ Individual commands remain useful for focused debugging:
 | Backend | `uv run pytest -q tests/backend` |
 | Plugin, skill, packaging, release contracts | `uv run pytest -q tests/plugin` |
 | Frontend | `node --test tests/frontend/*.test.js` |
+| Analysis SDK contracts, exact optional overlay, fake HTTP | `uv run --locked --with typesafe-sdk==0.7.0 pytest -q tests/backend/test_typesafe_provider.py tests/backend/test_analysis_contracts.py tests/backend/test_analysis_eml.py` |
 | Frontend syntax | `node --check src/dead_letter/frontend/static/app.js` |
 | Plugin schema | `npx --yes @anthropic-ai/claude-code@2.1.145 plugin validate plugin/` |
 | Agent Skill validation | `gh skill publish --dry-run` |

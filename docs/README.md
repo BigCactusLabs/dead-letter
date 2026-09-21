@@ -19,6 +19,7 @@ runtime contracts and historical design notes serve different purposes.
 | Run isolated MCP with selected mounts | [Containers](reference/containers.md) |
 | Interpret conversion quality and retained attachments | [Quality Diagnostics](reference/quality-diagnostics.md) |
 | Reproduce the token/fidelity comparison | [Benchmarks](../benchmarks/README.md) |
+| Preview the experimental BYOK semantic analysis from a checkout | [Experimental analysis](reference/experimental-analysis.md) |
 
 ## Develop and maintain
 
@@ -48,6 +49,8 @@ filename. Machine-readable versions live in package/distribution metadata;
 strategy and outstanding evidence requirements. The
 [MBOX ingestion design notes](project/2026-09-18-mbox-ingestion.md) record the
 research and boundaries behind streaming Takeout import. The
+[analysis foundation checkpoint](project/2026-09-18-issue-110-analysis-foundation.md)
+records what #117 landed for issue #110 and what remains. The
 [docs and release audit](project/docs-release-audit.md) records this refresh,
 its scope, and remaining validation boundaries. The completed
 [html-to-markdown v3 migration](reference/html-to-markdown-v3-migration.md)
