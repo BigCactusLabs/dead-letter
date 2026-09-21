@@ -1,0 +1,30 @@
+name: typesafe-contracts
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'feat/**']
+
+permissions:
+  contents: read
+
+jobs:
+  sdk-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Setup uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - name: Sync base development dependencies
+        run: uv sync --extra dev --locked
+      # The SDK is an exact, isolated optional overlay. This must not change the
+      # base conversion lock or make a key necessary for normal CI.
+      - name: Require the tested SDK (do not silently skip the suite)
+        run: uv run --locked --with typesafe-sdk==0.7.0 python -c "import typesafe_sdk; from importlib.metadata import version; assert version('typesafe-sdk') == '0.7.0'"
+      - name: SDK and EML contract tests with fake HTTP only
+        run: uv run --locked --with typesafe-sdk==0.7.0 pytest -q tests/backend/test_typesafe_provider.py tests/backend/test_analysis_contracts.py tests/backend/test_analysis_eml.py

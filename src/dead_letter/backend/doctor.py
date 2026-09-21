@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import json
 import os
 import sys
@@ -91,6 +92,24 @@ def check_ui_extras() -> CheckResult:
     return _check_extras("ui_extras", UI_EXTRAS, "dead-letter[ui]")
 
 
+def check_typesafe_analysis() -> CheckResult:
+    """Report presence only: no SDK import, endpoint probe or credential echo.
+
+    Installed/configured does not establish SDK compatibility, valid credentials,
+    provider availability or consent. Absence is normal for local-only installs.
+    """
+    try:
+        installed = importlib.util.find_spec("typesafe_sdk") is not None
+    except (ImportError, ValueError):
+        installed = False
+    configured = bool(os.environ.get("TYPESAFE_API_KEY", "").strip())
+    return CheckResult(
+        "typesafe_analysis", "ok" if installed and configured else "skip",
+        f"TypeSafe: installed={str(installed).lower()}, "
+        f"configured={str(configured).lower()}; not contacted",
+    )
+
+
 def check_inbox_path(path: Path | None) -> CheckResult:
     if path is None:
         return CheckResult("inbox_path", "skip", "Inbox path: not configured")
@@ -160,6 +179,7 @@ def run_doctor(*, json_output: bool = False) -> int:
         check_core_dependencies(),
         check_cli_extras(),
         check_ui_extras(),
+        check_typesafe_analysis(),
         check_inbox_path(inbox_path),
         check_cabinet_path(cabinet_path),
     ]
