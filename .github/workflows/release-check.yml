@@ -1,0 +1,29 @@
+name: release-check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feat/**
+
+permissions:
+  contents: read
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Check committed distribution metadata (no dependency install)
+        run: python scripts/release.py check
+      - name: Exercise release preparation and recovery guards offline
+        run: for t in test_release.py test_release_status.py test_homebrew_prepare.py; do python -m unittest discover -s tests/plugin -p "$t" -v || exit 1; done

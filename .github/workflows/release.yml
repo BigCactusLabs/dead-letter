@@ -4,163 +4,261 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: read
+
+# Never cancel an in-flight publication. Plugin tags use a separate workflow.
+concurrency:
+  group: package-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  publish:
+  preflight:
+    # A release event also fires for plugin releases and prereleases. Neither
+    # may publish a Python distribution or advance the stable MCP record.
+    if: github.repository == 'BigCactusLabs/dead-letter' && startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease
     runs-on: ubuntu-latest
-    environment: release
-    permissions:
-      id-token: write
+    timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
       - name: Setup uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
-          enable-cache: true
+          enable-cache: false
+      - name: Validate tag, source, and every version sync point before publication
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python scripts/release.py check --tag "$RELEASE_TAG"
+          test "$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")" = "$(git rev-parse HEAD)"
+          git merge-base --is-ancestor HEAD origin/main
+      - name: Validate the exact tagged source
+        run: |
+          uv sync --extra dev --locked
+          python scripts/verify.py full
+        env:
+          GH_TOKEN: ${{ github.token }}
 
-      - name: Build
-        run: uv build
+  build:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      checksums: ${{ steps.record.outputs.checksums }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Setup uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: false
+      - name: Build distributions once
+        run: uv build --out-dir build/package/dist
+      - name: Validate distribution metadata and record exact build checksums
+        id: record
+        run: |
+          python scripts/package_artifacts.py record --dist-dir build/package/dist --checksums build/package/SHA256SUMS --version "${GITHUB_REF_NAME#v}"
+          {
+            echo 'checksums<<BUILD_CHECKSUMS'
+            cat build/package/SHA256SUMS
+            echo BUILD_CHECKSUMS
+          } >> "$GITHUB_OUTPUT"
+      - name: Preserve the complete build for testing and publication
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: python-package-${{ github.sha }}
+          path: build/package/
+          if-no-files-found: error
+          retention-days: 30
 
+  test-package:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout smoke scripts, not an import source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Setup uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: false
+      - name: Download the exact build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: python-package-${{ github.sha }}
+          path: build/package/
+      - name: Check rendered metadata and isolated noneditable installs
+        run: python scripts/verify.py packaging --dist-dir build/package/dist --checksums build/package/SHA256SUMS
+
+  publish:
+    needs: test-package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # This job deliberately has no source checkout, dependency installation,
+      # or build step. It can only upload the already-tested distribution pair.
+      - name: Download the exact tested build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: python-package-${{ github.sha }}
+          path: build/package/
+      - name: Verify exact tested bytes before upload
+        run: cd build/package/dist && sha256sum --check --strict ../SHA256SUMS
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # release/v1
+        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # v1.14.1
         with:
           attestations: true
+          packages-dir: build/package/dist/
 
-  # Builds the one-click MCPB bundle (mcpb/ + scripts/build_mcpb.py), smoke
-  # tests it against the PyPI release it pins, and attaches it to the GitHub
-  # release. The bundle does not vendor the package: its pyproject.toml pins
-  # dead-letter[mcp]==X.Y.Z from PyPI, so PyPI must be live before the smoke
-  # test can pass. Runs before publish-mcp because the registry entry needs
-  # the asset URL and SHA-256.
-  build-mcpb:
+  # Readiness is a separate read-only job: retrying index propagation must not
+  # re-upload an already published Python distribution. Every artifact channel
+  # waits here, including the container's live PyPI tool-schema comparison.
+  pypi-ready:
     needs: publish
     runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Wait for both PyPI indexes to serve the release
+        run: python scripts/release.py wait-pypi "${GITHUB_REF_NAME#v}"
+
+  build-mcpb:
+    needs: pypi-ready
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
-      contents: write # upload the .mcpb asset to the release
+      contents: write
     outputs:
       sha256: ${{ steps.hash.outputs.sha256 }}
       asset: ${{ steps.hash.outputs.asset }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
-
+          package-manager-cache: false
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-
       - name: Setup uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
-          enable-cache: true
-
-      - name: Resolve release version
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Assert the tag matches the package version
-        run: |
-          v="${{ steps.version.outputs.version }}"
-          pkg=$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
-          if [ "$pkg" != "$v" ]; then
-            echo "tag v${v} does not match pyproject.toml version ${pkg}" >&2
-            exit 1
-          fi
-
-      - name: Wait for PyPI to serve the release
-        run: |
-          v="${{ steps.version.outputs.version }}"
-          for i in $(seq 1 30); do
-            if curl -fsSL "https://pypi.org/pypi/dead-letter/${v}/json" >/dev/null; then
-              echo "PyPI is serving dead-letter ${v}"
-              exit 0
-            fi
-            echo "waiting for PyPI dead-letter ${v} (attempt ${i}/30)"
-            sleep 10
-          done
-          echo "PyPI did not serve dead-letter ${v} in time" >&2
-          exit 1
-
-      - name: Build the MCPB bundle
-        run: python scripts/build_mcpb.py
-
-      - name: Smoke test the bundle against PyPI
-        run: python scripts/smoke_mcpb.py "dist/dead-letter-mcp-${{ steps.version.outputs.version }}.mcpb"
-
-      - name: Record the asset hash
-        id: hash
-        run: |
-          v="${{ steps.version.outputs.version }}"
-          asset="dead-letter-mcp-${v}.mcpb"
-          sha=$(cut -d ' ' -f1 "dist/${asset}.sha256")
-          echo "asset=${asset}" >> "$GITHUB_OUTPUT"
-          echo "sha256=${sha}" >> "$GITHUB_OUTPUT"
-          echo "${asset} sha256=${sha}"
-
-      - name: Attach the bundle to the GitHub release
+          enable-cache: false
+      - name: Build the MCPB bundle or restore the published bytes
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          v="${{ steps.version.outputs.version }}"
-          gh release upload "v${v}" "dist/dead-letter-mcp-${v}.mcpb" "dist/dead-letter-mcp-${v}.mcpb.sha256" --clobber
+          asset="dead-letter-mcp-${GITHUB_REF_NAME#v}.mcpb"
+          existing=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')
+          if grep -Fxq "$asset" <<< "$existing"; then
+            mkdir -p dist
+            gh release download "$GITHUB_REF_NAME" --pattern "$asset" --dir dist
+            if grep -Fxq "$asset.sha256" <<< "$existing"; then
+              gh release download "$GITHUB_REF_NAME" --pattern "$asset.sha256" --dir dist
+              (cd dist && sha256sum "$asset" | cmp - "$asset.sha256")
+            else
+              # The published bundle is the truth; regenerate a missing sidecar from it.
+              (cd dist && sha256sum "$asset" > "$asset.sha256")
+            fi
+          else
+            python scripts/build_mcpb.py
+          fi
+      - name: Smoke test the bundle against PyPI
+        run: python scripts/smoke_mcpb.py "dist/dead-letter-mcp-${GITHUB_REF_NAME#v}.mcpb"
+      - name: Record the asset hash
+        id: hash
+        run: |
+          asset="dead-letter-mcp-${GITHUB_REF_NAME#v}.mcpb"
+          sha=$(sha256sum "dist/$asset" | cut -d ' ' -f1)
+          echo "asset=${asset}" >> "$GITHUB_OUTPUT"
+          echo "sha256=${sha}" >> "$GITHUB_OUTPUT"
+      - name: Attach the bundle without replacing published assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          asset="dead-letter-mcp-${GITHUB_REF_NAME#v}.mcpb"
+          python scripts/release.py upload-assets "$GITHUB_REF_NAME" "dist/$asset" "dist/$asset.sha256"
 
-  # Publishes server metadata to the Official MCP Registry
-  # (registry.modelcontextprotocol.io) after the PyPI release is live. From
-  # there it propagates automatically to the GitHub MCP Registry, PulseMCP,
-  # and downstream aggregators. Uses GitHub OIDC to claim the
-  # io.github.BigCactusLabs/* namespace, so there is no stored secret. The
-  # registry only stores metadata; the package itself lives on PyPI.
-  publish-mcp:
-    needs: [publish, build-mcpb]
-    runs-on: ubuntu-latest
+  build-container:
+    needs: pypi-ready
     permissions:
-      id-token: write # OIDC, proves ownership of the io.github.BigCactusLabs namespace
       contents: read
+      packages: write
+    # Job-level reuse resolves at the caller commit, never from runtime workspace files.
+    uses: ./.github/workflows/container.yml # zizmor: ignore[self-repository] Keep the documented same-commit reusable workflow contract; this is not a local step action.
+    with:
+      publish: true
+
+  publish-mcp:
+    needs: [pypi-ready, build-mcpb, build-container]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: write # archive the fully resolved registry manifest for recovery
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - name: Resolve release version
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Wait for PyPI to serve the release
-        # The registry validates the mcp-name marker in the package's PyPI
-        # description, so the new version (README included) must be live first.
-        run: |
-          v="${{ steps.version.outputs.version }}"
-          for i in $(seq 1 30); do
-            if curl -fsSL "https://pypi.org/pypi/dead-letter/${v}/json" >/dev/null; then
-              echo "PyPI is serving dead-letter ${v}"
-              exit 0
-            fi
-            echo "waiting for PyPI dead-letter ${v} (attempt ${i}/30)"
-            sleep 10
-          done
-          echo "PyPI did not serve dead-letter ${v} in time" >&2
-          exit 1
-
       - name: Stamp server.json with the release version and bundle hash
-        # The committed server.json carries an all-zero fileSha256 placeholder
-        # for the MCPB package; the real hash only exists once build-mcpb has
-        # packed the asset. Refuse to publish if the placeholder survives.
+        env:
+          BUNDLE_SHA: ${{ needs.build-mcpb.outputs.sha256 }}
+          BUNDLE_ASSET: ${{ needs.build-mcpb.outputs.asset }}
         run: |
-          v="${{ steps.version.outputs.version }}"
-          sha="${{ needs.build-mcpb.outputs.sha256 }}"
-          asset="${{ needs.build-mcpb.outputs.asset }}"
-          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${v}/${asset}"
-          jq --arg v "$v" --arg sha "$sha" --arg url "$url" '
+          v="${GITHUB_REF_NAME#v}"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${v}/${BUNDLE_ASSET}"
+          jq --arg v "$v" --arg sha "$BUNDLE_SHA" --arg url "$url" '
             .version = $v
             | .packages |= map(
                 if .registryType == "pypi" then
@@ -173,19 +271,65 @@ jobs:
                 else . end
               )
           ' server.json > server.json.tmp && mv server.json.tmp server.json
-          cat server.json
-          if jq -e '.packages[] | select(.registryType == "mcpb") | .fileSha256 | test("^[0-9a-f]{64}$") | not' server.json >/dev/null \
-             || jq -e '.packages[] | select(.registryType == "mcpb") | .fileSha256 == ("0" * 64)' server.json >/dev/null; then
-            echo "server.json MCPB fileSha256 is unset or a placeholder" >&2
-            exit 1
-          fi
-
-      - name: Install mcp-publisher
+          jq -e '[.packages[] | select(.registryType == "mcpb") | .fileSha256] | length == 1 and all(.[]; test("^[0-9a-f]{64}$") and . != ("0" * 64))' server.json >/dev/null
+      - name: Add the verified OCI package to the release metadata
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          DIGEST: ${{ needs.build-container.outputs.digest }}
+        run: python3 scripts/container_metadata.py registry --version "$VERSION" --digest "$DIGEST"
+      - name: Archive the resolved registry manifest and checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
-
+          asset="dead-letter-server-${GITHUB_REF_NAME#v}.json"
+          cp server.json "$asset"
+          sha256sum "$asset" > "$asset.sha256"
+          python3 scripts/release.py upload-assets "$GITHUB_REF_NAME" "$asset" "$asset.sha256"
+      - name: Install mcp-publisher
+        # Upstream v1.8.1 release asset digest, reviewed 2026-09-19. Upgrade both
+        # values together; never resolve an executable from releases/latest.
+        env:
+          MCP_PUBLISHER_VERSION: v1.8.1
+          MCP_PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+        run: |
+          test "$(uname -m)" = x86_64
+          curl --connect-timeout 10 --max-time 120 -fsSL \
+            "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz" \
+            -o mcp-publisher.tar.gz
+          echo "$MCP_PUBLISHER_SHA256  mcp-publisher.tar.gz" | sha256sum --check --strict
+          tar xzf mcp-publisher.tar.gz mcp-publisher
       - name: Authenticate to the MCP Registry (GitHub OIDC)
         run: ./mcp-publisher login github-oidc
-
       - name: Publish to the MCP Registry
         run: ./mcp-publisher publish
+
+  summary:
+    if: always() && needs.preflight.result != 'skipped'
+    needs: [preflight, build, test-package, publish, pypi-ready, build-mcpb, build-container, publish-mcp]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Record channel outcomes and remaining maintainer actions
+        env:
+          PREFLIGHT: ${{ needs.preflight.result }}
+          BUILD: ${{ needs.build.result }}
+          PACKAGE_TEST: ${{ needs.test-package.result }}
+          CHECKSUMS: ${{ needs.build.outputs.checksums }}
+          PYPI: ${{ needs.publish.result }}
+          READY: ${{ needs.pypi-ready.result }}
+          MCPB: ${{ needs.build-mcpb.result }}
+          OCI: ${{ needs.build-container.result }}
+          REGISTRY: ${{ needs.publish-mcp.result }}
+        run: |
+          {
+            echo '## Package release channel outcomes'
+            printf '| Channel | Job result |\n|---|---|\n| Preflight | %s |\n| Build | %s |\n| Packaged install and README | %s |\n| PyPI upload | %s |\n| PyPI install readiness | %s |\n| MCPB | %s |\n| OCI | %s |\n| MCP Registry | %s |\n' "$PREFLIGHT" "$BUILD" "$PACKAGE_TEST" "$PYPI" "$READY" "$MCPB" "$OCI" "$REGISTRY"
+            echo '### Recorded Python build checksums'
+            echo '```text'
+            printf '%s\n' "$CHECKSUMS"
+            echo '```'
+            echo 'These are build evidence, not proof of publication. Preserve them in the release completion ledger before the build artifact expires.'
+            echo 'A failed PyPI upload job may already have uploaded files. Inspect its steps before retrying.'
+            echo 'If only install readiness failed, rerun failed jobs; do not re-upload the successful package.'
+            echo 'Still explicit: plugin tag/marketplace, core-only Homebrew update, desktop client smoke tests, and curated catalog outcomes. See docs/reference/publishing.md.'
+          } >> "$GITHUB_STEP_SUMMARY"

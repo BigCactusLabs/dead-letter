@@ -17,7 +17,7 @@ SUBCOMMANDS = frozenset({"convert", "doctor", "analyze"})
 
 
 def _add_convert_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("input_path", help="Path to .eml file or directory")
+    parser.add_argument("input_path", help="Path to .eml/.mbox file or .eml directory")
     parser.add_argument("--output", help="Output file or directory")
     parser.add_argument("--strip-signatures", action="store_true")
     parser.add_argument("--strip-disclaimers", action="store_true")
@@ -47,16 +47,32 @@ def _add_convert_flags(parser: argparse.ArgumentParser) -> None:
         help="Section order in structured mode (default: oldest-first).",
     )
     parser.add_argument("--report", action="store_true", help="Write conversion report to output directory")
+    parser.add_argument(
+        "--mbox-unescape", choices=["preserve", "mboxrd", "mboxo"], default="preserve",
+        help="MBOX body From-quoting policy; preserve is loss-averse (default).",
+    )
+    parser.add_argument(
+        "--max-message-mib", type=int, default=64,
+        help="MBOX: maximum stored bytes per message in MiB (default: 64).",
+    )
+    parser.add_argument(
+        "--mbox-bundles", action="store_true",
+        help="MBOX: write Cabinet-style message.md, source.eml and attachment bundles.",
+    )
+    parser.add_argument(
+        "--mbox-timeout", type=float, default=None, metavar="SECONDS",
+        help="MBOX: opt into a subprocess per message with this worker time budget.",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="dead-letter",
-        description="Convert .eml files to Markdown.",
+        description="Convert .eml files and exported .mbox archives to Markdown.",
     )
     subs = parser.add_subparsers(dest="command")
 
-    convert_parser = subs.add_parser("convert", help="Convert .eml files to Markdown")
+    convert_parser = subs.add_parser("convert", help="Convert email exports to Markdown")
     _add_convert_flags(convert_parser)
 
     doctor_parser = subs.add_parser("doctor", help="Check runtime environment")
@@ -172,6 +188,21 @@ def _run_convert(args: argparse.Namespace) -> int:
     input_path = Path(args.input_path).expanduser().resolve()
     options = _to_core_options(args)
     started_at = monotonic()
+
+    if input_path.suffix.lower() == ".mbox":
+        if args.delete_eml:
+            print("--delete-eml is not supported for MBOX; the archive is always preserved", file=sys.stderr)
+            return 1
+        from dead_letter.backend.mbox_cli import run_mbox
+        return run_mbox(
+            input_path, output=args.output, options=options,
+            max_message_mib=args.max_message_mib, unescape=args.mbox_unescape,
+            bundles=args.mbox_bundles, timeout_seconds=args.mbox_timeout,
+        )
+    if (args.mbox_bundles or args.mbox_unescape != "preserve" or args.max_message_mib != 64
+            or args.mbox_timeout is not None):
+        print("MBOX-specific options require a .mbox input file", file=sys.stderr)
+        return 1
 
     if input_path.is_dir():
         results = core_convert_dir(input_path, output=args.output, options=options)

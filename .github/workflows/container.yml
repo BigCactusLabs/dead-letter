@@ -1,0 +1,250 @@
+name: container
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - pyproject.toml
+      - uv.lock
+      - README.md
+      - LICENSE
+      - src/**
+      - docker/**
+      - scripts/container_metadata.py
+      - scripts/smoke_container.py
+      - tests/plugin/test_container_distribution.py
+      - .github/workflows/container.yml
+      - .github/workflows/release.yml
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - pyproject.toml
+      - uv.lock
+      - README.md
+      - LICENSE
+      - src/**
+      - docker/**
+      - scripts/container_metadata.py
+      - scripts/smoke_container.py
+      - tests/plugin/test_container_distribution.py
+      - .github/workflows/container.yml
+      - .github/workflows/release.yml
+  workflow_call:
+    inputs:
+      publish:
+        description: Publish only when called from the package release after PyPI succeeds
+        type: boolean
+        default: false
+    outputs:
+      digest:
+        description: Tested, publicly pullable multi-platform image digest
+        value: ${{ jobs.publish.outputs.digest }}
+
+permissions:
+  contents: read
+
+# Do not cancel a release between staging, testing, and promotion.
+concurrency:
+  group: container-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.inputs.outputs.version }}
+      revision: ${{ steps.inputs.outputs.revision }}
+      source_date_epoch: ${{ steps.inputs.outputs.source_date_epoch }}
+      python_image: ${{ steps.inputs.outputs.python_image }}
+      uv_image: ${{ steps.inputs.outputs.uv_image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Resolve source and immutable base images once for all jobs
+        id: inputs
+        env:
+          RELEASE: ${{ inputs.publish || false }}
+        shell: bash
+        run: |
+          args=()
+          if [[ "$RELEASE" == true ]]; then args+=(--release); fi
+          python3 scripts/container_metadata.py prepare --ref "$GITHUB_REF" "${args[@]}" | tee -a "$GITHUB_OUTPUT"
+          {
+            echo '### Resolved container build inputs'
+            echo '```text'
+            cat "$GITHUB_OUTPUT"
+            echo '```'
+            docker buildx version
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  test:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      REVISION: ${{ needs.prepare.outputs.revision }}
+      SOURCE_DATE_EPOCH: ${{ needs.prepare.outputs.source_date_epoch }}
+      PYTHON_IMAGE: ${{ needs.prepare.outputs.python_image }}
+      UV_IMAGE: ${{ needs.prepare.outputs.uv_image }}
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Build from the locked source (no publish credentials)
+        run: |
+          docker buildx build --load --provenance=false --platform "$PLATFORM" \
+            --build-arg PYTHON_IMAGE --build-arg UV_IMAGE --build-arg VERSION \
+            --build-arg REVISION --build-arg SOURCE_DATE_EPOCH \
+            --tag dead-letter-smoke .
+      - name: Exercise every MCP tool with offline, isolated synthetic mail
+        run: |
+          python3 scripts/smoke_container.py dead-letter-smoke \
+            --platform "$PLATFORM" --version "$VERSION" --revision "$REVISION"
+
+  publish:
+    if: inputs.publish && github.event_name == 'release' && github.repository == 'BigCactusLabs/dead-letter'
+    needs: [prepare, test]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.promote.outputs.digest }}
+    env:
+      IMAGE: ghcr.io/bigcactuslabs/dead-letter
+      VERSION: ${{ needs.prepare.outputs.version }}
+      REVISION: ${{ needs.prepare.outputs.revision }}
+      SOURCE_DATE_EPOCH: ${{ needs.prepare.outputs.source_date_epoch }}
+      PYTHON_IMAGE: ${{ needs.prepare.outputs.python_image }}
+      UV_IMAGE: ${{ needs.prepare.outputs.uv_image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: false
+      - name: Authenticate only the release publishing job
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Build a staging image with provenance and SBOMs
+        id: staging
+        run: |
+          docker buildx build --platform linux/amd64,linux/arm64 \
+            --build-arg PYTHON_IMAGE --build-arg UV_IMAGE --build-arg VERSION \
+            --build-arg REVISION --build-arg SOURCE_DATE_EPOCH \
+            --provenance=mode=max --sbom=true \
+            --output type=registry,rewrite-timestamp=true \
+            --metadata-file "$RUNNER_TEMP/container-build.json" \
+            --tag "$IMAGE:candidate-$REVISION-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" .
+          digest=$(jq -er '."containerimage.digest" | select(test("^sha256:[0-9a-f]{64}$"))' "$RUNNER_TEMP/container-build.json")
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Verify published digest and PyPI tool-schema parity on both platforms
+        env:
+          DIGEST: ${{ steps.staging.outputs.digest }}
+        run: |
+          # One image store cannot hold two platform variants of the same index
+          # reference (moby/moby#43188), so test each platform's own immutable
+          # child manifest digest. Attestation manifests are not platforms.
+          manifest=$(docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .Manifest}}')
+          for platform in linux/amd64 linux/arm64; do
+            child=$(printf '%s' "$manifest" | jq -r --arg platform "$platform" '
+              .manifests[]
+              | select((.annotations // {})["vnd.docker.reference.type"] != "attestation-manifest")
+              | select((.platform.os + "/" + .platform.architecture) == $platform)
+              | .digest')
+            if [[ ! "$child" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::No single child manifest for $platform under $IMAGE@$DIGEST"
+              exit 1
+            fi
+            docker pull --platform "$platform" "$IMAGE@$child"
+            python3 scripts/smoke_container.py "$IMAGE@$child" \
+              --platform "$platform" --version "$VERSION" --revision "$REVISION" \
+              --timeout 120 --compare-pypi "$VERSION"
+          done
+      - name: Require anonymous access before advertising the image
+        env:
+          DIGEST: ${{ steps.staging.outputs.digest }}
+        run: |
+          config=$(mktemp -d)
+          trap 'rm -rf "$config"' EXIT
+          # Resolution reuses the authenticated client; only the pulls are
+          # anonymous. Child digests again, for the same image-store reason.
+          manifest=$(docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .Manifest}}')
+          for platform in linux/amd64 linux/arm64; do
+            child=$(printf '%s' "$manifest" | jq -r --arg platform "$platform" '
+              .manifests[]
+              | select((.annotations // {})["vnd.docker.reference.type"] != "attestation-manifest")
+              | select((.platform.os + "/" + .platform.architecture) == $platform)
+              | .digest')
+            if [[ ! "$child" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::No single child manifest for $platform under $IMAGE@$DIGEST"
+              exit 1
+            fi
+            if ! docker --config "$config" pull --platform "$platform" "$IMAGE@$child"; then
+              echo '::error::GHCR image is not anonymously pullable. Set the package visibility to public, then rerun failed jobs. No release tag or MCP OCI entry has been promoted.'
+              exit 1
+            fi
+          done
+      - name: Promote without overwriting an existing release tag
+        id: promote
+        env:
+          DIGEST: ${{ steps.staging.outputs.digest }}
+        run: |
+          # Fail closed on authentication/network errors; only manifest absence
+          # permits creation. Existing release tags are never silently replaced.
+          if existing=$(docker buildx imagetools inspect "$IMAGE:$VERSION" 2> "$RUNNER_TEMP/tag-error"); then
+            current=$(printf '%s\n' "$existing" | sed -n 's/^Digest:[[:space:]]*//p' | head -1)
+            if [[ "$current" != "$DIGEST" ]]; then
+              echo '::error::Release tag already exists with a different digest. Do not overwrite it; inspect the prior release and use its verified digest or cut a new release.'
+              exit 1
+            fi
+          elif grep -Eqi 'manifest unknown|not found' "$RUNNER_TEMP/tag-error"; then
+            docker buildx imagetools create --tag "$IMAGE:$VERSION" "$IMAGE@$DIGEST"
+          else
+            cat "$RUNNER_TEMP/tag-error" >&2
+            exit 1
+          fi
+          promoted=$(docker buildx imagetools inspect "$IMAGE:$VERSION" | sed -n 's/^Digest:[[:space:]]*//p' | head -1)
+          if [[ "$promoted" != "$DIGEST" ]]; then
+            echo '::error::Promoted tag does not resolve to the tested digest.'
+            exit 1
+          fi
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          {
+            echo '### Published container'
+            echo "\`$IMAGE:$VERSION\`"
+            echo "\`$IMAGE@$DIGEST\`"
+            echo 'Both platforms passed stdio/tool/mount checks; anonymous pulls verified.'
+            echo 'Provenance and SBOMs are attached to the registry image, not the local test image.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove publishing credentials
+        if: always()
+        continue-on-error: true
+        run: docker logout ghcr.io

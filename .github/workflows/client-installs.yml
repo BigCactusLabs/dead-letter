@@ -1,0 +1,98 @@
+name: client-installs
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  published-launcher:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - name: Check generated metadata without modifying client settings
+        run: python scripts/generate_client_installs.py --check
+      - name: Launch public PyPI package and convert synthetic mail
+        run: python scripts/smoke_client_install.py
+
+  cline-catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: cline/marketplace
+          # Pinned validator/schema, not arbitrary future upstream code.
+          ref: e59b03e4f8904073b43b40e93d975f639d1fa694
+          path: build/cline-marketplace
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: Stage the candidate without replacing an upstream entry
+        run: |
+          target=build/cline-marketplace/registry/mcps/dead-letter
+          test ! -e "$target"
+          mkdir -p "$target"
+          cp docs/project/submissions/cline/entry.json "$target/entry.json"
+      # The pinned generator uses Node built-ins only; no npm install needed.
+      - name: Run Cline's actual marketplace validator
+        working-directory: build/cline-marketplace
+        run: npm run validate
+
+  cline-registration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - name: Register the candidate in a disposable Cline CLI profile
+        # Script pins @cline/cli, removes inherited credentials, and never asks
+        # an agent/model to run. --yes affects only this synthetic profile.
+        run: python scripts/smoke_cline_registration.py
+
+  discovery-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Record public catalog evidence without submissions or credentials
+        # Missing/unknown entries are reported, not conversion test failures.
+        # Offline tests cover the classifier; there is no scheduled crawler.
+        run: python scripts/audit_mcp_discovery.py --output build/discovery-evidence.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: discovery-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/discovery-evidence.json
+          retention-days: 30
+          if-no-files-found: error

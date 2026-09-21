@@ -1,0 +1,52 @@
+From 1669160939957813740@example.test Thu Jun 11 00:38:38 +0000 2020
+From: Alice <alice@example.test>
+To: Bob <bob@example.test>
+Date: Thu, 11 Jun 2020 00:38:38 +0000
+Subject: Project review
+Message-ID: <review-1@example.test>
+X-GM-THRID: 1669160939957813740
+X-Gmail-Labels: Inbox,Projects/Atelier,
+ Important
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="fixture-boundary"
+
+--fixture-boundary
+Content-Type: text/plain; charset=utf-8
+
+Please review the attached figures.
+From the engineering team, with thanks.
+
+--fixture-boundary
+Content-Type: text/csv; name="figures.csv"
+Content-Disposition: attachment; filename="figures.csv"
+Content-Transfer-Encoding: base64
+
+YSxiCjEsMgo=
+--fixture-boundary--
+
+From sender@example.test Thu Jun 11 01:38:38 2020
+This is not a valid RFC header
+Broken message, retained for MIME diagnostics.
+
+From sender@example.test Thu Jun 11 02:38:38 2020
+From: Bob <bob@example.test>
+To: Alice <alice@example.test>
+Date: Thu, 11 Jun 2020 02:38:38 +0000
+Subject: Project review
+Message-ID: <review-3@example.test>
+In-Reply-To: <review-1@example.test>
+Content-Type: text/plain; charset=utf-8
+
+Approved. Please use the final version.
+
+On Thu, Jun 11, 2020 at 00:38 Alice <alice@example.test> wrote:
+> Please review the attached figures.
+>
+> On Wed, Jun 10, 2020 Bob <bob@example.test> wrote:
+>> Please send the updated version.
+>>
+>> On Tue, Jun 9, 2020 Alice <alice@example.test> wrote:
+>>> The initial review is complete.
+>>> We retained the original measurements.
+>>> Please compare against this baseline.
+

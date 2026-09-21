@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -25,6 +26,9 @@ class ReportEntry:
 def sanitize_string(value: str) -> str:
     """Remove null bytes and replace lone surrogates for safe JSON serialization."""
     value = value.replace("\x00", "")
+    # surrogateescape only handles U+DC80..U+DCFF. Other lone surrogates
+    # previously aborted an entire report with UnicodeEncodeError.
+    value = re.sub(r"[\ud800-\udc7f\udd00-\udfff]", "\ufffd", value)
     return value.encode("utf-8", errors="surrogateescape").decode("utf-8", errors="replace")
 
 
