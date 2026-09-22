@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from dead_letter.core import convert, convert_dir
 from dead_letter.core._pipeline import _iter_source_eml_files, convert_to_bundle_with_diagnostics
@@ -160,7 +161,7 @@ def convert_eml_to_bundle(
     optional diagnostics.
     """
     if source_handling != "copy":
-        raise ValueError(
+        raise ToolError(
             "MCP convert_eml_to_bundle only supports source_handling='copy'; "
             "use the CLI/API for move/delete."
         )

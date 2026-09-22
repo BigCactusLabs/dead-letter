@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- MCP bundle conversion keeps the copy-only rejection message visible with
+  MCP SDK 2.2 while preserving the source and rejecting move/delete requests.
 - Homebrew preparation reports when a released sdist clears Homebrew's 24-hour
   PyPI upload delay and refuses early `--write` attempts before changing the tap.
   Failed public Homebrew commands include a bounded, sanitized stderr detail

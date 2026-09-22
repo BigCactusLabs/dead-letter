@@ -177,7 +177,10 @@ def test_convert_eml_to_bundle_default_source_handling_is_copy(tmp_path: Path):
     assert source.exists()
 
 
-def test_convert_eml_to_bundle_source_handling_delete(tmp_path: Path):
+@pytest.mark.parametrize("source_handling", ["move", "delete"])
+def test_convert_eml_to_bundle_rejects_source_handling(tmp_path: Path, source_handling: str):
+    from mcp.server.mcpserver.exceptions import ToolError
+
     from dead_letter.backend.mcp_server import convert_eml_to_bundle
 
     source = tmp_path / "input" / "plain_text.eml"
@@ -185,13 +188,15 @@ def test_convert_eml_to_bundle_source_handling_delete(tmp_path: Path):
     shutil.copy2(FIXTURES / "plain_text.eml", source)
 
     cabinet = tmp_path / "cabinet"
-    with pytest.raises(ValueError, match="source_handling='copy'"):
+    original = source.read_bytes()
+    with pytest.raises(ToolError, match="source_handling='copy'"):
         convert_eml_to_bundle(
             eml_path=str(source),
             bundle_root=str(cabinet),
-            source_handling="delete",
+            source_handling=source_handling,
         )
-    assert source.exists()
+    assert source.read_bytes() == original
+    assert not cabinet.exists()
 
 
 def test_convert_eml_to_bundle_file_not_found():
@@ -483,7 +488,8 @@ async def test_mcp_client_convert_eml_round_trip():
 
 
 @pytest.mark.anyio
-async def test_mcp_client_convert_bundle_rejects_delete(tmp_path: Path):
+@pytest.mark.parametrize("source_handling", ["move", "delete"])
+async def test_mcp_client_convert_bundle_rejects_source_handling(tmp_path: Path, source_handling: str):
     """The MCP protocol path must enforce copy-only bundle conversion."""
     from mcp import Client
 
@@ -493,19 +499,22 @@ async def test_mcp_client_convert_bundle_rejects_delete(tmp_path: Path):
     source.parent.mkdir()
     shutil.copy2(FIXTURES / "plain_text.eml", source)
 
+    original = source.read_bytes()
+    cabinet = tmp_path / "cabinet"
     async with Client(mcp) as client:
         result = await client.call_tool(
             "convert_eml_to_bundle",
             {
                 "eml_path": str(source),
-                "bundle_root": str(tmp_path / "cabinet"),
-                "source_handling": "delete",
+                "bundle_root": str(cabinet),
+                "source_handling": source_handling,
             },
         )
 
     assert result.is_error is True
     assert "source_handling='copy'" in result.content[0].text
-    assert source.exists()
+    assert source.read_bytes() == original
+    assert not cabinet.exists()
 
 
 # ---------------------------------------------------------------------------
