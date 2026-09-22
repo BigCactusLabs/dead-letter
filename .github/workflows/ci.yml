@@ -24,9 +24,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Setup uv
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
+          prune-cache: true
       - name: Sync workspace
         run: uv sync --extra dev --locked
       - name: Checkout and import provenance
@@ -47,9 +48,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Setup uv
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
+          prune-cache: true
       - name: Sync workspace
         run: uv sync --extra dev --locked
       - name: Checkout and import provenance
@@ -84,9 +86,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Setup uv
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
+          prune-cache: true
       - name: Sync workspace
         run: uv sync --extra dev --locked
       - name: Checkout and import provenance
@@ -134,7 +137,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Setup uv
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: false
       - name: Build and verify isolated distribution installs
@@ -183,9 +186,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Setup uv
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
+          prune-cache: true
       - name: Checkout and import provenance
         run: uv run --extra dev --locked python scripts/ci_provenance.py
       - name: Provenance contracts
