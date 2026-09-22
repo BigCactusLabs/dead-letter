@@ -27,6 +27,7 @@ jobs:
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
+          prune-cache: true
       - name: Sync workspace
         run: uv sync --extra dev --locked
       - name: Checkout and import provenance
@@ -50,6 +51,7 @@ jobs:
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
+          prune-cache: true
       - name: Sync workspace
         run: uv sync --extra dev --locked
       - name: Checkout and import provenance
@@ -87,6 +89,7 @@ jobs:
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
+          prune-cache: true
       - name: Sync workspace
         run: uv sync --extra dev --locked
       - name: Checkout and import provenance
@@ -186,6 +189,7 @@ jobs:
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
+          prune-cache: true
       - name: Checkout and import provenance
         run: uv run --extra dev --locked python scripts/ci_provenance.py
       - name: Provenance contracts
