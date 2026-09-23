@@ -250,6 +250,10 @@ def test_invalid_lengths_follow_dialect_recovery(tmp_path, fields, body):
     pytest.param(b"cOnTeNt-LeNgTh: %d\n", id="case-insensitive"),
     pytest.param(b"Content-Length: %d\nX-Other: 1\ncontent-length: %d\n", id="duplicate-equal"),
     pytest.param(b"Content-Length: 000%d\n", id="leading-zeros"),
+    # RFC 5322 section 4.5 obsolete syntax allows WSP before the colon; the
+    # delimiter modes' refusal detector already treats this as Content-Length.
+    pytest.param(b"Content-Length : %d\n", id="obs-space-before-colon"),
+    pytest.param(b"Content-Length\t: %d\n", id="obs-tab-before-colon"),
 ])
 def test_accepted_length_spellings(tmp_path, fields):
     body = b"Hello\n" + BODY_POSTMARK + b"\n"

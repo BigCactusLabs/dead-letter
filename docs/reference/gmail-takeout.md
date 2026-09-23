@@ -220,7 +220,9 @@ Python callers pass `unescape="mboxcl"` or `unescape="mboxcl2"` to
 - **Length.** `N` is the exact number of stored bytes from just after the
   blank line that ends the top-level headers up to, but not including, the
   one line ending before the next postmark. CR bytes count. Only top-level
-  header fields named `Content-Length` (any case) are read; a
+  header fields named `Content-Length` (any case, with the RFC 5322
+  obsolete-syntax spaces or tabs before the colon allowed, as the other
+  dialects' refusal check also allows) are read; a
   `message/rfc822` part's own header is body text.
 - **Header value.** The unfolded value, trimmed of spaces, tabs and CR, must
   be 1–20 ASCII digits: no sign, no inner whitespace, not empty. Repeated
