@@ -9,6 +9,42 @@ recovery and offsets beyond 2 GiB. It deliberately does not parse MIME, render
 Markdown, write bundles or exercise streamed reports. This companion helper
 measures those operations through the real importer, then audits their output.
 
+## Property and fuzz testing
+
+The normal `pytest` run includes `tests/core/test_mbox_properties.py` and
+`test_mbox_fuzz.py`. The `ci` Hypothesis profile is the default: 30 deterministic,
+shrinking examples per property with a 500 ms example deadline. Mutation tests
+run 24 numbered seeds by default. Inputs are synthetic and at most 4 KiB per
+mutation case. The generators cover delimiter-framed `preserve`, `mboxrd`, and
+`mboxo` quoting, LF/CRLF, fake postmarks, malformed and folded headers,
+delimiter-adjacent long lines, duplicate IDs, empty records, and EOF without a
+final newline. They accept a dialect strategy so another dialect can be added
+after its framing contract exists. Content-Length dialects are not generated.
+
+Run the longer local check from the repository root:
+
+```bash
+HYPOTHESIS_PROFILE=fuzz DEAD_LETTER_FUZZ_ITERATIONS=300 \
+  uv run pytest -q --hypothesis-show-statistics \
+  tests/core/test_mbox_properties.py tests/core/test_mbox_fuzz.py
+```
+
+The `fuzz` profile runs 300 examples per property; the iteration knob accepts
+1–2000 numbered mutation seeds. To repeat a mutation failure, use its pytest
+case ID, for example `uv run pytest -q tests/core/test_mbox_fuzz.py -k seed-42`.
+Hypothesis reports a shrunk failing example and a reproduction blob; retain a
+confirmed minimized synthetic `.mbox` under `tests/core/fixtures/` and record
+any mutation seed in the regression test. Never use private mail as a public
+fixture.
+
+The generated mailbox model checks source-order ranges, byte hashes, stored
+bytes and dialect-specific unquoting. The mutation check limits reads and
+staged record size, then reconciles contiguous emitted ranges with the input.
+An invalid preamble or unsupported `Content-Length` can stop the archive;
+bytes after the last emitted range are then an unreported fatal suffix. The
+stdlib comparison applies only to mailboxes written by CPython's own MBOX
+writer, whose separator and storage-newline behavior match that test.
+
 ## Reproduce a synthetic comparison
 
 Each invocation is a fresh Python process with a fresh temporary destination.
