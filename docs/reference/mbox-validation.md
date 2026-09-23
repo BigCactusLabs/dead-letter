@@ -19,7 +19,9 @@ mutation case. The generators cover delimiter-framed `preserve`, `mboxrd`, and
 `mboxo` quoting, LF/CRLF, fake postmarks, malformed and folded headers,
 delimiter-adjacent long lines, duplicate IDs, empty records, and EOF without a
 final newline. They accept a dialect strategy so another dialect can be added
-after its framing contract exists. Content-Length dialects are not generated.
+after its framing contract exists. Content-Length dialects (`mboxcl`,
+`mboxcl2`) are not generated here; their framing cases live in
+`tests/core/test_mbox_content_length.py`.
 
 Run the longer local check from the repository root:
 

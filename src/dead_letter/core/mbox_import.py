@@ -134,7 +134,7 @@ def convert_mbox(
     opts = options or ConvertOptions()
     if opts.delete_eml:
         raise ValueError("--delete-eml is not supported for MBOX; the archive is always preserved")
-    if unescape not in {"preserve", "mboxrd", "mboxo"}:
+    if unescape not in {"preserve", "mboxrd", "mboxo", "mboxcl", "mboxcl2"}:
         raise ValueError(f"Unsupported MBOX unescape mode: {unescape}")
     root = Path(output).expanduser().resolve() if output is not None else source.with_suffix(".markdown")
     if root == source or root.suffix.lower() == ".md" or (root.exists() and not root.is_dir()):
