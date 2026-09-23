@@ -40,6 +40,8 @@ fixture.
 The generated mailbox model checks source-order ranges, byte hashes, stored
 bytes and dialect-specific unquoting. The mutation check limits reads and
 staged record size, then reconciles contiguous emitted ranges with the input.
+The mutation corpus also runs in a child process with a 20-second CI timeout
+(60 seconds in the longer profile), so a stuck parser fails the test run.
 An invalid preamble or unsupported `Content-Length` can stop the archive;
 bytes after the last emitted range are then an unreported fatal suffix. The
 stdlib comparison applies only to mailboxes written by CPython's own MBOX

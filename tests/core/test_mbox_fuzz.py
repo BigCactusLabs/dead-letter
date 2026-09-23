@@ -6,6 +6,8 @@ import hashlib
 import json
 import os
 import random
+import subprocess
+import sys
 from contextlib import closing
 from pathlib import Path
 
@@ -115,6 +117,19 @@ def test_seeded_mutations_account_for_bytes_and_bound_reads(tmp_path, monkeypatc
     assert cursor <= len(data), f"seed={seed}"
     if not fatal:
         assert cursor == len(data), f"seed={seed}: unaccounted bytes"
+
+
+def test_mutation_corpus_has_a_wall_time_limit():
+    # The byte cap and read-size assertions cannot interrupt a stuck parser.
+    # Run the seeded cases in a child so a hang fails within a finite budget.
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", str(Path(__file__).resolve()),
+         "-k", "seeded_mutations"],
+        capture_output=True, text=True,
+        timeout=60 if os.environ.get("HYPOTHESIS_PROFILE") == "fuzz" else 20,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_report_matches_streamed_empty_and_valid_records(tmp_path):
