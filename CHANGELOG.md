@@ -51,6 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The MCP `convert_directory` inputSchema now lists `output_directory` as
+  required, matching the existing runtime requirement, and an empty
+  `output_directory` is rejected instead of writing into the server's working
+  directory. The tool description now states the 50-file limit per call.
 - MCP bundle conversion keeps the copy-only rejection message visible with
   MCP SDK 2.2 while preserving the source and rejecting move/delete requests.
 - Homebrew preparation reports when a released sdist clears Homebrew's 24-hour
