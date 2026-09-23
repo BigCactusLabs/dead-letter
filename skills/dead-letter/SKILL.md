@@ -24,9 +24,15 @@ parsing MIME by hand whenever a task starts from exported email.
 
 ## Input boundary (say this instead of guessing)
 
-- Supported input is `.eml` only. Each file is one RFC 822 message.
-- Not supported: `.mbox` (including Gmail Takeout), `.pst`, `.ost`, `.msg`,
-  `.olm`, and live mailboxes or IMAP/Graph/Gmail APIs. If the user has one of
+- The MCP server (Path 1) accepts `.eml` only. Each file is one RFC 822
+  message. It does not support `.mbox` (including Gmail Takeout).
+- The CLI (Path 2) also converts a flat Gmail Takeout `.mbox` file, not just
+  `.eml`: `uvx --python 3.12 dead-letter convert "Takeout/Mail/All mail.mbox"
+  --output markdown/`. This is CLI/Python only; it does not extend the MCP
+  server or any web UI.
+- Not supported by any path: `.pst`, `.ost`, `.msg`, `.olm`, an Apple Mail
+  `.mbox` *directory* (as opposed to a flat `.mbox` file), compressed Takeout
+  archives, or live mailboxes/IMAP/Graph/Gmail APIs. If the user has one of
   these, say so and stop. Do not try to split or convert the container yourself
   unless the user asks you to.
 - Conversion is local. No email content is sent anywhere by dead-letter. A

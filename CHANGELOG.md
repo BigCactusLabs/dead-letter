@@ -36,6 +36,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only the formula with `--write`, and opens a draft tap PR with `--open-pr`
   after the reviewed patch hash matches; it never merges (#129). See the
   [release operations guide](docs/reference/release-operations.md).
+- Opt-in `Content-Length`-framed MBOX dialects: `--mbox-unescape mboxcl` /
+  `mboxcl2` and Python `unescape="mboxcl"` / `"mboxcl2"`. A length frames a
+  body only when it lands on one line ending followed by a valid postmark, or
+  on a single final line ending at EOF; the check uses bounded reads and body
+  postmark-like lines never split a validated message. `mboxcl` removes one
+  `>` from body `>From ` lines and falls back to postmark scanning for a
+  message with a missing or invalid length, recording
+  `framing_diagnostic: mbox_content_length_fallback` in its provenance;
+  `mboxcl2` stops with an archive error instead. Other modes still refuse
+  `Content-Length`. Parity is tested against an independent test reference
+  reader, not archives written by mutt or Dovecot. See the
+  [Takeout recipe](docs/reference/gmail-takeout.md#content-length-framing-mboxcl-and-mboxcl2) (#143).
 
 ### Fixed
 

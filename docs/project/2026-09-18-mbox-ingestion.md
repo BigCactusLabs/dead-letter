@@ -4,6 +4,21 @@ Reviewed September 18, 2026. This is an implementation/design record, not a
 claim of universal MBOX conformance or empirical coverage of every Gmail export.
 Public recipe: [Gmail Takeout to Markdown/Cabinet](../reference/gmail-takeout.md).
 
+**Status: history.** The base importer (#103/#115) and the optional worker
+follow-up (#118) both shipped together in the 0.4.0 release (2026-09-19). This
+record is retained for its source citations and design rationale, not as a
+work queue to revive. Opt-in mboxcl/mboxcl2 Content-Length framing
+([#143](https://github.com/BigCactusLabs/dead-letter/issues/143)) has since
+landed on `main` (unreleased). Remaining follow-ups are tracked as separate
+issues: compressed
+Takeout archives
+([#144](https://github.com/BigCactusLabs/dead-letter/issues/144)), MCP
+ingestion ([#145](https://github.com/BigCactusLabs/dead-letter/issues/145)),
+web/API import ([#146](https://github.com/BigCactusLabs/dead-letter/issues/146)),
+real multi-GB corpus validation
+([#138](https://github.com/BigCactusLabs/dead-letter/issues/138)), and durable
+resume ([#139](https://github.com/BigCactusLabs/dead-letter/issues/139)).
+
 ## Sources that changed the implementation
 
 1. [RFC 4155](https://www.rfc-editor.org/rfc/rfc4155.html), especially format
@@ -160,6 +175,8 @@ for that corpus or proof of universal dialect compatibility.
    against a reference implementation on inputs where its dialect differs.
 3. Length-framed dialects require validated endpoints and fixtures before being
    advertised; blindly trusting or ignoring Content-Length is not acceptable.
+   Follow-up: #143 added opt-in, endpoint-validated `mboxcl`/`mboxcl2` on
+   `main`; see the [recipe's dialect section](../reference/gmail-takeout.md#content-length-framing-mboxcl-and-mboxcl2).
 4. Source-fingerprint-validated resume/checkpointing and a durable journal for
    hard-kill recovery. Reconcile complete-but-unreceipted outputs. Do not describe
    the current suffix behavior or in-process checkpoint as resumability.

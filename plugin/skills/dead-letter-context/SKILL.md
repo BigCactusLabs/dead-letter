@@ -93,5 +93,5 @@ If the count is over 50, refuse the batch and tell the user to either narrow the
 
 ## Out of scope
 
-- `.mbox` and other email-archive container formats. dead-letter currently handles `.eml` only. If a user mentions an `.mbox` file, clarify the limitation rather than attempting conversion.
+- `.mbox` and other email-archive container formats. This plugin's MCP tools accept `.eml` only. dead-letter's CLI can convert a flat Gmail Takeout `.mbox` file (see [Gmail Takeout / MBOX](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/gmail-takeout.md)), but that is a separate CLI/Python surface, not this plugin. If a user mentions an `.mbox` file, say the MCP tools here can't take it and point them at the CLI docs rather than attempting conversion yourself.
 - Bulk archive processing beyond 50 files. Deferred to a future v2 sub-agent.

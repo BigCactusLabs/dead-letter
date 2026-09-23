@@ -48,8 +48,9 @@ def _add_convert_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--report", action="store_true", help="Write conversion report to output directory")
     parser.add_argument(
-        "--mbox-unescape", choices=["preserve", "mboxrd", "mboxo"], default="preserve",
-        help="MBOX body From-quoting policy; preserve is loss-averse (default).",
+        "--mbox-unescape", choices=["preserve", "mboxrd", "mboxo", "mboxcl", "mboxcl2"], default="preserve",
+        help="MBOX body From-quoting policy, or opt-in Content-Length framing (mboxcl, mboxcl2); "
+             "preserve is loss-averse (default).",
     )
     parser.add_argument(
         "--max-message-mib", type=int, default=64,
