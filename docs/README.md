@@ -47,8 +47,11 @@ filename. Machine-readable versions live in package/distribution metadata;
 
 [Reach & Distribution](project/reach.md) retains the product/discovery
 strategy and outstanding evidence requirements. The
-[MBOX ingestion design notes](project/2026-09-18-mbox-ingestion.md) record the
-research and boundaries behind streaming Takeout import. The
+[MBOX ingestion design notes](project/2026-09-18-mbox-ingestion.md) are a
+history record of the research and boundaries behind the streaming Takeout
+importer and its worker follow-up, both shipped in 0.4.0; current availability
+lives in [Gmail Takeout / MBOX](reference/gmail-takeout.md) and
+[MBOX Workers](reference/mbox-workers.md). The
 [analysis foundation checkpoint](project/2026-09-18-issue-110-analysis-foundation.md)
 records what #117 landed for issue #110 and what remains. The
 [docs and release audit](project/docs-release-audit.md) records this refresh,

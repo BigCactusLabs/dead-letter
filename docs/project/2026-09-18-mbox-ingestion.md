@@ -4,6 +4,20 @@ Reviewed September 18, 2026. This is an implementation/design record, not a
 claim of universal MBOX conformance or empirical coverage of every Gmail export.
 Public recipe: [Gmail Takeout to Markdown/Cabinet](../reference/gmail-takeout.md).
 
+**Status: history.** The base importer (#103/#115) and the optional worker
+follow-up (#118) both shipped together in the 0.4.0 release (2026-09-19). This
+record is retained for its source citations and design rationale, not as a
+work queue to revive. Remaining follow-ups are tracked as separate issues:
+mboxcl/mboxcl2 dialects and validated Content-Length framing
+([#143](https://github.com/BigCactusLabs/dead-letter/issues/143)), compressed
+Takeout archives
+([#144](https://github.com/BigCactusLabs/dead-letter/issues/144)), MCP
+ingestion ([#145](https://github.com/BigCactusLabs/dead-letter/issues/145)),
+web/API import ([#146](https://github.com/BigCactusLabs/dead-letter/issues/146)),
+real multi-GB corpus validation
+([#138](https://github.com/BigCactusLabs/dead-letter/issues/138)), and durable
+resume ([#139](https://github.com/BigCactusLabs/dead-letter/issues/139)).
+
 ## Sources that changed the implementation
 
 1. [RFC 4155](https://www.rfc-editor.org/rfc/rfc4155.html), especially format

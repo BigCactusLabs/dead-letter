@@ -1,9 +1,11 @@
 # MBOX message workers: timeouts and crash containment
 
-**Availability:** unreleased, optional CLI/Python follow-up to the streaming
-importer in PR #115. PR #118 is stacked on that branch, so reviewing or merging
-#115 does not require this option. Neither feature is in the published 0.2.5
-package. Use a checkout containing both changes and run `uv sync` first.
+**Availability:** shipped as an optional CLI/Python follow-up (#118) to the
+streaming MBOX importer (#103/#115), released together in 0.4.0. Install any
+CLI/Python route from the
+[installation and distribution map](distribution.md). The examples below use
+`uv run` for a development checkout; drop that prefix once dead-letter is
+installed.
 
 ## Use
 
@@ -171,9 +173,12 @@ The local environment could run 42 supervisor/contract checks with lightweight
 core stand-ins but lacks the MIME dependencies; full package and actual-worker
 validation runs in GitHub CI. PR check results and their commit SHAs are the
 current evidence. No private email was used or uploaded, and a real authorized
-multi-GB Takeout archive has not been tested.
+multi-GB Takeout archive has not been tested; that gap is tracked in
+[#138](https://github.com/BigCactusLabs/dead-letter/issues/138).
 
 Next foundation work remains: measure end-to-end startup/copy overhead on
 representative messages before considering worker reuse; evaluate portable host
 resource caps separately; and design durable resume around both file publication
-and report receipts. None is implied by this timeout option.
+and report receipts, tracked in
+[#139](https://github.com/BigCactusLabs/dead-letter/issues/139). None is
+implied by this timeout option.
