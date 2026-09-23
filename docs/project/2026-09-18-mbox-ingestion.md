@@ -160,6 +160,8 @@ for that corpus or proof of universal dialect compatibility.
    against a reference implementation on inputs where its dialect differs.
 3. Length-framed dialects require validated endpoints and fixtures before being
    advertised; blindly trusting or ignoring Content-Length is not acceptable.
+   Follow-up: #143 added opt-in, endpoint-validated `mboxcl`/`mboxcl2` on
+   `main`; see the [recipe's dialect section](../reference/gmail-takeout.md#content-length-framing-mboxcl-and-mboxcl2).
 4. Source-fingerprint-validated resume/checkpointing and a durable journal for
    hard-kill recovery. Reconcile complete-but-unreceipted outputs. Do not describe
    the current suffix behavior or in-process checkpoint as resumability.
