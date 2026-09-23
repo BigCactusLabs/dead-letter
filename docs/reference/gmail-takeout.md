@@ -1,10 +1,15 @@
 # Gmail Takeout / MBOX to Markdown and Cabinet
 
-**Availability:** new CLI/Python functionality for issue #103, not present in the
-published 0.2.5 package. Use a checkout containing this change (`uv sync`) and
-prefix the commands below with `uv run` until a release includes it. Existing
-MCP tools, web uploads, watch mode, and recursive EML directory conversion remain
-EML-only. No Google login, API key, or hosted email processing is needed.
+**Availability:** shipped in the CLI and Python API in the 0.4.0 release (#103).
+Install any CLI/Python route from the
+[installation and distribution map](distribution.md); once dead-letter is
+installed, run the commands below without a `uv run` prefix. Keep `uv run` only
+when working from a development checkout. The MCP server and web UI remain
+EML-only: MBOX import is not available through either surface (tracked: MCP
+ingestion [#145](https://github.com/BigCactusLabs/dead-letter/issues/145), web/API
+import [#146](https://github.com/BigCactusLabs/dead-letter/issues/146)). Watch
+mode and recursive EML directory conversion also remain EML-only. No Google
+login, API key, or hosted email processing is needed.
 
 ## Convert an export
 
@@ -122,6 +127,10 @@ File output and report receipts are **not one atomic transaction**. The newest
 completed file can be absent from the report if interruption occurs before its
 receipt commits. Counts describe committed receipts, not a post-interruption
 rescan of the destination. This is not resumability or exactly-once ingestion.
+Durable resume is tracked in
+[#139](https://github.com/BigCactusLabs/dead-letter/issues/139); a real
+multi-GB Takeout corpus has not been validated end-to-end, tracked in
+[#138](https://github.com/BigCactusLabs/dead-letter/issues/138).
 
 Report publication is atomic. Ctrl-C during the final report copy returns 130
 without a traceback; a failed or interrupted write before replacement leaves a
@@ -137,8 +146,9 @@ directories for simultaneous imports: report publication is last-writer-wins.
 
 ## Optional timed message workers
 
-Byte limits do not stop a stuck parser or a native-library crash. A checkout
-containing the worker follow-up (PR #118) supports an opt-in per-message budget:
+Byte limits do not stop a stuck parser or a native-library crash. Shipped
+alongside the base importer in 0.4.0, `--mbox-timeout` opts into a per-message
+budget (#118, follow-up to #103):
 
 ```bash
 dead-letter convert archive.mbox --output markdown/ --report --mbox-timeout 30
@@ -177,11 +187,16 @@ in this format; there is no universal reliable detector.
 
 Unsupported inputs fail explicitly when detectable: non-empty preambles and
 `Content-Length`-framed mboxcl/mboxcl2 mailboxes are refused, not silently treated
-as another dialect. Folded continuation text containing `Content-Length:` is
-not a new storage header. Content-Length refusal is archive-fatal because
-continuing could misidentify body text as additional messages. Unknown postmark
-syntaxes, compressed files, live mail spools, PST/MSG and Apple Mail bundle
-directories are outside this slice. See the [research and design notes](../project/2026-09-18-mbox-ingestion.md).
+as another dialect. mboxcl/mboxcl2 are not supported yet; validated
+Content-Length framing is tracked in
+[#143](https://github.com/BigCactusLabs/dead-letter/issues/143). Folded
+continuation text containing `Content-Length:` is not a new storage header.
+Content-Length refusal is archive-fatal because continuing could misidentify
+body text as additional messages. Unknown postmark syntaxes, compressed files
+(compressed Takeout archives are tracked in
+[#144](https://github.com/BigCactusLabs/dead-letter/issues/144)), live mail
+spools, PST/MSG and Apple Mail bundle directories are outside this slice. See
+the [implementation history](../project/2026-09-18-mbox-ingestion.md).
 
 ## Python: consume lazily
 
