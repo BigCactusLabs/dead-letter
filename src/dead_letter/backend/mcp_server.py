@@ -195,7 +195,7 @@ def convert_eml_to_bundle(
 @mcp.tool()
 def convert_directory(
     directory: str,
-    output_directory: str | None = None,
+    output_directory: str,
     dry_run: bool = False,
     preset: Literal["default", "clean", "verbose", "raw"] = "default",
     strip_signatures: bool | None = None,
@@ -212,8 +212,11 @@ def convert_directory(
 ) -> str:
     """Batch convert all .eml files in a directory to Markdown.
 
-    Recursively finds all .eml files and converts them. Returns a JSON
-    summary with total, successes, failures, output_paths, and errors.
+    Recursively finds .eml files (at most 50 per call; larger directories
+    are rejected before any conversion). output_directory is required:
+    Markdown is written there, mirroring subfolders, and source .eml files
+    are left in place. Returns a JSON summary with total, successes,
+    failures, output_paths, and errors.
 
     Use convert_eml to retrieve individual converted file content.
     """
@@ -221,7 +224,7 @@ def convert_directory(
     dir_path = Path(directory).expanduser().resolve()
     if not dir_path.is_dir():
         raise FileNotFoundError(f"Directory not found: {directory}")
-    if output_directory is None:
+    if not output_directory:
         raise ValueError("output_directory is required for MCP directory conversion")
 
     files = _iter_source_eml_files(dir_path)

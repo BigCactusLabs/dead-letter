@@ -256,13 +256,30 @@ def test_convert_directory_returns_summary(tmp_path: Path):
     assert result["errors"] == []
 
 
-def test_convert_directory_requires_output_directory(tmp_path: Path):
+@pytest.mark.anyio
+async def test_convert_directory_schema_requires_output_directory():
+    """The published inputSchema must match the runtime requirement."""
+    from mcp import Client
+
+    from dead_letter.backend.mcp_server import MCP_MAX_DIRECTORY_FILES, mcp
+
+    async with Client(mcp) as client:
+        result = await client.list_tools()
+
+    tool = next(t for t in result.tools if t.name == "convert_directory")
+    assert set(tool.input_schema["required"]) == {"directory", "output_directory"}
+    assert tool.input_schema["properties"]["output_directory"]["type"] == "string"
+    assert f"at most {MCP_MAX_DIRECTORY_FILES} per call" in tool.description
+
+
+@pytest.mark.parametrize("output_directory", [None, ""])
+def test_convert_directory_requires_output_directory(tmp_path: Path, output_directory):
     from dead_letter.backend.mcp_server import convert_directory
 
     eml_dir = _make_eml_dir(tmp_path, count=1)
 
     with pytest.raises(ValueError, match="output_directory"):
-        convert_directory(directory=str(eml_dir))
+        convert_directory(directory=str(eml_dir), output_directory=output_directory)
 
     assert not list(eml_dir.glob("*.md"))
 
@@ -282,11 +299,14 @@ def test_convert_directory_dry_run(tmp_path: Path):
     assert result["total"] == 1
 
 
-def test_convert_directory_not_found():
+def test_convert_directory_not_found(tmp_path: Path):
     from dead_letter.backend.mcp_server import convert_directory
 
     with pytest.raises(FileNotFoundError, match="not_a_real_dir"):
-        convert_directory(directory="/tmp/not_a_real_dir")
+        convert_directory(
+            directory="/tmp/not_a_real_dir",
+            output_directory=str(tmp_path / "output"),
+        )
 
 
 def test_convert_directory_with_preset(tmp_path: Path):

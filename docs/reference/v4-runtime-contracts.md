@@ -820,7 +820,8 @@ These differ from the CLI and the Python API:
   `"move"` and `"delete"` are rejected with a `ValueError`. The original `.eml`
   is never modified over MCP.
 - **`convert_directory` requires `output_directory`.** Unlike `convert_dir`, it
-  has no in-place default.
+  has no in-place default. The inputSchema lists it as required, and an empty
+  string is rejected.
 - **Directory batches cap at 50 files.** `MCP_MAX_DIRECTORY_FILES = 50`; a larger
   directory is rejected before any conversion runs.
 
