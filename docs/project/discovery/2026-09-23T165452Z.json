@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-09-23T16:54:52.222631+00:00",
+  "identity": "io.github.BigCactusLabs/dead-letter",
+  "results": [
+    {
+      "surface": "official-registry",
+      "status": "present",
+      "identity": "io.github.BigCactusLabs/dead-letter",
+      "version": "0.4.0",
+      "registry_status": "active",
+      "packages": [
+        {
+          "registryType": "pypi",
+          "identifier": "dead-letter",
+          "version": "0.4.0"
+        },
+        {
+          "registryType": "mcpb",
+          "identifier": "https://github.com/BigCactusLabs/dead-letter/releases/download/v0.4.0/dead-letter-mcp-0.4.0.mcpb",
+          "version": "0.4.0"
+        },
+        {
+          "registryType": "oci",
+          "identifier": "ghcr.io/bigcactuslabs/dead-letter@sha256:b0dc1c4d76370bf2315a9d5fe46d1bdfe3f932b1894c8edf51f71cda2b95ac22"
+        }
+      ],
+      "scope": "exact Official Registry latest-version endpoint; not downstream admission or runtime validation",
+      "evidence": [
+        {
+          "url": "https://registry.modelcontextprotocol.io/v0.1/servers/io.github.BigCactusLabs%2Fdead-letter/versions/latest",
+          "checked_at": "2026-09-23T16:54:50.565073+00:00",
+          "sha256": "1c919948ab898f96c0d4a36df80c817ed4f89e0df2931860147583b9db0b5d20",
+          "bytes": 2692
+        }
+      ]
+    },
+    {
+      "surface": "cline-marketplace",
+      "status": "not_in_snapshot",
+      "matches": [],
+      "entries_checked": 203,
+      "generated_at": "2026-09-18T20:15:28.359Z",
+      "scope": "complete published Cline marketplace catalog response; not legacy marketplace or GUI discovery",
+      "evidence": [
+        {
+          "url": "https://cline.github.io/marketplace/catalog.json",
+          "checked_at": "2026-09-23T16:54:51.426597+00:00",
+          "sha256": "187ebe2b130e25f261a805cc5930a19e275ece2c34ab21bd9df966a566b9848c",
+          "bytes": 198279
+        }
+      ]
+    },
+    {
+      "surface": "awesome-mcp-servers",
+      "status": "present",
+      "matches": [
+        {
+          "line": 920,
+          "category": "\ud83d\udcac <a name=\"communication\"></a>Communication",
+          "repo": "https://github.com/BigCactusLabs/dead-letter"
+        }
+      ],
+      "entries_checked": 4308,
+      "scope": "exact repository links in verified upstream README list rows; not open submissions or other lists",
+      "revision": "77bbee449380650cd44d4343afce7c5cddbdebc1",
+      "evidence": [
+        {
+          "url": "https://api.github.com/repos/punkpeye/awesome-mcp-servers/commits/main",
+          "checked_at": "2026-09-23T16:54:51.619825+00:00",
+          "sha256": "6723b459f228a945d6b0b84ee4f287950e552b1977022c55263fe41b3a4c1244",
+          "bytes": 7025
+        },
+        {
+          "url": "https://api.github.com/repos/punkpeye/awesome-mcp-servers/contents/README.md?ref=77bbee449380650cd44d4343afce7c5cddbdebc1",
+          "checked_at": "2026-09-23T16:54:51.865910+00:00",
+          "sha256": "dd28dabb64835ab5088920003954a7f00d2b3601da30e34753053ab61c3a983e",
+          "bytes": 1019
+        },
+        {
+          "url": "https://raw.githubusercontent.com/punkpeye/awesome-mcp-servers/77bbee449380650cd44d4343afce7c5cddbdebc1/README.md",
+          "checked_at": "2026-09-23T16:54:52.178679+00:00",
+          "sha256": "ef665a8fdd9851d036e888abf5ce6750611cfd526634b08edd60ad6c32982a67",
+          "bytes": 1858500
+        }
+      ]
+    }
+  ]
+}
