@@ -19,3 +19,6 @@ docs/superpowers/
 # Keep committed vendor assets for frontend runtime.
 !src/frontend/static/vendor/
 !src/frontend/static/vendor/**
+
+# Local Claude Code state
+.claude/
