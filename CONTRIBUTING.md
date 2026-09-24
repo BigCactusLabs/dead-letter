@@ -50,7 +50,7 @@ Individual commands remain useful for focused debugging:
 | Backend | `uv run pytest -q tests/backend` |
 | Plugin, skill, packaging, release contracts | `uv run pytest -q tests/plugin` |
 | Frontend | `node --test tests/frontend/*.test.js` |
-| Analysis SDK contracts, exact optional overlay, fake HTTP | `uv run --locked --with typesafe-sdk==0.7.0 pytest -q tests/backend/test_typesafe_provider.py tests/backend/test_analysis_contracts.py tests/backend/test_analysis_eml.py` |
+| Analysis SDK contracts, locked optional extra, fake HTTP | `uv run --locked --extra typesafe pytest -q tests/backend/test_typesafe_provider.py tests/backend/test_analysis_contracts.py tests/backend/test_analysis_eml.py` |
 | Frontend syntax | `node --check src/dead_letter/frontend/static/app.js` |
 | Plugin schema | `npx --yes @anthropic-ai/claude-code@2.1.145 plugin validate plugin/` |
 | Agent Skill validation | `gh skill publish --dry-run` |
@@ -63,7 +63,9 @@ Individual commands remain useful for focused debugging:
 | Advisory lint / format / types | `uv run ruff check .` / `uv run ruff format --check .` / `uv run pyright` |
 
 The skill command needs `gh` with skill support (2.90+); the dry run publishes
-nothing. Run the targeted suite first, then all Python/frontend checks before
+nothing. The analysis command installs the optional SDK into `.venv`; restore
+SDK-free development with `uv sync --extra dev --locked` after testing it.
+Run the targeted suite first, then all Python/frontend checks before
 claiming a shared-interface change is complete. CI also checks maintained
 Markdown links, builds/smokes MCPB on Linux/macOS/Windows, and tests containers
 natively on amd64/arm64 for container-related changes. Offline contract tests

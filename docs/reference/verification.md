@@ -18,7 +18,7 @@ python scripts/verify.py packaging
 | --- | --- |
 | `quick` | Core, backend, frontend entrypoint syntax |
 | `full` | Core, backend, plugin contracts, pinned plugin schema validator, Agent Skill dry run, frontend tests/syntax, offline release metadata |
-| `packaging` | Build wheel/sdist once, check embedded README metadata and checksums, `twine check --strict`, six isolated installed-package probes |
+| `packaging` | Build wheel/sdist once, check embedded README metadata and checksums, `twine check --strict`, eight isolated installed-package probes |
 
 For a shared-interface or release-preparation change, run `full` **and**
 `packaging`. `full` is not an assertion that every possible distribution or
@@ -48,7 +48,8 @@ Source Python checks use `uv run --locked --no-sync`: setup is explicit,
 and a verification run does not silently refresh the development environment.
 Schema/skill checks need Node/npm and `gh` with skill support (2.90+).
 Packaging resolves build/runtime dependencies and pinned `twine==7.0.0`; it
-can require network access even though it only converts synthetic local mail.
+can require network access for installation. Runtime probes use synthetic local
+mail and fake HTTP for analysis; they make no live provider requests.
 
 ## Workflow syntax and security
 
@@ -172,8 +173,9 @@ and differing wheel/sdist README bodies. It reads archives without extracting
 or importing them. Keep `SHA256SUMS` outside the distribution directory.
 
 Each wheel profile gets its own clean venv: core only, `cli`, `mcp`, `ui`,
-and `benchmark`. A sixth fresh venv installs the sdist core, checking that
-it can build/install independently too. The installer receives a direct
+`benchmark`, and `typesafe`. Two further venvs install the sdist as core and
+with `typesafe`, checking that it can build/install independently too.
+The installer receives a direct
 local artifact URL, not a package name that could resolve to PyPI. Transitive
 dependencies may still resolve from package indexes.
 
@@ -188,6 +190,12 @@ and source preservation. Core verifies optional stacks did not leak in;
 extras exercise watchfiles, a bounded four-tool MCP stdio session plus
 conversion, UI imports/packaged static resources, and a tokenizer without
 remote vocabulary downloads. A stdio handshake is not a GUI install test.
+
+Core and TypeSafe profiles check offline analysis previews and lazy SDK imports.
+The TypeSafe wheel/sdist profiles require the exact SDK before running the
+existing analysis contracts against the installed package with synthetic keys
+and fake HTTP. These checks establish packaging and transport behavior, not
+empirical profile quality. See [experimental analysis](experimental-analysis.md).
 
 The README remains hand-written. Its logo and outbound repository links are
 absolute so PyPI does not interpret them relative to a project page. The

@@ -5,7 +5,7 @@ HOST="127.0.0.1"
 PORT="8765"
 URL="http://${HOST}:${PORT}"
 READY_TIMEOUT_SECONDS=20
-SYNC_PROMPT="Dependencies are missing or stale. Run 'uv sync --all-extras' now? [y/N] "
+SYNC_PROMPT="Dependencies are missing or stale. Run 'uv sync --extra dev' now? [y/N] "
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [ "${DEAD_LETTER_PATH_PREFIX+x}" = "x" ]; then
@@ -85,7 +85,7 @@ require_uv() {
 	fi
 
 	printf "uv is not installed or not on PATH.\n"
-	printf "Install uv, then run 'uv sync --all-extras' and try again.\n"
+	printf "Install uv, then run 'uv sync --extra dev' and try again.\n"
 	exit 1
 }
 
@@ -97,13 +97,13 @@ run_uv() {
 ensure_synced() {
 	local answer
 
-	if run_uv sync --check --all-extras >/dev/null 2>&1; then
+	if run_uv sync --check --extra dev >/dev/null 2>&1; then
 		return 0
 	fi
 
 	if [ ! -t 0 ]; then
-		printf "Dependencies are missing or stale. Running 'uv sync --all-extras' (non-interactive launch)...\n"
-		if ! run_uv sync --all-extras; then
+		printf "Dependencies are missing or stale. Running 'uv sync --extra dev' (non-interactive launch)...\n"
+		if ! run_uv sync --extra dev; then
 			printf "Dependency sync failed.\n"
 			print_manual_command
 			exit 1
@@ -119,7 +119,7 @@ ensure_synced() {
 
 	case "$answer" in
 	y | Y | yes | YES)
-		if ! run_uv sync --all-extras; then
+		if ! run_uv sync --extra dev; then
 			printf "Dependency sync failed.\n"
 			print_manual_command
 			exit 1

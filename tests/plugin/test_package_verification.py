@@ -166,11 +166,13 @@ class ArtifactTests(unittest.TestCase):
 class IsolationTests(unittest.TestCase):
     def test_host_python_paths_and_project_overrides_removed(self):
         variables = {key: "HOST" for key in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "UV_PROJECT", "UV_PROJECT_ENVIRONMENT", "UV_WORKING_DIRECTORY")}
+        variables.update(TYPESAFE_API_KEY="PRIVATE_KEY", TYPESAFE_BASE_URL="https://private.example")
         with patch.dict(os.environ, variables):
             env = smoke.isolated_environment()
         for key in variables:
             self.assertNotIn(key, env)
         self.assertEqual(env["PYTHONNOUSERSITE"], "1")
+        self.assertEqual(env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"], "1")
 
     def test_noneditable_direct_artifact_outside_checkout_and_isolated_python(self):
         artifact = Path(tempfile.gettempdir()) / "test artifact.whl"
@@ -188,6 +190,26 @@ class IsolationTests(unittest.TestCase):
         self.assertIn(f"dead-letter[ui] @ {artifact.resolve().as_uri()}", install.args[0])
         self.assertEqual(probe.args[0][1], "-I")
         self.assertTrue(Path(probe.args[0][2]).is_absolute())
+
+    def test_typesafe_contracts_run_after_installed_probe(self):
+        artifact = Path(tempfile.gettempdir()) / "test artifact.whl"
+        with patch.object(smoke.subprocess, "run") as run, patch.object(smoke, "sdk_contracts") as contracts:
+            smoke.smoke(artifact, VERSION, "typesafe")
+        self.assertEqual(run.call_count, 3)
+        self.assertIn("dead-letter[typesafe]", run.call_args_list[1].args[0][-1])
+        self.assertEqual(run.call_args_list[2].args[0][1], "-I")
+        contracts.assert_called_once()
+
+    def test_sdist_typesafe_selects_sdist_and_extra(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            wheel = directory / "package.whl"
+            sdist = directory / "package.tar.gz"
+            with patch.object(smoke, "validate", return_value=[wheel, sdist]), \
+                 patch.object(smoke, "verify_checksums"), patch.object(smoke, "smoke") as installed:
+                smoke.main(["--dist-dir", str(directory), "--checksums", str(directory / "SHA256SUMS"),
+                            "--version", VERSION, "--profile", "sdist-typesafe"])
+        installed.assert_called_once_with(sdist, VERSION, "typesafe")
 
 
 class RunnerTests(unittest.TestCase):
@@ -234,7 +256,7 @@ class RunnerTests(unittest.TestCase):
             (directory / "p.tar.gz").touch()
             with patch.object(verify.shutil, "which", return_value="/bin/uv"), patch.object(verify, "run_check", side_effect=lambda name, command: {"name": name, "command": command, "status": "passed"}) as run:
                 results = verify.packaging_checks(directory, directory / "SHA256SUMS", build=False, version=VERSION)
-        self.assertEqual(len(results), 8)
+        self.assertEqual(len(results), 10)
         self.assertNotIn("build", [r["name"] for r in results])
         self.assertIn("verify", run.call_args_list[0].args[1])
         self.assertNotIn("record", run.call_args_list[0].args[1])

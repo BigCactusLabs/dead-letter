@@ -42,39 +42,47 @@ quoted-prefix debug logging were corrected. `7ea9ab4` recorded that checkpoint.
   suggest review, independently of any confidence cutoff. Failures have no answers.
 - CLI live provider selection is explicit opt-in; stderr disclosure, stdout JSON.
   Dry-run remains keyless, offline and SDK-free. `--show-state` requires dry-run.
-- `typesafe-contracts` CI installs the real exact SDK in an optional uv overlay
-  and exercises it against fake HTTP. Base CI can omit this optional dependency.
+- The original `typesafe-contracts` CI used an exact SDK overlay and exercised
+  it against fake HTTP. The #163 continuation below replaces that overlay.
 
 `f6a6714` distinguishes SDK operation timeouts from total-budget expiry and adds
 installed/configured-only doctor reporting with five tests. The SDK timeout also
 inherits built-in TimeoutError, so exception-handler ordering is significant.
 
-**Not implemented:** `dead-letter[typesafe]` packaging/lock update, atomic sidecars,
-resume, directory processing, batch scheduling or empirical inference evaluation.
-The executable checkout recipe is currently `uv run --locked --with
-typesafe-sdk==0.7.0 dead-letter analyze ... --provider typesafe`. Do not document
-an unavailable published extra or claim the base dependency lock pins this overlay.
-Core conversion, bundles, existing four MCP tools, UI, release versions and the
-base dependency graph are unchanged by this continuation.
+The original foundation used an exact SDK overlay. The #163 continuation adds
+the optional `typesafe = ["typesafe-sdk==0.7.0"]` extra and regenerates `uv.lock`.
+The checkout recipe is now `uv run --locked --extra typesafe dead-letter analyze
+... --provider typesafe`. Base/development installs do not select the extra.
+This remains unreleased; the published 0.4.0 package has no TypeSafe extra.
+
+**Not implemented:** atomic sidecars, resume, directory processing, batch
+scheduling or empirical inference evaluation. Core conversion, bundles, existing
+four MCP tools, UI and release versions are unchanged by this continuation.
+
+### SDK pin decision — September 23, 2026
+
+[Upstream 0.7.1](https://github.com/typesafe-ai/typesafe-sdk-python/compare/v0.7.0...v0.7.1)
+adds API-key validation and exception redaction. Packaging retains the adapter's
+tested 0.7.0 pin; dead-letter already validates keys before SDK use and suppresses
+SDK/HTTP logs within provider calls. This is a bounded packaging decision, not a
+claim that 0.7.0 is the latest SDK. A pin upgrade must rerun the adapter's wire,
+logging, retry and response contracts. The
+[0.7.0 metadata](https://pypi.org/pypi/typesafe-sdk/0.7.0/json) remains available
+and its wheel and sdist are not yanked. No live inference was used for this check.
 
 ## Next work, in implementation order
 
-1. Package `typesafe = ["typesafe-sdk==0.7.0"]` as an optional extra and regenerate
-   `uv.lock` with uv in a resolver-capable environment. Do not hand-invent wheel
-   hashes or modify unrelated dependency versions. Test base installs without
-   the SDK and the extra-enabled path. The current exact overlay is an executable
-   development path, not a substitute for completing packaging acceptance.
-2. Add atomic, no-clobber sidecars and validated-result-only reuse. Bind source,
+1. Add atomic, no-clobber sidecars and validated-result-only reuse (#164). Bind source,
    effective inputs, schema/profile/normalizer/model/endpoint to the saved artifact.
    Keep successful results separate from attempts. Reject corrupted, incomplete,
    failed, mismatched or stale-alias cached artifacts. Expose age/returned model;
    do not call an alias cache entry fresh inference. No raw SDK/body dumps.
-3. Add directory output and bounded worker scheduling, safe collision handling,
+2. Add directory output and bounded worker scheduling (#165), safe collision handling,
    auth fail-fast, cancellation and partial-success persistence. The adapter
    already owns retries: do not introduce a second retry loop in batch code.
    External cancellation currently propagates and cleans up the current client;
    persisting completed work/attempts across interruption is still batch work.
-4. Review/expand the synthetic seed with authorized data; create a family-separated
+3. Review/expand the synthetic seed with authorized data (#166); create a family-separated
    held-out set. Compare separate Nouls and response-expectation Choice, context
    and cleanup variants and a simple baseline. Optional live runs require separate
    authorization, never an incidental CI/install/doctor request. Measure per-label
@@ -108,6 +116,33 @@ become a negative result, and no classification authorizes mailbox actions.
 
 ## Verification record
 
+### #163 packaging continuation — September 24, 2026
+
+Local checks passed on Python 3.12:
+
+- Full source checks: 594 core, 386 backend, 415 plugin and 87 frontend tests;
+  156 subtests. The optional SDK suite was skipped in the base environment.
+- The locked-extra source suite and each isolated TypeSafe wheel/sdist install
+  passed 192 fake-HTTP contract tests. No tests were skipped in those SDK runs.
+- Independent review found that the UI launcher's `--all-extras` would install
+  the SDK and that the base install probe lacked an explicit missing-SDK failure
+  check. Both were corrected. The launcher now selects `--extra dev`; the core
+  probe checks the installed CLI's safe rejection before source reads or network
+  access. The repair passed 55 focused tests and 15 subtests.
+- Rebuilt final wheel/sdist metadata, all eight isolated install profiles and
+  strict README rendering passed. The plugin schema and README validators needed
+  scoped retries outside sandbox cache restrictions; their initial runner exits
+  were failures, not clean full-run passes. Agent Skill dry run and release
+  metadata checks passed. No existing locked package version changed.
+
+The full source results preceded the bounded launcher/probe repair; focused
+repair checks and final artifact checks cover that delta. This is local evidence,
+not a new CI run, release, live-provider test or profile-quality evaluation.
+The SDK-free development environment was restored. Sidecars, resume, batches and
+reviewed held-out evaluation remain pending.
+
+### Original foundation evidence
+
 Earlier EML implementation: CI run
 [35387757900](https://github.com/BigCactusLabs/dead-letter/actions/runs/35387757900)
 passed 316 core, 354 backend, 92 plugin and 87 frontend tests (849 total), plus
@@ -122,8 +157,9 @@ production exception ordering without weakening the failing assertion. Final
 head-specific CI results are recorded on PR #117; do not infer a pass from this
 historical initial result.
 
-The working container cannot install the repository/SDK dependency graph, so
-local checks are Python compilation, not a substituted parser/SDK test harness.
-Actual EML and SDK tests run in GitHub CI. Every request fixture and credential is
-synthetic, transport is fake HTTP, and no private mailbox or real API key is used.
+The original working container could not install the repository/SDK dependency
+graph, so its local checks were Python compilation, not a substituted parser/SDK
+test harness. Actual EML and SDK tests ran in GitHub CI. Every request fixture and
+credential was synthetic, transport was fake HTTP, and no private mailbox or real
+API key was used.
 No live quality, calibration, cost, provider-latency or stable-profile claim.

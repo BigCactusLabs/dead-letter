@@ -1,5 +1,6 @@
-"""Stdlib regressions for the installed-package probe itself."""
+"""Regressions for the installed-package probe and its analysis preflight guard."""
 from pathlib import Path
+import importlib.metadata
 import subprocess
 import sys
 import tempfile
@@ -43,6 +44,31 @@ class CliProbeTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "fresh"):
                     probe.cli_probe(fixture)
             self.assertEqual(run.call_count, 1)
+
+
+class TypeSafeProbeTests(unittest.TestCase):
+    def test_missing_sdk_probe_rejects_successful_cli(self):
+        from dead_letter.backend import analysis_cli
+        with patch.object(analysis_cli, "main", return_value=0):
+            with self.assertRaisesRegex(RuntimeError, "did not fail closed"):
+                probe.missing_typesafe_probe(Path("synthetic.eml"))
+
+    def test_missing_sdk_probe_rejects_source_access(self):
+        from dead_letter.analysis import service
+        with patch.object(service, "preflight", return_value=None):
+            with self.assertRaisesRegex(RuntimeError, "read source or attempted network"):
+                probe.missing_typesafe_probe(Path("synthetic.eml"))
+
+    def test_wrong_sdk_version_fails_before_import(self):
+        with patch.object(probe.importlib.metadata, "version", return_value="0.7.1"), \
+             patch.object(probe.builtins, "__import__", side_effect=AssertionError("SDK imported")):
+            with self.assertRaisesRegex(RuntimeError, "wrong TypeSafe SDK version"):
+                probe.typesafe_install_probe()
+
+    def test_missing_sdk_cannot_be_a_successful_probe(self):
+        with patch.object(probe.importlib.metadata, "version", side_effect=importlib.metadata.PackageNotFoundError("typesafe-sdk")):
+            with self.assertRaises(importlib.metadata.PackageNotFoundError):
+                probe.typesafe_install_probe()
 
 
 if __name__ == "__main__":

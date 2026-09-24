@@ -3,13 +3,20 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import builtins
+from contextlib import redirect_stderr, redirect_stdout
+import importlib
 import importlib.metadata
 import importlib.resources
 import importlib.util
+import io
 import json
+import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
+from unittest.mock import patch
 
 BODY = "Packaged installation preserves this synthetic message."
 TOOLS = {"convert_eml", "convert_eml_to_bundle", "convert_directory", "get_diagnostics"}
@@ -22,6 +29,98 @@ def require(condition: bool, message: str) -> None:
 
 def executable(name: str) -> str:
     return str(Path(sys.executable).with_name(name + (".exe" if sys.platform == "win32" else "")))
+
+
+def offline_preview_probe(fixture: Path) -> None:
+    """Prove a present key or installed extra cannot trigger provider access."""
+    original_import = builtins.__import__
+    original_import_module = importlib.import_module
+    original_get = type(os.environ).get
+    original_getitem = type(os.environ).__getitem__
+
+    def guarded_import(name, *args, **kwargs):
+        require(not name.startswith("typesafe_sdk"), "preview imported the TypeSafe SDK")
+        return original_import(name, *args, **kwargs)
+
+    def guarded_import_module(name, *args, **kwargs):
+        require(not name.startswith("typesafe_sdk"), "preview imported the TypeSafe SDK")
+        return original_import_module(name, *args, **kwargs)
+
+    def guarded_get(environ, key, *args):
+        require(key != "TYPESAFE_API_KEY", "preview read the TypeSafe API key")
+        return original_get(environ, key, *args)
+
+    def guarded_getitem(environ, key):
+        require(key != "TYPESAFE_API_KEY", "preview read the TypeSafe API key")
+        return original_getitem(environ, key)
+
+    def forbidden_network(*args, **kwargs):
+        raise RuntimeError("preview attempted network access")
+
+    os.environ["TYPESAFE_API_KEY"] = "SYNTHETIC_PACKAGE_PROBE_KEY"
+    try:
+        with (patch.object(builtins, "__import__", guarded_import),
+              patch.object(importlib, "import_module", guarded_import_module),
+              patch.object(type(os.environ), "get", guarded_get),
+              patch.object(type(os.environ), "__getitem__", guarded_getitem),
+              patch.object(socket, "socket", forbidden_network),
+              patch.object(socket, "create_connection", forbidden_network)):
+            from dead_letter.analysis import prepare_eml
+            preview = prepare_eml(fixture).preview()
+        require(preview["execution_status"] == "skipped", "preview did not skip execution")
+        require(preview["remote_enabled"] is False, "preview enabled remote access")
+        require("typesafe_sdk" not in sys.modules, "preview loaded the TypeSafe SDK")
+    finally:
+        os.environ.pop("TYPESAFE_API_KEY", None)
+
+
+def missing_typesafe_probe(fixture: Path) -> None:
+    """Exercise installed CLI preflight with a real absent SDK and a synthetic key."""
+    from dead_letter.analysis import service
+    from dead_letter.backend import analysis_cli
+
+    original_import = builtins.__import__
+    original_import_module = importlib.import_module
+
+    def guarded_import(name, *args, **kwargs):
+        require(not name.startswith("typesafe_sdk"), "missing-SDK preflight imported the SDK")
+        return original_import(name, *args, **kwargs)
+
+    def guarded_import_module(name, *args, **kwargs):
+        require(not name.startswith("typesafe_sdk"), "missing-SDK preflight imported the SDK")
+        return original_import_module(name, *args, **kwargs)
+
+    def forbidden(*args, **kwargs):
+        raise RuntimeError("missing-SDK preflight read source or attempted network access")
+
+    stdout, stderr = io.StringIO(), io.StringIO()
+    with (patch.dict(os.environ, {"TYPESAFE_API_KEY": "SYNTHETIC_PACKAGE_PROBE_KEY"}),
+          patch.object(builtins, "__import__", guarded_import),
+          patch.object(importlib, "import_module", guarded_import_module),
+          patch.object(service, "prepare_eml", forbidden),
+          patch.object(socket.socket, "connect", forbidden),
+          patch.object(socket.socket, "connect_ex", forbidden),
+          patch.object(socket.socket, "sendto", forbidden),
+          patch.object(socket, "create_connection", forbidden),
+          patch.object(socket, "getaddrinfo", forbidden),
+          redirect_stdout(stdout), redirect_stderr(stderr)):
+        code = analysis_cli.main([str(fixture), "--provider", "typesafe"])
+    require(code == 1, "missing SDK did not fail closed")
+    require(not stdout.getvalue(), "missing SDK produced an analysis result")
+    require(json.loads(stderr.getvalue()) == {
+        "execution_status": "failed", "stage": "analysis",
+        "error_code": "typesafe_sdk_not_installed",
+    }, "missing SDK returned the wrong error")
+    require("typesafe_sdk" not in sys.modules, "missing-SDK preflight loaded the SDK")
+
+
+def typesafe_install_probe() -> None:
+    require(importlib.metadata.version("typesafe-sdk") == "0.7.0", "wrong TypeSafe SDK version")
+    import typesafe_sdk
+    import httpx2
+    for module in (typesafe_sdk, httpx2):
+        location = Path(module.__file__).resolve()
+        require(location.is_relative_to(Path(sys.prefix).resolve()), f"not importing the venv installation: {location}")
 
 
 def cli_probe(fixture: Path) -> None:
@@ -85,10 +184,16 @@ async def mcp_probe(fixture: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", required=True)
-    parser.add_argument("--extra", choices=("core", "cli", "mcp", "ui", "benchmark"), required=True)
-    parser.add_argument("--artifact-url", required=True)
+    parser.add_argument("--version")
+    parser.add_argument("--extra", choices=("core", "cli", "mcp", "ui", "benchmark", "typesafe"))
+    parser.add_argument("--artifact-url")
+    parser.add_argument("--check-typesafe-only", action="store_true")
     args = parser.parse_args()
+    if args.check_typesafe_only:
+        typesafe_install_probe()
+        return 0
+    if not all((args.version, args.extra, args.artifact_url)):
+        parser.error("--version, --extra and --artifact-url are required for an artifact probe")
     import dead_letter
 
     location = Path(dead_letter.__file__).resolve()
@@ -108,9 +213,13 @@ def main() -> int:
     fixture.write_bytes(content)
     cli_probe(fixture)
 
+    if args.extra in {"core", "typesafe"}:
+        offline_preview_probe(fixture)
+
     if args.extra == "core":
-        for module in ("watchfiles", "mcp", "fastapi", "tiktoken"):
+        for module in ("watchfiles", "mcp", "fastapi", "tiktoken", "typesafe_sdk", "httpx2"):
             require(importlib.util.find_spec(module) is None, f"core unexpectedly includes {module}")
+        missing_typesafe_probe(fixture)
     elif args.extra == "cli":
         import watchfiles
         require(callable(watchfiles.watch), "watchfiles surface missing")
@@ -127,6 +236,8 @@ def main() -> int:
         # No downloaded tokenizer data or network access is needed for the probe.
         encoding = tiktoken.Encoding(name="package-smoke", pat_str=r".", mergeable_ranks={bytes([i]): i for i in range(256)}, special_tokens={})
         require(len(encoding.encode("smoke")) == 5, "tokenizer surface failed")
+    elif args.extra == "typesafe":
+        typesafe_install_probe()
     require(fixture.read_bytes() == content, "packaged conversion modified its source")
     print(json.dumps({"extra": args.extra, "version": args.version, "import_path": str(location), "artifact_url": args.artifact_url}))
     return 0

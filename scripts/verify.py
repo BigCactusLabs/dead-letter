@@ -17,7 +17,7 @@ import time
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILES = ("core", "cli", "mcp", "ui", "benchmark", "sdist")
+PROFILES = ("core", "cli", "mcp", "ui", "benchmark", "sdist", "typesafe", "sdist-typesafe")
 SUITES = ("core", "backend", "plugin", "frontend", "metadata")
 
 

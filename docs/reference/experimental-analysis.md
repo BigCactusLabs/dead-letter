@@ -10,10 +10,13 @@ CLI and async Python consumers receive versioned JSON results. Neither candidate
 profile has empirical email-triage quality results. Ordinary conversion, bundles,
 MCP tools and UI remain local and do not enable analysis when a key is present.
 
-There is **no `dead-letter[typesafe]` package extra yet**. The tested SDK is an
-optional exact `typesafe-sdk==0.7.0` uv overlay. The base dependency lock and release
-versions are unchanged. Packaging the extra with a regenerated, verified lock is
-still tracked under #110. Do not use the commands below with the older PyPI release.
+The development checkout includes an optional `typesafe` extra, pinned to
+`typesafe-sdk==0.7.0` in the dependency lock. Base and normal development installs
+remain SDK-free. This extra is **not available in the published 0.4.0 package**;
+use the checkout commands below until a release includes it.
+Commands with `--extra typesafe` install the SDK into the project environment.
+To return to SDK-free development after testing, run
+`uv sync --extra dev --locked`.
 
 ## Start with a local preview
 
@@ -49,7 +52,7 @@ log, or saved JSON. A populated environment variable is not consent by itself.
 TypeSafe and may incur provider charges:**
 
 ```bash
-uv run --locked --with typesafe-sdk==0.7.0 dead-letter analyze message.eml \
+uv run --locked --extra typesafe dead-letter analyze message.eml \
   --provider typesafe --profile triage-choice-v1 --identity me@example.com
 ```
 
@@ -232,9 +235,9 @@ JEV inference, accuracy, calibration or latency benchmarks. No real key or priva
 email was submitted during this implementation. Human-review/expand the seed and
 compare both profiles on a family-separated held-out set before freezing semantics.
 
-Still pending: packaged optional extra plus verified lock, atomic collision-safe
-sidecars, valid-result-only resume/alias-age handling, directory concurrency and
-partial-success persistence. See the [implementation checkpoint](../project/2026-09-18-issue-110-analysis-foundation.md).
+Still pending: atomic collision-safe sidecars, valid-result-only resume/alias-age
+handling, directory concurrency and partial-success persistence. See the
+[implementation checkpoint](../project/2026-09-18-issue-110-analysis-foundation.md).
 
 ## First-party implementation references
 

@@ -17,13 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pre-render quotes, signature text, unknown attribution and missing timezones
   remain distinct. `--show-state` explicitly exposes private local evidence (#110).
 - Explicit single-message BYOK execution through the optional, exact TypeSafe SDK
-  0.7.0 uv overlay. CLI provider opt-in and async Python permission gates disclose
+  0.7.0. CLI provider opt-in and async Python permission gates disclose
   the validated host before sending normalized evidence. Request-local SDK logging
   filters, redirect/response-size guards, SDK-owned bounded retries, safe attempt
   records and versioned result envelopes keep failures distinct from predictions.
   `doctor` reports SDK/key presence without contacting the provider. Dry-run and
-  ordinary conversion remain local; packaged extra, sidecars/resume and batches
+  ordinary conversion remain local; sidecars/resume and batches
   remain pending. See [experimental analysis](docs/reference/experimental-analysis.md).
+- Optional `typesafe` extra with the exact SDK pin in `uv.lock`, plus isolated
+  wheel/sdist checks for offline previews and real-SDK fake-HTTP contracts.
+  Base installs and the UI launcher remain SDK-free; installing the extra does
+  not enable remote analysis (#163).
 - A dedicated SDK contract workflow runs the real pinned SDK with synthetic EML
   and fake HTTP, including import-time DEBUG logging, timeout/cancellation,
   redirect/auth, response-validation and retry boundaries. No live inference or

@@ -66,6 +66,7 @@ ui = [
   "uvicorn[standard]>=0.45.0",
 ]
 benchmark = ["tiktoken>=0.8.0"]
+typesafe = ["typesafe-sdk==0.7.0"]
 dev = [
   "dead-letter[ui,mcp,benchmark]",
   "anyio>=4.0.0",

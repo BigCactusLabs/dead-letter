@@ -158,8 +158,8 @@ def test_helper_resyncs_when_binary_exists_but_deps_are_stale(tmp_path: Path) ->
 
     assert result.returncode == 0
     assert log_path.read_text(encoding="utf-8").splitlines() == [
-        "uv:sync --check --all-extras",
-        "uv:sync --all-extras",
+        "uv:sync --check --extra dev",
+        "uv:sync --extra dev",
         "ui:--host 127.0.0.1 --port 8765",
         "open:http://127.0.0.1:8765",
     ]

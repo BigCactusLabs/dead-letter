@@ -89,10 +89,12 @@ The docs-link workflow inventories maintained, tracked Markdown, including
 root, plugin, skill, container/bundle, and benchmark guides; it excludes mail
 fixtures rather than relying on a stale directory glob.
 
-The separate `typesafe-contracts` workflow installs the exact optional SDK
-overlay and runs the analysis contract tests with fake HTTP only; they are not
-part of `verify.py`. Locally:
-`uv run --locked --with typesafe-sdk==0.7.0 pytest -q tests/backend/test_typesafe_provider.py tests/backend/test_analysis_contracts.py tests/backend/test_analysis_eml.py`.
+The separate `typesafe-contracts` workflow installs the locked optional `typesafe`
+extra and runs the analysis contract tests with fake HTTP only. The default
+source setup omits the SDK; `verify.py packaging` also runs these contracts
+against extra-enabled wheel/sdist installs. Locally:
+`uv run --locked --extra typesafe pytest -q tests/backend/test_typesafe_provider.py tests/backend/test_analysis_contracts.py tests/backend/test_analysis_eml.py`.
+Restore SDK-free development with `uv sync --extra dev --locked` afterward.
 
 CI also builds/smokes MCPB on Linux, macOS, and Windows. Container-related
 paths trigger native amd64/arm64 Docker checks. With no Docker daemon, run
