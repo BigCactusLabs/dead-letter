@@ -11,6 +11,7 @@ runtime contracts and historical design notes serve different purposes.
 | Convert a Gmail Takeout `.mbox` export locally | [Gmail Takeout / MBOX](reference/gmail-takeout.md) |
 | Contain MBOX parser hangs or crashes with per-message deadlines | [MBOX Workers](reference/mbox-workers.md) |
 | Measure or audit a full MBOX import | [MBOX Validation](reference/mbox-validation.md) |
+| Compare fresh MBOX worker costs and review the reuse decision | [Worker benchmark evidence](project/2026-09-24-mbox-worker-benchmark.md) |
 | Install the MCP server in VS Code, Cursor, or Cline | [Client Installation](reference/client-installation.md) |
 | Choose CLI, UI, MCPB, plugin, container, or skill | [Installation and distribution map](reference/distribution.md) |
 | Configure an agent/MCP client safely | [Agent install guide](../llms-install.md) |
