@@ -62,8 +62,9 @@ legitimately differ. Consult the selected release or plugin manifest, not
 `main`, to identify a published version. `main` can contain the next release's
 metadata before its artifacts exist.
 
-`gh skill install` chooses the latest tagged release by default; this repo
-also has plugin tags. For a reviewed package snapshot, use
+`gh skill install` chooses the latest GitHub release by default; the
+release-less `plugin-v*` tags do not affect it. For a reviewed package
+snapshot, use
 `gh skill install BigCactusLabs/dead-letter dead-letter@vX.Y.Z --agent codex`,
 replacing `X.Y.Z` with a published package release that contains the skill.
 A full commit pin is also supported. The pin attaches to the **skill name**.
