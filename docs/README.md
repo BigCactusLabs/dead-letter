@@ -8,6 +8,7 @@ runtime contracts and historical design notes serve different purposes.
 | Task | Read |
 | --- | --- |
 | Understand the product and convert a first email | [README](../README.md) |
+| Follow tested Markdown, RAG, MCP, Cabinet, and audit workflows | [Conversion recipes](recipes/README.md) |
 | Convert a Gmail Takeout `.mbox` export locally | [Gmail Takeout / MBOX](reference/gmail-takeout.md) |
 | Contain MBOX parser hangs or crashes with per-message deadlines | [MBOX Workers](reference/mbox-workers.md) |
 | Measure or audit a full MBOX import | [MBOX Validation](reference/mbox-validation.md) |
