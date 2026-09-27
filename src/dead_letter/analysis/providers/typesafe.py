@@ -29,8 +29,8 @@ from dead_letter.analysis.profiles import get_profile
 from dead_letter.analysis.responses import validate_response
 from dead_letter.analysis.providers._logging import install_filters, private_provider_logs
 
-SDK_VERSION = "0.7.0"
-ADAPTER_VERSION = "typesafe-sdk-0.7.0-v1"
+SDK_VERSION = "0.7.1"
+ADAPTER_VERSION = "typesafe-sdk-0.7.1-v1"
 SYSTEM_ONE_PATH = "/v1/systemone"
 MAX_RESPONSE_BYTES = 512_000
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,255}\Z")

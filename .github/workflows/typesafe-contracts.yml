@@ -25,6 +25,6 @@ jobs:
       - name: Sync development and exact optional SDK dependencies from lock
         run: uv sync --extra dev --extra typesafe --locked
       - name: Require the tested SDK (do not silently skip the suite)
-        run: uv run --locked --no-sync python -c "import typesafe_sdk, httpx2; from importlib.metadata import version; assert version('typesafe-sdk') == '0.7.0'"
+        run: uv run --locked --no-sync python -c "import typesafe_sdk, httpx2; from importlib.metadata import version; assert version('typesafe-sdk') == '0.7.1'"
       - name: SDK and EML contract tests with fake HTTP only
         run: uv run --locked --no-sync pytest -q tests/backend/test_typesafe_provider.py tests/backend/test_analysis_contracts.py tests/backend/test_analysis_eml.py

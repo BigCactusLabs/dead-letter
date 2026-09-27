@@ -60,7 +60,7 @@ class TypeSafeProbeTests(unittest.TestCase):
                 probe.missing_typesafe_probe(Path("synthetic.eml"))
 
     def test_wrong_sdk_version_fails_before_import(self):
-        with patch.object(probe.importlib.metadata, "version", return_value="0.7.1"), \
+        with patch.object(probe.importlib.metadata, "version", return_value="0.7.0"), \
              patch.object(probe.builtins, "__import__", side_effect=AssertionError("SDK imported")):
             with self.assertRaisesRegex(RuntimeError, "wrong TypeSafe SDK version"):
                 probe.typesafe_install_probe()
