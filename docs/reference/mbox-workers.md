@@ -176,8 +176,9 @@ current evidence. No private email was used or uploaded, and a real authorized
 multi-GB Takeout archive has not been tested; that gap is tracked in
 [#138](https://github.com/BigCactusLabs/dead-letter/issues/138).
 
-Next foundation work remains: measure end-to-end startup/copy overhead on
-representative messages before considering worker reuse; evaluate portable host
+The [synthetic worker benchmark](../project/2026-09-24-mbox-worker-benchmark.md)
+measures startup/copy overhead and defers reuse. Next foundation work remains:
+obtain representative real-corpus evidence; evaluate portable host
 resource caps separately; and design durable resume around both file publication
 and report receipts, tracked in
 [#139](https://github.com/BigCactusLabs/dead-letter/issues/139). None is

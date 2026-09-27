@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Five [conversion recipes](docs/recipes/README.md) for Markdown/Obsidian,
   RAG preprocessing, local MCP conversion, Cabinet archiving, and report/quality
   auditing, with shared synthetic mail and a released-package smoke check (#162).
+- A repeated synthetic MBOX worker benchmark separates measured worker lifetime
+  and parent publication, verifies output/provenance/diagnostic parity, and records
+  timing variability and bounded disk/RSS observations. See the
+  [measurement guide](docs/reference/mbox-validation.md) (#141).
 - Experimental semantic analysis: two candidate TypeSafe/JEV triage profiles,
   normalized-evidence state assembly, redacted-by-default previews, effective-input
   fingerprints, native-answer validation and a synthetic development seed. Real

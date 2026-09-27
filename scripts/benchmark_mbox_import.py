@@ -165,7 +165,7 @@ def artifact_digest(output: Path, root: Path, bundles: bool, digest: Any, index:
 
 
 def rss_metrics() -> dict[str, int | str | None]:
-    """Linux semantics only: child high-water mark is NOT a process-tree total."""
+    """Native platform units; child high-water mark is NOT a process-tree total."""
     metrics: dict[str, int | str | None] = {
         "importer_peak_rss_bytes": None, "largest_reaped_worker_peak_rss_bytes": None,
         "rss_method": "unavailable_on_this_platform",
@@ -176,6 +176,12 @@ def rss_metrics() -> dict[str, int | str | None]:
             importer_peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024,
             largest_reaped_worker_peak_rss_bytes=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss * 1024,
             rss_method="linux_getrusage_separate_high_water_marks_not_tree_total",
+        )
+    elif sys.platform == "darwin":
+        import resource
+        metrics.update(
+            importer_peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+            rss_method="darwin_getrusage_self_bytes_children_unavailable",
         )
     return metrics
 

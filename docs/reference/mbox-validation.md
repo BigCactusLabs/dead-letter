@@ -1,7 +1,7 @@
 # MBOX validation and full-import measurements
 
-Availability: development-checkout helper on PR #118, built on the streaming
-importer in #115. Run `uv sync --extra dev --locked` first. This does not change
+Availability: development-checkout helpers for the streaming importer and
+optional workers released in 0.4.0. Run `uv sync --extra dev --locked` first. This does not change
 CLI defaults, release versions, or the worker isolation contract.
 
 The earlier `scripts/benchmark_mbox_stream.py` checks framing, oversized-record
@@ -143,8 +143,10 @@ Linux exposes two separate process-lifetime high-water marks:
 reported separately and never added into a fictitious measured process-tree
 peak. The importer high-water mark includes imports, corpus generation and audit
 work, not just conversion. Worker high-water is the largest reaped child, not a
-sum across workers. macOS/Windows RSS is **null**, not zero, because this helper
-does not implement those platforms' distinct measurement contracts.
+sum across workers. On macOS, importer RSS uses `RUSAGE_SELF.ru_maxrss` in
+bytes, as specified by the [current Apple XNU contract](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/man/man2/getrusage.2).
+The macOS child metric and both Windows metrics are **null**, not zero; no
+unverified child aggregation or unit conversion is applied.
 
 `--trace-allocations` optionally adds `traced_importer_peak_bytes` for allocations
 traced during the loop. It excludes pre-existing allocations and worker heaps,
@@ -160,6 +162,60 @@ checkout commit, hardware and storage alongside the summaries; package versions
 alone do not uniquely identify unreleased code. Do not enable worker reuse or
 change defaults based solely on small synthetic CI results. Python startup cost
 and real MIME/attachment work are different workloads.
+
+## Reproduce the bounded worker-cost matrix
+
+```bash
+uv run python scripts/benchmark_mbox_workers.py --messages 4 --repeats 3 \
+  --work-dir /private/tmp > worker-matrix.json
+```
+
+Use an existing local directory appropriate to the host in `--work-dir`
+(`/tmp` on Linux). Check the reported filesystem: a RAM-backed temporary
+directory measures a different storage path from a persistent disk. The helper
+has no private-archive option. It generates four
+separate deterministic workloads: small plain mail, approximately 1 MiB plain
+mail, mail with an 8 MiB binary attachment, and HTML with 1,200 quoted paragraphs.
+It runs flat and bundle output through direct conversion and the actual timed
+worker. Each trial uses a fresh importer process and destination. Each admitted
+worker message uses the production fresh-process launcher. The helper permits
+1–32 records per trial and two or three repeats; defaults are four and three.
+It alternates direct/worker order and retains all samples, medians, ranges and
+sample standard deviations. It makes no significance or confidence claim from
+three repeats. Corpus construction and import-only probes run outside trials.
+
+The existing audit checks all artifact bytes, source ranges, provenance and
+diagnostics. Known record counts must match; parity must also hold across
+repeats. A mismatch or failed record suppresses aggregate timing comparisons and
+causes a failing exit. This checks fidelity between paths, not independent MIME
+correctness. Each trial retains raw elapsed, throughput, RSS and artifact data.
+
+The extra metrics have deliberately narrow meanings:
+
+| Metric | Scope |
+| --- | --- |
+| `import_probes` | Fresh `-I` interpreter with importer/supervisor imports, recording import and process elapsed time. A startup-cost proxy, not the timed worker's measured startup component. Do not subtract it from worker conversion. |
+| `direct_record_conversion_seconds` | Direct parsing, rendering and writing, excluding archive framing. Includes final publication; the direct publication split is unavailable. |
+| `worker_lifetime_seconds` | Actual supervisor launch/wait interval, including child startup/import, conversion, receipt, exit and parent exit observation. Child conversion and startup cannot be separated without additional instrumentation. |
+| `parent_publication_seconds` | Parent artifact validation/copy within `_publish`; a subset of worker-mode `conversion_seconds`, not an additional duration. |
+| `disk_observation_seconds` | Checkpoint inspection overhead, also included in conversion time. |
+| `temporary_checkpoint_max_*` | Maximum observed per-message staging bytes. Direct: staged EML after conversion. Worker: staged EML plus private workspace after worker exit and before final copy. Excludes the source archive, report spools, parser transient files and filesystem metadata. A lower bound, not a sampled peak. |
+| `final_disk` | All final artifacts plus report, measured before cleanup. Logical bytes and allocated `st_blocks × 512` bytes; allocation is null where unavailable. Shared/compressed filesystem storage is not an exclusive physical-usage measurement. |
+
+Corpus bytes are reported separately. Source, staging and final output use the
+selected filesystem (`TMPDIR` is set for each trial). Temporary staging overlaps
+with growing final output; do not add independently observed maxima and call the
+sum a measured whole-run peak. Importer RSS includes imports and auditing;
+macOS worker RSS and simultaneous process-tree RSS remain unavailable. File
+hashing warms caches, and the host is not tuned or isolated from other work.
+Private-function timing hooks exist only in the helper; runtime code, timeout
+behavior and receipt validation remain unchanged.
+
+See the [September 24 evidence and reuse decision](../project/2026-09-24-mbox-worker-benchmark.md)
+for the measured machine, exact helper hashes, full samples and limits. The
+helper exits 0 only when every matrix cell passes parity. A worker timeout or
+trial failure stops the matrix with a nonzero exit; incomplete output is not a
+valid comparison.
 
 ## Validate an authorized real export locally
 
@@ -221,7 +277,9 @@ Reviewed September 19, 2026.
 ## Next decisions
 
 Complete an authorized real-corpus run and inspect sample quality before claiming
-broad Takeout compatibility. Measure startup/copy overhead before evaluating
-worker reuse. Durable resume must separately reconcile completed-but-unreceipted
+broad Takeout compatibility. The bounded synthetic worker-cost matrix supports
+retaining fresh-worker isolation; see the
+[reuse decision](../project/2026-09-24-mbox-worker-benchmark.md) before reopening it.
+Durable resume must separately reconcile completed-but-unreceipted
 output and preserve user-edited files; matching hashes in this audit does not
-implement that protocol. Neither experiment blocks independent review of #115.
+implement that protocol. These experiments do not block the released importer.
