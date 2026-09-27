@@ -70,6 +70,23 @@ logging, retry and response contracts. The
 [0.7.0 metadata](https://pypi.org/pypi/typesafe-sdk/0.7.0/json) remains available
 and its wheel and sdist are not yanked. No live inference was used for this check.
 
+### SDK pin upgrade — September 27, 2026
+
+#179 moves the exact pin to 0.7.1 and supersedes the September 23 retention.
+Upstream changes: the SDK strips the API key and rejects empty, non-ASCII,
+non-printable or space-containing keys; transport `RequestError`s now raise
+`TypeSafeAPITimeoutError`/`TypeSafeAPIConnectionError` from a redacted copy
+without the request or traceback frames, not from the original. dead-letter's
+own key check (printable ASCII 33–126, at most 8192 characters) already accepts
+only keys 0.7.1 leaves unchanged. Failure classification checks only the
+top-level SDK exception type, never its cause chain. The logging filters
+still apply to the `typesafe_sdk` source logger, which 0.7.1 does not rename.
+The transport-error test now requires the exact code for each error type.
+With 0.7.1 installed, the provider, analysis contract and EML suites passed
+(192 tests). SDK-free, backend/core/plugin passed (1397, 1 skipped), as did
+`release.py check` and all 11 `verify.py packaging` checks, including both
+TypeSafe install probes. No live inference was used.
+
 ## Next work, in implementation order
 
 1. Add atomic, no-clobber sidecars and validated-result-only reuse (#164). Bind source,

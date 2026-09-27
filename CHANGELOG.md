@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Five [conversion recipes](docs/recipes/README.md) for Markdown/Obsidian,
+  RAG preprocessing, local MCP conversion, Cabinet archiving, and report/quality
+  auditing, with shared synthetic mail and a released-package smoke check (#162).
 - A repeated synthetic MBOX worker benchmark separates measured worker lifetime
   and parent publication, verifies output/provenance/diagnostic parity, and records
   timing variability and bounded disk/RSS observations. See the
@@ -21,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pre-render quotes, signature text, unknown attribution and missing timezones
   remain distinct. `--show-state` explicitly exposes private local evidence (#110).
 - Explicit single-message BYOK execution through the optional, exact TypeSafe SDK
-  0.7.0. CLI provider opt-in and async Python permission gates disclose
+  0.7.1. CLI provider opt-in and async Python permission gates disclose
   the validated host before sending normalized evidence. Request-local SDK logging
   filters, redirect/response-size guards, SDK-owned bounded retries, safe attempt
   records and versioned result envelopes keep failures distinct from predictions.

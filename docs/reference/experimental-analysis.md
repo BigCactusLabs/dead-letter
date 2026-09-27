@@ -11,7 +11,7 @@ profile has empirical email-triage quality results. Ordinary conversion, bundles
 MCP tools and UI remain local and do not enable analysis when a key is present.
 
 The development checkout includes an optional `typesafe` extra, pinned to
-`typesafe-sdk==0.7.0` in the dependency lock. Base and normal development installs
+`typesafe-sdk==0.7.1` in the dependency lock. Base and normal development installs
 remain SDK-free. This extra is **not available in the published 0.4.0 package**;
 use the checkout commands below until a release includes it.
 Commands with `--extra typesafe` install the SDK into the project environment.
@@ -119,7 +119,7 @@ use the shared snapshot rather than build another MIME parser.
 
 ## Provider, credentials and privacy
 
-The adapter lazily imports exactly SDK 0.7.0. Missing or different versions fail
+The adapter lazily imports exactly SDK 0.7.1. Missing or different versions fail
 preflight rather than silently using an untested API. Normal conversion, previews,
 help and imports do not load the SDK. `dead-letter doctor` reports only installed
 and configured booleans and does not contact TypeSafe or validate a real key.
@@ -241,9 +241,9 @@ handling, directory concurrency and partial-success persistence. See the
 
 ## First-party implementation references
 
-Checked September 18, 2026:
+Checked September 18, 2026; SDK source link updated to 0.7.1 on September 27, 2026:
 
-- [SDK 0.7.0 source](https://github.com/typesafe-ai/typesafe-sdk-python/tree/v0.7.0)
+- [SDK 0.7.1 source](https://github.com/typesafe-ai/typesafe-sdk-python/tree/v0.7.1)
   and [changelog](https://docs.typesafe.ai/sdk/python/changelog).
 - [SDK usage](https://docs.typesafe.ai/sdk/python/usage),
   [retry policy](https://docs.typesafe.ai/sdk/python/api/retries), and
