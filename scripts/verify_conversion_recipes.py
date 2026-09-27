@@ -66,8 +66,9 @@ def stop(process: subprocess.Popen[str]) -> None:
 
 def check(python: Path) -> dict[str, object]:
     bin_dir = python.absolute().parent
-    cli = bin_dir / "dead-letter"
-    server = bin_dir / "dead-letter-mcp"
+    suffix = ".exe" if sys.platform == "win32" else ""
+    cli = bin_dir / f"dead-letter{suffix}"
+    server = bin_dir / f"dead-letter-mcp{suffix}"
     require(
         python.is_file() and cli.is_file() and server.is_file(),
         "released interpreter/entry points missing",
