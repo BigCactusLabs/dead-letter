@@ -1,0 +1,26 @@
+From: Mara Chen <mara@cedarworks.example>
+To: Operations <ops@northstar.example>
+Date: Tue, 15 Sep 2026 09:20:00 -0400
+Subject: Cedar Works order 4821 - revised delivery
+Message-ID: <order-4821@cedarworks.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="cedar-4821"
+
+--cedar-4821
+Content-Type: text/plain; charset="utf-8"
+
+Hello team,
+
+Please move order 4821 to Thursday, 17 September. The revised quantities are
+in the attached CSV. Please confirm the delivery window by Wednesday noon.
+
+Regards,
+Mara
+
+--cedar-4821
+Content-Type: text/csv; charset="utf-8"; name="order-4821.csv"
+Content-Disposition: attachment; filename="order-4821.csv"
+Content-Transfer-Encoding: base64
+
+c2t1LHF1YW50aXR5Cm5vdGVib29rLDI0CnBlbiw0OAo=
+--cedar-4821--
