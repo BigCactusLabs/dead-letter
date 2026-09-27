@@ -115,7 +115,7 @@ def missing_typesafe_probe(fixture: Path) -> None:
 
 
 def typesafe_install_probe() -> None:
-    require(importlib.metadata.version("typesafe-sdk") == "0.7.0", "wrong TypeSafe SDK version")
+    require(importlib.metadata.version("typesafe-sdk") == "0.7.1", "wrong TypeSafe SDK version")
     import typesafe_sdk
     import httpx2
     for module in (typesafe_sdk, httpx2):

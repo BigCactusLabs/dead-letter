@@ -225,12 +225,16 @@ def test_long_retry_after_does_not_exceed_budget():
     assert result["error_code"] in {"provider_budget_exceeded", "provider_rate_limited"}
 
 
-@pytest.mark.parametrize("error_type", ["ConnectError", "ReadTimeout"])
-def test_transport_errors_are_safe(error_type):
+@pytest.mark.parametrize(("error_type", "code"), [
+    ("ConnectError", "provider_connection_failed"), ("ReadTimeout", "provider_timeout"),
+])
+def test_transport_errors_are_safe(error_type, code):
+    # SDK 0.7.1 re-raises from a redacted copy of the transport error; the
+    # classification must still follow the original error type exactly.
     def handler(request):
         raise getattr(httpx, error_type)(PRIVATE + KEY, request=request)
     result = evaluate(handler, config=TypeSafeConfig(max_retries=0))
-    assert result["error_code"] in {"provider_connection_failed", "provider_timeout"}
+    assert result["error_code"] == code
     assert result["billing_status"] == "unknown"
     assert len(result["attempts"]) == 1
     assert PRIVATE not in json.dumps(result) and KEY not in json.dumps(result)
