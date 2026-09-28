@@ -141,6 +141,8 @@ become a negative result, and no classification authorizes mailbox actions.
 
 ### #165 directory continuation — unreleased
 
+Initial implementation, before adversarial review:
+
 - Added 41 directory contract cases using synthetic EML and the actual pinned
   SDK with `httpx2.MockTransport`. The final directory/provider/sidecar set passed
   209 tests on Python 3.12.13. The earlier 206-case set also passed on Python
@@ -155,6 +157,21 @@ become a negative result, and no classification authorizes mailbox actions.
 - Initial checks found and repaired a CLI path-error regression. A further test
   reproduced a Python 3.12 cyclic-output-symlink failure; target validation now
   stays in the per-item sidecar path, so other messages can continue.
+
+Repair round 1 preserves the original cancellation exception, including outer
+`TimeoutError` conversion and TaskGroup cancellation on Python 3.12. Prefix
+collisions and output-root aliases are checked before work, CLI `--jobs` is
+strict and directory-only, and cancelled unsent items remain `not_started`.
+Summary models/usage now count only fresh successes published in the current
+run; discarded fresh calls remain unknown usage. Single-message interrupted
+attempt persistence is explicitly documented and tested with real CLI SIGINT.
+
+The directory/provider/sidecar/EML/CLI set passed 276 tests on each of Python
+3.12.13 and 3.14.5. The full backend suite passed 727 tests. The quick runner
+passed core (1456 passed, two platform skips), backend (727 passed) and frontend
+syntax. The added regressions include both prefix-overlap orders, case aliases on the case-insensitive host,
+output-root refusal, cancellation identity, concurrent-winner accounting and a
+non-success throttle-streak reset. All provider calls used fake HTTP.
 
 These are fake-HTTP execution and persistence checks, not profile-quality,
 provider-latency, billing, publication or release evidence. Reviewed held-out
