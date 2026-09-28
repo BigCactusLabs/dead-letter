@@ -15,7 +15,14 @@ from dead_letter.core.forwarding import (
 )
 from dead_letter.core.types import ConversationZone, ZoneKind
 
-_QUOTED_LINE_RE = re.compile(r"(?m)^[ \t]*>")
+# Outlook-style reply separator line, which opens a From/Sent header block.
+_OUTLOOK_SEPARATOR_RE = re.compile(
+    r"^[ \t]*(?:_{20,}|-{3,}[ \t]*Original Message[ \t]*-{3,})[ \t\r]*$", re.IGNORECASE
+)
+_OUTLOOK_HEADER_RE = re.compile(
+    r"^[ \t]*\*{0,2}(?P<label>From|Sent|Date|To|Cc|Bcc|Subject|Reply-To):\*{0,2}",
+    re.IGNORECASE,
+)
 # One ``>`` quote level, removed from the body of a quoted forward.
 _QUOTE_LEVEL_RE = re.compile(r"(?m)^[ \t]*>[ \t]?")
 _INDENT_SENTINEL_PREFIX = "\ue000dead-letter-indent-"
@@ -63,18 +70,65 @@ def parse_email_replies(text: str) -> list[EmailReply]:
     return replies
 
 
-def _reply_boundary_before(prefix: str) -> bool:
-    """True when reply history starts before the first forward separator.
-
-    Mirrors the HTML path, which stops at the first reply boundary: a quoted
-    ``>`` line, or a boundary mail-parser-reply finds (``On ... wrote:``,
-    an Outlook ``____`` + From/Sent block, and similar).
-    """
-    if _QUOTED_LINE_RE.search(prefix):
-        return True
-    if not prefix.strip():
+def _outlook_block_ends_at(lines: list[str], last: int) -> bool:
+    """True when ``lines[last]`` closes a separator + From/Sent header block."""
+    first = last
+    labels: set[str] = set()
+    while first >= 0:
+        match = _OUTLOOK_HEADER_RE.match(lines[first])
+        if match is None:
+            break
+        labels.add(match.group("label").lower())
+        first -= 1
+    if "from" not in labels or not labels & {"sent", "date"}:
         return False
-    return len(parse_email_replies(prefix)) > 1
+    while first >= 0 and not lines[first].strip():
+        first -= 1
+    return first >= 0 and _OUTLOOK_SEPARATOR_RE.match(lines[first]) is not None
+
+
+def _separator_in_reply_history(prefix: str) -> bool:
+    """True when a plain-text separator sits inside reply history.
+
+    ``prefix`` is the text before the separator line. Walking back over blank
+    and ``>``-quoted lines, the separator is reply history only when the
+    line reached is a reply attribution mail-parser-reply recognizes
+    ("On ... wrote:") or closes an Outlook ``____`` /
+    ``-----Original Message-----`` + From/Sent header block. A ``>`` line or
+    attribution-like line in the forwarder's own note, followed by ordinary
+    text, does not count.
+    """
+    lines = prefix.split("\n")
+    last = len(lines) - 1
+    while last >= 0 and (not lines[last].strip() or lines[last].lstrip().startswith(">")):
+        last -= 1
+    if last < 0:
+        return False
+    # Outlook history is unquoted, so everything after its separator +
+    # From/Sent block is reply history.
+    for index, line in enumerate(lines):
+        if _OUTLOOK_SEPARATOR_RE.match(line):
+            block_end = index + 1
+            while block_end < len(lines) and not lines[block_end].strip():
+                block_end += 1
+            while block_end < len(lines) and _OUTLOOK_HEADER_RE.match(lines[block_end]):
+                block_end += 1
+            if block_end > index + 1 and _outlook_block_ends_at(lines, block_end - 1):
+                return True
+    if _OUTLOOK_HEADER_RE.match(lines[last]):
+        return _outlook_block_ends_at(lines, last)
+    tail = lines[last].strip()
+    if not tail.endswith((":", "：")):
+        return False
+    for reply in parse_email_replies(prefix)[1:]:
+        header_lines = [line.strip() for line in str(reply.headers or "").splitlines() if line.strip()]
+        if (
+            header_lines
+            and header_lines[-1] == tail
+            and not _OUTLOOK_HEADER_RE.match(header_lines[0])
+        ):
+            return True
+    return False
 
 
 def _opens_quoted_forward(source: str, start: int) -> bool:
@@ -110,7 +164,7 @@ def _segment_forwarded_message(
         )
         and followed_by_header_line(normalized, match.end(), quoted=bool(match.group("quote")))
     ]
-    if not matches or _reply_boundary_before(source[: matches[0].start()]):
+    if not matches or _separator_in_reply_history(source[: matches[0].start()]):
         return None
     if not split_forwards:
         # One header/body pair holding everything after the first marker keeps
