@@ -1003,3 +1003,126 @@ def test_fullfsync_missing_constant_uses_fsync(tmp_path, monkeypatch):
     fd = os.open(tmp_path / "output", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     sidecar._write_file(fd, b"synthetic")
     assert calls == [fd]
+
+
+@pytest.mark.parametrize(
+    "inconsistency",
+    ["empty", "only_failed", "only_started", "not_attempted", "retry_count"],
+)
+def test_success_requires_consistent_provider_execution(
+    setup, monkeypatch, inconsistency
+):
+    source, output, calls = setup
+    result = run(source, output)
+    if inconsistency == "empty":
+        result["attempts"] = []
+    elif inconsistency in {"only_failed", "only_started"}:
+        result["attempts"][0]["status"] = (
+            "interrupted_or_failed" if inconsistency == "only_failed" else "started"
+        )
+    elif inconsistency == "not_attempted":
+        result["billing_status"] = "not_attempted"
+    else:
+        result["retry_count"] = 1
+    # Execution consistency is validation, not part of effective-input identity.
+    assert sidecar._reuse_key(result) == result["reuse_key"]
+    save(output, result)
+    saved_bytes = output.read_bytes()
+    original_source = source.read_bytes()
+    monkeypatch.setattr(sidecar, "preflight", forbidden)
+    monkeypatch.setattr(TypeSafeProvider, "evaluate", forbidden)
+    with pytest.raises(AnalysisError, match="^analysis_output_corrupt$"):
+        run(source, output)
+    assert len(calls) == 1
+    assert output.read_bytes() == saved_bytes
+    assert source.read_bytes() == original_source
+
+
+@pytest.mark.parametrize("retry", [False, True])
+def test_completed_fake_provider_success_remains_reusable(setup, monkeypatch, retry):
+    source, output, calls = setup
+    evaluate = TypeSafeProvider.evaluate
+    if retry:
+
+        async def with_retry(self, request, **kwargs):
+            outcome = await evaluate(self, request, **kwargs)
+            completed = outcome["attempts"][0]
+            failed = {
+                **completed,
+                "status": "interrupted_or_failed",
+                "http_status": None,
+            }
+            outcome["attempts"] = [failed, {**completed, "number": 2}]
+            outcome["retry_count"] = 1
+            return outcome
+
+        monkeypatch.setattr(TypeSafeProvider, "evaluate", with_retry)
+    written = run(source, output)
+    monkeypatch.setattr(sidecar, "preflight", forbidden)
+    monkeypatch.setattr(TypeSafeProvider, "evaluate", forbidden)
+    reused = run(source, output)
+    assert reused["sidecar"]["outcome"] == "reused"
+    assert reused["attempts"] == written["attempts"]
+    assert reused["billing_status"] == "unknown"
+    assert reused["retry_count"] == int(retry)
+    assert len(calls) == 1
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Named-user expansion differs on Windows")
+def test_unknown_output_user_is_safe_python_and_cli_error(setup, monkeypatch, capsys):
+    from pathlib import Path
+    from uuid import uuid4
+
+    source, output, calls = setup
+    unknown = f"~dl164_missing_{uuid4().hex}/analysis.json"
+    # Verify the real expansion failure rather than relying on a mocked lookup.
+    with pytest.raises(RuntimeError):
+        Path(unknown).expanduser()
+    monkeypatch.setattr(sidecar, "preflight", forbidden)
+    monkeypatch.setattr(sidecar, "prepare_eml", forbidden)
+    with pytest.raises(AnalysisError, match="^analysis_output_invalid$"):
+        run(source, unknown)
+    assert (
+        cli.main(
+            ["analyze", str(source), "--provider", "typesafe", "--output", unknown]
+        )
+        == 2
+    )
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err) == {
+        "execution_status": "failed",
+        "stage": "analysis",
+        "error_code": "analysis_output_invalid",
+    }
+    assert unknown not in captured.err and "Traceback" not in captured.err
+    assert not calls and set(output.parent.iterdir()) == {source}
+
+
+@pytest.mark.parametrize("operation", ["expanduser", "absolute"])
+def test_output_computation_oserror_is_safe_error(
+    setup, monkeypatch, capsys, operation
+):
+    from pathlib import Path
+
+    source, output, calls = setup
+
+    def fail(*args):
+        raise OSError(errno.EACCES, "PRIVATE_DESTINATION_DETAIL")
+
+    monkeypatch.setattr(Path, operation, fail)
+    monkeypatch.setattr(sidecar, "preflight", forbidden)
+    monkeypatch.setattr(sidecar, "prepare_eml", forbidden)
+    with pytest.raises(AnalysisError, match="^analysis_output_invalid$"):
+        run(source, output)
+    assert (
+        cli.main(
+            ["analyze", str(source), "--provider", "typesafe", "--output", str(output)]
+        )
+        == 2
+    )
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err)["error_code"] == "analysis_output_invalid"
+    assert "PRIVATE_DESTINATION_DETAIL" not in captured.err
+    assert not calls

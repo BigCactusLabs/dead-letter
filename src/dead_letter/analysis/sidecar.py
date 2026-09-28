@@ -280,6 +280,9 @@ def _validate(result: dict, prepared: PreparedEmail) -> None:
     if result["retry_count"] != max(0, len(attempts) - 1):
         raise ValueError("invalid retry count")
     if result["execution_status"] == "succeeded":
+        if (result["billing_status"] != "unknown"
+                or not any(attempt["status"] == "response_received" for attempt in attempts)):
+            raise ValueError("inconsistent successful execution")
         if (result["error_code"] is not None or result["evaluated_at"] is None
                 or result["assessment_status"] is None or "sdk_version" not in result):
             raise ValueError("incomplete success")
@@ -364,7 +367,10 @@ async def analyze_to_sidecar(
         raise AnalysisError("unsupported_analysis_provider")
     if type(alias_max_age) not in (int, float) or not math.isfinite(alias_max_age) or alias_max_age < 0:
         raise AnalysisError("invalid_alias_max_age")
-    target = Path(output).expanduser().absolute()  # Never resolve the target symlink.
+    try:
+        target = Path(output).expanduser().absolute()  # Never resolve the target symlink.
+    except (RuntimeError, OSError):
+        raise AnalysisError("analysis_output_invalid") from None
     effective = config or TypeSafeConfig.from_environment()
     options = dict(profile_name=profile_name, focus_identity=focus_identity,
                    max_context_segments=max_context_segments, model=model,

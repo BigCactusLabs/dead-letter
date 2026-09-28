@@ -90,6 +90,8 @@ check that the parent is writable. `PATH.attempts` must be absent or a real,
 non-symlink directory; an existing attempts directory is also probed for writes.
 A directory, symlink (including a broken link), other non-regular output target,
 or unusable destination is refused with `analysis_output_invalid` (exit 2).
+An unresolvable `~user` or destination path computation error uses the same safe
+error before source reads or provider preflight.
 These checks also apply to reuse and leave no probe file after success. They
 cannot prevent permissions or available space from changing later. The source
 `.eml` is never written or moved. `--output` with `--dry-run` is rejected;
@@ -122,6 +124,10 @@ platform permission semantics) and must be treated as sensitive.
 
 An existing result must parse as strict JSON, pass envelope and native-answer
 validation, have `execution_status: succeeded`, and match the current reuse key.
+A saved success must include at least one `response_received` attempt,
+`billing_status: unknown`, and a retry count consistent with its attempt count.
+Inconsistent execution records are `analysis_output_corrupt`; these checks do
+not add attempt or billing fields to the reuse key.
 Reuse performs local destination checks, preparation and validation: no provider
 call, network, SDK import, or API key is needed. It does not claim fresh inference.
 Source location alone does not change identity. Stdout `source.reference` reports
