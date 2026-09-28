@@ -193,21 +193,22 @@ def annotate_quoted_zones(
 
 
 def _annotate_forwarded_zone(zone: ConversationZone) -> ConversationZone:
-    """Move a forward's leading From/Date/Subject block into metadata.
+    """Record a forward's From/Date/Subject as metadata.
 
-    Uses ``forward_*`` keys, not ``attribution_*``: snapshot readers take
-    ``attribution_from`` as a segment author, and forwarded authors stay
-    unknown there.
+    Content is left intact: snapshot readers see the full forwarded header
+    block, and the renderer removes the heading lines when it builds the
+    structured section. Uses ``forward_*`` keys, not ``attribution_*``:
+    snapshot readers take ``attribution_from`` as a segment author, and
+    forwarded authors stay unknown there.
     """
     parsed = parse_forward_headers(zone.content)
     if parsed is None:
         return zone
-    fields, rest = parsed
+    fields, _rest = parsed
     new_meta = dict(zone.metadata)
     new_meta["forward_from"] = fields["from"]
-    date = fields.get("date") or fields.get("sent")
-    if date:
-        new_meta["forward_date"] = date
+    if fields.get("date"):
+        new_meta["forward_date"] = fields["date"]
     if fields.get("subject"):
         new_meta["forward_subject"] = fields["subject"]
-    return replace(zone, content=rest, metadata=new_meta)
+    return replace(zone, metadata=new_meta)

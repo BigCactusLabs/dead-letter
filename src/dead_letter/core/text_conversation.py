@@ -8,9 +8,14 @@ import warnings
 from mailparser_reply import EmailReply, EmailReplyParser
 
 from dead_letter.core.conversation import ConversationResult
-from dead_letter.core.forwarding import FORWARD_MARKER_RE, normalize_marker_text
+from dead_letter.core.forwarding import (
+    FORWARD_MARKER_RE,
+    followed_by_header_line,
+    normalize_marker_text,
+)
 from dead_letter.core.types import ConversationZone, ZoneKind
 
+_QUOTED_LINE_RE = re.compile(r"(?m)^[ \t]*>")
 # One ``>`` quote level, removed from the body of a quoted forward.
 _QUOTE_LEVEL_RE = re.compile(r"(?m)^[ \t]*>[ \t]?")
 _INDENT_SENTINEL_PREFIX = "\ue000dead-letter-indent-"
@@ -58,6 +63,20 @@ def parse_email_replies(text: str) -> list[EmailReply]:
     return replies
 
 
+def _reply_boundary_before(prefix: str) -> bool:
+    """True when reply history starts before the first forward separator.
+
+    Mirrors the HTML path, which stops at the first reply boundary: a quoted
+    ``>`` line, or a boundary mail-parser-reply finds (``On ... wrote:``,
+    an Outlook ``____`` + From/Sent block, and similar).
+    """
+    if _QUOTED_LINE_RE.search(prefix):
+        return True
+    if not prefix.strip():
+        return False
+    return len(parse_email_replies(prefix)) > 1
+
+
 def _opens_quoted_forward(source: str, start: int) -> bool:
     """Accept a ``>``-quoted marker only where a quote block opens without an
     attribution line, as in Apple Mail's plain-text forwards.
@@ -79,15 +98,19 @@ def _opens_quoted_forward(source: str, start: int) -> bool:
 def _segment_forwarded_message(
     source: str, *, split_forwards: bool = False
 ) -> ConversationResult | None:
+    normalized = normalize_marker_text(source)
     matches = [
         match
-        for match in FORWARD_MARKER_RE.finditer(normalize_marker_text(source))
+        for match in FORWARD_MARKER_RE.finditer(normalized)
         # Quoted (Apple Mail) markers are only split out for structured
         # output; latest mode keeps its pre-existing handling of them.
-        if not match.group("quote")
-        or (split_forwards and _opens_quoted_forward(source, match.start()))
+        if (
+            not match.group("quote")
+            or (split_forwards and _opens_quoted_forward(source, match.start()))
+        )
+        and followed_by_header_line(normalized, match.end(), quoted=bool(match.group("quote")))
     ]
-    if not matches:
+    if not matches or _reply_boundary_before(source[: matches[0].start()]):
         return None
     if not split_forwards:
         # One header/body pair holding everything after the first marker keeps

@@ -165,7 +165,8 @@ def convert_eml(
     convert_eml_to_bundle to save the decoded attachment files.
 
     thread_mode="structured" adds a section per earlier reply or forwarded
-    message; forwarded content is kept in either mode.
+    message. Gmail HTML forwards and unquoted plain-text forwards are kept in
+    latest mode too; a plain-text forward inside ">" quoting is not.
 
     Presets bundle common flag combinations:
     - default: strips signatures, tracking pixels, signature images

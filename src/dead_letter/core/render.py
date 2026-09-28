@@ -7,6 +7,7 @@ import re
 
 import yaml
 
+from dead_letter.core.forwarding import parse_forward_headers
 from dead_letter.core.types import (
     ConvertOptions,
     ParsedEmail,
@@ -132,8 +133,17 @@ def _build_forward_sections(threaded: ThreadedContent) -> list[str]:
 
 
 def _render_forward_section(zone: Zone) -> str:
-    header = _attribution_header(zone, lead="Forwarded from", key="forward") or _FORWARD_FALLBACK_HEADER
-    body = _render_zone_content(zone, zone.content)
+    header = _attribution_header(zone, lead="Forwarded from", key="forward")
+    content = zone.content
+    if header is None:
+        header = _FORWARD_FALLBACK_HEADER
+    else:
+        # The heading carries From/Date/Subject; drop those lines only here so
+        # zone content (and snapshot text) keeps the full header block.
+        parsed = parse_forward_headers(content)
+        if parsed is not None:
+            content = parsed[1]
+    body = _render_zone_content(zone, content)
     if body:
         return f"{header}\n\n{body}"
     return header

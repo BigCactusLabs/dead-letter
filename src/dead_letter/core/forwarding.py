@@ -75,22 +75,36 @@ _APPLE_FORWARD_LABELS: tuple[str, ...] = (
 # splitter use these.
 FORWARD_MARKER_PATTERNS: tuple[str, ...] = (
     # Gmail keeps this English separator in every UI language checked.
-    r"-{2,}\s*Forwarded message\s*-{2,}",
-    r"-{3,10}\s*(?:" + "|".join(_DASHED_FORWARD_LABELS) + r")\s*-{3,10}",
-    r"(?:" + "|".join(_APPLE_FORWARD_LABELS) + r")\s?:",
+    r"-{2,}[ \t]*Forwarded message[ \t]*-{2,}",
+    r"-{3,10}[ \t]*(?:" + "|".join(_DASHED_FORWARD_LABELS) + r")[ \t]*-{3,10}",
+    r"(?:" + "|".join(_APPLE_FORWARD_LABELS) + r")[ \t]?:",
 )
 
 _MARKER_ALTERNATION = "|".join(f"(?:{pattern})" for pattern in FORWARD_MARKER_PATTERNS)
 
-# A marker on its own line anywhere in a text, optionally behind ``>`` quote
-# markers (Apple Mail quotes its plain-text forwards). Match against text
-# passed through ``normalize_marker_text``.
+# A marker on its own unindented line, optionally behind ``>`` quote markers
+# (Apple Mail quotes its plain-text forwards). Match against text passed
+# through ``normalize_marker_text``.
 FORWARD_MARKER_RE = re.compile(
-    rf"(?im)^[ \t]*(?P<quote>(?:>[ \t]?)+)?(?:{_MARKER_ALTERNATION})[ \t\r]*$"
+    rf"(?im)^(?P<quote>(?:>[ \t]?)+)?(?:{_MARKER_ALTERNATION})[ \t\r]*$"
 )
+
+# A header-like line ("From:", "Von:", "De :", "| Subject: |", "**From:**")
+# that must follow a plain-text separator, so prose that merely contains a
+# separator-shaped line is not split as a forward.
+_HEADER_LIKE_LINE_RE = re.compile(
+    r"^(?:\|[ \t]*)?\*{0,2}[^\W\d_][\w.-]*(?: [\w.-]+)?\*{0,2}[ \t]?:"
+)
+_QUOTE_PREFIX_RE = re.compile(r"^(?:>[ \t]?)+")
 
 # Trailing Markdown hard-break syntax that html_to_markdown emits for ``<br>``.
 _HARD_BREAK_RE = re.compile(r"(?:\s|\\)+$")
+
+# Labels folded into a forward section heading; other header lines stay in
+# the forwarded content.
+_HEADING_LABELS = {"from": "from", "date": "date", "sent": "date", "subject": "subject"}
+_EMPHASIS_RE = re.compile(r"\*\*|__")
+_DOUBLE_ANGLE_RE = re.compile(r"<<([^<>]*)>>")
 
 _FORWARD_HEADER_LINE_RE = re.compile(
     r"^\*{0,2}(?P<label>From|Date|Sent|Subject|To|Cc|Bcc|Reply-To):\*{0,2}[ \t]*(?P<value>.*)$",
@@ -123,28 +137,64 @@ def split_forward_marker(text: str) -> tuple[str | None, str]:
     return _HARD_BREAK_RE.sub("", first_line.strip()), rest
 
 
-def parse_forward_headers(text: str) -> tuple[dict[str, str], str] | None:
-    """Parse the leading ``From:``/``Date:``/``Subject:`` block of a forward.
+def followed_by_header_line(text: str, end: int, *, quoted: bool) -> bool:
+    """True when the first non-blank line after ``end`` looks like a header."""
+    for line in text[end:].split("\n"):
+        if quoted:
+            line = _QUOTE_PREFIX_RE.sub("", line.lstrip())
+        candidate = line.strip()
+        if candidate:
+            return _HEADER_LIKE_LINE_RE.match(candidate) is not None
+    return False
 
-    Returns ``(fields, rest)`` with lower-cased labels when a ``From:`` line
-    is present, otherwise None so the caller keeps the header lines as text.
+
+def _clean_sender(value: str) -> str:
+    """Drop Markdown emphasis and doubled angle brackets from a parsed sender."""
+    value = _EMPHASIS_RE.sub("", value)
+    return _WHITESPACE_RE.sub(" ", _DOUBLE_ANGLE_RE.sub(r"<\1>", value)).strip()
+
+
+def parse_forward_headers(text: str) -> tuple[dict[str, str], str] | None:
+    """Parse the header block at the top of a forward.
+
+    The block is the run of header lines before the first blank line; in the
+    Apple Mail layout (bold labels, blank-separated) it runs to the first
+    non-header line instead. The first From, Date (or Sent) and Subject lines
+    become ``fields`` for the section heading and are removed from ``rest``;
+    To/Cc/Bcc/Reply-To and repeated labels stay in ``rest``. Returns None
+    when no From line is found, so the caller keeps the text unchanged.
     """
-    lines = text.lstrip("\n").split("\n")
+    lines = text.split("\n")
     fields: dict[str, str] = {}
-    consumed = 0
+    consumed: set[int] = set()
+    apple_layout: bool | None = None
+    end = len(lines)
     for index, line in enumerate(lines):
         candidate = _HARD_BREAK_RE.sub("", line.strip())
         if not candidate:
-            # Apple Mail separates header lines with blank lines.
-            continue
+            if apple_layout is None or apple_layout:
+                continue
+            end = index
+            break
         match = _FORWARD_HEADER_LINE_RE.match(candidate)
         if match is None:
+            end = index
             break
+        if apple_layout is None:
+            apple_layout = candidate.startswith("**")
+        key = _HEADING_LABELS.get(match.group("label").lower())
         value = _WHITESPACE_RE.sub(" ", match.group("value")).strip()
-        label = match.group("label").lower()
-        if value and label not in fields:
-            fields[label] = value
-        consumed = index + 1
+        if key is not None and value and key not in fields:
+            fields[key] = value
+            consumed.add(index)
     if "from" not in fields:
         return None
-    return fields, "\n".join(lines[consumed:]).lstrip("\n")
+    fields["from"] = _clean_sender(fields["from"])
+    kept = [
+        line
+        for index, line in enumerate(lines[:end])
+        if index not in consumed and (line.strip() or not apple_layout)
+    ]
+    if apple_layout and kept:
+        kept.append("")
+    return fields, "\n".join([*kept, *lines[end:]]).strip("\n")
