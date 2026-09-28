@@ -35,7 +35,7 @@ Official Registry and Awesome states, not the unresolved other directories.
 
 | Surface | Observed state (September 23) | Next concrete step |
 | --- | --- | --- |
-| Official MCP Registry | **present**. Exact identity active at **0.4.0** (latest), with PyPI `dead-letter` 0.4.0, the v0.4.0 MCPB release asset, and an OCI digest `ghcr.io/bigcactuslabs/dead-letter@sha256:b0dc1c4d…`. Four versions are listed: 0.4.0, 0.3.1, 0.2.5, 0.2.4. | Recheck after the next maintainer release; do not advertise unreleased artifacts as already published. |
+| Official MCP Registry | **present**. Exact identity active at **0.4.5** (latest, confirmed 2026-09-28 via `release.py status`), with PyPI `dead-letter` 0.4.5, the v0.4.5 MCPB release asset, and an OCI digest `ghcr.io/bigcactuslabs/dead-letter@sha256:18ff617fb594196e12e3574809caf8ff5b79bea8a831f801b8fc2ac6418a82a1`. Five versions are listed: 0.4.5, 0.4.0, 0.3.1, 0.2.5, 0.2.4. | Recheck after the next maintainer release; do not advertise unreleased artifacts as already published. |
 | Glama | **present**. [Listing](https://glama.ai/mcp/servers/BigCactusLabs/dead-letter) shows four tools and a Claim button; claim state is not confirmed. The `convert_directory` summary is the tool's docstring, which omits the required output directory and the 50-file limit. | Owner sign-in on the [claim page](https://glama.ai/mcp/servers/BigCactusLabs/dead-letter/admin); request a re-sync after the next release. |
 | GitHub MCP Registry / VS Code gallery | **not_in_snapshot**. All 288 entries of `api.mcp.github.com/v0.1/servers` were enumerated; dead-letter is not among them. | Onboarding route is contested; see [GitHub MCP Registry and Agent Finder](#github-mcp-registry-and-agent-finder). |
 | PulseMCP | **unknown**. The v0beta API returned 410 (sunset); the v0.1 API returned 401 and requires an `X-API-Key` header; the site search returned a Cloudflare 403. | Recheck with an API key or a manual owner lookup, and record a listing URL/version. |
@@ -104,11 +104,11 @@ description, which is the tool's own docstring verbatim:
 > failures, output_paths, and errors. Use convert_eml to retrieve individual
 > converted file content.
 
-The root cause is in the server, not Glama: the 0.4.0 MCP input schema marks
-`output_directory` optional, although the tool rejects a call without it and
-permits at most 50 `.eml` files per call. The schema is fixed in this change
-(it now requires `output_directory` and documents the 50-file limit); the fix
-ships in 0.4.5. Glama needs a re-sync after the claim and the 0.4.5 release. No
+The root cause is in the server, not Glama: the 0.4.0 MCP input schema marked
+`output_directory` optional, although the tool rejected a call without it and
+permitted at most 50 `.eml` files per call. The schema fix (requiring
+`output_directory` and documenting the 50-file limit) shipped in the 0.4.5
+release (2026-09-28). Glama needs a re-sync after the claim to pick it up. No
 upstream listing edit was made here.
 
 ## Cline submission package and tested path

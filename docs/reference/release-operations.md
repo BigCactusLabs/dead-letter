@@ -21,6 +21,15 @@ It must contain the target version's wheel and sdist with their original SHA-256
 values. **Do not regenerate it from the current checkout or from PyPI**: comparing
 PyPI to itself would not establish that the tested build was published.
 
+Recover it from the release workflow's run-scoped `python-package-<commit>`
+Actions artifact:
+
+```bash
+gh run download RELEASE_RUN_ID -n "python-package-$RELEASE_SHA"
+python scripts/release.py status --version X.Y.Z \
+  --checksums "python-package-$RELEASE_SHA/SHA256SUMS"
+```
+
 Without that evidence, available PyPI files and a matching tap cannot become
 `verified`. Older releases, including ones that predate the build-once gate,
 may never have had the new evidence assets. Their absence is reported, not

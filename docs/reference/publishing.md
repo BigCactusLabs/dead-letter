@@ -37,7 +37,11 @@ contract. No catalog enrollment or license change is implied by this runbook.
 
 ## Prepare The Release
 
-Start from a reviewed working branch. Choose the next package version
+Start from a reviewed working branch, named outside the reserved `release`
+ref — for example `chore/release-X.Y.Z`. A branch literally named
+`release/...` is rejected by the remote: the repository already has a
+`release` branch, and Git treats the two as a directory/file conflict.
+Choose the next package version
 explicitly; the helper does not choose a version, create tags, or publish a
 package. Python 3.12+ is sufficient for the offline commands:
 
@@ -158,6 +162,14 @@ gh release create "v$VERSION" --verify-tag --latest \
   --notes-file /absolute/path/outside-the-repo/release-notes.md
 ```
 
+Build `release-notes.md` from the dated `## [X.Y.Z] - YYYY-MM-DD` section of
+`CHANGELOG.md`; do not draft new release prose. Rewrite that section's
+repo-relative links (`](docs/...)`, `](README.md)`, `](plugin/...)`) to
+absolute `https://github.com/BigCactusLabs/dead-letter/blob/vX.Y.Z/...` links,
+since relative links do not resolve on the GitHub release page. Title the
+release `dead-letter X.Y.Z`. Keep the notes file itself outside the repository,
+as the path above shows.
+
 Do not reuse or move an existing release tag. The workflow checks the tag
 namespace, every version relationship, dated changelog, tag-to-commit
 identity, main ancestry, source tests, and the packaged-artifact gate **before**
@@ -184,6 +196,15 @@ readiness retry does not re-upload the successful package. The readiness gate
 also protects the container's comparison against the exact PyPI tool schemas;
 it must not be removed just because a local container build needs no PyPI
 release. Avoid duplicating readiness checks in separate shell loops.
+
+The separate `client-installs` workflow (`published-launcher` on each OS,
+`cline-registration`) runs on every PR and on `main`; it launches the latest
+*public* PyPI package and compares its tools against `PUBLISHED_TOOLS`. When a
+release adds or changes MCP tools, that comparison fails on the preparation PR
+and on `main` after merge until the new version reaches PyPI. This workflow is
+not part of the release gate and does not block tagging or publication. Once
+`wait-pypi` confirms readiness, rerun its failed jobs on the release commit to
+turn `main` green again.
 
 Use a maintainer-authorized CLI/session for the release event. A release
 created by another workflow's default `GITHUB_TOKEN` generally does not start
@@ -258,6 +279,14 @@ Catalog acceptance from GHCR publication.
 Rebuilding can change attestation/index digests even with unchanged source.
 Rerun failed jobs, not successful publication jobs. Never overwrite a different
 existing version digest to make a retry pass.
+
+The `publish` job's own `--compare-pypi` check resolves
+`dead-letter[mcp]==X.Y.Z` from PyPI before promoting the tested index digest.
+It has failed with "no version of dead-letter[mcp]==X.Y.Z" immediately after a
+successful `pypi-ready` job, on both 0.4.0 and 0.4.5 — index/CDN propagation
+lag rather than a real publication failure. The image is not promoted to the
+version tag when this happens. Recovery is the same as any other job: rerun
+**failed jobs**; no rebuild is needed once the index catches up.
 
 ## Update The Homebrew Tap
 
