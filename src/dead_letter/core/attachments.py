@@ -65,7 +65,9 @@ def collect_inline_cid_data_uris(raw_attachments: list[dict[str, Any]]) -> dict[
 def _encode_payload_with_fallback(payload: str, charset: str) -> bytes:
     try:
         return payload.encode(charset, errors="replace")
-    except LookupError:
+    # LookupError: unknown or non-text codec. UnicodeError: a codec that rejects
+    # the "replace" handler (idna) or refuses all input (undefined).
+    except (LookupError, UnicodeError):
         return payload.encode("utf-8", errors="replace")
 
 

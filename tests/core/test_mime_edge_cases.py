@@ -34,6 +34,17 @@ def test_missing_attachment_payload_is_not_invented(metadata: dict) -> None:
     assert collect_attachment_parts([{"filename": "metadata-only.txt", **metadata}]) == []
 
 
+@pytest.mark.parametrize("payload, expected", [("", b""), ("caf\u00e9", "caf\u00e9".encode())])
+@pytest.mark.parametrize("charset", ["idna", "undefined", "x-not-a-charset", "base64_codec"])
+def test_unsupported_attachment_charset_falls_back_to_utf8(
+    charset: str, payload: str, expected: bytes
+) -> None:
+    parts = collect_attachment_parts([
+        {"filename": "note.txt", "payload": payload, "content_transfer_encoding": "7bit", "charset": charset},
+    ])
+    assert parts[0].payload == expected
+
+
 def test_whitespace_in_text_attachment_is_preserved() -> None:
     parts = collect_attachment_parts([
         {"filename": "spaces.txt", "payload": " \r\n\t", "content_transfer_encoding": "7bit"},
