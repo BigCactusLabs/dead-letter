@@ -253,6 +253,59 @@ def test_plain_markers_after_reply_boundary_or_in_prose_are_not_forwards(text: s
         assert not any(zone.kind is ZoneKind.FORWARD_HEADER for zone in zones)
 
 
+@pytest.mark.parametrize(
+    ("name", "note"),
+    [
+        ("plain_note_quotes_then_forward.eml", ["You asked:", "can you send the budget?", "Here it is."]),
+        ("plain_note_wrote_like_then_forward.eml", ["Per Bob's note below.", "Bob wrote:", "nothing"]),
+        ("plain_note_outlook_like_then_forward.eml", ["FYI - see below", "From: Me", "Sent: today"]),
+    ],
+)
+def test_forward_after_note_with_reply_like_lines_is_kept(
+    name: str, note: list[str], tmp_path: Path
+) -> None:
+    _, latest = _body(name, tmp_path)
+    front, structured = _body(name, tmp_path, thread_mode="structured")
+
+    _positions(latest, [*note, MARKER_LINE, "From: Dave", "DAVE FORWARDED BODY"])
+    assert "thread_messages: 1" in front
+    assert "Forwarded message" not in structured
+    assert "## Earlier message" not in structured
+    _positions(
+        structured,
+        [*note, "## Forwarded from Dave &lt;dave@example.com&gt; (Wed, Mar 4, 2026) — Budget",
+         "To: alice@example.com", "DAVE FORWARDED BODY"],
+    )
+
+
+@pytest.mark.parametrize(
+    "name", ["plain_outlook_reply_localized_marker.eml", "plain_outlook_reply_english_marker.eml"]
+)
+def test_separator_inside_outlook_history_stays_reply(name: str, tmp_path: Path) -> None:
+    _, latest = _body(name, tmp_path)
+    front, structured = _body(name, tmp_path, thread_mode="structured")
+
+    assert "OLD REPLY HISTORY LINE" not in latest
+    assert "## Forwarded" not in structured
+    assert "thread_messages: 1" in front
+    _positions(structured, ["## From Bob &lt;bob@example.com&gt;", "OLD REPLY HISTORY LINE"])
+
+
+@pytest.mark.parametrize(
+    "attribution",
+    [
+        "On Mon, Mar 2, 2026 at 9:00 AM Bob <b@example.com> wrote:",
+        "On Mon, Mar 2, 2026 at 9:00 AM Bob <b@example.com>\nwrote:",
+    ],
+)
+def test_separator_quoted_under_attribution_is_reply_history(attribution: str) -> None:
+    text = f"Thanks\n\n{attribution}\n> hi\n{MARKER_LINE}\nFrom: Dave <d@example.com>\n\nBody"
+    for split in (False, True):
+        zones = segment_text_conversation(text, split_forwards=split).zones
+        assert not any(zone.kind is ZoneKind.FORWARD_HEADER for zone in zones)
+        assert any(zone.kind is ZoneKind.QUOTED for zone in zones)
+
+
 def test_plain_segmentation_splits_every_marker_when_requested() -> None:
     text = f"Note.\n\n{MARKER_LINE}\nFrom: A\n\nOne.\n\nBegin forwarded message:\n\nFrom: B\n\nTwo."
     split = segment_text_conversation(text, split_forwards=True)

@@ -527,6 +527,94 @@ def main() -> int:
 
             Erin protocol text
         """,
+        "plain_outlook_reply_english_marker.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: RE: Minutes
+            Date: Thu, 05 Mar 2026 12:30:00 +0000
+            Message-ID: <plain-outlook-english-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Thanks!
+
+            ________________________________
+            From: Bob <bob@example.com>
+            Sent: Wednesday, March 4, 2026 9:00 AM
+            To: Alice <alice@example.com>
+            Subject: FW: Minutes
+
+            OLD REPLY HISTORY LINE
+
+            ---------- Forwarded message ---------
+            From: Erin <erin@example.com>
+
+            Erin text
+        """,
+        "plain_note_quotes_then_forward.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Budget
+            Date: Thu, 05 Mar 2026 12:35:00 +0000
+            Message-ID: <plain-note-quotes-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            You asked:
+            > can you send the budget?
+            Here it is.
+
+            ---------- Forwarded message ---------
+            From: Dave <dave@example.com>
+            Date: Wed, Mar 4, 2026
+            Subject: Budget
+            To: alice@example.com
+
+            DAVE FORWARDED BODY
+        """,
+        "plain_note_wrote_like_then_forward.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Budget
+            Date: Thu, 05 Mar 2026 12:40:00 +0000
+            Message-ID: <plain-note-wrote-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Per Bob's note below.
+            On Monday we agreed, Bob wrote:
+            nothing
+
+            ---------- Forwarded message ---------
+            From: Dave <dave@example.com>
+            Date: Wed, Mar 4, 2026
+            Subject: Budget
+            To: alice@example.com
+
+            DAVE FORWARDED BODY
+        """,
+        "plain_note_outlook_like_then_forward.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Budget
+            Date: Thu, 05 Mar 2026 12:45:00 +0000
+            Message-ID: <plain-note-outlook-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            FYI - see below
+
+            From: Me
+            Sent: today
+
+            ---------- Forwarded message ---------
+            From: Dave <dave@example.com>
+            Date: Wed, Mar 4, 2026
+            Subject: Budget
+            To: alice@example.com
+
+            DAVE FORWARDED BODY
+        """,
         "plain_marker_in_prose.eml": """
             From: Alice <alice@example.com>
             To: Bob <bob@example.com>
