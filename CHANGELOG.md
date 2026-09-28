@@ -87,6 +87,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Named zero-byte attachments are retained in MIME fallback extraction and
+  bundle output instead of silently disappearing. Metadata-only entries with
+  no payload still do not create attachment files.
+- Inline-image data URIs remove MIME base64 line wrapping so embedded Markdown
+  image destinations stay on one line, without changing attachment bytes.
+- Subject decoding falls back to UTF-8 replacement for unsupported charset
+  decoders and preserves malformed RFC 2047 encoded words instead of raising.
 - Compressed Takeout hardening: bounded ZIP/ZIP64 directory admission and TAR
   metadata, strict TAR end-marker validation, staging access/space checks, and
   report-only container paths/stat signatures. Record provenance keeps `archive`
