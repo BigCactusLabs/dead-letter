@@ -17,6 +17,7 @@ from dead_letter.core._pipeline import (
     _write_attachment_parts,
 )
 from dead_letter.core.mbox import MboxFormatError, MboxLimits, MboxRecord, UnescapeMode, iter_mbox
+from dead_letter.core.mbox_isolation import MboxBudgetError
 from dead_letter.core.render import serialize_markdown
 from dead_letter.core.types import ConvertOptions
 
@@ -41,6 +42,7 @@ def _convert_record(
     *,
     bundles: bool,
     unescape: UnescapeMode,
+    reraise: tuple[type[BaseException], ...] = (),
 ) -> MboxConversion:
     locator = f"{source.name}#message-{record.index:08d}"
     provenance = {**record.provenance(source), "unescape": unescape}
@@ -97,7 +99,7 @@ def _convert_record(
                 created.unlink(missing_ok=True)
             except OSError:
                 pass
-        if not isinstance(exc, Exception):
+        if not isinstance(exc, Exception) or isinstance(exc, reraise):
             raise
         code, _fallback, _repair = _convert_error_metadata(exc)
         return MboxConversion(
@@ -116,6 +118,9 @@ def convert_mbox(
     unescape: UnescapeMode = "preserve",
     bundles: bool = False,
     timeout_seconds: float | None = None,
+    memory_limit_mib: int | None = None,
+    cpu_seconds: int | None = None,
+    max_output_mib: int | None = None,
 ) -> Iterator[MboxConversion]:
     """Lazily convert an immutable exported mailbox; never delete the archive.
 
@@ -126,10 +131,23 @@ def convert_mbox(
     A positive ``timeout_seconds`` opts into a fresh subprocess per admitted
     message, including dry runs. This is a worker wall-time budget, not a memory
     limit, security sandbox, or deadline for framing/final output publication.
+
+    ``memory_limit_mib``, ``cpu_seconds`` and ``max_output_mib`` opt into
+    per-worker resource limits and require ``timeout_seconds``. A budget this
+    platform cannot enforce raises ``MboxBudgetError`` before any conversion.
+    They are resource limits, not filesystem or network isolation.
     """
-    if timeout_seconds is not None:
-        from dead_letter.core.mbox_isolation import convert_record_isolated, validate_timeout
+    budget_values = (memory_limit_mib, cpu_seconds, max_output_mib)
+    if timeout_seconds is not None or any(value is not None for value in budget_values):
+        from dead_letter.core.mbox_isolation import (
+            WorkerBudgets,
+            convert_record_isolated,
+            validate_budgets,
+            validate_timeout,
+        )
         validate_timeout(timeout_seconds)
+        budgets = WorkerBudgets(*budget_values)
+        validate_budgets(budgets, worker_mode=timeout_seconds is not None)
     source = Path(path).expanduser().resolve()
     opts = options or ConvertOptions()
     if opts.delete_eml:
@@ -146,10 +164,16 @@ def convert_mbox(
                 if timeout_seconds is not None and record.path is not None:
                     yield convert_record_isolated(
                         record, source, root, opts, bundles=bundles,
-                        unescape=unescape, timeout=timeout_seconds,
+                        unescape=unescape, timeout=timeout_seconds, budgets=budgets,
                     )
                 else:
                     yield _convert_record(record, source, root, opts, bundles=bundles, unescape=unescape)
+    except MboxBudgetError as exc:
+        # A worker could not apply a requested budget: abort the whole import.
+        yield MboxConversion(
+            source.name, None, False,
+            error={"code": exc.code, "stage": "worker", "message": exc.message},
+        )
     except (MboxFormatError, OSError, ValueError) as exc:
         yield MboxConversion(
             source.name, None, False,

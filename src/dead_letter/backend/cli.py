@@ -64,6 +64,18 @@ def _add_convert_flags(parser: argparse.ArgumentParser) -> None:
         "--mbox-timeout", type=float, default=None, metavar="SECONDS",
         help="MBOX: opt into a subprocess per message with this worker time budget.",
     )
+    parser.add_argument(
+        "--mbox-memory-mib", type=int, default=None, metavar="MIB",
+        help="MBOX worker mode: address-space limit per worker in MiB (Linux only).",
+    )
+    parser.add_argument(
+        "--mbox-cpu-seconds", type=int, default=None, metavar="SECONDS",
+        help="MBOX worker mode: CPU-time limit per worker (Linux, macOS).",
+    )
+    parser.add_argument(
+        "--mbox-max-output-mib", type=int, default=None, metavar="MIB",
+        help="MBOX worker mode: maximum size of each file a worker writes, in MiB (Linux, macOS).",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -199,9 +211,12 @@ def _run_convert(args: argparse.Namespace) -> int:
             input_path, output=args.output, options=options,
             max_message_mib=args.max_message_mib, unescape=args.mbox_unescape,
             bundles=args.mbox_bundles, timeout_seconds=args.mbox_timeout,
+            memory_limit_mib=args.mbox_memory_mib, cpu_seconds=args.mbox_cpu_seconds,
+            max_output_mib=args.mbox_max_output_mib,
         )
     if (args.mbox_bundles or args.mbox_unescape != "preserve" or args.max_message_mib != 64
-            or args.mbox_timeout is not None):
+            or args.mbox_timeout is not None or args.mbox_memory_mib is not None
+            or args.mbox_cpu_seconds is not None or args.mbox_max_output_mib is not None):
         print("MBOX-specific options require a .mbox input file", file=sys.stderr)
         return 1
 

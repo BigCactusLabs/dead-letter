@@ -9,15 +9,20 @@ from __future__ import annotations
 import json
 import math
 import os
+import secrets
 import shutil
+import signal
 import stat
 import subprocess
 import sys
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import monotonic
 from typing import TYPE_CHECKING, Any
+
+from dead_letter import _mbox_worker
+from dead_letter._mbox_worker import BUDGET_STATUS_FILE, EXIT_BUDGET_APPLY_FAILED, EXIT_MEMORY_LIMIT
 
 if TYPE_CHECKING:
     from dead_letter.core.mbox import MboxRecord, UnescapeMode
@@ -33,6 +38,110 @@ _ERROR_MESSAGES = {
     "html_markdown_failed": "HTML-to-Markdown conversion failed in worker",
     "mbox_publish_failed": "Completed worker output could not be published",
 }
+_RESOURCE_MESSAGES = {
+    "memory": "Message worker exceeded its memory budget; no output published",
+    "cpu": "Message worker exceeded its CPU-time budget; no output published",
+    "output": "Message worker exceeded its per-file output budget; no output published",
+}
+
+# control -> (Python parameter, CLI flag, worker argument, unit multiplier)
+_BUDGET_CONTROLS = {
+    "memory": ("memory_limit_mib", "--mbox-memory-mib", "memory_mib", 1024 * 1024),
+    "cpu": ("cpu_seconds", "--mbox-cpu-seconds", "cpu_seconds", 1),
+    "output": ("max_output_mib", "--mbox-max-output-mib", "max_output_mib", 1024 * 1024),
+}
+# Decided before any conversion. macOS xnu counts RLIMIT_AS against a baseline
+# virtual size of hundreds of GiB, so an absolute memory budget is unavailable
+# there. Windows Job Objects are not implemented in this slice.
+_SUPPORTED_BUDGETS = {"linux": {"memory", "cpu", "output"}, "darwin": {"cpu", "output"}}
+_PLATFORM_NAMES = {"linux": "Linux", "darwin": "macOS", "win32": "Windows"}
+
+
+class MboxBudgetError(ValueError):
+    """A requested worker budget is unsupported or could not be applied."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.message = message
+
+
+@dataclass(frozen=True, slots=True)
+class WorkerBudgets:
+    """Opt-in per-worker resource limits; ``None`` leaves a control unset."""
+
+    memory_limit_mib: int | None = None
+    cpu_seconds: int | None = None
+    max_output_mib: int | None = None
+
+    def requested(self) -> list[str]:
+        return [name for name, (field, *_rest) in _BUDGET_CONTROLS.items() if getattr(self, field) is not None]
+
+    def worker_args(self) -> tuple[str, ...]:
+        return tuple(
+            f"{arg}={getattr(self, field)}"
+            for field, _flag, arg, _unit in _BUDGET_CONTROLS.values() if getattr(self, field) is not None
+        )
+
+
+def validate_budgets(budgets: WorkerBudgets, *, worker_mode: bool) -> None:
+    """Reject invalid, worker-less or platform-unsupported budgets before conversion."""
+    requested = budgets.requested()
+    for control in requested:
+        field, flag, _arg, unit = _BUDGET_CONTROLS[control]
+        value = getattr(budgets, field)
+        if type(value) is not int or value <= 0 or value * unit > 2**62:
+            raise ValueError(f"MBOX {field} ({flag}) must be a positive integer")
+    if requested and not worker_mode:
+        raise ValueError("MBOX resource budgets require worker mode (timeout_seconds / --mbox-timeout)")
+    supported = _SUPPORTED_BUDGETS.get(sys.platform, set())
+    platform = _PLATFORM_NAMES.get(sys.platform, sys.platform)
+    for control in requested:
+        if control not in supported:
+            field, flag, _arg, _unit = _BUDGET_CONTROLS[control]
+            raise MboxBudgetError(
+                "mbox_budget_unsupported",
+                f"the {control} budget ({field} / {flag}) is not available on {platform}",
+            )
+
+
+def _budget_outcome(workspace: Path, returncode: int, nonce: str) -> str | None:
+    """Accept a budget exit status only with a matching control file.
+
+    An ordinary exit (or native ``_exit``) with the same number cannot supply
+    the per-launch nonce, so it remains an abnormal worker exit.
+    """
+    expected = {EXIT_BUDGET_APPLY_FAILED: "apply_failed", EXIT_MEMORY_LIMIT: "memory_limit"}.get(returncode)
+    if expected is None:
+        return None
+    path = workspace / BUDGET_STATUS_FILE
+    try:
+        _regular(path)
+        with path.open("rb") as stream:
+            raw = stream.read(4097)
+        if len(raw) > 4096:
+            return None
+        data = json.loads(raw, object_pairs_hook=_json_object)
+    except (OSError, ValueError, RecursionError):
+        return None
+    if (
+        isinstance(data, dict) and set(data) == {"nonce", "outcome"}
+        and isinstance(data["nonce"], str) and secrets.compare_digest(data["nonce"], nonce)
+        and data["outcome"] == expected
+    ):
+        return expected
+    return None
+
+
+def _exceeded_limit(returncode: int, budgets: WorkerBudgets, outcome: str | None = None) -> str | None:
+    if budgets.memory_limit_mib is not None and outcome == "memory_limit":
+        return "memory"
+    xcpu, xfsz = getattr(signal, "SIGXCPU", None), getattr(signal, "SIGXFSZ", None)
+    if budgets.cpu_seconds is not None and xcpu is not None and returncode == -xcpu:
+        return "cpu"
+    if budgets.max_output_mib is not None and xfsz is not None and returncode == -xfsz:
+        return "output"
+    return None
 
 
 def validate_timeout(value: float | None) -> None:
@@ -46,17 +155,23 @@ def validate_timeout(value: float | None) -> None:
         raise ValueError("MBOX timeout must be a finite positive number of seconds")
 
 
-def _worker_command(request: Path) -> list[str]:
+def _worker_command(request: Path, *budget_args: str) -> list[str]:
     # -I excludes CWD/PYTHONPATH shadowing. The package must be installed in this
     # interpreter (including uv's editable install); do not invoke a shell/uvx.
-    return [sys.executable, "-I", "-m", "dead_letter._mbox_worker", str(request)]
+    if not budget_args:
+        return [sys.executable, "-I", "-m", "dead_letter._mbox_worker", str(request)]
+    # Budgeted: run the worker file as a script so importing the dead_letter
+    # package (and its parsers) waits until limits are applied. -I keeps the
+    # script directory off sys.path; -B disables bytecode writes.
+    script = str(Path(_mbox_worker.__file__).resolve())
+    return [sys.executable, "-I", "-B", script, str(request), *budget_args]
 
 
-def _run_worker(request: Path, timeout: float) -> int:
+def _run_worker(request: Path, timeout: float, budget_args: tuple[str, ...] = ()) -> int:
     # DEVNULL avoids unbounded captured logs and leaking private parser errors.
     # A new group/session leaves terminal Ctrl-C handling to the parent.
     process = subprocess.Popen(
-        _worker_command(request), cwd=request.parent,
+        _worker_command(request, *budget_args), cwd=request.parent,
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         close_fds=True, start_new_session=os.name == "posix",
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
@@ -181,7 +296,7 @@ def _publish(staged: Path, root: Path, *, bundles: bool) -> Path:
 
 def convert_record_isolated(
     record: MboxRecord, source: Path, root: Path, options: ConvertOptions, *,
-    bundles: bool, unescape: UnescapeMode, timeout: float,
+    bundles: bool, unescape: UnescapeMode, timeout: float, budgets: WorkerBudgets | None = None,
 ) -> MboxConversion:
     from dead_letter.core.mbox_import import MboxConversion
 
@@ -189,9 +304,11 @@ def convert_record_isolated(
     locator = f"{source.name}#message-{record.index:08d}"
     provenance = {**record.provenance(source), "unescape": unescape}
 
-    def failed(code: str) -> MboxConversion:
+    budgets = budgets or WorkerBudgets()
+
+    def failed(code: str, message: str | None = None) -> MboxConversion:
         return MboxConversion(locator, None, False, provenance, error={
-            "code": code, "stage": "worker", "message": _ERROR_MESSAGES[code],
+            "code": code, "stage": "worker", "message": message or _ERROR_MESSAGES[code],
         })
 
     with TemporaryDirectory(prefix="dead-letter-worker-") as temporary:
@@ -204,11 +321,27 @@ def convert_record_isolated(
             "options": asdict(options), "bundles": bundles, "unescape": unescape,
         }, ensure_ascii=True), encoding="utf-8")
         try:
-            returncode = _run_worker(request, timeout)
+            # Without budgets, launch exactly as before this option existed.
+            nonce = secrets.token_hex(16)
+            budget_args = (*budgets.worker_args(), f"nonce={nonce}") if budgets.requested() else ()
+            returncode = (_run_worker(request, timeout, budget_args) if budget_args
+                          else _run_worker(request, timeout))
         except subprocess.TimeoutExpired:
             return failed("mbox_message_timeout")
         # Launch failures propagate as archive errors rather than trying to start
-        # an unavailable interpreter once for every remaining message.
+        # an unavailable interpreter once for every remaining message. So does a
+        # requested budget the worker could not apply: the guarantee is unmet.
+        outcome = _budget_outcome(workspace, returncode, nonce) if budget_args else None
+        if outcome == "apply_failed":
+            raise MboxBudgetError(
+                "mbox_budget_apply_failed",
+                "a message worker could not apply the requested resource budgets; import aborted",
+            )
+        limit = _exceeded_limit(returncode, budgets, outcome)
+        if limit is not None:
+            # Withheld exactly like a timeout: the private workspace, including
+            # any partial artifact, is discarded without publication.
+            return failed("mbox_message_resource_limit", _RESOURCE_MESSAGES[limit])
         if returncode != 0:
             return failed("mbox_worker_crashed")
         try:

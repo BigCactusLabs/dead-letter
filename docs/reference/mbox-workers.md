@@ -89,14 +89,114 @@ The report stores the effective setting in `mbox_options.timeout_seconds`, with
 partial-success status, exit code 1 for errors, and Ctrl-C exit code 130 remain.
 No new report schema version or inference/remote-analysis behavior is introduced.
 
+## Optional resource budgets
+
+**Availability:** on `main`, unreleased (#140, first slice). Budgets are opt-in
+and apply only in worker mode. Without them, worker conversion is unchanged.
+
+```bash
+uv run dead-letter convert archive.mbox --output markdown/ --report \
+  --mbox-timeout 60 --mbox-cpu-seconds 30 --mbox-max-output-mib 256
+
+# Linux only: also cap each worker's virtual address space.
+uv run dead-letter convert archive.mbox --output markdown/ --report \
+  --mbox-timeout 60 --mbox-cpu-seconds 30 --mbox-memory-mib 2048
+```
+
+```python
+convert_mbox("archive.mbox", output="markdown", timeout_seconds=60,
+             cpu_seconds=30, max_output_mib=256)
+```
+
+Each value is a positive integer. A budget without `--mbox-timeout`
+(`timeout_seconds`) is a usage error, reported before any conversion or output.
+The wall-clock timeout remains the universal backstop on every platform.
+
+| Control | CLI / Python | Unit | Linux | macOS | Windows | Mechanism and limitation |
+| --- | --- | --- | --- | --- | --- | --- |
+| Memory | `--mbox-memory-mib` / `memory_limit_mib` | MiB of virtual address space | Supported | **Unavailable** | **Unavailable** | `RLIMIT_AS`. Counts reserved address space, not resident memory, so it includes interpreter and native-library mappings; set it well above the observed RSS. On macOS, xnu counts it against a baseline virtual size of hundreds of GiB, so an absolute budget cannot be honored. |
+| CPU time | `--mbox-cpu-seconds` / `cpu_seconds` | seconds of CPU time | Supported | Supported | **Unavailable** | `RLIMIT_CPU`: `SIGXCPU` at the limit, with the kernel's hard limit one second later. Includes interpreter startup and imports. It does not bound time spent blocked; the wall-clock timeout covers that. |
+| Output size | `--mbox-max-output-mib` / `max_output_mib` | MiB **per file** | Supported | Supported | **Unavailable** | `RLIMIT_FSIZE`: `SIGXFSZ` when a single file the worker writes would exceed the limit. It bounds each Markdown file, attachment and bundle `source.eml` copy, not total output or free disk. A bundle whose source message exceeds the limit fails. |
+
+Windows Job Objects (and other platforms) are a follow-up; there, requesting any
+budget fails with `mbox_budget_unsupported` rather than running unenforced.
+The parent decides this matrix from the platform before the first message and
+never silently drops a requested control.
+
+A budgeted worker is launched differently from an unbudgeted one. Instead of
+`python -I -m dead_letter._mbox_worker`, the parent runs the installed worker
+file as a script: `python -I -B <path>/_mbox_worker.py`. Importing a module
+with `-m` would first import the `dead_letter` package and its MIME and HTML
+libraries. As a script, the worker imports only the standard library, applies
+its limits, and only then imports `dead_letter`. `-I` keeps the script
+directory off `sys.path`, and `-B` disables `.pyc` writes, so imports never
+write files against the output limit. Unbudgeted launches keep the `-m`
+command unchanged. The worker sets its own limits after disabling core dumps
+and before reading the staged EML. It does not use `preexec_fn`, which CPython
+documents as unsafe in threaded parents. The limits reach the worker as
+parent-generated arguments; email content cannot set them.
+
+Budgets only ever lower limits. The worker's new soft and hard limits are each
+the smaller of the requested value and the inherited one, so a stricter soft
+or hard limit set by the host or shell is kept rather than raised. For
+example, an inherited CPU limit of (20 s, unlimited) with `--mbox-cpu-seconds 30`
+becomes (20 s, 31 s). The receipt is capped at 1 MiB and the smallest output
+budget is 1 MiB, so a valid receipt always fits.
+
+### Budget failures
+
+| Code | Scope | Meaning |
+| --- | --- | --- |
+| `mbox_budget_unsupported` | Usage error, before conversion | The control is unavailable on this platform (message names the control, flag and platform). CLI exit code 1, no output or report. |
+| `mbox_budget_apply_failed` | Archive-fatal | A worker could not apply a requested limit (for example, a stricter host policy rejected it). No record is converted without the requested guarantee; the import stops with an archive error entry. |
+| `mbox_message_resource_limit` | One record | The worker exceeded a budget. The message names the limit when it can be determined: CPU time (`SIGXCPU`), per-file output (`SIGXFSZ`), or memory (a `MemoryError` observed under a memory budget). |
+
+An exceeded budget is handled like a timeout: the worker is reaped, its private
+workspace and any partial artifacts are discarded unpublished, and later
+records continue. Outcomes that cannot be attributed to a budget stay
+`mbox_worker_crashed`. That includes a native library aborting on allocation
+failure under a memory budget, and the kernel `SIGKILL` backstop one second
+after the CPU soft limit.
+
+The worker reports apply-failed and memory-limit outcomes with a distinct exit
+status. That status only counts if the worker also wrote a small control file,
+`budget-status.json`, carrying a random nonce the parent issued for that launch.
+The worker opens the control file and encodes its contents before any limit is
+applied, so writing it later needs no allocation. Any other exit with the same
+number, including a `SystemExit` raised during conversion, is
+`mbox_worker_crashed`.
+
+**Memory detection.** Parts of the EML pipeline recover from errors on purpose;
+for example, an attachment that fails to decode is skipped. Under a memory
+budget, such a recovery could publish a message with an attachment silently
+missing. To prevent that, a memory-budgeted worker uses a `sys.monitoring`
+`RAISE` callback (Python 3.12+) during conversion. The callback records every
+`MemoryError` that reaches a Python frame, including one raised by a C function
+such as a base64 decoder and later caught. If any was recorded, the whole
+record is withheld as a memory-limit outcome. A worker that cannot get a free
+monitoring tool ID treats this as a failure to apply the budget. Known gap: a
+native library that hits and handles an allocation failure internally, without
+raising into Python, is not observed.
+
+The report records the requested values in `mbox_options.memory_limit_mib`,
+`mbox_options.cpu_seconds` and `mbox_options.max_output_mib`, with `null` when a
+control is not set.
+
+**These are resource limits, not a sandbox.** They do not restrict filesystem
+or network access, user privileges, or what native code can read. Existing
+synthetic amplification measurements (parent RSS, staging and final disk use)
+are in the [worker benchmark](../project/2026-09-24-mbox-worker-benchmark.md);
+they are not a recommendation for budget values.
+
 ## Precise limits
 
-**This is process-lifetime containment, not a security sandbox or memory cap.**
+**This is process-lifetime containment, not a security sandbox.** Without the
+opt-in [resource budgets](#optional-resource-budgets) it is not a memory cap.
 The child runs with the user's normal privileges and inherited environment.
 Python isolated mode (`-I`) excludes current-directory/PYTHONPATH import
 shadowing; it does not deny filesystem or network access. The normal conversion
 pipeline remains local and introduces no network calls. Host-level restrictions
-are still needed for adversarial native code, strict memory ceilings, disk
+are still needed for adversarial native code, memory ceilings where no budget is available, disk
 quotas, or guaranteed isolation from other user data.
 
 The budget starts after process creation and covers worker startup/imports,
@@ -116,7 +216,7 @@ dump services remain host policy; this is not a universal no-dump guarantee.
 One fresh interpreter per message adds startup overhead and an extra output-copy
 step. In bundle mode, reserve disk space for the worker's temporary source and
 attachment copies as well as final output. Worker-local allocations disappear
-with the process, but a single message can still exhaust host memory before its
+with the process, but without a Linux memory budget a single message can still exhaust host memory before its
 time budget expires. Do not interpret the existing 64 MiB source limit as a
 64 MiB resident-memory bound.
 
@@ -176,10 +276,23 @@ current evidence. No private email was used or uploaded, and a real authorized
 multi-GB Takeout archive has not been tested; that gap is tracked in
 [#138](https://github.com/BigCactusLabs/dead-letter/issues/138).
 
+Resource-budget tests (`tests/core/test_mbox_budgets.py`) run the capability
+matrix on every platform by patching the platform name, and use actual worker
+processes for exceeded CPU and output budgets, withheld artifacts, later-record
+continuation, output parity when budgets are satisfied, and an injected
+`setrlimit` failure. Further worker cases check that no `dead_letter` or parser
+module is loaded when limits are applied, that stricter inherited soft limits
+are preserved, and that `SystemExit(3)`/`SystemExit(4)` from conversion or a
+control file with the wrong nonce is reported as a crash. An in-process case
+checks that a `MemoryError` swallowed during attachment decoding is detected.
+The memory cases run only on Linux; CPU/output worker cases
+skip on Windows with an explicit reason. CPU and memory overruns are driven by
+the same test-only command builder replacing one private pipeline function.
+
 The [synthetic worker benchmark](../project/2026-09-24-mbox-worker-benchmark.md)
 measures startup/copy overhead and defers reuse. Next foundation work remains:
-obtain representative real-corpus evidence; evaluate portable host
-resource caps separately; and design durable resume around both file publication
+obtain representative real-corpus evidence; Windows Job Object budgets
+and a macOS memory control (#140 follow-up); and design durable resume around both file publication
 and report receipts, tracked in
 [#139](https://github.com/BigCactusLabs/dead-letter/issues/139). None is
 implied by this timeout option.
