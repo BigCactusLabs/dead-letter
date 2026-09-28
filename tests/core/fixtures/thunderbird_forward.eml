@@ -1,0 +1,16 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Fwd: Minutes
+Date: Thu, 05 Mar 2026 11:30:00 +0000
+Message-ID: <thunderbird-forward-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>Minutes attached below.</p>
+<div class="moz-forward-container"><br><br>-------- Forwarded Message --------
+<table class="moz-email-headers-table" border="0" cellpadding="0" cellspacing="0">
+<tbody><tr><th valign="BASELINE" nowrap="nowrap" align="RIGHT">Subject: </th><td>Minutes</td></tr>
+<tr><th valign="BASELINE" nowrap="nowrap" align="RIGHT">Date: </th><td>Wed, 4 Mar 2026 09:00:00 +0000</td></tr>
+<tr><th valign="BASELINE" nowrap="nowrap" align="RIGHT">From: </th><td>Erin &lt;erin@example.com&gt;</td></tr>
+</tbody></table><br><p>Minutes from the Wednesday meeting.</p></div>
+</body></html>

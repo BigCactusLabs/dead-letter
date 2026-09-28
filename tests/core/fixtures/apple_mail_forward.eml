@@ -1,0 +1,13 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Fwd: Receipt
+Date: Thu, 05 Mar 2026 11:35:00 +0000
+Message-ID: <apple-forward-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<html><body style="line-break:after-white-space">See below.<br id="lineBreakAtBeginningOfMessage"><div><br>
+<blockquote type="cite"><div>Begin forwarded message:</div><br class="Apple-interchange-newline">
+<div style="margin:0px"><span><b>From: </b></span><span>Shop &lt;shop@example.com&gt;<br></span></div>
+<div style="margin:0px"><span><b>Subject: </b></span><span><b>Receipt</b><br></span></div>
+<br><div>Thank you for your order.</div></blockquote></div></body></html>

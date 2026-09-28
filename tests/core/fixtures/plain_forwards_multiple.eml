@@ -1,0 +1,33 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Fwd: notes
+Date: Thu, 05 Mar 2026 11:25:00 +0000
+Message-ID: <plain-forwards-multiple-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Digest of notes below.
+
+---------- Forwarded message ---------
+From: Person One <one@example.com>
+Date: Mon, Mar 2, 2026 at 9:00 AM
+Subject: Note one
+To: team@example.com
+
+Body from person one.
+
+-------- Forwarded message --------
+From: Person Two <two@example.com>
+Date: Tue, Mar 3, 2026 at 9:00 AM
+Subject: Note two
+
+Body from person two.
+
+Begin forwarded message:
+
+From: Person Three <three@example.com>
+Subject: Note three
+Date: March 4, 2026 at 9:00:00 AM EST
+To: team@example.com
+
+Body from person three.
