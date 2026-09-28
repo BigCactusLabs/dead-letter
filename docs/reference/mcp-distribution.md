@@ -104,11 +104,11 @@ description, which is the tool's own docstring verbatim:
 > failures, output_paths, and errors. Use convert_eml to retrieve individual
 > converted file content.
 
-The root cause is in the server, not Glama: the released MCP input schema marks
+The root cause is in the server, not Glama: the 0.4.0 MCP input schema marks
 `output_directory` optional, although the tool rejects a call without it and
 permits at most 50 `.eml` files per call. The schema is fixed in this change
 (it now requires `output_directory` and documents the 50-file limit); the fix
-is unreleased. Glama needs a re-sync after the claim and the next release. No
+ships in 0.4.5. Glama needs a re-sync after the claim and the 0.4.5 release. No
 upstream listing edit was made here.
 
 ## Cline submission package and tested path

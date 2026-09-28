@@ -2,25 +2,27 @@
 
 Tracking: [issue #110](https://github.com/BigCactusLabs/dead-letter/issues/110).
 Implementation: [PR #117](https://github.com/BigCactusLabs/dead-letter/pull/117),
-merged to `main` on September 21, 2026 and not yet in a PyPI release.
+merged to `main` on September 21, 2026 and first released in 0.4.5.
 
-**Status: development-checkout single-message analysis, not a released feature.**
+**Status: experimental single-message analysis, released in 0.4.5.**
 Local EML preparation now connects to an explicitly enabled TypeSafe SDK adapter.
 CLI and async Python consumers receive versioned JSON results. Neither candidate
 profile has empirical email-triage quality results. Ordinary conversion, bundles,
 MCP tools and UI remain local and do not enable analysis when a key is present.
 
-The development checkout includes an optional `typesafe` extra, pinned to
-`typesafe-sdk==0.7.1` in the dependency lock. Base and normal development installs
-remain SDK-free. This extra is **not available in the published 0.4.0 package**;
-use the checkout commands below until a release includes it.
+The package includes an optional `typesafe` extra, pinned to
+`typesafe-sdk==0.7.1`. Base and normal development installs remain SDK-free.
+The extra and the `analyze` command are available in 0.4.5 and later; 0.4.0
+and earlier do not include them. The commands below run from a development
+checkout. With an installed package, drop the `uv run` prefix and its options;
+remote execution needs the package installed with the `typesafe` extra.
 Commands with `--extra typesafe` install the SDK into the project environment.
 To return to SDK-free development after testing, run
 `uv sync --extra dev --locked`.
 
 ## Start with a local preview
 
-Run from the implementation checkout with its normal dependencies installed:
+Run from a development checkout with its normal dependencies installed:
 
 ```bash
 uv sync --extra dev --locked
@@ -75,7 +77,7 @@ stderr JSON. Provider failures return a failed result envelope on stdout with a
 safe error code. Always inspect `execution_status` and `assessment_status`; a
 zero exit alone does not mean a semantic assessment occurred.
 
-## Saved single-message results (unreleased, #164)
+## Saved single-message results (#164)
 
 Add `--output PATH` to write a result or reuse a validated saved success:
 

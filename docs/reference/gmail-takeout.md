@@ -1,22 +1,23 @@
 # Gmail Takeout / MBOX to Markdown and Cabinet
 
 **Availability:** plain MBOX shipped in the CLI and Python API in the 0.4.0
-release (#103). Compressed ZIP/TGZ input is **unreleased** (#144).
+release (#103). Compressed ZIP/TGZ input shipped in 0.4.5 (#144).
 Install any CLI/Python route from the
 [installation and distribution map](distribution.md); once dead-letter is
 installed, run the commands below without a `uv run` prefix. Keep `uv run` only
 when working from a development checkout. The web UI remains EML-only (tracked:
 web/API import [#146](https://github.com/BigCactusLabs/dead-letter/issues/146)).
-Released MCP servers are EML-only; `main` adds a bounded, unreleased
-[`convert_mbox` MCP tool](#mcp-bounded-convert_mbox-unreleased) (#145). Watch
+MCP servers from 0.4.5 add a bounded
+[`convert_mbox` MCP tool](#mcp-bounded-convert_mbox) (#145); 0.4.0 and earlier
+MCP servers are EML-only. Watch
 mode and recursive EML directory conversion also remain EML-only. No Google
 login, API key, or hosted email processing is needed.
 
 ## Convert an export
 
 Export Mail from [Google Takeout](https://takeout.google.com/) and download it.
-The unreleased CLI/Python importer can read the ZIP/TGZ directly; see
-[compressed input](#compressed-input-unreleased). As an alternative, extract
+The CLI/Python importer in 0.4.5 and later can read the ZIP/TGZ directly; see
+[compressed input](#compressed-input). As an alternative, extract
 the download locally and select an actual **flat `.mbox` file**, not an Apple
 Mail `.mbox` directory. Work on an
 immutable export, never an actively written system mailbox. Google documents
@@ -40,16 +41,16 @@ Attachments are listed as metadata in this mode; they are not extracted.
 Conversion does not embed/index messages, group separate archive records into
 conversations, interpret historical messages as current tasks, or upload data.
 
-## Compressed input (unreleased)
+## Compressed input
 
+Available in 0.4.5 and later; 0.4.0 and earlier do not read ZIP/TGZ input.
 This first #144 slice adds CLI and Python input only. MCP and web/API ingestion
-are unchanged and do not accept compressed containers. Use a development checkout
-for these examples until a release includes this feature:
+are unchanged and do not accept compressed containers.
 
 ```bash
-uv run dead-letter convert takeout.zip --output markdown/ --report
-uv run dead-letter convert takeout.tgz --output Cabinet/ --mbox-bundles --report
-uv run dead-letter convert takeout.tar.gz --mbox-member "Takeout/Mail/All mail.mbox" \
+dead-letter convert takeout.zip --output markdown/ --report
+dead-letter convert takeout.tgz --output Cabinet/ --mbox-bundles --report
+dead-letter convert takeout.tar.gz --mbox-member "Takeout/Mail/All mail.mbox" \
   --mbox-staging-dir /path/to/existing/staging --output markdown/ --report
 ```
 
@@ -304,7 +305,7 @@ Hard-killed-parent recovery and durable resume remain unimplemented. See the
 [worker contract and practitioner sources](mbox-workers.md) for error codes,
 Python usage, tests, and precise limits.
 
-On `main` (unreleased), worker mode also accepts opt-in resource budgets:
+In 0.4.5 and later, worker mode also accepts opt-in resource budgets:
 `--mbox-cpu-seconds` and `--mbox-max-output-mib` (Linux and macOS) and
 `--mbox-memory-mib` (Linux only). An unsupported control is refused before
 conversion. Budgets apply to ZIP/TGZ input as well (Python `convert_mbox_archive`
@@ -340,13 +341,13 @@ is not a new storage header. That refusal is archive-fatal because continuing
 could misidentify body text as additional messages. Unknown postmark
 syntaxes, unsupported compressed formats, live mail spools, PST/MSG and Apple
 Mail bundle directories are outside this slice. ZIP/TGZ support is described
-[above](#compressed-input-unreleased). See
+[above](#compressed-input). See
 the [implementation history](../project/2026-09-18-mbox-ingestion.md).
 
 ### Content-Length framing: mboxcl and mboxcl2
 
-**Availability:** on `main` only, not in 0.4.0 or any published release yet
-(see the `Unreleased` section of the [changelog](../../CHANGELOG.md)).
+**Availability:** 0.4.5 and later; 0.4.0 and earlier do not accept these
+dialects (see the 0.4.5 section of the [changelog](../../CHANGELOG.md)).
 
 Some local mail tools write a `Content-Length` header that states the body
 size. dead-letter reads these archives only when you select the dialect; it
@@ -405,9 +406,10 @@ and are stricter than [mutt's](https://github.com/muttmua/mutt/blob/b74263bb9381
 which compares only five bytes to `From ` at the endpoint. Dialect names
 follow [de Boyne Pollard's MBOX survey](https://jdebp.uk/FGA/mail-mbox-formats.html).
 
-## MCP: bounded `convert_mbox` (unreleased)
+## MCP: bounded `convert_mbox`
 
-On `main` only, not in any release yet. The MCP server's `convert_mbox` tool
+Available in MCP servers from 0.4.5 and later; 0.4.0 and earlier do not have
+this tool. The MCP server's `convert_mbox` tool
 runs the same importer for small exports, with fixed bounds:
 
 - one flat `.mbox` file (suffix checked case-insensitively); compressed

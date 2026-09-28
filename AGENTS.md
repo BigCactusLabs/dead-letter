@@ -19,7 +19,7 @@ capability in user-facing docs.
 ## Repo map
 
 - `src/dead_letter/core/` — MIME parse → sanitize → thread/zone → Markdown render; `mbox*.py` and `stream_report.py` stream `.mbox` imports through the same pipeline; `snapshot.py` exposes a read-only parsed snapshot for analysis
-- `src/dead_letter/analysis/` — experimental, unreleased BYOK semantic analysis: normalized evidence, profiles, result envelopes, and the opt-in TypeSafe provider; see [Experimental analysis](docs/reference/experimental-analysis.md) before widening it
+- `src/dead_letter/analysis/` — experimental BYOK semantic analysis (released in 0.4.5): normalized evidence, profiles, result envelopes, and the opt-in TypeSafe provider; see [Experimental analysis](docs/reference/experimental-analysis.md) before widening it
 - `src/dead_letter/backend/` — CLI (`mbox_cli.py` for MBOX, `analysis_cli.py` for `analyze`), FastAPI API, job runner, watch, MCP, doctor
 - `src/dead_letter/frontend/` — static Alpine.js ES modules; no build step
 - `plugin/` — Claude manifest, commands, context skill, exact MCP launcher pin
