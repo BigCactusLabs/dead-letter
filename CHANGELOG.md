@@ -87,6 +87,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Directory conversion preserves output-directory intent for names ending in
+  `.md`, including nested input folders. Existing `.md` directories and explicit
+  trailing separators are no longer treated as output filenames; dry runs
+  still create nothing.
+- Bundles retain inline image files and attachment metadata when image embedding
+  is combined with signature/tracking-image filtering. The retention pass
+  recognizes rendered data URIs as references.
+- Removing a signature image no longer deletes a separate body image sharing its
+  Content-ID. CIDs still used by images in the filtered HTML are retained;
+  stripped-image diagnostics still report the removed occurrence.
 - Named zero-byte attachments are retained in MIME fallback extraction and
   bundle output instead of silently disappearing. Metadata-only entries with
   no payload still do not create attachment files. Text attachments whose
