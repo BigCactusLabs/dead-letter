@@ -32,9 +32,18 @@ parsing MIME by hand whenever a task starts from exported email.
   `.eml`: `uvx --python 3.12 dead-letter convert "Takeout/Mail/All mail.mbox"
   --output markdown/`. The CLI has no archive size or message-count cap. No
   web UI accepts `.mbox`.
+- Compressed Takeout downloads (`.zip`, `.tgz`, `.tar.gz`): released versions
+  (0.4.0 and earlier) do not read them; extract the download and pass the flat
+  `.mbox` inside. Unreleased builds from the `main` branch let the CLI and
+  Python API read them directly (`dead-letter convert takeout.zip --output
+  markdown/`); see the
+  [Takeout guide](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/gmail-takeout.md#compressed-input-unreleased).
+  The MCP server never accepts them (`convert_mbox` takes one flat `.mbox`
+  only), and the web UI accepts `.eml` only.
 - Not supported by any path: `.pst`, `.ost`, `.msg`, `.olm`, an Apple Mail
-  `.mbox` *directory* (as opposed to a flat `.mbox` file), compressed Takeout
-  archives, or live mailboxes/IMAP/Graph/Gmail APIs. If the user has one of
+  `.mbox` *directory* (as opposed to a flat `.mbox` file), plain `.tar`,
+  single-file `.gz`, `.bz2`, `.xz`, `.7z`, RAR, or live
+  mailboxes/IMAP/Graph/Gmail APIs. If the user has one of
   these, say so and stop. Do not try to split or convert the container yourself
   unless the user asks you to.
 - Conversion is local. No email content is sent anywhere by dead-letter. A
