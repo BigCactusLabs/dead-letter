@@ -7,6 +7,65 @@ import os
 import sys
 from pathlib import Path
 
+# Distinct exit statuses read by the parent (mbox_isolation). A worker that was
+# asked for a budget it could not apply must not convert anything.
+EXIT_BUDGET_APPLY_FAILED = 3
+EXIT_MEMORY_LIMIT = 4
+BUDGET_NAMES = ("memory_mib", "cpu_seconds", "max_output_mib")
+_MIB = 1024 * 1024
+
+
+def _parse_budgets(args: list[str]) -> dict[str, int]:
+    # Parent-generated ``name=value`` pairs only; never derived from email.
+    budgets: dict[str, int] = {}
+    for arg in args:
+        name, sep, value = arg.partition("=")
+        if not sep or name not in BUDGET_NAMES or name in budgets or not (value.isascii() and value.isdigit()):
+            raise ValueError("Invalid worker budget argument")
+        budgets[name] = int(value)
+        if budgets[name] <= 0:
+            raise ValueError("Invalid worker budget argument")
+    return budgets
+
+
+def _apply_budgets(budgets: dict[str, int]) -> None:
+    """Limit this process before it imports parsers or reads the staged EML.
+
+    Applied by the worker itself rather than a ``preexec_fn``, which CPython
+    documents as unsafe in threaded parents. Any failure is raised so the parent
+    can abort instead of converting without the requested guarantee.
+    """
+    if not budgets:
+        return
+    import resource
+    import signal
+
+    def cap(value: int, hard: int) -> int:
+        # Never raise an existing, stricter host hard limit.
+        return value if hard == resource.RLIM_INFINITY or hard > value else hard
+
+    for name, value in budgets.items():
+        if name == "memory_mib":
+            kind, amount = resource.RLIMIT_AS, value * _MIB
+            limits = (cap(amount, resource.getrlimit(kind)[1]),) * 2
+        elif name == "cpu_seconds":
+            # SIGXCPU at the soft limit terminates by default; the hard limit
+            # one second later is the kernel's SIGKILL backstop.
+            kind, hard = resource.RLIMIT_CPU, resource.getrlimit(resource.RLIMIT_CPU)[1]
+            limits = (cap(value, hard), cap(value + 1, hard))
+        else:
+            # RLIMIT_FSIZE bounds each file this process writes. Python ignores
+            # SIGXFSZ at startup; restore the default so an oversized write ends
+            # the worker instead of surfacing as an ordinary conversion error.
+            # Bytecode caching is disabled so lazy imports never hit the limit.
+            sys.dont_write_bytecode = True
+            signal.signal(signal.SIGXFSZ, signal.SIG_DFL)
+            kind, amount = resource.RLIMIT_FSIZE, value * _MIB
+            limits = (cap(amount, resource.getrlimit(kind)[1]),) * 2
+        resource.setrlimit(kind, limits)
+        if resource.getrlimit(kind) != limits:
+            raise OSError("Worker budget was not applied")
+
 
 def _disable_core_dumps() -> None:
     # Do this before importing the MIME/native libraries. Best effort: OS crash
@@ -19,8 +78,7 @@ def _disable_core_dumps() -> None:
             pass
 
 
-def run(request_path: Path) -> int:
-    _disable_core_dumps()
+def run(request_path: Path, budgets: dict[str, int] | None = None) -> int:
     from dead_letter.core.mbox import MboxRecord
     from dead_letter.core.mbox_import import _convert_record
     from dead_letter.core.mbox_isolation import MAX_RECEIPT_BYTES
@@ -39,6 +97,9 @@ def run(request_path: Path) -> int:
     result = _convert_record(
         record, Path(request["archive_name"]), request_path.parent / "artifacts", options,
         bundles=request["bundles"], unescape=request["unescape"],
+        # Under a memory budget an allocation failure is a resource-limit
+        # outcome for the parent to report, not an ordinary conversion error.
+        reraise=(MemoryError,) if budgets and "memory_mib" in budgets else (),
     )
     # A receipt carries only status/diagnostics, never a serialized MIME object
     # or a path for the parent to follow. Exit without a receipt on oversize.
@@ -56,9 +117,20 @@ def run(request_path: Path) -> int:
 
 def main() -> int:
     try:
-        if len(sys.argv) != 2:
+        if len(sys.argv) < 2:
             return 2
-        return run(Path(sys.argv[1]))
+        budgets = _parse_budgets(sys.argv[2:])
+    except ValueError:
+        return 2
+    _disable_core_dumps()
+    try:
+        _apply_budgets(budgets)
+    except Exception:
+        return EXIT_BUDGET_APPLY_FAILED
+    try:
+        return run(Path(sys.argv[1]), budgets)
+    except MemoryError:
+        return EXIT_MEMORY_LIMIT if "memory_mib" in budgets else 1
     except Exception:
         # The parent emits only a fixed safe error code; no private traceback.
         return 1

@@ -166,6 +166,12 @@ Hard-killed-parent recovery and durable resume remain unimplemented. See the
 [worker contract and practitioner sources](mbox-workers.md) for error codes,
 Python usage, tests, and precise limits.
 
+On `main` (unreleased), worker mode also accepts opt-in resource budgets:
+`--mbox-cpu-seconds` and `--mbox-max-output-mib` (Linux and macOS) and
+`--mbox-memory-mib` (Linux only). An unsupported control is refused before
+conversion. These are resource limits, not filesystem or network isolation; see
+[optional resource budgets](mbox-workers.md#optional-resource-budgets).
+
 ## Dialects: do not guess away quoting
 
 By default `--mbox-unescape preserve` retains `>From ` body text. When the export

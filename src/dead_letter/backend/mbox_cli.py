@@ -22,6 +22,9 @@ def run_mbox(
     unescape: UnescapeMode = "preserve",
     bundles: bool = False,
     timeout_seconds: float | None = None,
+    memory_limit_mib: int | None = None,
+    cpu_seconds: int | None = None,
+    max_output_mib: int | None = None,
 ) -> int:
     root = Path(output).expanduser().resolve() if output is not None else source.with_suffix(".markdown")
     started = monotonic()
@@ -35,6 +38,7 @@ def run_mbox(
             results = stack.enter_context(closing(convert_mbox(
                 source, output=root, options=options, limits=limits,
                 unescape=unescape, bundles=bundles, timeout_seconds=timeout_seconds,
+                memory_limit_mib=memory_limit_mib, cpu_seconds=cpu_seconds, max_output_mib=max_output_mib,
             )))
             for item in results:
                 total += 1
@@ -66,7 +70,10 @@ def run_mbox(
                     import_options={"unescape": unescape, "bundles": bundles,
                                     "max_message_bytes": limits.max_message_bytes,
                                     "max_line_bytes": limits.max_line_bytes,
-                                    "timeout_seconds": timeout_seconds},
+                                    "timeout_seconds": timeout_seconds,
+                                    "memory_limit_mib": memory_limit_mib,
+                                    "cpu_seconds": cpu_seconds,
+                                    "max_output_mib": max_output_mib},
                 )
             except KeyboardInterrupt:
                 print("MBOX report publication interrupted; previous report retained if present", file=sys.stderr)

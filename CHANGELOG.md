@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Opt-in resource budgets for MBOX message workers: `--mbox-cpu-seconds` and
+  `--mbox-max-output-mib` (Linux and macOS) and `--mbox-memory-mib` (Linux),
+  with matching `convert_mbox` parameters. Budgets require `--mbox-timeout`;
+  an unsupported control fails before conversion (`mbox_budget_unsupported`),
+  a limit the worker cannot apply aborts the import (`mbox_budget_apply_failed`),
+  and an exceeded budget fails only that record (`mbox_message_resource_limit`)
+  with its partial output withheld. Windows is not yet supported. These are
+  resource limits, not a sandbox. See [MBOX workers](docs/reference/mbox-workers.md#optional-resource-budgets) (#140).
 - Five [conversion recipes](docs/recipes/README.md) for Markdown/Obsidian,
   RAG preprocessing, local MCP conversion, Cabinet archiving, and report/quality
   auditing, with shared synthetic mail and a released-package smoke check (#162).
