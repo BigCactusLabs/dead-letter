@@ -16,7 +16,7 @@ import sys
 import tempfile
 
 from generate_client_installs import ROOT, public_launcher
-from smoke_mcpb import EXPECTED_TOOLS, SmokeFailure, StdioClient, result_text
+from smoke_mcpb import EXPECTED_TOOLS, PUBLISHED_TOOLS, SmokeFailure, StdioClient, result_text
 
 MESSAGE = (
     "From: sender@example.invalid\nTo: recipient@example.invalid\n"
@@ -85,8 +85,11 @@ def check(command: list[str] | None = None, *, environment: dict[str, str] | Non
                 raise SmokeFailure("initialize returned no protocol/server information")
             client.notify("notifications/initialized")
             tools = client.request("tools/list").get("tools", [])
-            if len(tools) != len(EXPECTED_TOOLS) or {t["name"] for t in tools} != EXPECTED_TOOLS:
-                raise SmokeFailure("published launcher did not expose the four expected tools")
+            names = [t["name"] for t in tools]
+            # The public package may predate tools on main, but never lacks the
+            # published ones or exposes anything unknown.
+            if len(names) != len(set(names)) or not PUBLISHED_TOOLS <= set(names) <= EXPECTED_TOOLS:
+                raise SmokeFailure("published launcher did not expose the expected tools")
             result = client.request("tools/call", {
                 "name": "convert_eml", "arguments": {"eml_path": str(fixture)},
             })
@@ -105,7 +108,7 @@ def main() -> int:
     except (SmokeFailure, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(f"FAIL: {error}", file=sys.stderr)
         return 1
-    print("PASS: generated client command, public PyPI stdio handshake, four tools, synthetic conversion")
+    print("PASS: generated client command, public PyPI stdio handshake, expected tools, synthetic conversion")
     return 0
 
 

@@ -4,10 +4,10 @@
 Install any CLI/Python route from the
 [installation and distribution map](distribution.md); once dead-letter is
 installed, run the commands below without a `uv run` prefix. Keep `uv run` only
-when working from a development checkout. The MCP server and web UI remain
-EML-only: MBOX import is not available through either surface (tracked: MCP
-ingestion [#145](https://github.com/BigCactusLabs/dead-letter/issues/145), web/API
-import [#146](https://github.com/BigCactusLabs/dead-letter/issues/146)). Watch
+when working from a development checkout. The web UI remains EML-only (tracked:
+web/API import [#146](https://github.com/BigCactusLabs/dead-letter/issues/146)).
+Released MCP servers are EML-only; `main` adds a bounded, unreleased
+[`convert_mbox` MCP tool](#mcp-bounded-convert_mbox-unreleased) (#145). Watch
 mode and recursive EML directory conversion also remain EML-only. No Google
 login, API key, or hosted email processing is needed.
 
@@ -264,6 +264,31 @@ were run. The rules follow Dovecot's [endpoint check](https://github.com/dovecot
 and are stricter than [mutt's](https://github.com/muttmua/mutt/blob/b74263bb9381b11dc0c08bc1fafa206ed1e53fda/mbox.c#L359-L425),
 which compares only five bytes to `From ` at the endpoint. Dialect names
 follow [de Boyne Pollard's MBOX survey](https://jdebp.uk/FGA/mail-mbox-formats.html).
+
+## MCP: bounded `convert_mbox` (unreleased)
+
+On `main` only, not in any release yet. The MCP server's `convert_mbox` tool
+runs the same importer for small exports, with fixed bounds:
+
+- one flat `.mbox` file (suffix checked case-insensitively); compressed
+  archives and Apple Mail `.mbox` directories are rejected;
+- at most 256 MiB of source, checked before conversion;
+- at most 1000 messages per call. When an archive holds more, the call stops
+  cleanly and returns `truncated: true`; the remaining messages are not
+  converted and there is no resume. Use the CLI for the whole archive;
+- default `preserve` quoting and default per-message limits. Unescape modes,
+  `--max-message-mib` and timed workers are CLI/Python-only;
+- `output_directory` is required. Output names and the
+  `.dead-letter-report.json` report are collision-safe: a second call into the
+  same folder writes `.dead-letter-report-2.json` and suffixed messages;
+- the response is a bounded summary with counts, the report path and at most
+  20 failure entries (index, error code, generic message). It never contains
+  message content;
+- cancelling the MCP call does not stop the conversion; the bounds limit how
+  long it runs.
+
+See the [runtime contract](v4-runtime-contracts.md#mcp-server-dead_letterbackendmcp_server)
+for the full inputs, outputs and error text.
 
 ## Python: consume lazily
 

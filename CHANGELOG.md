@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and an exceeded budget fails only that record (`mbox_message_resource_limit`)
   with its partial output withheld. Windows is not yet supported. These are
   resource limits, not a sandbox. See [MBOX workers](docs/reference/mbox-workers.md#optional-resource-budgets) (#140).
+- A bounded `convert_mbox` MCP tool converts one flat `.mbox` file (at most
+  256 MiB, first 1000 messages) into `output_directory` with the CLI's streaming
+  report under a collision-safe name. It returns counts, `truncated`, the report
+  path and at most 20 failure entries, never message content. Compressed archives
+  are rejected, the source is never modified, and MCP call cancellation is not
+  supported. See the [runtime contract](docs/reference/v4-runtime-contracts.md#mcp-server-dead_letterbackendmcp_server) (#145).
 - Five [conversion recipes](docs/recipes/README.md) for Markdown/Obsidian,
   RAG preprocessing, local MCP conversion, Cabinet archiving, and report/quality
   auditing, with shared synthetic mail and a released-package smoke check (#162).
