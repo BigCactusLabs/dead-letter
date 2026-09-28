@@ -343,6 +343,418 @@ def main() -> int:
             END:VCALENDAR
             --cal-1--
         """,
+        "gmail_forward_single.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Vendor Note
+            Date: Thu, 05 Mar 2026 11:00:00 +0000
+            Message-ID: <gmail-forward-single-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div dir="ltr">FYI, see the vendor note below.</div><br>
+            <div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">---------- Forwarded message ---------<br>
+            From: <strong class="gmail_sendername" dir="auto">Vendor</strong> <span dir="auto">&lt;vendor@example.net&gt;</span><br>
+            Date: Thu, Mar 5, 2026 at 8:00 AM<br>Subject: Vendor Note<br>To: Alice &lt;alice@example.com&gt;<br></div><br><br>
+            <div dir="ltr">Please review the attached quote.</div>
+            </div>
+        """,
+        "gmail_forward_french.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Stage
+            Date: Thu, 05 Mar 2026 11:02:00 +0000
+            Message-ID: <gmail-forward-french-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div dir="ltr">Pour info.</div><br>
+            <div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">---------- Forwarded message ---------<br>
+            De : <b class="gmail_sendername" dir="auto">Expéditeur</b> <span dir="auto">&lt;sender@example.fr&gt;</span><br>
+            Date: jeu. 5 mars 2026 à 08:00<br>Subject: Stage<br>To: Alice &lt;alice@example.com&gt;<br></div><br><br>
+            <div dir="ltr">Le programme du stage est joint.</div>
+            </div>
+        """,
+        "thunderbird_forward.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Minutes
+            Date: Thu, 05 Mar 2026 11:30:00 +0000
+            Message-ID: <thunderbird-forward-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <html><body><p>Minutes attached below.</p>
+            <div class="moz-forward-container"><br><br>-------- Forwarded Message --------
+            <table class="moz-email-headers-table" border="0" cellpadding="0" cellspacing="0">
+            <tbody><tr><th valign="BASELINE" nowrap="nowrap" align="RIGHT">Subject: </th><td>Minutes</td></tr>
+            <tr><th valign="BASELINE" nowrap="nowrap" align="RIGHT">Date: </th><td>Wed, 4 Mar 2026 09:00:00 +0000</td></tr>
+            <tr><th valign="BASELINE" nowrap="nowrap" align="RIGHT">From: </th><td>Erin &lt;erin@example.com&gt;</td></tr>
+            </tbody></table><br><p>Minutes from the Wednesday meeting.</p></div>
+            </body></html>
+        """,
+        "apple_mail_forward.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Receipt
+            Date: Thu, 05 Mar 2026 11:35:00 +0000
+            Message-ID: <apple-forward-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <html><body style="line-break:after-white-space">See below.<br id="lineBreakAtBeginningOfMessage"><div><br>
+            <blockquote type="cite"><div>Begin forwarded message:</div><br class="Apple-interchange-newline">
+            <div style="margin:0px"><span><b>From: </b></span><span>Shop &lt;shop@example.com&gt;<br></span></div>
+            <div style="margin:0px"><span><b>Subject: </b></span><span><b>Receipt</b><br></span></div>
+            <br><div>Thank you for your order.</div></blockquote></div></body></html>
+        """,
+        "gmail_forward_body_headers.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Budget
+            Date: Thu, 05 Mar 2026 11:40:00 +0000
+            Message-ID: <gmail-forward-body-headers-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div>Memo</div><div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">---------- Forwarded message ---------<br>
+            From: <strong class="gmail_sendername" dir="auto">Dave</strong> <span dir="auto">&lt;<a href="mailto:dave@example.com">dave@example.com</a>&gt;</span><br>
+            Date: Wed, Mar 4, 2026 at 10:00 AM<br>Subject: Budget<br>To: &lt;alice@example.com&gt;<br>Cc: Carol &lt;carol@example.com&gt;<br></div><br><br>
+            <div dir="ltr">To: All staff<br>Date: Friday is a holiday<br>From: HR<br><br>Office closed.</div></div>
+        """,
+        "gmail_forward_empty_body.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Budget
+            Date: Thu, 05 Mar 2026 11:45:00 +0000
+            Message-ID: <gmail-forward-empty-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div dir="ltr">Empty fwd</div><div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">---------- Forwarded message ---------<br>
+            From: <strong class="gmail_sendername" dir="auto">Dave</strong> <span dir="auto">&lt;<a href="mailto:dave@example.com">dave@example.com</a>&gt;</span><br>
+            Date: Wed, Mar 4, 2026 at 10:00 AM<br>Subject: Budget<br>To: &lt;alice@example.com&gt;<br>Cc: Carol &lt;carol@example.com&gt;<br></div><br><br></div>
+        """,
+        "plain_forward_empty_body.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Invoice
+            Date: Thu, 05 Mar 2026 11:50:00 +0000
+            Message-ID: <plain-forward-empty-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            FYI
+
+            ---------- Forwarded message ---------
+            From: Dave <dave@example.com>
+            Date: Wed, Mar 4, 2026
+            Subject: Invoice
+            To: alice@example.com
+            Cc: Carol <carol@example.com>
+        """,
+        "gmail_reply_unclassed_blockquote.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Re: Probe
+            Date: Thu, 05 Mar 2026 11:55:00 +0000
+            Message-ID: <gmail-reply-unclassed-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div dir="ltr">Thanks!</div><br><div class="gmail_quote"><div dir="ltr" class="gmail_attr">On Wed, Mar 4, 2026 at 9:00 AM Bob &lt;bob@example.com&gt; wrote:<br></div>
+            <blockquote style="margin:0 0 0 .8ex">OLD REPLY HISTORY</blockquote></div>
+        """,
+        "gmail_reply_wrapped_blockquote.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Re: Probe
+            Date: Thu, 05 Mar 2026 12:00:00 +0000
+            Message-ID: <gmail-reply-wrapped-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div dir="ltr">Thanks!</div><br><div class="gmail_quote"><div dir="ltr" class="gmail_attr">On Wed, Mar 4, 2026 at 9:00 AM Bob &lt;bob@example.com&gt; wrote:<br></div>
+            <div><blockquote class="gmail_quote">OLD REPLY HISTORY</blockquote></div></div>
+        """,
+        "gmail_extra_reply.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Re: Probe
+            Date: Thu, 05 Mar 2026 12:05:00 +0000
+            Message-ID: <gmail-extra-reply-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div dir="ltr">Thanks!<div class="gmail_extra"><br><div class="gmail_quote">On Wed, Mar 4, 2026 at 9:00 AM Bob <span>&lt;bob@example.com&gt;</span> wrote:<br>
+            <blockquote class="gmail_quote">OLD REPLY HISTORY</blockquote></div></div></div>
+        """,
+        "gmail_reply_attr_after_br.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Re: Probe
+            Date: Thu, 05 Mar 2026 12:10:00 +0000
+            Message-ID: <gmail-reply-br-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div dir="ltr">Thanks!</div><div class="gmail_quote"><br><div dir="ltr" class="gmail_attr">On Wed, Mar 4, 2026 at 9:00 AM Bob &lt;bob@example.com&gt; wrote:<br></div>
+            <blockquote class="gmail_quote">OLD REPLY HISTORY</blockquote></div>
+        """,
+        "plain_outlook_reply_localized_marker.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: AW: Protokoll
+            Date: Thu, 05 Mar 2026 12:15:00 +0000
+            Message-ID: <plain-outlook-localized-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Danke!
+
+            ________________________________
+            From: Bob <bob@example.com>
+            Sent: Wednesday, March 4, 2026 9:00 AM
+            To: Alice <alice@example.com>
+            Subject: WG: Protokoll
+
+            OLD REPLY HISTORY LINE
+
+            -------- Weitergeleitete Nachricht --------
+            Betreff: Protokoll
+            Datum: Tue, 3 Mar 2026
+            Von: Erin <erin@example.com>
+
+            Erin protocol text
+        """,
+        "plain_outlook_reply_english_marker.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: RE: Minutes
+            Date: Thu, 05 Mar 2026 12:30:00 +0000
+            Message-ID: <plain-outlook-english-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Thanks!
+
+            ________________________________
+            From: Bob <bob@example.com>
+            Sent: Wednesday, March 4, 2026 9:00 AM
+            To: Alice <alice@example.com>
+            Subject: FW: Minutes
+
+            OLD REPLY HISTORY LINE
+
+            ---------- Forwarded message ---------
+            From: Erin <erin@example.com>
+
+            Erin text
+        """,
+        "plain_note_quotes_then_forward.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Budget
+            Date: Thu, 05 Mar 2026 12:35:00 +0000
+            Message-ID: <plain-note-quotes-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            You asked:
+            > can you send the budget?
+            Here it is.
+
+            ---------- Forwarded message ---------
+            From: Dave <dave@example.com>
+            Date: Wed, Mar 4, 2026
+            Subject: Budget
+            To: alice@example.com
+
+            DAVE FORWARDED BODY
+        """,
+        "plain_note_wrote_like_then_forward.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Budget
+            Date: Thu, 05 Mar 2026 12:40:00 +0000
+            Message-ID: <plain-note-wrote-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Per Bob's note below.
+            On Monday we agreed, Bob wrote:
+            nothing
+
+            ---------- Forwarded message ---------
+            From: Dave <dave@example.com>
+            Date: Wed, Mar 4, 2026
+            Subject: Budget
+            To: alice@example.com
+
+            DAVE FORWARDED BODY
+        """,
+        "plain_note_outlook_like_then_forward.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Budget
+            Date: Thu, 05 Mar 2026 12:45:00 +0000
+            Message-ID: <plain-note-outlook-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            FYI - see below
+
+            From: Me
+            Sent: today
+
+            ---------- Forwarded message ---------
+            From: Dave <dave@example.com>
+            Date: Wed, Mar 4, 2026
+            Subject: Budget
+            To: alice@example.com
+
+            DAVE FORWARDED BODY
+        """,
+        "plain_marker_in_prose.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Re: Probe
+            Date: Thu, 05 Mar 2026 12:20:00 +0000
+            Message-ID: <plain-marker-prose-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Hello team,
+            please note: the subject line in the old system said
+            ----- Mensaje reenviado -----
+            and nothing else. Then:
+
+            On Wed, Mar 4, 2026 at 9:00 AM Bob <bob@example.com> wrote:
+            > OLD REPLY HISTORY
+        """,
+        "plain_indented_marker_in_reply.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Re: Probe
+            Date: Thu, 05 Mar 2026 12:25:00 +0000
+            Message-ID: <plain-indented-marker-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Thanks
+
+            On Wed, Mar 4, 2026 at 9:00 AM Bob <bob@example.com> wrote:
+            > hi
+                ---------- Forwarded message ---------
+            > more
+        """,
+        "gmail_forwards_sequential.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: digest
+            Date: Thu, 05 Mar 2026 11:05:00 +0000
+            Message-ID: <gmail-forwards-sequential-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div dir="ltr">Digest of notes below.</div>
+            <div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>
+            From: Person One &lt;one@example.com&gt;<br>Date: Mon, Mar 2, 2026 at 9:00 AM<br>Subject: Note one<br>To: team@example.com<br></div><br>
+            <div>Body from person one.</div></div>
+            <div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>
+            From: Person Two &lt;two@example.com&gt;<br>Date: Tue, Mar 3, 2026 at 9:00 AM<br>Subject: Note two<br>To: team@example.com<br></div><br>
+            <div>Body from person two.</div></div>
+            <div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>
+            From: Person Three &lt;three@example.com&gt;<br>Date: Wed, Mar 4, 2026 at 9:00 AM<br>Subject: Note three<br>To: team@example.com<br></div><br>
+            <div>Body from person three.</div></div>
+        """,
+        "gmail_forwards_nested.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Fwd: Fwd: chain
+            Date: Thu, 05 Mar 2026 11:10:00 +0000
+            Message-ID: <gmail-forwards-nested-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div dir="ltr">Passing this chain along.</div>
+            <div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>
+            From: Person One &lt;one@example.com&gt;<br>Date: Wed, Mar 4, 2026 at 9:00 AM<br>Subject: Fwd: Fwd: chain<br>To: alice@example.com<br></div><br>
+            <div>Body from person one.</div><br>
+            <div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>
+            From: Person Two &lt;two@example.com&gt;<br>Date: Tue, Mar 3, 2026 at 9:00 AM<br>Subject: Fwd: chain<br>To: one@example.com<br></div><br>
+            <div>Body from person two.</div><br>
+            <div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>
+            From: Person Three &lt;three@example.com&gt;<br>Date: Mon, Mar 2, 2026 at 9:00 AM<br>Subject: chain<br>To: two@example.com<br></div><br>
+            <div>Body from person three.</div></div></div></div>
+        """,
+        "gmail_forward_with_reply_quote.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Re: Budget
+            Date: Thu, 05 Mar 2026 11:15:00 +0000
+            Message-ID: <gmail-forward-reply-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div dir="ltr">See the budget thread below.</div>
+            <div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>
+            From: Dave &lt;dave@example.com&gt;<br>Date: Wed, Mar 4, 2026 at 10:00 AM<br>Subject: Re: Budget<br>To: alice@example.com<br></div><br>
+            <div dir="ltr">Dave approves the budget.</div><br>
+            <div class="gmail_quote"><div dir="ltr" class="gmail_attr">On Tue, Mar 3, 2026 at 9:00 AM Carol &lt;carol@example.com&gt; wrote:<br></div>
+            <blockquote class="gmail_quote"><div>Carol asks about the budget.</div></blockquote></div></div>
+        """,
+        "gmail_reply_with_forward.eml": """
+            From: Bob <bob@example.com>
+            To: Alice <alice@example.com>
+            Subject: Re: Fwd: Vendor Note
+            Date: Thu, 05 Mar 2026 11:20:00 +0000
+            Message-ID: <gmail-reply-forward-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div dir="ltr">Thanks, got it.</div><br>
+            <div class="gmail_quote"><div dir="ltr" class="gmail_attr">On Thu, Mar 5, 2026 at 11:00 AM Alice &lt;alice@example.com&gt; wrote:<br></div>
+            <blockquote class="gmail_quote"><div>Forwarding this vendor note.</div>
+            <div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>
+            From: Vendor &lt;vendor@example.net&gt;<br>Date: Thu, Mar 5, 2026 at 8:00 AM<br>Subject: Vendor Note<br></div><br>
+            <div>Vendor quote body.</div></div></blockquote></div>
+        """,
+        "plain_forwards_multiple.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: notes
+            Date: Thu, 05 Mar 2026 11:25:00 +0000
+            Message-ID: <plain-forwards-multiple-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Digest of notes below.
+
+            ---------- Forwarded message ---------
+            From: Person One <one@example.com>
+            Date: Mon, Mar 2, 2026 at 9:00 AM
+            Subject: Note one
+            To: team@example.com
+
+            Body from person one.
+
+            -------- Forwarded message --------
+            From: Person Two <two@example.com>
+            Date: Tue, Mar 3, 2026 at 9:00 AM
+            Subject: Note two
+
+            Body from person two.
+
+            Begin forwarded message:
+
+            From: Person Three <three@example.com>
+            Subject: Note three
+            Date: March 4, 2026 at 9:00:00 AM EST
+            To: team@example.com
+
+            Body from person three.
+        """,
     }
 
     for name, content in fixtures.items():

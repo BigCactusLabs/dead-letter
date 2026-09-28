@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Gmail forwarded messages are no longer dropped as quoted reply history.
+  In the default `latest` thread mode, Gmail HTML forwards are kept inline,
+  including sequential and nested forwards and any reply quoted inside a
+  forward; body text after or between forwards is emitted before them. In
+  `structured` mode each Gmail forward and each unquoted plain-text forward
+  separator gets its own `## Forwarded from …` (or `## Forwarded message`)
+  section in document order, with no leftover separator lines, and counts
+  toward `thread_messages`. Forward detection also recognizes localized
+  Thunderbird, Yahoo and Apple Mail separators. A text/plain forward inside
+  `>` quoting is still treated as quoted history in `latest` mode, and
+  signature stripping can still remove text after a `-- ` line inside a
+  forward. Output for mail without a forward is unchanged.
+- A plain-text Outlook reply (`____` or `-----Original Message-----` plus a
+  From/Sent block) whose history contains a forward separator no longer
+  leaks that reply history into `latest` output.
+
+### Changed
+
+- The `convert_eml` MCP tool description now says attachments are listed in
+  front matter but not written to disk (`convert_eml_to_bundle` saves them),
+  and how `structured` mode and forwarded content interact.
+
 ## [0.4.5] - 2026-09-28
 
 ### Added

@@ -1,0 +1,16 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Fwd: Invoice
+Date: Thu, 05 Mar 2026 11:50:00 +0000
+Message-ID: <plain-forward-empty-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+FYI
+
+---------- Forwarded message ---------
+From: Dave <dave@example.com>
+Date: Wed, Mar 4, 2026
+Subject: Invoice
+To: alice@example.com
+Cc: Carol <carol@example.com>

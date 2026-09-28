@@ -1,0 +1,18 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Fwd: digest
+Date: Thu, 05 Mar 2026 11:05:00 +0000
+Message-ID: <gmail-forwards-sequential-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<div dir="ltr">Digest of notes below.</div>
+<div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>
+From: Person One &lt;one@example.com&gt;<br>Date: Mon, Mar 2, 2026 at 9:00 AM<br>Subject: Note one<br>To: team@example.com<br></div><br>
+<div>Body from person one.</div></div>
+<div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>
+From: Person Two &lt;two@example.com&gt;<br>Date: Tue, Mar 3, 2026 at 9:00 AM<br>Subject: Note two<br>To: team@example.com<br></div><br>
+<div>Body from person two.</div></div>
+<div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>
+From: Person Three &lt;three@example.com&gt;<br>Date: Wed, Mar 4, 2026 at 9:00 AM<br>Subject: Note three<br>To: team@example.com<br></div><br>
+<div>Body from person three.</div></div>

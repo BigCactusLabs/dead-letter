@@ -1,0 +1,19 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Fwd: Budget
+Date: Thu, 05 Mar 2026 12:35:00 +0000
+Message-ID: <plain-note-quotes-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+You asked:
+> can you send the budget?
+Here it is.
+
+---------- Forwarded message ---------
+From: Dave <dave@example.com>
+Date: Wed, Mar 4, 2026
+Subject: Budget
+To: alice@example.com
+
+DAVE FORWARDED BODY

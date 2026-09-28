@@ -1,0 +1,18 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Fwd: Fwd: Fwd: chain
+Date: Thu, 05 Mar 2026 11:10:00 +0000
+Message-ID: <gmail-forwards-nested-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<div dir="ltr">Passing this chain along.</div>
+<div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>
+From: Person One &lt;one@example.com&gt;<br>Date: Wed, Mar 4, 2026 at 9:00 AM<br>Subject: Fwd: Fwd: chain<br>To: alice@example.com<br></div><br>
+<div>Body from person one.</div><br>
+<div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>
+From: Person Two &lt;two@example.com&gt;<br>Date: Tue, Mar 3, 2026 at 9:00 AM<br>Subject: Fwd: chain<br>To: one@example.com<br></div><br>
+<div>Body from person two.</div><br>
+<div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>
+From: Person Three &lt;three@example.com&gt;<br>Date: Mon, Mar 2, 2026 at 9:00 AM<br>Subject: chain<br>To: two@example.com<br></div><br>
+<div>Body from person three.</div></div></div></div>

@@ -131,8 +131,8 @@ uvx --python 3.12 dead-letter convert message.eml --output converted/run-1/ \
 CLI pass `--allow-fallback-on-html-error --allow-html-repair-on-panic` for
 the same tolerance.)
 
-Other useful flags: `--thread-mode structured` (render quoted history as
-sections), `--include-all-headers`, `--embed-inline-images`, `--dry-run`
+Other useful flags: `--thread-mode structured` (render quoted history and
+forwarded messages as sections), `--include-all-headers`, `--embed-inline-images`, `--dry-run`
 (validate without writing; prints nothing), `--report` (write
 `.dead-letter-report.json` into the `--output` directory; without `--output`
 it lands in the input folder, so always pair it with `--output`).
@@ -157,8 +157,10 @@ Rules:
 ## Output shape
 
 Each Markdown file starts with YAML front matter, then the body. Quoted
-history is collapsed by default (`thread-mode latest`). Calendar invites get a
-summary block. Read the front matter for metadata instead of re-parsing
+reply history is collapsed by default (`thread-mode latest`). Releases after
+0.4.5 keep Gmail and plain-text forwarded messages in the default output;
+0.4.5 and earlier drop Gmail HTML forwards unless you pass
+`--thread-mode structured`. Calendar invites get a summary block. Read the front matter for metadata instead of re-parsing
 headers from the body.
 
 ## Large batches

@@ -1,0 +1,12 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Fwd: Budget
+Date: Thu, 05 Mar 2026 11:40:00 +0000
+Message-ID: <gmail-forward-body-headers-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<div>Memo</div><div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">---------- Forwarded message ---------<br>
+From: <strong class="gmail_sendername" dir="auto">Dave</strong> <span dir="auto">&lt;<a href="mailto:dave@example.com">dave@example.com</a>&gt;</span><br>
+Date: Wed, Mar 4, 2026 at 10:00 AM<br>Subject: Budget<br>To: &lt;alice@example.com&gt;<br>Cc: Carol &lt;carol@example.com&gt;<br></div><br><br>
+<div dir="ltr">To: All staff<br>Date: Friday is a holiday<br>From: HR<br><br>Office closed.</div></div>

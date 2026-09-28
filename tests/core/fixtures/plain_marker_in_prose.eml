@@ -1,0 +1,15 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Re: Probe
+Date: Thu, 05 Mar 2026 12:20:00 +0000
+Message-ID: <plain-marker-prose-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Hello team,
+please note: the subject line in the old system said
+----- Mensaje reenviado -----
+and nothing else. Then:
+
+On Wed, Mar 4, 2026 at 9:00 AM Bob <bob@example.com> wrote:
+> OLD REPLY HISTORY

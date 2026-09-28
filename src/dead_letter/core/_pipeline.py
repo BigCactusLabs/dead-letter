@@ -14,8 +14,9 @@ from selectolax.parser import HTMLParser
 
 from dead_letter.core.attribution import annotate_quoted_zones
 from dead_letter.core.calendar import summarize_calendar_parts
-from dead_letter.core.html_conversation import segment_html_conversation
+from dead_letter.core.forwarding import split_forward_marker
 from dead_letter.core.html import html_has_italic_nodes, html_to_markdown, unwrap_italic_tags
+from dead_letter.core.html_conversation import segment_html_conversation
 from dead_letter.core.image_filter import filter_images
 from dead_letter.core.mime import parse_eml
 from dead_letter.core.render import render_markdown, serialize_markdown
@@ -313,6 +314,22 @@ def _threaded_content_from_conversation(
         content = content.strip()
         if not content:
             continue
+        if zone.kind is ZoneKind.FORWARDED_BODY:
+            # Mirror the plain-text shape: the marker line becomes its own
+            # FORWARD_HEADER zone ahead of the forwarded headers and body.
+            marker, content = split_forward_marker(content)
+            content = content.strip()
+            if marker is not None:
+                text_zones.append(ConversationZone(
+                    kind=ZoneKind.FORWARD_HEADER,
+                    content=marker,
+                    source_kind=zone.source_kind,
+                    client_hint=zone.client_hint,
+                    confidence=zone.confidence,
+                    metadata=zone.metadata,
+                ))
+            if not content:
+                continue
         text_zones.append(ConversationZone(
             kind=zone.kind,
             content=content,

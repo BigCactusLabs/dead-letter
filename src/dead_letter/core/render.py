@@ -7,6 +7,7 @@ import re
 
 import yaml
 
+from dead_letter.core.forwarding import parse_forward_headers
 from dead_letter.core.types import (
     ConvertOptions,
     ParsedEmail,
@@ -19,6 +20,8 @@ from dead_letter.core.types import (
 )
 
 _FENCE_OPEN_RE = re.compile(r"^( {0,3})(`{3,}|~{3,})(.*)$")
+_FORWARD_KINDS = frozenset({ZoneKind.FORWARD_HEADER, ZoneKind.FORWARDED_BODY})
+_SECTION_KINDS = _FORWARD_KINDS | {ZoneKind.QUOTED}
 
 
 def render_markdown(
@@ -78,7 +81,15 @@ def render_markdown(
     body = "\n\n".join(head_lines).strip()
 
     if opts.thread_mode is ThreadMode.STRUCTURED and not used_quoted_fallback:
-        sections = _build_thread_sections(threaded, opts)
+        forward_sections = _build_forward_sections(threaded)
+        if forward_sections:
+            body = "\n\n".join(
+                _render_zone_content(zone, zone.content)
+                for zone in threaded.zones
+                if zone.kind not in _SECTION_KINDS and zone.content.strip()
+            ).strip()
+        # thread_order reorders reply sections only; forwards keep document order.
+        sections = [*forward_sections, *_build_thread_sections(threaded, opts)]
         if sections:
             front_matter["thread_messages"] = len(sections)
             body = "\n\n".join([body, *sections]).strip()
@@ -98,6 +109,44 @@ def _build_thread_sections(threaded: ThreadedContent, opts: ConvertOptions) -> l
     if opts.thread_order is ThreadOrder.OLDEST_FIRST:
         sections = list(reversed(sections))
     return sections
+
+
+def _build_forward_sections(threaded: ThreadedContent) -> list[str]:
+    """One section per forwarded message, in document order.
+
+    The marker (FORWARD_HEADER) is replaced by the section heading; a marker
+    with no following body still yields a heading-only section.
+    """
+    sections: list[str] = []
+    pending_marker = False
+    for zone in threaded.zones:
+        if zone.kind is ZoneKind.FORWARDED_BODY:
+            sections.append(_render_forward_section(zone))
+            pending_marker = False
+            continue
+        if pending_marker:
+            sections.append(_FORWARD_FALLBACK_HEADER)
+        pending_marker = zone.kind is ZoneKind.FORWARD_HEADER
+    if pending_marker:
+        sections.append(_FORWARD_FALLBACK_HEADER)
+    return sections
+
+
+def _render_forward_section(zone: Zone) -> str:
+    header = _attribution_header(zone, lead="Forwarded from", key="forward")
+    content = zone.content
+    if header is None:
+        header = _FORWARD_FALLBACK_HEADER
+    else:
+        # The heading carries From/Date/Subject; drop those lines only here so
+        # zone content (and snapshot text) keeps the full header block.
+        parsed = parse_forward_headers(content)
+        if parsed is not None:
+            content = parsed[1]
+    body = _render_zone_content(zone, content)
+    if body:
+        return f"{header}\n\n{body}"
+    return header
 
 
 def _render_thread_section(zone: Zone) -> str:
@@ -191,18 +240,25 @@ def _escape_html_outside_code_spans(line: str) -> str:
 def _section_header(zone: Zone) -> str:
     if zone.metadata.get("thread_render") == "degenerate":
         return "## Earlier in thread"
-    from_ = _escaped_metadata(zone, "attribution_from")
+    return _attribution_header(zone, lead="From", key="attribution") or "## Earlier message"
+
+
+_FORWARD_FALLBACK_HEADER = "## Forwarded message"
+
+
+def _attribution_header(zone: Zone, *, lead: str, key: str) -> str | None:
+    from_ = _escaped_metadata(zone, f"{key}_from")
     if not from_:
-        return "## Earlier message"
-    date = _escaped_metadata(zone, "attribution_date")
-    subject = _escaped_metadata(zone, "attribution_subject")
+        return None
+    date = _escaped_metadata(zone, f"{key}_date")
+    subject = _escaped_metadata(zone, f"{key}_subject")
     if date and subject:
-        return f"## From {from_} ({date}) — {subject}"
+        return f"## {lead} {from_} ({date}) — {subject}"
     if date:
-        return f"## From {from_} ({date})"
+        return f"## {lead} {from_} ({date})"
     if subject:
-        return f"## From {from_} — {subject}"
-    return f"## From {from_}"
+        return f"## {lead} {from_} — {subject}"
+    return f"## {lead} {from_}"
 
 
 def _escaped_metadata(zone: Zone, key: str) -> str | None:
