@@ -64,7 +64,7 @@ The plugin works in two runtimes that share the plugin format:
 
 ## Path-resolution rule
 
-Always pass the user's path to the MCP server **unchanged**. The MCP server only checks existence and returns an error result whose text is `File not found: <path>` — no rewriting needed. The error text is all you get; the MCP protocol does not carry an exception class name.
+Always pass the user's path to the MCP server **unchanged**. The MCP server only checks existence and returns an error result whose text contains `File not found: <path>` — no rewriting needed. The error text is all you get; the MCP protocol does not carry an exception class name.
 
 If you get a `File not found:` error and you're in Cowork:
 

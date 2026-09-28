@@ -65,9 +65,9 @@ Presets: `default` (strip signatures, tracking pixels, signature images),
 Individual flags override the preset.
 
 Rules:
-- Pass the user's path unchanged. A missing file returns `File not found: <path>`
-  and a missing folder returns `Directory not found: <path>`. Surface that
-  text; do not rewrite the path.
+- Pass the user's path unchanged. A missing file returns an error containing
+  `File not found: <path>` and a missing folder returns one containing
+  `Directory not found: <path>`. Surface that text; do not rewrite the path.
 - `convert_eml` without `output_path` is read-only. Prefer it for reading and
   summarizing.
 - `convert_directory` and `convert_eml_to_bundle` write to disk. Confirm the

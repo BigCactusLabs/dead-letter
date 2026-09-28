@@ -47,7 +47,7 @@ Run this checklist before each plugin release. Most can run in Cowork; some requ
 ### 7. Host-path remediation
 
 1. Without any granted directory, type `/dead-letter:convert /Users/<you>/Desktop/some.eml`.
-2. Expect: an error result from the MCP server whose text is `File not found: <path>`, followed by Claude suggesting "drag the file into the chat" (per the SKILL.md path-resolution rule).
+2. Expect: an error result from the MCP server whose text contains `File not found: <path>`, followed by Claude suggesting "drag the file into the chat" (per the SKILL.md path-resolution rule).
 
 ## Claude Code session checks
 
