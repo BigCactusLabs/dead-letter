@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `>` quoting is still treated as quoted history in `latest` mode, and
   signature stripping can still remove text after a `-- ` line inside a
   forward. Output for mail without a forward is unchanged.
+- A plain-text Outlook reply (`____` or `-----Original Message-----` plus a
+  From/Sent block) whose history contains a forward separator no longer
+  leaks that reply history into `latest` output.
+
+### Changed
+
+- The `convert_eml` MCP tool description now says attachments are listed in
+  front matter but not written to disk (`convert_eml_to_bundle` saves them),
+  and how `structured` mode and forwarded content interact.
 
 ## [0.4.5] - 2026-09-28
 
