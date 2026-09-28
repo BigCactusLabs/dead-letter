@@ -68,6 +68,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Unreleased analysis sidecars now reject unusable destinations before inference,
+  preserve full results on write failure, and run provider preflight before new
+  source reads. Reuse binds adapter/SDK versions, reports the current source
+  basename, tolerates bounded clock skew, and retries a vanished target once.
+  Failure/skip records use `attempt_recorded`; macOS file writes request
+  `F_FULLFSYNC` where supported (#164).
+
 - The MCP `convert_directory` inputSchema now lists `output_directory` as
   required, matching the existing runtime requirement, and an empty
   `output_directory` is rejected instead of writing into the server's working

@@ -8,6 +8,7 @@ import math
 import os
 import re
 import stat
+import sys
 import uuid
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -17,7 +18,9 @@ from typing import Callable
 from dead_letter.analysis.contracts import DEFAULT_MODEL, AnalysisError, canonical_json, digest
 from dead_letter.analysis.eml import PreparedEmail, prepare_eml
 from dead_letter.analysis.profiles import get_profile
-from dead_letter.analysis.providers.typesafe import TypeSafeConfig, emit_disclosure, preflight
+from dead_letter.analysis.providers.typesafe import (
+    SDK_VERSION, TypeSafeConfig, emit_disclosure, preflight,
+)
 from dead_letter.analysis.responses import validate_response
 from dead_letter.analysis.service import RESULT_SCHEMA_VERSION, _result_envelope, analyze_prepared
 
@@ -47,7 +50,9 @@ def _binding(result: dict) -> dict:
         **{key: result[key] for key in (
             "request_fingerprint", "state_sha256", "normalization_version",
             "state_builder_version", "provider", "endpoint", "requested_model",
+            "adapter_version",
         )},
+        "sdk_version": result.get("sdk_version"),
         "profile_sha256": result["profile"]["sha256"],
     }
 
@@ -85,11 +90,56 @@ def _fsync_directory(path: Path) -> None:
             raise
 
 
+def _probe_directory(directory: Path, name: str) -> None:
+    probe = directory / f".{name}.{uuid.uuid4().hex}.tmp"
+    fd = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        os.close(fd)
+    finally:
+        probe.unlink()
+
+
+def _validate_destination(path: Path) -> bool:
+    """Fail before any source read or provider preflight on unusable outputs."""
+    exists = _target_exists(path)
+    attempts = path.with_name(path.name + ".attempts")
+    try:
+        try:
+            info = attempts.lstat()
+        except FileNotFoundError:
+            info = None
+        if info is not None and not stat.S_ISDIR(info.st_mode):
+            raise AnalysisError("analysis_output_invalid")
+        _probe_directory(path.parent, path.name)
+        if info is not None:
+            _probe_directory(attempts, path.name)
+    except OSError:
+        raise AnalysisError("analysis_output_invalid") from None
+    return exists
+
+
+def _fsync_file(fd: int) -> None:
+    os.fsync(fd)
+    if sys.platform == "darwin":
+        import fcntl
+        command = getattr(fcntl, "F_FULLFSYNC", None)
+        if command is not None:
+            try:
+                # The temp inode becomes the published file through the hard link.
+                fcntl.fcntl(fd, command)
+            except OSError as exc:
+                if exc.errno not in {
+                    errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS, errno.ENOTTY,
+                }:
+                    raise
+                # Ordinary fsync above remains the fallback on unsupported volumes.
+
+
 def _write_file(fd: int, data: bytes) -> None:
     with os.fdopen(fd, "wb") as handle:
         handle.write(data)
         handle.flush()
-        os.fsync(handle.fileno())
+        _fsync_file(handle.fileno())
 
 
 def _publish(path: Path, result: dict) -> None:
@@ -244,7 +294,7 @@ def _validate(result: dict, prepared: PreparedEmail) -> None:
 
 def _reuse(path: Path, prepared: PreparedEmail, alias_max_age: float) -> dict:
     if not _target_exists(path):
-        raise AnalysisError("analysis_output_invalid")
+        raise FileNotFoundError
     try:
         before = path.lstat()
         fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
@@ -264,8 +314,12 @@ def _reuse(path: Path, prepared: PreparedEmail, alias_max_age: float) -> dict:
         _validate(result, prepared)
         created = _timestamp(result["created_at"])
         age = (_now() - created).total_seconds()
-        if age < 0:
+        if age < -300:
             raise ValueError("future creation time")
+        age = max(0.0, age)
+    except FileNotFoundError:
+        # The caller can re-enter the absent-output path once, before preflight.
+        raise
     except AnalysisError as exc:
         if exc.code == "analysis_output_invalid":
             raise
@@ -273,6 +327,7 @@ def _reuse(path: Path, prepared: PreparedEmail, alias_max_age: float) -> dict:
     except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError, OverflowError):
         raise AnalysisError("analysis_output_corrupt") from None
     expected = _result_envelope(prepared)
+    expected["sdk_version"] = SDK_VERSION
     if (result["execution_status"] != "succeeded" or result["reuse_key"] != _reuse_key(result)
             or result["reuse_key"] != _reuse_key(expected)):
         raise AnalysisError("analysis_output_mismatch")
@@ -285,7 +340,9 @@ def _reuse(path: Path, prepared: PreparedEmail, alias_max_age: float) -> dict:
     if result["returned_model"] != result["requested_model"] and age > alias_max_age:
         raise AnalysisError("analysis_output_stale_alias")
     result["sidecar"] = {"path": str(path), "outcome": "reused", "created_at": result["created_at"],
-                         "age_seconds": age, "returned_model": result["returned_model"]}
+                         "age_seconds": age, "returned_model": result["returned_model"],
+                         "stored_source_name": result["source"]["reference"]}
+    result["source"]["reference"] = prepared.snapshot.source.name
     return result
 
 
@@ -299,24 +356,31 @@ async def analyze_to_sidecar(
     """Reuse a validated success offline, or execute and persist one prepared email.
 
     Remote work still requires allow_remote=True. Existing outputs are never
-    replaced. Failures/skips go only to output + '.attempts/'. Source is read once.
+    replaced. Execution failures/skips go to output + '.attempts/'. New inference
+    requires preflight before source reads; reuse needs no SDK/key. A vanished
+    reusable output can restart the absent-output flow once and reread the source.
     """
     if provider != "typesafe":
         raise AnalysisError("unsupported_analysis_provider")
     if type(alias_max_age) not in (int, float) or not math.isfinite(alias_max_age) or alias_max_age < 0:
         raise AnalysisError("invalid_alias_max_age")
     target = Path(output).expanduser().absolute()  # Never resolve the target symlink.
-    exists = _target_exists(target)
     effective = config or TypeSafeConfig.from_environment()
-    prepared = prepare_eml(path, profile_name=profile_name, focus_identity=focus_identity,
-                           max_context_segments=max_context_segments, model=model,
-                           base_url=effective.base_url)
-    if exists:
-        return _reuse(target, prepared, alias_max_age)
-    if allow_remote is not True:
-        raise AnalysisError("remote_analysis_not_authorized")
+    options = dict(profile_name=profile_name, focus_identity=focus_identity,
+                   max_context_segments=max_context_segments, model=model,
+                   base_url=effective.base_url)
+    for check in range(2):
+        if not _validate_destination(target):
+            preflight(allow_remote=allow_remote)
+            break
+        prepared = prepare_eml(path, **options)
+        try:
+            return _reuse(target, prepared, alias_max_age)
+        except FileNotFoundError:
+            if check:
+                raise AnalysisError("analysis_output_corrupt") from None
+    prepared = prepare_eml(path, **options)
     try:
-        preflight(allow_remote=True)
         result = await analyze_prepared(prepared, allow_remote=True, config=effective,
                                         on_disclosure=on_disclosure)
     except AnalysisError as exc:
@@ -337,7 +401,7 @@ async def analyze_to_sidecar(
                     break
                 except FileExistsError:
                     continue
-            result["sidecar"] = {"path": str(attempt), "outcome": "written"}
+            result["sidecar"] = {"path": str(attempt), "outcome": "attempt_recorded"}
         else:
             try:
                 _publish(target, result)
@@ -349,5 +413,10 @@ async def analyze_to_sidecar(
                     raise _DiscardedResultError(exc.code) from None
                 result["sidecar"]["discarded_fresh_result"] = True
         return result
-    except OSError:
-        raise AnalysisError("analysis_output_write_failed") from None
+    except _DiscardedResultError:
+        raise
+    except Exception:
+        # A paid result must survive disk/serialization failures. Do not expose
+        # private exception details or turn persistence failure into inference failure.
+        result["sidecar"] = {"outcome": "write_failed", "error_code": "analysis_output_write_failed"}
+        return result

@@ -99,7 +99,8 @@ def main(argv: list[str] | None = None) -> int:
             result = asyncio.run(analyze_eml(args.input_path, provider=args.provider,
                                             allow_remote=True, config=config, **options))
         print(json.dumps(result, ensure_ascii=False, allow_nan=False, indent=2, sort_keys=True))
-        return 1 if result["execution_status"] == "failed" else 0
+        return 1 if (result["execution_status"] == "failed"
+                     or result.get("sidecar", {}).get("outcome") == "write_failed") else 0
     except AnalysisError as exc:
         hint = None
         if exc.code in {"analysis_output_corrupt", "analysis_output_mismatch",

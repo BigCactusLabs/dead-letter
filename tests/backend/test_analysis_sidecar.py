@@ -7,6 +7,9 @@ import hashlib
 import json
 import os
 import socket
+import stat
+import sys
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -116,16 +119,10 @@ def test_written_then_offline_reused_exact_bytes_and_no_private_content(
         assert marker not in stored_bytes.decode()
 
 
-@pytest.mark.parametrize("status", ["failed", "skipped", "preflight"])
+@pytest.mark.parametrize("status", ["failed", "skipped"])
 def test_non_success_only_writes_separate_attempts(setup, monkeypatch, status):
     source, output, _ = setup
-    if status == "preflight":
-
-        def fail(**kwargs):
-            raise AnalysisError("typesafe_sdk_not_installed")
-
-        monkeypatch.setattr(sidecar, "preflight", fail)
-    elif status == "failed":
+    if status == "failed":
 
         async def fail(*args, **kwargs):
             return {
@@ -148,10 +145,8 @@ def test_non_success_only_writes_separate_attempts(setup, monkeypatch, status):
     original = source.read_bytes()
     for _ in range(2):
         result = run(source, output)
-        assert result["execution_status"] == (
-            "failed" if status == "preflight" else status
-        )
-        assert result["sidecar"]["outcome"] == "written"
+        assert result["execution_status"] == status
+        assert result["sidecar"]["outcome"] == "attempt_recorded"
         assert result["answers"] == {}
     assert not output.exists()
     attempts = list(output.with_name(output.name + ".attempts").iterdir())
@@ -400,9 +395,17 @@ def test_interrupted_after_temp_write_cleans_own_temp_only(
         raise exception
 
     monkeypatch.setattr(os, "link", interrupted)
-    expected = AnalysisError if isinstance(exception, OSError) else KeyboardInterrupt
-    with pytest.raises(expected):
-        run(source, output)
+    if isinstance(exception, OSError):
+        result = run(source, output)
+        assert result["execution_status"] == "succeeded"
+        assert result["answers"]
+        assert result["sidecar"] == {
+            "outcome": "write_failed",
+            "error_code": "analysis_output_write_failed",
+        }
+    else:
+        with pytest.raises(KeyboardInterrupt):
+            run(source, output)
     assert not output.exists()
     assert list(output.parent.glob(".*.tmp")) == [unrelated]
     assert source.read_bytes() == original
@@ -466,8 +469,12 @@ def test_fallback_write_failure_removes_own_partial_output(setup, monkeypatch):
 
     monkeypatch.setattr(os, "link", unsupported)
     monkeypatch.setattr(sidecar, "_write_file", fail_second)
-    with pytest.raises(AnalysisError, match="^analysis_output_write_failed$"):
-        run(source, output)
+    result = run(source, output)
+    assert result["execution_status"] == "succeeded" and result["answers"]
+    assert result["sidecar"] == {
+        "outcome": "write_failed",
+        "error_code": "analysis_output_write_failed",
+    }
     assert not output.exists()
     assert not list(output.parent.glob(".*.tmp"))
 
@@ -555,23 +562,36 @@ def test_cli_race_refusal_reports_discarded_call(setup, monkeypatch, capsys):
     assert len(calls) == 1
 
 
-def test_cli_failure_writes_attempt_and_retains_failure_exit(
-    setup, monkeypatch, capsys
+@pytest.mark.parametrize("status,exit_code", [("failed", 1), ("skipped", 0)])
+def test_cli_non_success_records_attempt_with_existing_exit(
+    setup, monkeypatch, capsys, status, exit_code
 ):
     source, output, _ = setup
+    if status == "failed":
 
-    def fail(**kwargs):
-        raise AnalysisError("typesafe_api_key_missing")
+        async def fail(*args, **kwargs):
+            return {
+                "execution_status": "failed",
+                "error_code": "provider_timeout",
+                "attempts": [],
+                "retry_count": 0,
+                "billing_status": "not_attempted",
+                "sdk_version": "0.7.1",
+            }
 
-    monkeypatch.setattr(sidecar, "preflight", fail)
+        monkeypatch.setattr(TypeSafeProvider, "evaluate", fail)
+    else:
+        source = email_file(source.parent, body="")
+        monkeypatch.setattr(TypeSafeProvider, "evaluate", forbidden)
     assert (
         cli.main(
             ["analyze", str(source), "--provider", "typesafe", "--output", str(output)]
         )
-        == 1
+        == exit_code
     )
     result = json.loads(capsys.readouterr().out)
-    assert result["error_code"] == "typesafe_api_key_missing"
+    assert result["execution_status"] == status
+    assert result["sidecar"]["outcome"] == "attempt_recorded"
     assert not output.exists()
     assert len(list(output.with_name(output.name + ".attempts").glob("*.json"))) == 1
 
@@ -602,8 +622,12 @@ def test_fsync_failure_before_publication_leaves_no_output(setup, monkeypatch):
         raise OSError(errno.EIO, "disk failure")
 
     monkeypatch.setattr(os, "fsync", fail)
-    with pytest.raises(AnalysisError, match="^analysis_output_write_failed$"):
-        run(source, output)
+    result = run(source, output)
+    assert result["execution_status"] == "succeeded" and result["answers"]
+    assert result["sidecar"] == {
+        "outcome": "write_failed",
+        "error_code": "analysis_output_write_failed",
+    }
     assert not output.exists()
     assert not list(output.parent.glob(".*.tmp"))
 
@@ -623,3 +647,359 @@ def test_existing_attempts_symlink_is_never_used(setup, monkeypatch, tmp_path):
     with pytest.raises(AnalysisError, match="^analysis_output_invalid$"):
         run(source, output)
     assert not list(elsewhere.iterdir()) and not output.exists()
+
+
+@pytest.mark.skipif(
+    os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+    reason="POSIX directory permissions require a non-root process",
+)
+@pytest.mark.parametrize("location", ["parent", "attempts"])
+def test_unwritable_destination_refused_before_source_or_provider(
+    setup, monkeypatch, capsys, location
+):
+    source, output, calls = setup
+    if location == "parent":
+        directory = output.parent / "readonly"
+        directory.mkdir()
+        output = directory / output.name
+    else:
+        directory = output.with_name(output.name + ".attempts")
+        directory.mkdir()
+    directory.chmod(0o500)
+    monkeypatch.setattr(sidecar, "preflight", forbidden)
+    monkeypatch.setattr(sidecar, "prepare_eml", forbidden)
+    try:
+        assert (
+            cli.main(
+                [
+                    "analyze",
+                    str(source),
+                    "--provider",
+                    "typesafe",
+                    "--output",
+                    str(output),
+                ]
+            )
+            == 2
+        )
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert json.loads(captured.err)["error_code"] == "analysis_output_invalid"
+        assert not calls and not output.exists()
+        assert not list(directory.iterdir())
+    finally:
+        directory.chmod(0o700)
+
+
+def test_attempts_file_refused_before_source_or_provider(setup, monkeypatch, capsys):
+    source, output, calls = setup
+    attempts = output.with_name(output.name + ".attempts")
+    attempts.write_text("do not change")
+    monkeypatch.setattr(sidecar, "preflight", forbidden)
+    monkeypatch.setattr(sidecar, "prepare_eml", forbidden)
+    assert (
+        cli.main(
+            ["analyze", str(source), "--provider", "typesafe", "--output", str(output)]
+        )
+        == 2
+    )
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err)["error_code"] == "analysis_output_invalid"
+    assert not calls and not output.exists()
+    assert attempts.read_text() == "do not change"
+    assert set(output.parent.iterdir()) == {source, attempts}
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [OSError(errno.EACCES, "PRIVATE_ERROR"), AnalysisError("invalid_json_data")],
+)
+def test_cli_preserves_full_result_on_publication_failure(
+    setup, monkeypatch, capsys, failure
+):
+    source, output, calls = setup
+    original = source.read_bytes()
+    published = []
+
+    def fail(path, result):
+        published.append(json.loads(json.dumps(result)))
+        raise failure
+
+    monkeypatch.setattr(sidecar, "_publish", fail)
+    assert (
+        cli.main(
+            ["analyze", str(source), "--provider", "typesafe", "--output", str(output)]
+        )
+        == 1
+    )
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert captured.err == ""
+    assert result.pop("sidecar") == {
+        "outcome": "write_failed",
+        "error_code": "analysis_output_write_failed",
+    }
+    assert result == published[0]
+    assert result["execution_status"] == "succeeded" and result["answers"]
+    assert len(calls) == 1 and not output.exists()
+    assert source.read_bytes() == original
+    assert "PRIVATE_ERROR" not in captured.out
+
+
+@pytest.mark.parametrize("field", ["adapter_version", "sdk_version"])
+@pytest.mark.parametrize("change", ["upgrade", "tamper", "rekey"])
+def test_adapter_and_sdk_versions_invalidate_reuse(setup, monkeypatch, field, change):
+    from dead_letter.analysis import service
+
+    source, output, calls = setup
+    result = run(source, output)
+    if change == "upgrade":
+        if field == "adapter_version":
+            monkeypatch.setattr(service, "ADAPTER_VERSION", "new-adapter-version")
+        else:
+            monkeypatch.setattr(sidecar, "SDK_VERSION", "9.9.9")
+    else:
+        result[field] = "9.9.9"
+        if change == "rekey":
+            result["reuse_key"] = sidecar._reuse_key(result)
+        save(output, result)
+    original = output.read_bytes()
+    monkeypatch.setattr(sidecar, "preflight", forbidden)
+    with pytest.raises(AnalysisError, match="^analysis_output_mismatch$"):
+        run(source, output)
+    assert len(calls) == 1 and output.read_bytes() == original
+
+
+def test_reuse_reports_current_source_name_without_changing_stored_file(
+    setup, monkeypatch, capsys
+):
+    source, output, calls = setup
+    run(source, output, focus_identity=("reader@example.com",))
+    saved = output.read_bytes()
+    renamed = source.with_name("renamed-copy.eml")
+    renamed.write_bytes(source.read_bytes())
+    monkeypatch.setattr(sidecar, "preflight", forbidden)
+    assert (
+        cli.main(
+            [
+                "analyze",
+                str(renamed),
+                "--provider",
+                "typesafe",
+                "--output",
+                str(output),
+                "--identity",
+                "reader@example.com",
+            ]
+        )
+        == 0
+    )
+    result = json.loads(capsys.readouterr().out)
+    assert result["source"]["reference"] == renamed.name
+    assert result["sidecar"]["stored_source_name"] == source.name
+    assert result["focus_identity"] == {"aliases": ["reader@example.com"]}
+    assert json.loads(saved)["source"]["reference"] == source.name
+    assert output.read_bytes() == saved and len(calls) == 1
+    if os.name != "nt":
+        assert stat.S_IMODE(output.stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize(
+    "code", ["typesafe_api_key_missing", "typesafe_sdk_not_installed"]
+)
+def test_preflight_failure_matches_stdout_only_before_source_read(
+    setup, monkeypatch, capsys, code
+):
+    from dead_letter.analysis import service
+
+    source, output, calls = setup
+
+    def fail(**kwargs):
+        raise AnalysisError(code)
+
+    monkeypatch.setattr(sidecar, "preflight", fail)
+    monkeypatch.setattr(service, "preflight", fail)
+    monkeypatch.setattr(sidecar, "prepare_eml", forbidden)
+    monkeypatch.setattr(service, "prepare_eml", forbidden)
+    args = ["analyze", str(source), "--provider", "typesafe"]
+    assert cli.main(args) == 1
+    plain = capsys.readouterr()
+    assert cli.main([*args, "--output", str(output)]) == 1
+    persisted = capsys.readouterr()
+    assert persisted == plain
+    assert plain.out == "" and json.loads(plain.err)["error_code"] == code
+    assert not calls and set(source.parent.iterdir()) == {source}
+
+
+def test_missing_key_real_preflight_never_reads_source(setup, monkeypatch, capsys):
+    from dead_letter.analysis.providers.typesafe import preflight
+
+    source, output, calls = setup
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.setattr(sidecar, "preflight", preflight)
+    monkeypatch.setattr(sidecar, "prepare_eml", forbidden)
+    assert (
+        cli.main(
+            ["analyze", str(source), "--provider", "typesafe", "--output", str(output)]
+        )
+        == 1
+    )
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err)["error_code"] == "typesafe_api_key_missing"
+    assert not calls and set(source.parent.iterdir()) == {source}
+
+
+@pytest.mark.parametrize("future_seconds", [2, 300, 300.001])
+def test_clock_skew_window(setup, monkeypatch, future_seconds):
+    source, output, calls = setup
+    result = run(source, output)
+    now = datetime.now(timezone.utc)
+    result["created_at"] = (now + timedelta(seconds=future_seconds)).isoformat()
+    result["returned_model"] = "jev-resolved"
+    save(output, result)
+    original = output.read_bytes()
+    monkeypatch.setattr(sidecar, "_now", lambda: now)
+    monkeypatch.setattr(sidecar, "preflight", forbidden)
+    if future_seconds > 300:
+        with pytest.raises(AnalysisError, match="^analysis_output_corrupt$"):
+            run(source, output)
+    else:
+        reused = run(source, output, alias_max_age=0)
+        assert reused["sidecar"]["age_seconds"] == 0
+    assert len(calls) == 1 and output.read_bytes() == original
+
+
+@pytest.mark.parametrize("stage", ["before_reuse", "open"])
+def test_vanished_target_reenters_absent_flow_with_preflight_before_reread(
+    setup, monkeypatch, stage
+):
+    source, output, calls = setup
+    run(source, output)
+    events = []
+    prepare = sidecar.prepare_eml
+    open_file = os.open
+
+    def prepare_and_remove(*args, **kwargs):
+        events.append("read")
+        prepared = prepare(*args, **kwargs)
+        if stage == "before_reuse" and events == ["read"]:
+            output.unlink()
+        return prepared
+
+    def open_and_remove(path, flags, *args, **kwargs):
+        if stage == "open" and path == output and output.exists():
+            output.unlink()
+        return open_file(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(sidecar, "prepare_eml", prepare_and_remove)
+    monkeypatch.setattr(os, "open", open_and_remove)
+    monkeypatch.setattr(
+        sidecar, "preflight", lambda **kwargs: events.append("preflight")
+    )
+    result = run(source, output)
+    assert result["sidecar"]["outcome"] == "written"
+    assert events == ["read", "preflight", "read"]
+    assert len(calls) == 2 and output.exists()
+
+
+def test_mac_fullfsync_and_unsupported_fallback(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(os, "fsync", lambda fd: calls.append("fsync"))
+
+    def fullsync(fd, command):
+        assert command == 51
+        calls.append("fullfsync")
+
+    module = SimpleNamespace(F_FULLFSYNC=51, fcntl=fullsync)
+    monkeypatch.setitem(sys.modules, "fcntl", module)
+
+    def write(name):
+        fd = os.open(tmp_path / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        sidecar._write_file(fd, b"synthetic")
+
+    write("fullsync")
+    assert "fullfsync" in calls
+    calls.clear()
+
+    def unsupported(fd, command):
+        calls.append("unsupported")
+        raise OSError(errno.ENOTSUP, "unsupported")
+
+    module.fcntl = unsupported
+    write("fallback")
+    assert "unsupported" in calls and "fsync" in calls
+
+
+def test_repeated_target_disappearance_is_bounded(setup, monkeypatch):
+    source, output, calls = setup
+    run(source, output)
+    stored = output.read_bytes()
+    prepare = sidecar.prepare_eml
+    read_count = []
+
+    def remove_and_recreate(*args, **kwargs):
+        read_count.append(1)
+        prepared = prepare(*args, **kwargs)
+        output.unlink()
+        return prepared
+
+    validate = sidecar._validate_destination
+
+    def recreate_after_disappearance(path):
+        if not path.exists():
+            path.write_bytes(stored)
+        return validate(path)
+
+    monkeypatch.setattr(sidecar, "prepare_eml", remove_and_recreate)
+    monkeypatch.setattr(sidecar, "_validate_destination", recreate_after_disappearance)
+    monkeypatch.setattr(sidecar, "preflight", forbidden)
+    with pytest.raises(AnalysisError, match="^analysis_output_corrupt$"):
+        run(source, output)
+    assert len(read_count) == 2 and len(calls) == 1
+    assert not output.exists()
+
+
+def test_directory_sync_failure_retains_result_and_complete_output(setup, monkeypatch):
+    source, output, calls = setup
+
+    def fail(path):
+        raise OSError(errno.EIO, "private sync error")
+
+    monkeypatch.setattr(sidecar, "_fsync_directory", fail)
+    result = run(source, output)
+    assert result["sidecar"]["outcome"] == "write_failed"
+    assert result["execution_status"] == "succeeded"
+    saved = json.loads(output.read_text())
+    assert saved == {key: value for key, value in result.items() if key != "sidecar"}
+    monkeypatch.setattr(sidecar, "preflight", forbidden)
+    assert run(source, output)["sidecar"]["outcome"] == "reused"
+    assert len(calls) == 1
+
+
+def test_fullfsync_io_failure_retains_result(setup, monkeypatch):
+    source, output, _ = setup
+
+    def fail(fd, command):
+        raise OSError(errno.EIO, "private disk error")
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setitem(
+        sys.modules, "fcntl", SimpleNamespace(F_FULLFSYNC=51, fcntl=fail)
+    )
+    result = run(source, output)
+    assert result["sidecar"]["outcome"] == "write_failed"
+    assert result["execution_status"] == "succeeded" and result["answers"]
+    assert not output.exists() and not list(output.parent.glob(".*.tmp"))
+
+
+def test_fullfsync_missing_constant_uses_fsync(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setitem(sys.modules, "fcntl", SimpleNamespace())
+    monkeypatch.setattr(os, "fsync", lambda fd: calls.append(fd))
+    fd = os.open(tmp_path / "output", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    sidecar._write_file(fd, b"synthetic")
+    assert calls == [fd]

@@ -59,8 +59,12 @@ The unreleased #164 continuation adds single-message `--output` and exported
 `analyze_to_sidecar`: no-clobber publication, separate failed/skipped attempts,
 strict successful-result reuse with source/effective-input binding, alias age,
 and concurrent-winner validation. Reuse needs no SDK/key or network. Privacy
-and existing stdout-only execution are preserved. See the public contract for
-fallback filesystem durability limits.
+and existing stdout-only execution are preserved. The repair adds writable-
+destination probes, adapter/SDK reuse binding, preflight-before-read for new
+inference, current-invocation source references on reuse, bounded clock skew,
+and full stdout results on persistence failure. Failed/skipped attempt records
+use `attempt_recorded`; skips still exit 0 without creating the success path.
+See the public contract for sensitive metadata and filesystem durability limits.
 
 **Not implemented:** directory processing, batch scheduling or empirical
 inference evaluation. Core conversion, bundles, existing
