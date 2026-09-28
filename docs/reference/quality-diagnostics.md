@@ -234,4 +234,4 @@ images may be absent from rendered Markdown and bundle attachment artifacts.
 
 ## Thread Mode
 
-- `thread_mode="structured"` adds per-message section headers for prior replies. No new diagnostic codes; attribution-parse failures emit `logging.DEBUG` on logger `dead_letter.core.attribution`.
+- `thread_mode="structured"` adds per-message section headers for prior replies and forwarded messages. Forwarded content is kept in both thread modes; see [Runtime Contracts](v4-runtime-contracts.md). No new diagnostic codes; attribution-parse failures emit `logging.DEBUG` on logger `dead_letter.core.attribution`.

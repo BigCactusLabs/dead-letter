@@ -89,13 +89,20 @@ Rules:
 - `allow_html_repair_on_panic`
 - `delete_eml`
 - `dry_run`
-- `thread_mode` — `"latest"` (default) or `"structured"`. Structured mode appends per-message sections for prior replies.
+- `thread_mode` — `"latest"` (default) or `"structured"`. Structured mode appends per-message sections for prior replies and forwarded messages. Forwarded content is kept in both modes.
 - `thread_order` — `"oldest-first"` (default) or `"latest-first"`. Only meaningful when `thread_mode` is `"structured"`.
 - `report`
 
 ### Thread history
 
-When `thread_mode="structured"`, the renderer appends per-message sections after the latest message. Each section uses a header ladder rooted in the parsed sender (`## From {sender}` plus optional date / subject). Sections whose attribution line could not be parsed render as `## Earlier message`; threads that the parser could not split at all render as a single `## Earlier in thread` section. Front matter gains a `thread_messages: N` key when N > 0. Default behavior (`thread_mode="latest"`) is byte-identical to v4.x output.
+When `thread_mode="structured"`, the renderer appends per-message sections after the latest message. Each section uses a header ladder rooted in the parsed sender (`## From {sender}` plus optional date / subject). Sections whose attribution line could not be parsed render as `## Earlier message`; threads that the parser could not split at all render as a single `## Earlier in thread` section. Front matter gains a `thread_messages: N` key when N > 0, counting forward and reply sections.
+
+Forwarded messages are content, not reply history:
+
+- A forward block is a Gmail `div.gmail_quote` whose first element child is `div.gmail_attr` with no direct-child `blockquote.gmail_quote` (a reply pairs the attribution with that blockquote), or a legacy `div.gmail_quote` whose own leading text is a forward separator. Forward blocks nested inside a forward are split out; any other quote block inside a forward stays in that forward's content. In plain text, a forward is a separator line: Gmail's `---------- Forwarded message ---------` (any run of 2+ dashes), Thunderbird/Yahoo `-------- Forwarded Message --------` and its localized labels, or Apple Mail `Begin forwarded message:` and its localized forms. The separators live in one list in `dead_letter/core/forwarding.py`, drawn from Gmail samples, Thunderbird l10n sources, and the MIT-licensed crisp-oss/email-forward-parser fixtures.
+- `thread_mode="latest"` keeps every forward inline after the body, in document order: separator line, forwarded header lines, then the forwarded body. Reply quotes are still dropped, including a reply quote that contains a forward. Output for mail without a forward is unchanged, and so is latest-mode output for plain-text, Thunderbird, and Apple Mail forwards, which were already kept.
+- `thread_mode="structured"` renders one section per forward, before any reply sections, in document order (outermost first for nested forwards). The separator line is dropped. When a `From:` header parses, the section heading is `## Forwarded from {sender}` with the same optional date / subject ladder; otherwise it is `## Forwarded message`. `thread_order` reorders reply sections only. A `>`-quoted separator (Apple Mail plain text) counts as a forward only in structured mode, and only when no attribution line (a line ending in `:`) or quoted line directly precedes it.
+- Outlook `divRplyFwdMsg` blocks and `message/rfc822` attachments are handled as before.
 
 ### `ConvertResult`
 
