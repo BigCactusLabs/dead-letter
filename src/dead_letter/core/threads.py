@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dead_letter.core.attribution import annotate_quoted_zones
 from dead_letter.core.text_conversation import segment_text_conversation
-from dead_letter.core.types import ConvertOptions, ThreadedContent, Zone
+from dead_letter.core.types import ConvertOptions, ThreadedContent, ThreadMode, Zone
 from dead_letter.core.zone_cleanup import cleanup_zones
 
 
@@ -17,7 +17,9 @@ def build_zones(
 ) -> ThreadedContent:
     """Split message text into body and quoted zones."""
     opts = options or ConvertOptions()
-    result = segment_text_conversation(plain_text)
+    result = segment_text_conversation(
+        plain_text, split_forwards=opts.thread_mode is ThreadMode.STRUCTURED,
+    )
     annotated = annotate_quoted_zones(result.zones, opts)
     cleaned = cleanup_zones(annotated, opts)
 

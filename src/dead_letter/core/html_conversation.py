@@ -7,6 +7,7 @@ from html import escape
 from selectolax.parser import HTMLParser
 
 from dead_letter.core.conversation import ConversationResult
+from dead_letter.core.forwarding import is_forward_marker_line
 from dead_letter.core.sanitize import sanitize_html
 from dead_letter.core.types import ConversationZone, ZoneKind
 
@@ -76,6 +77,91 @@ def _quote_match(node) -> tuple[str, str] | None:
     if node.tag == "blockquote" and "front-blockquote" in classes:
         return "front", "front_blockquote"
     return None
+
+
+# Upper bound on forward blocks split out of one message. Deeper nesting stays
+# inside the last split block, so content is kept either way.
+_MAX_FORWARD_BLOCKS = 64
+
+
+def _leading_text_line(node) -> str:
+    """First line of ``node``'s own leading text, before any child element."""
+    for child in node.iter(include_text=True):
+        if child.tag != "-text":
+            return ""
+        text = (child.text_content or "").strip()
+        if text:
+            return text.split("\n", 1)[0]
+    return ""
+
+
+def _is_forward_block(node) -> bool:
+    """Classify a Gmail ``div.gmail_quote`` as a forwarded message.
+
+    Structural first (language-independent): the first element child is
+    ``div.gmail_attr`` and no direct child is ``blockquote.gmail_quote``; a
+    reply pairs the attribution with that blockquote. Legacy Gmail forwards
+    have no ``gmail_attr`` and open with the separator as the block's own text.
+    """
+    if node.tag != "div":
+        return False
+    children = list(node.iter())
+    if any(
+        child.tag == "blockquote" and "gmail_quote" in _class_tokens(child)
+        for child in children
+    ):
+        return False
+    if children and children[0].tag == "div" and "gmail_attr" in _class_tokens(children[0]):
+        return True
+    if any("gmail_attr" in _class_tokens(child) for child in children):
+        return False
+    return is_forward_marker_line(_leading_text_line(node))
+
+
+def _collect_forward_blocks(root) -> list:
+    """Return Gmail forward blocks in document order, outermost first.
+
+    Collection stops at the first quote boundary outside a forward that is not
+    itself a forward, so reply history keeps today's single-boundary handling.
+    Forwards nested in a forward are collected; any other quote block inside a
+    forward stays part of that forward's content.
+    """
+    forwards: list = []
+    stack = [(root, False)]
+    while stack:
+        node, in_forward = stack.pop()
+        if node is not root and node.next is not None:
+            stack.append((node.next, in_forward))
+        match = _quote_match(node)
+        if match is not None:
+            if match[0] == "gmail" and _is_forward_block(node):
+                forwards.append(node)
+                if len(forwards) >= _MAX_FORWARD_BLOCKS:
+                    break
+                if node.child is not None:
+                    stack.append((node.child, True))
+                continue
+            if not in_forward:
+                break
+            continue
+        if node.child is not None:
+            stack.append((node.child, in_forward))
+    return forwards
+
+
+def _extract_forward_blocks(tree: HTMLParser) -> list[str]:
+    root = tree.body or tree.css_first("html")
+    if root is None:
+        return []
+    forwards = _collect_forward_blocks(root)
+    fragments: list[str] = []
+    # Innermost/last first, so each captured block excludes the nested
+    # forwards already removed from it.
+    for node in reversed(forwards):
+        fragments.append(_node_html(node))
+        node.decompose()
+    fragments.reverse()
+    return [fragment for fragment in fragments if fragment]
 
 
 def _find_first_quote_boundary(tree: HTMLParser):
@@ -173,8 +259,12 @@ def segment_html_conversation(html: str, *, client_hint: str | None = None) -> C
     zones: list[ConversationZone] = []
     rules_triggered: list[str] = []
 
+    forwarded_blocks = _extract_forward_blocks(tree)
+    if forwarded_blocks:
+        rules_triggered.append("gmail_forward")
+
     quote_node, detected_hint, detected_rule = _find_first_quote_boundary(tree)
-    resolved_hint = detected_hint or client_hint
+    resolved_hint = detected_hint or ("gmail" if forwarded_blocks else None) or client_hint
     if detected_rule is not None:
         rules_triggered.append(detected_rule)
 
@@ -200,7 +290,18 @@ def segment_html_conversation(html: str, *, client_hint: str | None = None) -> C
                 content=body_content,
                 source_kind="html",
                 client_hint=resolved_hint,
-                confidence=0.95 if quote_node is not None else 0.7,
+                confidence=0.95 if quote_node is not None or forwarded_blocks else 0.7,
+            )
+        )
+
+    for forwarded in forwarded_blocks:
+        zones.append(
+            ConversationZone(
+                kind=ZoneKind.FORWARDED_BODY,
+                content=forwarded,
+                source_kind="html",
+                client_hint=resolved_hint,
+                confidence=0.95,
             )
         )
 

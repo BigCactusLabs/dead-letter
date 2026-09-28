@@ -161,6 +161,12 @@ def convert_eml(
     Returns the full Markdown content (front matter + body). When output_path
     is provided, also writes the file to disk.
 
+    Attachments are listed in the front matter but not written to disk; use
+    convert_eml_to_bundle to save the decoded attachment files.
+
+    thread_mode="structured" adds a section per earlier reply or forwarded
+    message; forwarded content is kept in either mode.
+
     Presets bundle common flag combinations:
     - default: strips signatures, tracking pixels, signature images
     - clean: default + strips disclaimers and quoted headers

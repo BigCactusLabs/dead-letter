@@ -8,11 +8,11 @@ import warnings
 from mailparser_reply import EmailReply, EmailReplyParser
 
 from dead_letter.core.conversation import ConversationResult
+from dead_letter.core.forwarding import FORWARD_MARKER_RE, normalize_marker_text
 from dead_letter.core.types import ConversationZone, ZoneKind
 
-_FORWARD_MARKER_RE = re.compile(
-    r"(?im)^(?:-+\s*Forwarded message\s*-+|Begin forwarded message:)\s*$"
-)
+# One ``>`` quote level, removed from the body of a quoted forward.
+_QUOTE_LEVEL_RE = re.compile(r"(?m)^[ \t]*>[ \t]?")
 _INDENT_SENTINEL_PREFIX = "\ue000dead-letter-indent-"
 _INDENT_SENTINEL_SUFFIX = "\ue001"
 
@@ -58,14 +58,43 @@ def parse_email_replies(text: str) -> list[EmailReply]:
     return replies
 
 
-def _segment_forwarded_message(source: str) -> ConversationResult | None:
-    match = _FORWARD_MARKER_RE.search(source)
-    if match is None:
-        return None
+def _opens_quoted_forward(source: str, start: int) -> bool:
+    """Accept a ``>``-quoted marker only where a quote block opens without an
+    attribution line, as in Apple Mail's plain-text forwards.
 
-    before = source[: match.start()].strip()
-    marker = match.group(0).strip()
-    forwarded = source[match.end() :].strip()
+    A quoted marker under ``On ... wrote:`` (or any line ending in a colon) or
+    deeper inside a quote is reply history containing a forward, which keeps
+    its reply handling.
+    """
+    end = start
+    while end > 0:
+        line_start = source.rfind("\n", 0, end - 1) + 1
+        stripped = source[line_start:end].strip()
+        end = line_start
+        if stripped:
+            return not stripped.startswith(">") and not stripped.endswith(":")
+    return True
+
+
+def _segment_forwarded_message(
+    source: str, *, split_forwards: bool = False
+) -> ConversationResult | None:
+    matches = [
+        match
+        for match in FORWARD_MARKER_RE.finditer(normalize_marker_text(source))
+        # Quoted (Apple Mail) markers are only split out for structured
+        # output; latest mode keeps its pre-existing handling of them.
+        if not match.group("quote")
+        or (split_forwards and _opens_quoted_forward(source, match.start()))
+    ]
+    if not matches:
+        return None
+    if not split_forwards:
+        # One header/body pair holding everything after the first marker keeps
+        # latest-mode output byte-identical to the pre-split renderer.
+        matches = matches[:1]
+
+    before = source[: matches[0].start()].strip()
 
     zones: list[ConversationZone] = []
     if before:
@@ -78,35 +107,45 @@ def _segment_forwarded_message(source: str) -> ConversationResult | None:
             )
         )
 
-    zones.append(
-        ConversationZone(
-            kind=ZoneKind.FORWARD_HEADER,
-            content=marker,
-            source_kind="plain",
-            confidence=0.9,
-        )
-    )
-
-    if forwarded:
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(source)
+        forwarded = source[match.end() : end]
+        if match.group("quote"):
+            forwarded = _QUOTE_LEVEL_RE.sub("", forwarded)
+        forwarded = forwarded.strip()
         zones.append(
             ConversationZone(
-                kind=ZoneKind.FORWARDED_BODY,
-                content=forwarded,
+                kind=ZoneKind.FORWARD_HEADER,
+                content=match.group(0).strip(),
                 source_kind="plain",
-                confidence=0.85,
+                confidence=0.9,
             )
         )
+
+        if forwarded:
+            zones.append(
+                ConversationZone(
+                    kind=ZoneKind.FORWARDED_BODY,
+                    content=forwarded,
+                    source_kind="plain",
+                    confidence=0.85,
+                )
+            )
 
     return ConversationResult(zones=zones, client_hint="generic")
 
 
-def segment_text_conversation(text: str) -> ConversationResult:
-    """Split plain text into body and quoted conversation zones."""
+def segment_text_conversation(text: str, *, split_forwards: bool = False) -> ConversationResult:
+    """Split plain text into body and quoted conversation zones.
+
+    With ``split_forwards`` each forward marker starts its own header/body
+    zone pair; otherwise everything after the first marker is one pair.
+    """
     source = (text or "").strip()
     if not source:
         return ConversationResult(zones=[])
 
-    forwarded = _segment_forwarded_message(source)
+    forwarded = _segment_forwarded_message(source, split_forwards=split_forwards)
     if forwarded is not None:
         return forwarded
 

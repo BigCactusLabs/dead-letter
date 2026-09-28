@@ -6,6 +6,7 @@ import logging
 import re
 from dataclasses import dataclass, replace
 
+from dead_letter.core.forwarding import parse_forward_headers
 from dead_letter.core.types import ConversationZone, ConvertOptions, ThreadMode, ZoneKind
 
 _LOGGER = logging.getLogger("dead_letter.core.attribution")
@@ -142,6 +143,8 @@ def annotate_quoted_zones(
 ) -> list[ConversationZone]:
     """Parse attribution lines on QUOTED zones in STRUCTURED mode.
 
+    Forwarded bodies get ``forward_*`` metadata from their header block.
+
     Two-part fallback safety:
     1. If no non-QUOTED content exists, skip annotation entirely so the
        render layer's QUOTED-fallback path returns byte-identical output.
@@ -160,6 +163,9 @@ def annotate_quoted_zones(
 
     out: list[ConversationZone] = []
     for zone in zones:
+        if zone.kind is ZoneKind.FORWARDED_BODY:
+            out.append(_annotate_forwarded_zone(zone))
+            continue
         if zone.kind is not ZoneKind.QUOTED:
             out.append(zone)
             continue
@@ -184,3 +190,24 @@ def annotate_quoted_zones(
         new_content = normalized[match.consumed_end:].lstrip("\n")
         out.append(replace(zone, content=new_content, metadata=new_meta))
     return out
+
+
+def _annotate_forwarded_zone(zone: ConversationZone) -> ConversationZone:
+    """Move a forward's leading From/Date/Subject block into metadata.
+
+    Uses ``forward_*`` keys, not ``attribution_*``: snapshot readers take
+    ``attribution_from`` as a segment author, and forwarded authors stay
+    unknown there.
+    """
+    parsed = parse_forward_headers(zone.content)
+    if parsed is None:
+        return zone
+    fields, rest = parsed
+    new_meta = dict(zone.metadata)
+    new_meta["forward_from"] = fields["from"]
+    date = fields.get("date") or fields.get("sent")
+    if date:
+        new_meta["forward_date"] = date
+    if fields.get("subject"):
+        new_meta["forward_subject"] = fields["subject"]
+    return replace(zone, content=rest, metadata=new_meta)
