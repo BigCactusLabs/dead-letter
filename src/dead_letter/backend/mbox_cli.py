@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from contextlib import ExitStack, closing
 from pathlib import Path
@@ -9,12 +10,13 @@ from time import monotonic
 
 from dead_letter.core.mbox import MboxLimits, UnescapeMode
 from dead_letter.core.mbox_import import convert_mbox
+from dead_letter.core.mbox_archive import _convert_mbox_archive
 from dead_letter.core.stream_report import StreamingReport
 from dead_letter.core.types import ConvertOptions
 
 
 def run_mbox(
-    source: Path,
+    source: str | Path,
     *,
     output: str | None,
     options: ConvertOptions,
@@ -22,19 +24,30 @@ def run_mbox(
     unescape: UnescapeMode = "preserve",
     bundles: bool = False,
     timeout_seconds: float | None = None,
+    memory_limit_mib: int | None = None,
+    cpu_seconds: int | None = None,
+    max_output_mib: int | None = None,
+    archive_input: bool = False,
+    member: str | None = None,
+    staging_dir: str | None = None,
 ) -> int:
-    root = Path(output).expanduser().resolve() if output is not None else source.with_suffix(".markdown")
+    root = Path(output).expanduser().resolve() if output is not None else Path(source).expanduser().resolve().with_suffix(".markdown")
     started = monotonic()
     total = failures = 0
     interrupted = False
     fatal = False
+    archive_summary = {} if archive_input else None
     with ExitStack() as stack:
         report = stack.enter_context(StreamingReport()) if options.report else None
         try:
             limits = MboxLimits(max_message_bytes=max_message_mib * 1024 * 1024)
-            results = stack.enter_context(closing(convert_mbox(
+            convert = _convert_mbox_archive if archive_input else convert_mbox
+            archive_options = dict(member=member, staging_dir=staging_dir, archive_summary=archive_summary) if archive_input else {}
+            results = stack.enter_context(closing(convert(
                 source, output=root, options=options, limits=limits,
                 unescape=unescape, bundles=bundles, timeout_seconds=timeout_seconds,
+                memory_limit_mib=memory_limit_mib, cpu_seconds=cpu_seconds, max_output_mib=max_output_mib,
+                **archive_options,
             )))
             for item in results:
                 total += 1
@@ -49,13 +62,15 @@ def run_mbox(
                     entry["diagnostics"] = item.diagnostics
                 if item.error is not None:
                     entry["error"] = item.error
-                    print(f"{item.source}: {item.error['code']}: {item.error['message']}", file=sys.stderr)
+                    label = json.dumps(item.source, ensure_ascii=True) if archive_input else item.source
+                    print(f"{label}: {item.error['code']}: {item.error['message']}", file=sys.stderr)
                 if report is not None:
                     report.append(entry)
         except KeyboardInterrupt:
             interrupted = True
         except (OSError, ValueError) as exc:
-            print(f"MBOX import failed: {exc}", file=sys.stderr)
+            message = json.dumps(str(exc), ensure_ascii=True) if archive_input else str(exc)
+            print(f"MBOX import failed: {message}", file=sys.stderr)
             return 1
         if report is not None:
             try:
@@ -63,16 +78,21 @@ def run_mbox(
                     root, options=options, input_path=str(source),
                     duration_ms=int((monotonic() - started) * 1000),
                     status="interrupted" if interrupted else "failed" if fatal else None,
+                    archive_summary=archive_summary,
                     import_options={"unescape": unescape, "bundles": bundles,
                                     "max_message_bytes": limits.max_message_bytes,
                                     "max_line_bytes": limits.max_line_bytes,
-                                    "timeout_seconds": timeout_seconds},
+                                    "timeout_seconds": timeout_seconds,
+                                    "memory_limit_mib": memory_limit_mib,
+                                    "cpu_seconds": cpu_seconds,
+                                    "max_output_mib": max_output_mib},
                 )
             except KeyboardInterrupt:
                 print("MBOX report publication interrupted; previous report retained if present", file=sys.stderr)
                 return 130
             except OSError as exc:
-                print(f"MBOX report could not be written: {exc}", file=sys.stderr)
+                message = json.dumps(str(exc), ensure_ascii=True) if archive_input else str(exc)
+                print(f"MBOX report could not be written: {message}", file=sys.stderr)
                 return 1
     print(f"MBOX: {total - failures} succeeded, {failures} errors" +
           (" (interrupted)" if interrupted else ""), file=sys.stderr)

@@ -9,11 +9,14 @@ follow-up (#118) both shipped together in the 0.4.0 release (2026-09-19). This
 record is retained for its source citations and design rationale, not as a
 work queue to revive. Opt-in mboxcl/mboxcl2 Content-Length framing
 ([#143](https://github.com/BigCactusLabs/dead-letter/issues/143)) has since
-landed on `main` (unreleased). Remaining follow-ups are tracked as separate
-issues: compressed
-Takeout archives
-([#144](https://github.com/BigCactusLabs/dead-letter/issues/144)), MCP
-ingestion ([#145](https://github.com/BigCactusLabs/dead-letter/issues/145)),
+landed on `main` (unreleased). The first CLI/Python compressed Takeout slice
+([#144](https://github.com/BigCactusLabs/dead-letter/issues/144)) is now implemented
+but unreleased: ZIP/TGZ stage a selected MBOX into a private fixed file before
+using the same framer and conversion pipeline. It includes byte/entry limits,
+container mutation and integrity checks, cleanup, archive provenance and reports.
+The issue remains open for follow-up validation; real multi-GB compressed corpus
+validation is still unknown. See the [compressed-input contract](../reference/gmail-takeout.md#compressed-input-unreleased).
+Remaining follow-ups include MCP ingestion ([#145](https://github.com/BigCactusLabs/dead-letter/issues/145)),
 web/API import ([#146](https://github.com/BigCactusLabs/dead-letter/issues/146)),
 real multi-GB corpus validation
 ([#138](https://github.com/BigCactusLabs/dead-letter/issues/138)), and durable

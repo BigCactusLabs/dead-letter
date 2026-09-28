@@ -73,6 +73,9 @@ class StreamingReport:
         duration_ms: int,
         status: str | None = None,
         import_options: dict[str, Any] | None = None,
+        filename: str = ".dead-letter-report.json",
+        job_id: str = "cli",
+        archive_summary: dict[str, Any] | None = None,
     ) -> Path:
         # Ctrl-C may have stopped an append halfway through a JSON token/comma.
         # Publish the committed prefix, never arbitrary bytes beyond it.
@@ -84,7 +87,7 @@ class StreamingReport:
                 else "failed" if self.errors else "succeeded"
             )
         report = build_report(
-            entries=[], options=options, job_id="cli", job_status=status,
+            entries=[], options=options, job_id=job_id, job_status=status,
             duration_ms=duration_ms, input_path=input_path, input_mode="mbox", total=self.total,
         )
         report["summary"] = {
@@ -93,9 +96,11 @@ class StreamingReport:
         }
         if import_options is not None:
             report["mbox_options"] = _sanitize_value(import_options)
+        if archive_summary is not None:
+            report["archive"] = _sanitize_value(archive_summary)
         del report["results"]
         directory.mkdir(parents=True, exist_ok=True)
-        target = directory / ".dead-letter-report.json"
+        target = directory / filename
         fd, temporary = tempfile.mkstemp(prefix=".dead-letter-report-", suffix=".tmp", dir=directory)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as out:

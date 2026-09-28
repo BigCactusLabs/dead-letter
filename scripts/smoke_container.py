@@ -23,7 +23,7 @@ import time
 import uuid
 from pathlib import Path
 
-EXPECTED_TOOLS = {"convert_eml", "convert_eml_to_bundle", "convert_directory", "get_diagnostics"}
+EXPECTED_TOOLS = {"convert_eml", "convert_eml_to_bundle", "convert_directory", "get_diagnostics", "convert_mbox"}
 SERVER_NAME = "io.github.BigCactusLabs/dead-letter"
 MESSAGE = (
     "From: sender@example.invalid\nTo: recipient@example.invalid\n"
@@ -338,7 +338,7 @@ def main() -> int:
     except (SmokeFailure, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         print(f"FAIL: {error}", file=sys.stderr)
         return 1
-    print(f"PASS: {args.image} ({args.platform}); four tools, offline mounts, destructive-operation rejection")
+    print(f"PASS: {args.image} ({args.platform}); five tools, offline mounts, destructive-operation rejection")
     return 0
 
 

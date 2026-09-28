@@ -3,19 +3,32 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
+from contextlib import ExitStack, closing
 from pathlib import Path
+from time import monotonic
 from typing import Literal
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from dead_letter.core import convert, convert_dir
-from dead_letter.core._pipeline import _iter_source_eml_files, convert_to_bundle_with_diagnostics
+from dead_letter.core._pipeline import (
+    _iter_source_eml_files,
+    _open_collision_safe_output,
+    convert_to_bundle_with_diagnostics,
+)
+from dead_letter.core.mbox import MboxLimits
+from dead_letter.core.mbox_import import convert_mbox as _convert_mbox_records
+from dead_letter.core.stream_report import StreamingReport
 from dead_letter.core.types import ConvertOptions
 
 mcp = MCPServer("dead-letter")
 MCP_MAX_DIRECTORY_FILES = 50
+MCP_MAX_MBOX_BYTES = 256 * 1024 * 1024
+MCP_MAX_MBOX_MESSAGES = 1000
+MCP_MAX_MBOX_FAILURES_RETURNED = 20
 
 PRESETS: dict[str, dict[str, bool]] = {
     "default": {
@@ -248,6 +261,203 @@ def convert_directory(
         "errors": [{"file": str(r.source), "error": r.error} for r in failures],
     }
     return json.dumps(summary, indent=2)
+
+
+@mcp.tool()
+def convert_mbox(
+    path: str,
+    output_directory: str,
+    bundles: bool = False,
+    dry_run: bool = False,
+    preset: Literal["default", "clean", "verbose", "raw"] = "default",
+    strip_signatures: bool | None = None,
+    strip_disclaimers: bool | None = None,
+    strip_tracking_pixels: bool | None = None,
+    strip_signature_images: bool | None = None,
+    strip_quoted_headers: bool | None = None,
+    embed_inline_images: bool | None = None,
+    include_all_headers: bool | None = None,
+    include_raw_html: bool | None = None,
+    no_calendar_summary: bool | None = None,
+    thread_mode: Literal["latest", "structured"] = "latest",
+    thread_order: Literal["oldest-first", "latest-first"] = "oldest-first",
+) -> str:
+    """Convert one flat .mbox archive (e.g. Gmail Takeout) to Markdown files.
+
+    Bounded: the archive must be at most 256 MiB, and conversion stops after
+    1000 messages (the response then has truncated=true; use the dead-letter
+    CLI for larger archives). Compressed archives and Apple Mail .mbox
+    directories are rejected. output_directory is required; one .md per
+    message (or one bundle directory when bundles=true) is written there with a
+    collision-safe JSON report. The source archive is never modified.
+
+    Returns a JSON summary (processed, converted, skipped, failed, truncated,
+    report_path, and at most 20 failure entries), never message content.
+    Cancellation is not supported; the bounds limit call duration.
+    """
+    options = _build_options(locals())
+    if not output_directory:
+        raise ToolError("output_directory is required for MCP MBOX conversion")
+    source = Path(path).expanduser().resolve()
+    if source.suffix.lower() != ".mbox":
+        raise ToolError(
+            "MCP convert_mbox accepts only a flat .mbox file; "
+            "extract compressed archives first."
+        )
+    if not source.exists():
+        raise ToolError(f"File not found: {path}")
+    if not source.is_file():
+        raise ToolError(f"MBOX path is not a regular file: {path}")
+    if not os.access(source, os.R_OK):
+        raise ToolError(f"File not readable: {path}")
+    admitted = source.stat()
+    size = admitted.st_size
+    if size > MCP_MAX_MBOX_BYTES:
+        raise ToolError(
+            f"MCP MBOX conversion supports archives up to {MCP_MAX_MBOX_BYTES // (1024 * 1024)} MiB; "
+            f"found {size} bytes. Use the dead-letter CLI for larger archives."
+        )
+
+    root = Path(output_directory).expanduser().resolve()
+    try:
+        return _run_mcp_mbox(source, admitted, root, options, bundles=bundles)
+    except (OSError, ValueError) as exc:
+        # Core validation (e.g. output is a file) and filesystem failures carry
+        # no message content; surface them instead of the SDK's generic text.
+        raise ToolError(f"MBOX conversion failed: {exc}") from exc
+
+
+def _publish_mcp_report(report: StreamingReport, root: Path, **kwargs: object) -> Path:
+    """Publish under a reserved collision-safe name; never leave the placeholder."""
+    handle, reserved = _open_collision_safe_output(root / ".dead-letter-report.json")
+    try:
+        handle.close()
+        return report.finish(root, filename=reserved.name, job_id="mcp", **kwargs)  # type: ignore[arg-type]
+    except BaseException:
+        reserved.unlink(missing_ok=True)
+        raise
+
+
+class _McpMboxLimitError(Exception):
+    """The archive outgrew or changed after admission; never a message error."""
+
+
+def _stat_identity(value: os.stat_result) -> tuple[int, ...]:
+    return (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns)
+
+
+def _run_mcp_mbox(
+    source: Path, admitted: os.stat_result, root: Path, options: ConvertOptions, *, bundles: bool,
+) -> str:
+    size = admitted.st_size
+    last_end: int | None = None
+    limits = MboxLimits()
+    started = monotonic()
+    processed = converted = skipped = failed = 0
+    truncated = fatal = False
+    failures: list[dict[str, object]] = []
+    report_path: Path | None = None
+    error: Exception | None = None
+    with ExitStack() as stack:
+        report = None if options.dry_run else stack.enter_context(StreamingReport())
+        try:
+            results = stack.enter_context(closing(_convert_mbox_records(
+                source, output=root, options=options, limits=limits, bundles=bundles,
+            )))
+            for item in results:
+                processed += 1
+                fatal = fatal or item.mbox is None
+                entry: dict[str, object] = {"source": item.source, "output": None, "success": item.success}
+                if item.output is not None:
+                    entry["output"] = item.output.relative_to(root).as_posix()
+                if item.mbox is not None:
+                    entry["mbox"] = item.mbox
+                if item.diagnostics is not None:
+                    entry["diagnostics"] = item.diagnostics
+                if item.error is not None:
+                    entry["error"] = item.error
+                if not item.success:
+                    failed += 1
+                    if len(failures) < MCP_MAX_MBOX_FAILURES_RETURNED:
+                        error_info = item.error or {}
+                        failures.append({
+                            "index": item.mbox["index"] if item.mbox is not None else None,
+                            "code": error_info.get("code"),
+                            "message": error_info.get("message"),
+                        })
+                elif item.output is None:
+                    skipped += 1
+                else:
+                    converted += 1
+                if report is not None:
+                    report.append(entry)
+                if item.mbox is not None and int(item.mbox["end_offset"]) > MCP_MAX_MBOX_BYTES:
+                    # The admission stat is a fast path only; enforce the cap on
+                    # the bytes actually read in case the file grew or was swapped.
+                    raise _McpMboxLimitError(
+                        "MBOX archive exceeds the MCP limit of "
+                        f"{MCP_MAX_MBOX_BYTES // (1024 * 1024)} MiB; use the dead-letter CLI"
+                    )
+                if processed >= MCP_MAX_MBOX_MESSAGES:
+                    # Stop before framing another record.
+                    last_end = int(item.mbox["end_offset"]) if item.mbox is not None else size
+                    break
+            try:
+                current = _stat_identity(source.stat())
+            except OSError:
+                current = None
+            if current != _stat_identity(admitted):
+                raise _McpMboxLimitError("MBOX changed during MCP conversion; use an immutable export")
+            # The archive holds more messages only if the last record ended
+            # before the admitted (and re-verified) end of file.
+            truncated = last_end is not None and last_end < size
+        except Exception as exc:
+            # Like the CLI's interrupted path: outputs already written still get
+            # a published report (status "failed") before the error surfaces.
+            error = exc
+        if report is not None and (error is None or processed):
+            try:
+                report_path = _publish_mcp_report(
+                    report, root, options=options, input_path=str(source),
+                    duration_ms=int((monotonic() - started) * 1000),
+                    status="failed" if fatal or error is not None else None,
+                    import_options={"unescape": "preserve", "bundles": bundles,
+                                    "max_message_bytes": limits.max_message_bytes,
+                                    "max_line_bytes": limits.max_line_bytes,
+                                    "timeout_seconds": None,
+                                    "max_messages": MCP_MAX_MBOX_MESSAGES,
+                                    "truncated": truncated},
+                )
+            except Exception as report_exc:
+                if error is None:
+                    raise
+                raise ToolError(
+                    f"MBOX conversion failed after {processed} messages: {error}; "
+                    f"the report could not be written: {report_exc}"
+                ) from error
+    if error is not None:
+        if not processed:
+            raise ToolError(f"MBOX conversion failed: {error}") from error
+        partial = f"; partial report: {report_path}" if report_path is not None else ""
+        raise ToolError(f"MBOX conversion failed after {processed} messages: {error}{partial}") from error
+
+    response: dict[str, object] = {
+        "output_directory": str(root),
+        "processed": processed,
+        "converted": converted,
+        "skipped": skipped,
+        "failed": failed,
+        "truncated": truncated,
+        "report_path": str(report_path) if report_path is not None else None,
+        "failures": failures,
+        "failures_omitted": failed - len(failures),
+    }
+    if truncated:
+        response["message"] = (
+            f"Stopped after the MCP limit of {MCP_MAX_MBOX_MESSAGES} messages; "
+            "the archive has more. Use the dead-letter CLI to convert the whole archive."
+        )
+    return json.dumps(response, indent=2)
 
 
 @mcp.tool()

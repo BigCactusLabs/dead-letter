@@ -17,7 +17,7 @@ SUBCOMMANDS = frozenset({"convert", "doctor", "analyze"})
 
 
 def _add_convert_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("input_path", help="Path to .eml/.mbox file or .eml directory")
+    parser.add_argument("input_path", help="Path to .eml/.mbox/.zip/.tgz/.tar.gz file or .eml directory")
     parser.add_argument("--output", help="Output file or directory")
     parser.add_argument("--strip-signatures", action="store_true")
     parser.add_argument("--strip-disclaimers", action="store_true")
@@ -60,9 +60,23 @@ def _add_convert_flags(parser: argparse.ArgumentParser) -> None:
         "--mbox-bundles", action="store_true",
         help="MBOX: write Cabinet-style message.md, source.eml and attachment bundles.",
     )
+    parser.add_argument("--mbox-member", metavar="NAME", help="Archive: exact .mbox member name")
+    parser.add_argument("--mbox-staging-dir", metavar="DIR", help="Archive: parent directory for private staging")
     parser.add_argument(
         "--mbox-timeout", type=float, default=None, metavar="SECONDS",
         help="MBOX: opt into a subprocess per message with this worker time budget.",
+    )
+    parser.add_argument(
+        "--mbox-memory-mib", type=int, default=None, metavar="MIB",
+        help="MBOX worker mode: address-space limit per worker in MiB (Linux only).",
+    )
+    parser.add_argument(
+        "--mbox-cpu-seconds", type=int, default=None, metavar="SECONDS",
+        help="MBOX worker mode: CPU-time limit per worker (Linux, macOS).",
+    )
+    parser.add_argument(
+        "--mbox-max-output-mib", type=int, default=None, metavar="MIB",
+        help="MBOX worker mode: maximum size of each file a worker writes, in MiB (Linux, macOS).",
     )
 
 
@@ -190,19 +204,31 @@ def _run_convert(args: argparse.Namespace) -> int:
     options = _to_core_options(args)
     started_at = monotonic()
 
-    if input_path.suffix.lower() == ".mbox":
+    archive_suffix = input_path.suffix.lower() in {".zip", ".tgz", ".gz", ".tar", ".bz2", ".xz", ".7z", ".rar"}
+    # Existing directories keep EML-directory conversion. Missing archive paths
+    # use the archive error/report path, just as missing plain MBOX paths do.
+    archive_input = archive_suffix and (input_path.is_file() or not input_path.exists())
+    if input_path.suffix.lower() == ".mbox" or archive_input:
+        if not archive_input and (args.mbox_member is not None or args.mbox_staging_dir is not None):
+            print("Archive-specific options require a ZIP/TGZ input", file=sys.stderr)
+            return 1
         if args.delete_eml:
             print("--delete-eml is not supported for MBOX; the archive is always preserved", file=sys.stderr)
             return 1
         from dead_letter.backend.mbox_cli import run_mbox
         return run_mbox(
-            input_path, output=args.output, options=options,
+            args.input_path if archive_input else input_path, output=args.output, options=options,
+            archive_input=archive_input, member=args.mbox_member, staging_dir=args.mbox_staging_dir,
             max_message_mib=args.max_message_mib, unescape=args.mbox_unescape,
             bundles=args.mbox_bundles, timeout_seconds=args.mbox_timeout,
+            memory_limit_mib=args.mbox_memory_mib, cpu_seconds=args.mbox_cpu_seconds,
+            max_output_mib=args.mbox_max_output_mib,
         )
     if (args.mbox_bundles or args.mbox_unescape != "preserve" or args.max_message_mib != 64
-            or args.mbox_timeout is not None):
-        print("MBOX-specific options require a .mbox input file", file=sys.stderr)
+            or args.mbox_timeout is not None or args.mbox_memory_mib is not None
+            or args.mbox_cpu_seconds is not None or args.mbox_max_output_mib is not None
+            or args.mbox_member is not None or args.mbox_staging_dir is not None):
+        print("MBOX-specific options require a .mbox or ZIP/TGZ input file", file=sys.stderr)
         return 1
 
     if input_path.is_dir():
