@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
+
+from selectolax.parser import HTMLParser
 
 from dead_letter.core.attribution import annotate_quoted_zones
 from dead_letter.core.calendar import summarize_calendar_parts
@@ -90,7 +93,10 @@ def _resolve_output_target(source: Path, subject: str, output: str | Path | None
         return source.parent / f"{slug}.md"
 
     output_path = Path(output).expanduser()
-    if output_path.suffix.lower() == ".md":
+    # A directory may itself end in .md. Keep an explicit trailing separator
+    # before Path normalizes it away, including for directories not yet created.
+    directory_intent = str(output).endswith(("/", os.sep)) or output_path.is_dir()
+    if output_path.suffix.lower() == ".md" and not directory_intent:
         return output_path
     return output_path / f"{slug}.md"
 
@@ -225,6 +231,14 @@ def _retain_referenced_inline_attachments(
     if not reference_text:
         return parsed
 
+    def is_referenced(cid: str) -> bool:
+        if f"cid:{cid}" in reference_text:
+            return True
+        # Embedding happens before this retention pass. A data URI in the
+        # rendered body still references the same attachment, not an orphan.
+        data_uri = parsed.inline_cid_to_data_uri.get(cid)
+        return bool(data_uri and data_uri in reference_text)
+
     removed_name_counts: Counter[str] = Counter()
     filtered_parts: list[AttachmentPart] = []
     for part in parsed.attachment_parts:
@@ -235,7 +249,7 @@ def _retain_referenced_inline_attachments(
         is_inline_image = (
             disposition_type != "attachment" and part.content_type.startswith("image/")
         )
-        if is_inline_image and part.content_id and f"cid:{part.content_id}" not in reference_text:
+        if is_inline_image and part.content_id and not is_referenced(part.content_id):
             removed_name_counts[part.filename] += 1
             continue
         filtered_parts.append(part)
@@ -258,12 +272,12 @@ def _retain_referenced_inline_attachments(
         inline_cid_to_filename={
             cid: filename
             for cid, filename in parsed.inline_cid_to_filename.items()
-            if f"cid:{cid}" in reference_text
+            if is_referenced(cid)
         },
         inline_cid_to_data_uri={
             cid: data_uri
             for cid, data_uri in parsed.inline_cid_to_data_uri.items()
-            if f"cid:{cid}" in reference_text
+            if is_referenced(cid)
         },
     )
 
@@ -584,6 +598,14 @@ def _build_pipeline_snapshot(
         for s in stripped_images
         if s.reference.startswith("cid:")
     }
+    if stripped_cids and filtered_html_body:
+        # Filtering removes image occurrences, not necessarily the whole asset.
+        # A body image may share a CID with a removed signature image.
+        remaining_tree = HTMLParser(filtered_html_body)
+        for image in remaining_tree.css("img"):
+            reference = image.attributes.get("src") or ""
+            if reference.startswith("cid:"):
+                stripped_cids.discard(reference.removeprefix("cid:"))
     if stripped_cids:
         parsed = _exclude_stripped_inline_attachments(parsed, stripped_cids=stripped_cids)
 
@@ -1039,7 +1061,9 @@ def convert_dir(
             file_output = None
         else:
             relative_parent = file_path.relative_to(source_dir).parent
-            file_output = output_root / relative_parent
+            # This API always receives a directory, even if its final component
+            # ends in .md. Do not create it here: dry runs must remain read-only.
+            file_output = f"{output_root / relative_parent}{os.sep}"
 
         result = convert(
             file_path,
