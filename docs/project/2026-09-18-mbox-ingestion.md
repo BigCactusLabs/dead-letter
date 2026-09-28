@@ -15,7 +15,7 @@ but unreleased: ZIP/TGZ stage a selected MBOX into a private fixed file before
 using the same framer and conversion pipeline. It includes byte/entry limits,
 container mutation and integrity checks, cleanup, archive provenance and reports.
 The issue remains open for follow-up validation; real multi-GB compressed corpus
-validation is still unknown. See the [compressed-input contract](../reference/gmail-takeout.md#compressed-input-unreleased).
+validation is still unknown. See the [compressed-input contract](../reference/gmail-takeout.md#compressed-input).
 Remaining follow-ups include MCP ingestion ([#145](https://github.com/BigCactusLabs/dead-letter/issues/145)),
 web/API import ([#146](https://github.com/BigCactusLabs/dead-letter/issues/146)),
 real multi-GB corpus validation

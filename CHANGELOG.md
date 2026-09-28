@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-09-28
+
 ### Added
 
 - The MCP server now reports a title, description, website URL, package
@@ -27,12 +29,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path and at most 20 failure entries, never message content. Compressed archives
   are rejected, the source is never modified, and MCP call cancellation is not
   supported. See the [runtime contract](docs/reference/v4-runtime-contracts.md#mcp-server-dead_letterbackendmcp_server) (#145).
+- Claude plugin: a user-typed `/dead-letter:mbox <path> [output-dir]` command
+  calls `convert_mbox` with an explicit output folder (`outputs/mbox/<run-id>`
+  in Cowork, the given folder or a fresh temp directory in Claude Code), never
+  beside the source. The context skill redirects natural-language MBOX requests
+  to it instead of calling the tool directly; compressed or oversized archives
+  are pointed at the CLI.
 - CLI/Python ZIP and TGZ Takeout ingestion with exact MBOX member selection,
   private staging, byte/member budgets, integrity and source-change checks,
   and archive provenance in Markdown and reports. ZIP requires Python 3.12.3+.
-  MCP/web ingestion is unchanged. See the [compressed-input guide](docs/reference/gmail-takeout.md#compressed-input-unreleased)
+  MCP/web ingestion is unchanged. See the [compressed-input guide](docs/reference/gmail-takeout.md#compressed-input)
   (Refs #144).
-- Unreleased single-message analysis sidecars with `--output` and async
+- Experimental single-message analysis sidecars with `--output` and async
   `analyze_to_sidecar`: no-clobber writes, separate failure/skip attempts, strict
   source/effective-input binding, validated offline reuse, alias-age limits and
   concurrent-winner checks. Sources remain unchanged; saved results contain no
@@ -117,7 +125,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the central directory itself rather than the EOCD record, TGZ input is
   refused if the tarfile hooks behind its metadata limits are unavailable, and
   macOS `._*` / `__MACOSX/` metadata is never an MBOX candidate (Refs #144).
-- Unreleased analysis sidecars now reject unusable destinations before inference,
+- Experimental analysis sidecars now reject unusable destinations before inference,
   preserve full results on write failure, and run provider preflight before new
   source reads. Reuse binds adapter/SDK versions, reports the current source
   basename, tolerates bounded clock skew, and retries a vanished target once.

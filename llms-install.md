@@ -132,7 +132,8 @@ uvx --python 3.12 dead-letter doctor
 
 For a pinned install, run the corresponding pinned CLI rather than using an
 unpinned doctor result as evidence about a different environment. For MCP,
-connect in the target client and confirm `tools/list` exposes all four tools.
+connect in the target client and confirm `tools/list` exposes the tools below
+(0.4.0 and earlier lack `convert_mbox`).
 Registration or a silent waiting stdio process is not a successful handshake.
 
 | Tool | Required input | Permanent writes |
@@ -140,6 +141,7 @@ Registration or a silent waiting stdio process is not a successful handshake.
 | `convert_eml` | `eml_path` | Only when `output_path` is supplied |
 | `convert_eml_to_bundle` | `eml_path`, `bundle_root` | Creates a copy-only bundle; original remains |
 | `convert_directory` | `directory`, `output_directory` | Batch output; at most 50 `.eml` files per call |
+| `convert_mbox` | `path`, `output_directory` | One flat `.mbox`; at most 256 MiB and 1000 messages per call (0.4.5 and later) |
 | `get_diagnostics` | `eml_path` | None; temporary files are cleaned up |
 
 Use an approved synthetic message first. Verify the Markdown, expected retained

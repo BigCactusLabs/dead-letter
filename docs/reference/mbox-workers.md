@@ -91,7 +91,8 @@ No new report schema version or inference/remote-analysis behavior is introduced
 
 ## Optional resource budgets
 
-**Availability:** on `main`, unreleased (#140, first slice). Budgets are opt-in
+**Availability:** 0.4.5 and later (#140, first slice); 0.4.0 and earlier do
+not accept these flags. Budgets are opt-in
 and apply only in worker mode. Without them, worker conversion is unchanged.
 
 ```bash

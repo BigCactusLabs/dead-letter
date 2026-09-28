@@ -62,10 +62,10 @@ operation. Dependency changes require their own reviewed lock update.
 `prepare` does not edit MCP tool lists. `mcpb/manifest.json` lists exactly the
 tools of the package version the bundle pins, and
 `tests/plugin/test_mcpb_bundle.py` (`SHIPPED_TOOLS`) fails until the new version
-is recorded. The release that first ships `convert_mbox` (#145) must add it to
+is recorded. The release that first ships a new tool must add it to
 `mcpb/manifest.json`, move it from `UNRELEASED_TOOLS` to that version's
 `SHIPPED_TOOLS` entry, and add it to `PUBLISHED_TOOLS` in
-`scripts/smoke_mcpb.py`.
+`scripts/smoke_mcpb.py`. 0.4.5 did this for `convert_mbox` (#145).
 
 Use `prepare "$VERSION" --keep-plugin` to defer plugin adoption explicitly,
 or `--plugin-version A.B.C` when the plugin's independent sequence is ahead.

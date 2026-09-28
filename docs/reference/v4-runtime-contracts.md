@@ -791,13 +791,13 @@ Exit codes:
 Published as the `dead-letter-mcp` console script (`dead-letter[mcp]`, MCP Python
 SDK 2.x) and described by `server.json` for the MCP Registry.
 
-On `main` (unreleased), `serverInfo` also carries a `title`, `description`,
+From 0.4.5, `serverInfo` also carries a `title`, `description`,
 `websiteUrl`, the package `version`, and a 64×64 PNG icon embedded as a
 `data:` URI (no network fetch), and each tool has a human-readable `title`.
 Clients decide whether and where to display these fields.
 
-Released packages (0.4.0 and earlier) expose the first four tools below.
-`convert_mbox` is on `main` and unreleased (#145). Five tools on `main`:
+Packages from 0.4.5 expose the five tools below. `convert_mbox` (#145) was
+added in 0.4.5; 0.4.0 and earlier expose the other four.
 
 | Tool | Required arguments | Returns |
 | --- | --- | --- |
@@ -839,7 +839,7 @@ These differ from the CLI and the Python API:
   string is rejected.
 - **Directory batches cap at 50 files.** `MCP_MAX_DIRECTORY_FILES = 50`; a larger
   directory is rejected before any conversion runs.
-- **`convert_mbox` is bounded (unreleased, #145).** It reuses the CLI's MBOX
+- **`convert_mbox` is bounded (0.4.5 and later, #145).** It reuses the CLI's MBOX
   importer with the default `preserve` unescape mode and default per-message
   limits. It exposes only `bundles` plus the conversion options above
   (including `dry_run`); unescape modes, worker timeouts and the per-message

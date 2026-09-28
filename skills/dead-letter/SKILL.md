@@ -25,20 +25,19 @@ parsing MIME by hand whenever a task starts from exported email.
 ## Input boundary (say this instead of guessing)
 
 - The MCP server (Path 1) accepts `.eml` files, each one RFC 822 message.
-  Released versions (0.4.0 and earlier) do not accept `.mbox`. Unreleased
-  builds from the `main` branch add a bounded `convert_mbox` tool; use it only
-  if the server's tool list includes it.
+  Version 0.4.5 and later add a bounded `convert_mbox` tool for one flat
+  `.mbox`; 0.4.0 and earlier do not accept `.mbox`. Use it only if the
+  server's tool list includes it.
 - The CLI (Path 2) also converts a flat Gmail Takeout `.mbox` file, not just
   `.eml`: `uvx --python 3.12 dead-letter convert "Takeout/Mail/All mail.mbox"
   --output markdown/`. The CLI has no archive size or message-count cap. No
   web UI accepts `.mbox`.
-- Compressed Takeout downloads (`.zip`, `.tgz`, `.tar.gz`): released versions
-  (0.4.0 and earlier) do not read them; extract the download and pass the flat
-  `.mbox` inside. Unreleased builds from the `main` branch let the CLI and
-  Python API read them directly (`dead-letter convert takeout.zip --output
+- Compressed Takeout downloads (`.zip`, `.tgz`, `.tar.gz`): in 0.4.5 and
+  later the CLI and Python API read them directly (`dead-letter convert takeout.zip --output
   markdown/`); see the
-  [Takeout guide](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/gmail-takeout.md#compressed-input-unreleased).
-  The MCP server never accepts them (`convert_mbox` takes one flat `.mbox`
+  [Takeout guide](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/gmail-takeout.md#compressed-input).
+  0.4.0 and earlier do not read them; extract the download and pass the flat
+  `.mbox` inside. The MCP server never accepts them (`convert_mbox` takes one flat `.mbox`
   only), and the web UI accepts `.eml` only.
 - Not supported by any path: `.pst`, `.ost`, `.msg`, `.olm`, an Apple Mail
   `.mbox` *directory* (as opposed to a flat `.mbox` file), plain `.tar`,
@@ -69,7 +68,7 @@ tools below), use it. Tool names:
 | `convert_directory(directory, output_directory, preset=...)` | Every `.eml` under a folder to Markdown files | Yes |
 | `convert_eml_to_bundle(eml_path, bundle_root, preset=...)` | One `.eml` to a folder with Markdown, decoded attachments, and the source | Yes |
 | `get_diagnostics(eml_path, preset=...)` | Quality and structure report for one `.eml` (body selection, segmentation, confidence, warnings) | No |
-| `convert_mbox(path, output_directory, bundles=false, preset=...)` | One flat `.mbox` (at most 256 MiB, first 1000 messages) to Markdown files plus a JSON report; returns counts, never message text. Only on servers built from `main` after 0.4.0 | Yes |
+| `convert_mbox(path, output_directory, bundles=false, preset=...)` | One flat `.mbox` (at most 256 MiB, first 1000 messages) to Markdown files plus a JSON report; returns counts, never message text. 0.4.5 and later | Yes |
 
 Presets: `default` (strip signatures, tracking pixels, signature images),
 `clean` (`default` plus disclaimers and quoted headers; best for summaries),

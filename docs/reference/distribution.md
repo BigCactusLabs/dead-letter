@@ -12,7 +12,7 @@ second email converter.
 | Convert a file or folder | `uvx`, pip, or pipx | Core converter and CLI | [README](../../README.md#-install) |
 | A Homebrew-managed CLI | `BigCactusLabs/tap` | Core CLI only; no UI or MCP extras | [README](../../README.md#-install) |
 | Drag-and-drop and Inbox/Cabinet | `dead-letter[ui]` | Local UI, API, and watch dependencies | [Quick Start](../../README.md#-quick-start) |
-| Tools in an MCP client | `dead-letter[mcp]` via `uvx` or pipx | Local stdio server and four tools | [Agent install guide](../../llms-install.md) |
+| Tools in an MCP client | `dead-letter[mcp]` via `uvx` or pipx | Local stdio server and its MCP tools | [Agent install guide](../../llms-install.md) |
 | Claude Desktop extension | Release `.mcpb` plus its checksum | Managed uv launcher with an exact package pin | [MCP setup](../../README.md#-mcp-server) |
 | Claude Code / Cowork commands | BCL plugin marketplace | Plugin commands and pinned MCP launcher | [Plugin guide](../../plugin/README.md) |
 | Container-isolated MCP | GHCR version or digest | Non-root stdio server; explicit input/output mounts | [Containers](containers.md) |

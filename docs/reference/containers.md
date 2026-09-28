@@ -1,9 +1,10 @@
 # Container distribution and Docker MCP Catalog
 
 The container is an **optional stdio MCP launch path**. Normal CLI, `uvx`,
-plugin, and MCPB installations do not require Docker. It exposes the same four
-local tools: `convert_eml`, `convert_eml_to_bundle`, `convert_directory`, and
-`get_diagnostics`. It does not start the web UI or listen on a network port.
+plugin, and MCPB installations do not require Docker. It exposes the same five
+local tools: `convert_eml`, `convert_eml_to_bundle`, `convert_directory`,
+`convert_mbox`, and `get_diagnostics` (images for 0.4.0 and earlier lack
+`convert_mbox`). It does not start the web UI or listen on a network port.
 
 ## Availability
 
@@ -204,7 +205,7 @@ docker mcp catalog import "$PWD/catalogs/dead-letter/catalog.yaml"
 ```
 
 Configure the two paths and container user in Docker Desktop, enable the
-server, and exercise all four tools against synthetic mail through the
+server, and exercise all five tools against synthetic mail through the
 Toolkit/gateway. Confirm input remains unchanged, output persists, and no
 network access is needed. Do not add a fabricated `tools.json` to bypass
 introspection failures. Do not reset an existing user's catalog merely to

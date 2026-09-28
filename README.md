@@ -43,7 +43,7 @@ Or install with Homebrew or pip below. Agents and MCP clients can use the client
 - **Install validation** — `dead-letter doctor` checks your runtime environment
 - **Conversion report** — opt-in JSON report with per-file diagnostics, including attachment referenced/retained counts for automation and audit
 - **MCP server** — integrate with Claude Desktop, Claude Code, Codex, and other MCP clients
-- **Claude plugin** — marketplace install in Claude Code or Cowork with four slash commands (`/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`)
+- **Claude plugin** — marketplace install in Claude Code or Cowork with five slash commands (`/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`, `/dead-letter:mbox`)
 - **Portable Agent Skill** — teaches skill-aware agents when and how to convert `.eml` files
 - **Python API** — `from dead_letter import convert` and you're off
 
@@ -311,7 +311,7 @@ shasum -a 256 -c dead-letter-mcp-X.Y.Z.mcpb.sha256
 certutil -hashfile dead-letter-mcp-X.Y.Z.mcpb SHA256
 ```
 
-Replace `X.Y.Z` with the selected package version. In a compatible Claude Desktop build, double-click the downloaded bundle, drag it onto the window, or use Settings > Extensions > Advanced settings > Install Extension. Check that the extension connects and exposes the four tools below, then convert a synthetic message.
+Replace `X.Y.Z` with the selected package version. In a compatible Claude Desktop build, double-click the downloaded bundle, drag it onto the window, or use Settings > Extensions > Advanced settings > Install Extension. Check that the extension connects and exposes the tools below (five from 0.4.5; `convert_mbox` is absent in 0.4.0 and earlier), then convert a synthetic message.
 
 The bundle uses a managed uv runtime and an exact package pin. First launch may download Python and dependencies. A checksum or command-line smoke test is not proof of a successful GUI installation on your client version. For hosts without MCPB support, use manual stdio setup below.
 
@@ -337,7 +337,7 @@ Merge the entry rather than replacing existing client settings. VS Code and othe
 /plugin install dead-letter
 ```
 
-The plugin launches the MCP server via `uvx` and adds four slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`. Local Claude Code needs `uv` on `PATH`; see [`plugin/`](https://github.com/BigCactusLabs/dead-letter/tree/main/plugin/) for runtime-specific setup and updates. Email content is treated as untrusted data, not instructions: embedded requests for tool use, credentials, or exfiltration are not followed.
+The plugin launches the MCP server via `uvx` and adds five slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`, `/dead-letter:mbox`. Local Claude Code needs `uv` on `PATH`; see [`plugin/`](https://github.com/BigCactusLabs/dead-letter/tree/main/plugin/) for runtime-specific setup and updates. Email content is treated as untrusted data, not instructions: embedded requests for tool use, credentials, or exfiltration are not followed.
 
 The marketplace pins the plugin tag and commit, and its launcher pins an exact published Python package. Claude Code and Cowork keep separate installed copies; update and verify each client. Those pins do not freeze every transitive dependency.
 
@@ -354,7 +354,7 @@ codex mcp add dead-letter -- uvx --python 3.12 --from 'dead-letter[mcp]' dead-le
 codex mcp list
 ```
 
-`mcp list` confirms registration, not a successful tool call. Connect through the target client, confirm all four tools, and convert a synthetic fixture before treating the installation as verified.
+`mcp list` confirms registration, not a successful tool call. Connect through the target client, confirm the tools below, and convert a synthetic fixture before treating the installation as verified.
 
 ### Tools
 
@@ -363,9 +363,10 @@ codex mcp list
 | `convert_eml` | `eml_path` | Markdown text. Also writes a file when `output_path` is given. |
 | `convert_eml_to_bundle` | `eml_path`, `bundle_root` | JSON with `bundle_path`, `markdown_path`, `attachment_paths`. Copy-only: the original `.eml` is never moved or deleted. |
 | `convert_directory` | `directory`, `output_directory` | JSON summary. Capped at 50 `.eml` files per call. |
+| `convert_mbox` | `path`, `output_directory` | JSON summary. One flat `.mbox`, at most 256 MiB and 1000 messages per call. 0.4.5 and later. |
 | `get_diagnostics` | `eml_path` | Quality and structure JSON. Writes nothing permanent. |
 
-All four take a `preset` (`default`, `clean`, `verbose`, `raw`) and per-flag overrides. Full contract, including the MCP-only constraints and the error-text table: [`docs/reference/v4-runtime-contracts.md`](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/v4-runtime-contracts.md#mcp-server-dead_letterbackendmcp_server).
+All five take a `preset` (`default`, `clean`, `verbose`, `raw`) and per-flag overrides. Full contract, including the MCP-only constraints and the error-text table: [`docs/reference/v4-runtime-contracts.md`](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/v4-runtime-contracts.md#mcp-server-dead_letterbackendmcp_server).
 
 ## 🗂 Project Structure
 
@@ -417,10 +418,10 @@ CI also validates plugin/skill schemas, frontend syntax, maintained Markdown lin
 
 ## ⚠️ Known Limitations
 
-- CLI/Python accept `.eml` and flat `.mbox` exports. ZIP/TGZ Takeout support is
-  unreleased; see the [Takeout guide](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/gmail-takeout.md). MCP/web
-  remain EML-only in released versions; `main` adds a bounded, unreleased MCP
-  `convert_mbox` tool for one flat `.mbox`. PST, MSG and live-mailbox connections are unsupported.
+- CLI/Python accept `.eml`, flat `.mbox` exports, and (from 0.4.5) ZIP/TGZ
+  Takeout downloads; see the [Takeout guide](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/gmail-takeout.md). The web UI
+  is EML-only. From 0.4.5 the MCP server adds a bounded `convert_mbox` tool for
+  one flat `.mbox`. PST, MSG and live-mailbox connections are unsupported.
 - Local-only, single-user, single-machine; no remote server or authentication service. An MCP host may send results to its model provider.
 - In-memory job registry: state resets on restart. Retained binary attachments need a separate parser for text indexing.
 

@@ -9,18 +9,27 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MCPB_ROOT = REPO_ROOT / "mcpb"
-EXPECTED_TOOLS = [
-    "convert_eml",
-    "convert_eml_to_bundle",
-    "convert_directory",
-    "get_diagnostics",
-]
 # MCP tools each published package exposes, keyed by the exact version the
 # bundle pins. The manifest must list exactly the pinned runtime's tools.
-SHIPPED_TOOLS = {"0.4.0": EXPECTED_TOOLS}
-# On main but not yet in any release (#145). Moves into SHIPPED_TOOLS and
-# mcpb/manifest.json in the release that ships it.
-UNRELEASED_TOOLS = {"convert_mbox"}
+SHIPPED_TOOLS = {
+    "0.4.0": [
+        "convert_eml",
+        "convert_eml_to_bundle",
+        "convert_directory",
+        "get_diagnostics",
+    ],
+    # convert_mbox (#145) first ships in 0.4.5.
+    "0.4.5": [
+        "convert_eml",
+        "convert_eml_to_bundle",
+        "convert_directory",
+        "convert_mbox",
+        "get_diagnostics",
+    ],
+}
+# Tools on main but not yet in any release. A new tool is listed here until
+# the release that ships it moves it into SHIPPED_TOOLS and mcpb/manifest.json.
+UNRELEASED_TOOLS: set[str] = set()
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
@@ -118,8 +127,10 @@ def test_checkout_tools_cover_the_manifest_with_only_unreleased_extras():
 def test_bundle_smoke_compares_runtime_with_manifest():
     import smoke_mcpb
 
-    published = set(EXPECTED_TOOLS)
-    checkout = published | UNRELEASED_TOOLS
+    published = set(SHIPPED_TOOLS[pinned_package_version()])
+    # With no unreleased tools, a placeholder keeps the ahead/behind cases real.
+    ahead = UNRELEASED_TOOLS or {"unreleased_placeholder_tool"}
+    checkout = published | ahead
     assert smoke_mcpb.compare_tools(published, published, local_source=False) == set()
     # A published bundle whose runtime and manifest disagree fails either way.
     with pytest.raises(smoke_mcpb.SmokeFailure):
@@ -127,7 +138,7 @@ def test_bundle_smoke_compares_runtime_with_manifest():
     with pytest.raises(smoke_mcpb.SmokeFailure):
         smoke_mcpb.compare_tools(published, checkout, local_source=False)
     # A local-source bundle may run ahead of the manifest, never behind it.
-    assert smoke_mcpb.compare_tools(checkout, published, local_source=True) == UNRELEASED_TOOLS
+    assert smoke_mcpb.compare_tools(checkout, published, local_source=True) == ahead
     with pytest.raises(smoke_mcpb.SmokeFailure):
         smoke_mcpb.compare_tools(published - {"get_diagnostics"}, published, local_source=True)
 

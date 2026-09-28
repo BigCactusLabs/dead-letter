@@ -39,7 +39,7 @@ Manual configuration: [examples/mcp/vscode.json](../../examples/mcp/vscode.json)
 VS Code uses **`servers`**, not `mcpServers`. Merge the `dead-letter` entry into
 a workspace `.vscode/mcp.json`, or use **MCP: Open User Configuration** for a
 user-scoped setup. Keep other entries intact. Inspect/start it using
-**MCP: List Servers**, then check the four tools in the chat tool picker.
+**MCP: List Servers**, then check the five tools in the chat tool picker.
 
 Direct installation does not prove the server appears in the `@mcp` gallery.
 Other Copilot hosts have their own configuration and transport capabilities;
@@ -89,7 +89,8 @@ running the same server executable in CI.
 ## Verify actual behavior
 
 After connecting, verify `tools/list` contains exactly `convert_eml`,
-`convert_eml_to_bundle`, `convert_directory`, and `get_diagnostics`. Then ask
+`convert_eml_to_bundle`, `convert_directory`, `convert_mbox`, and
+`get_diagnostics` (0.4.0 and earlier lack `convert_mbox`). Then ask
 the client to convert an explicitly selected synthetic `.eml` using
 `convert_eml` without `output_path`. Check the returned YAML front matter and
 body and verify the source still exists unchanged.

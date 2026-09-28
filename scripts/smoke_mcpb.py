@@ -20,16 +20,18 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_FIXTURE = REPO_ROOT / "tests" / "core" / "fixtures" / "forwarded.eml"
-# The four EML tools shipped in 0.4.0. convert_mbox (#145) is on main only, so
-# checks that launch a published package compare against PUBLISHED_TOOLS. The
-# bundle smoke itself compares the live runtime against the bundle's manifest.
+# The tools of the current release; 0.4.5 added convert_mbox (#145). Checks
+# that launch a published package compare against PUBLISHED_TOOLS. A tool on
+# main but not yet released belongs in EXPECTED_TOOLS only. The bundle smoke
+# itself compares the live runtime against the bundle's manifest.
 PUBLISHED_TOOLS = frozenset({
     "convert_eml",
     "convert_eml_to_bundle",
     "convert_directory",
+    "convert_mbox",
     "get_diagnostics",
 })
-EXPECTED_TOOLS = {*PUBLISHED_TOOLS, "convert_mbox"}
+EXPECTED_TOOLS = {*PUBLISHED_TOOLS}
 # First launch resolves and downloads dependencies, so reads need a generous budget.
 READ_TIMEOUT_SECONDS = 60.0
 
