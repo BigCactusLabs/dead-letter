@@ -783,16 +783,19 @@ Exit codes:
 ## MCP Server (`dead_letter.backend.mcp_server`)
 
 Published as the `dead-letter-mcp` console script (`dead-letter[mcp]`, MCP Python
-SDK 2.x) and described by `server.json` for the MCP Registry. Four tools:
+SDK 2.x) and described by `server.json` for the MCP Registry. Released packages
+(0.4.0 and earlier) expose the first four tools below. `convert_mbox` is on
+`main` and unreleased (#145). Five tools on `main`:
 
 | Tool | Required arguments | Returns |
 | --- | --- | --- |
 | `convert_eml` | `eml_path` | Markdown text (front matter + body). Writes a file too when `output_path` is given. |
 | `convert_eml_to_bundle` | `eml_path`, `bundle_root` | JSON: `bundle_path`, `markdown_path`, `attachment_paths`, and `diagnostics` when available. |
 | `convert_directory` | `directory`, `output_directory` | JSON: `total`, `successes`, `failures`, `output_paths`, `errors`. |
+| `convert_mbox` | `path`, `output_directory` | JSON: `output_directory`, `processed`, `converted`, `skipped`, `failed`, `truncated`, `report_path`, `failures` (at most 20 of `index`, `code`, `message`), `failures_omitted`, and `message` when truncated. Never returns message content. |
 | `get_diagnostics` | `eml_path` | Diagnostics JSON — `state`, `selected_body`, `segmentation_path`, `client_hint`, `confidence`, `fallback_used`, `warnings`, plus conditional `stripped_images` and `attachments` (see [quality-diagnostics.md](quality-diagnostics.md)). Writes nothing permanent. |
 
-All four accept `preset` (`default`, `clean`, `verbose`, `raw`) plus per-flag
+All five accept `preset` (`default`, `clean`, `verbose`, `raw`) plus per-flag
 overrides: `strip_signatures`, `strip_disclaimers`, `strip_tracking_pixels`,
 `strip_signature_images`, `strip_quoted_headers`, `embed_inline_images`,
 `include_all_headers`, `include_raw_html`, `no_calendar_summary`, `thread_mode`,
@@ -824,6 +827,36 @@ These differ from the CLI and the Python API:
   string is rejected.
 - **Directory batches cap at 50 files.** `MCP_MAX_DIRECTORY_FILES = 50`; a larger
   directory is rejected before any conversion runs.
+- **`convert_mbox` is bounded (unreleased, #145).** It reuses the CLI's MBOX
+  importer with the default `preserve` unescape mode and default per-message
+  limits. It exposes only `bundles` plus the conversion options above
+  (including `dry_run`); unescape modes, worker timeouts and the per-message
+  size override are CLI/Python-only.
+  - `path` must be one existing, readable regular file whose name ends in
+    `.mbox` (case-insensitive). Compressed archives, other suffixes and Apple
+    Mail `.mbox` directories are rejected before any output is written.
+  - The archive must be at most `MCP_MAX_MBOX_BYTES` (256 MiB); a larger one is
+    rejected before conversion. The cap is also enforced on the bytes actually
+    read: if a record ends past 256 MiB (the file grew or was swapped after
+    the check), conversion stops at that record. After iteration the source is
+    re-stated; a changed device, inode, size or modification time fails the
+    call. Both cases publish the partial report as `"failed"`.
+  - Conversion stops after `MCP_MAX_MBOX_MESSAGES` (1000) records. The
+    iterator is closed, nothing further is converted, and `truncated` is `true`
+    when the last processed record ended before end of file. The rest of the
+    archive is not converted; use the CLI. There is no resume.
+  - `output_directory` is required and must not be an existing file. Output
+    names are collision-safe, as in the CLI. Unless `dry_run` is set, a
+    streaming report with the CLI's MBOX report schema (`job.id` `"mcp"`,
+    `mbox_options.max_messages`, `mbox_options.truncated`) is written to
+    `.dead-letter-report.json` in `output_directory`, or `-2`, `-3`, ... when
+    that name exists; earlier reports are never overwritten. `dry_run` writes
+    nothing and returns `report_path: null`.
+  - The source archive is opened read-only and never modified, moved or
+    deleted.
+  - MCP request cancellation is **not supported**: a cancelled call keeps
+    running until it finishes or reaches a bound. The size and message caps
+    limit its duration.
 
 ### Error contract
 
@@ -851,6 +884,31 @@ Any other exception (a write failure, an unexpected crash) reaches the client
 only as `Error executing tool <name>`, with no further text. MCP SDK 2.1 and
 later mask these by design, and dead-letter relies on that so internal and
 email-derived text stays on the server.
+
+`convert_mbox` raises `ToolError`, so the MCP Python SDK 2.2 locked in
+`uv.lock` delivers its message to the client, prefixed by `Error executing
+tool convert_mbox: `:
+
+- `output_directory is required for MCP MBOX conversion`
+- `MCP convert_mbox accepts only a flat .mbox file; extract compressed archives first.`
+- `File not found: <path>`
+- `MBOX path is not a regular file: <path>`
+- `File not readable: <path>`
+- `MCP MBOX conversion supports archives up to 256 MiB; found <n> bytes. Use the dead-letter CLI for larger archives.`
+- `MBOX conversion failed: <reason>` — core output validation (for example,
+  `MBOX output must be a directory distinct from the source`) or a filesystem
+  error before any message was processed
+- `MBOX conversion failed after <n> messages: <reason>; partial report: <path>`
+  — an error after conversion started (for example, a full disk while
+  spooling the report, `MBOX archive exceeds the MCP limit of 256 MiB; use the
+  dead-letter CLI`, or `MBOX changed during MCP conversion; use an immutable
+  export`). Outputs already written stay in place and the report
+  is still published with `job.status` `"failed"`; it lists the entries
+  committed before the error. If the report itself cannot be written, the
+  message ends with `the report could not be written: <reason>` instead.
+
+Per-message failures are not tool errors; they appear in `failures` and the
+report with the importer's error codes (for example `mbox_empty_message`).
 
 ### Distribution
 

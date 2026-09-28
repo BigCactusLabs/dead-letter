@@ -477,6 +477,7 @@ async def test_server_has_all_tools():
     assert "convert_eml_to_bundle" in tool_names
     assert "convert_directory" in tool_names
     assert "get_diagnostics" in tool_names
+    assert "convert_mbox" in tool_names
 
 
 def test_main_entry_point_is_callable():
@@ -742,6 +743,7 @@ MCP_FLAG_TOOLS = (
     mcp_server.convert_eml_to_bundle,
     mcp_server.convert_directory,
     mcp_server.get_diagnostics,
+    mcp_server.convert_mbox,
 )
 
 

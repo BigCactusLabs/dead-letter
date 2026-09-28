@@ -14,17 +14,22 @@ import subprocess
 import sys
 import tempfile
 import threading
+import tomllib
 import zipfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_FIXTURE = REPO_ROOT / "tests" / "core" / "fixtures" / "forwarded.eml"
-EXPECTED_TOOLS = {
+# The four EML tools shipped in 0.4.0. convert_mbox (#145) is on main only, so
+# checks that launch a published package compare against PUBLISHED_TOOLS. The
+# bundle smoke itself compares the live runtime against the bundle's manifest.
+PUBLISHED_TOOLS = frozenset({
     "convert_eml",
     "convert_eml_to_bundle",
     "convert_directory",
     "get_diagnostics",
-}
+})
+EXPECTED_TOOLS = {*PUBLISHED_TOOLS, "convert_mbox"}
 # First launch resolves and downloads dependencies, so reads need a generous budget.
 READ_TIMEOUT_SECONDS = 60.0
 
@@ -96,6 +101,34 @@ class StdioClient:
                 continue
 
 
+def manifest_tools(bundle_dir: Path) -> set[str]:
+    manifest = json.loads((bundle_dir / "manifest.json").read_text(encoding="utf-8"))
+    return {tool["name"] for tool in manifest.get("tools", [])}
+
+
+def is_local_source(bundle_dir: Path) -> bool:
+    """True for a `build_mcpb.py --local-source` bundle (not releasable)."""
+    with (bundle_dir / "pyproject.toml").open("rb") as handle:
+        project = tomllib.load(handle)
+    return "dead-letter" in project.get("tool", {}).get("uv", {}).get("sources", {})
+
+
+def compare_tools(runtime: set[str], declared: set[str], *, local_source: bool) -> set[str]:
+    """Check the live tool list against the manifest; return undeclared extras.
+
+    A published-package bundle must match its manifest exactly. A local-source
+    bundle runs the checkout, which may be ahead of the manifest (unreleased
+    tools); it must still expose every declared tool.
+    """
+    missing = declared - runtime
+    extra = runtime - declared
+    if missing or (extra and not local_source):
+        raise SmokeFailure(
+            f"tools/list returned {sorted(runtime)}, manifest declares {sorted(declared)}"
+        )
+    return extra
+
+
 def unpack(archive: Path, destination: Path) -> None:
     with zipfile.ZipFile(archive) as bundle:
         bundle.extractall(destination)
@@ -131,9 +164,13 @@ def check(bundle_dir: Path, fixture: Path) -> None:
         client.notify("notifications/initialized")
 
         tools = {tool["name"] for tool in client.request("tools/list").get("tools", [])}
-        if tools != EXPECTED_TOOLS:
-            raise SmokeFailure(
-                f"tools/list returned {sorted(tools)}, expected {sorted(EXPECTED_TOOLS)}"
+        extra = compare_tools(
+            tools, manifest_tools(bundle_dir), local_source=is_local_source(bundle_dir)
+        )
+        if extra:
+            print(
+                f"NOTE: local-source runtime exposes tools not in the manifest: {sorted(extra)}",
+                flush=True,
             )
 
         result = client.request(

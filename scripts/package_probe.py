@@ -19,7 +19,7 @@ import sys
 from unittest.mock import patch
 
 BODY = "Packaged installation preserves this synthetic message."
-TOOLS = {"convert_eml", "convert_eml_to_bundle", "convert_directory", "get_diagnostics"}
+TOOLS = {"convert_eml", "convert_eml_to_bundle", "convert_directory", "get_diagnostics", "convert_mbox"}
 
 
 def require(condition: bool, message: str) -> None:

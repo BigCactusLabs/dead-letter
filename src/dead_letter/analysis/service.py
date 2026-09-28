@@ -24,25 +24,11 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-async def analyze_prepared(
-    prepared: PreparedEmail, *, allow_remote: bool = False,
-    config: TypeSafeConfig | None = None,
-    on_disclosure: Callable[[dict], None] = emit_disclosure,
-    _provider: TypeSafeProvider | None = None,
-) -> dict:
-    """Execute one explicitly authorized prepared email; never mutate source mail.
-
-    All successful candidate results suggest review because profile quality has
-    not yet been evaluated. This policy is not a confidence threshold. It never
-    translates missing context or failed execution into an assessed negative.
-    """
-    if allow_remote is not True:
-        raise AnalysisError("remote_analysis_not_authorized")
-    if not isinstance(prepared, PreparedEmail):
-        raise AnalysisError("invalid_prepared_email")
+def _result_envelope(prepared: PreparedEmail) -> dict:
+    """Safe local metadata shared by execution and persistence preflight failures."""
     request = prepared.request
     state = request.payload()["state"]
-    result = {
+    return {
         "schema_version": RESULT_SCHEMA_VERSION, "artifact_type": "message_analysis",
         "experimental": True, "provider": "typesafe", "adapter_version": ADAPTER_VERSION,
         "source": {"reference": prepared.snapshot.source.name,
@@ -64,6 +50,27 @@ async def analyze_prepared(
         "request_id": None, "attempts": [], "retry_count": 0,
         "billing_status": "not_attempted", "error_code": None,
     }
+
+
+async def analyze_prepared(
+    prepared: PreparedEmail, *, allow_remote: bool = False,
+    config: TypeSafeConfig | None = None,
+    on_disclosure: Callable[[dict], None] = emit_disclosure,
+    _provider: TypeSafeProvider | None = None,
+) -> dict:
+    """Execute one explicitly authorized prepared email; never mutate source mail.
+
+    All successful candidate results suggest review because profile quality has
+    not yet been evaluated. This policy is not a confidence threshold. It never
+    translates missing context or failed execution into an assessed negative.
+    """
+    if allow_remote is not True:
+        raise AnalysisError("remote_analysis_not_authorized")
+    if not isinstance(prepared, PreparedEmail):
+        raise AnalysisError("invalid_prepared_email")
+    result = _result_envelope(prepared)
+    state = prepared.request.payload()["state"]
+    request = prepared.request
     if not state["coverage"]["authored_text_available"]:
         result["reason"] = "no_authored_text"
         return result

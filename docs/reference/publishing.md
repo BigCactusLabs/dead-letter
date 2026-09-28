@@ -59,6 +59,14 @@ ARD entries, and (by default) the plugin asset version and exact runtime pin.
 Dependency versions and checksums in `uv.lock` are not refreshed by this
 operation. Dependency changes require their own reviewed lock update.
 
+`prepare` does not edit MCP tool lists. `mcpb/manifest.json` lists exactly the
+tools of the package version the bundle pins, and
+`tests/plugin/test_mcpb_bundle.py` (`SHIPPED_TOOLS`) fails until the new version
+is recorded. The release that first ships `convert_mbox` (#145) must add it to
+`mcpb/manifest.json`, move it from `UNRELEASED_TOOLS` to that version's
+`SHIPPED_TOOLS` entry, and add it to `PUBLISHED_TOOLS` in
+`scripts/smoke_mcpb.py`.
+
 Use `prepare "$VERSION" --keep-plugin` to defer plugin adoption explicitly,
 or `--plugin-version A.B.C` when the plugin's independent sequence is ahead.
 The helper rejects version reuse/rollback. A deliberately different exact
@@ -214,8 +222,10 @@ curated directories can lag or require separate review.
 
 The source lives in `mcpb/`; `scripts/build_mcpb.py` validates matching versions
 and packages the exact published Python dependency. `scripts/smoke_mcpb.py`
-checks a real stdio session before upload. CI's `--local-source` bundles are
-local test artifacts, not release downloads.
+checks a real stdio session before upload; the live tool list must equal the
+bundle manifest's. CI's `--local-source` bundles are local test artifacts, not
+release downloads; their runtime may expose unreleased tools beyond the
+manifest, which the smoke reports but does not fail.
 
 The release attaches the `.mcpb` and `.sha256` sidecar. On retry, a published
 bundle is downloaded, checked against its sidecar, and smoke-tested again

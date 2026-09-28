@@ -15,6 +15,12 @@ EXPECTED_TOOLS = [
     "convert_directory",
     "get_diagnostics",
 ]
+# MCP tools each published package exposes, keyed by the exact version the
+# bundle pins. The manifest must list exactly the pinned runtime's tools.
+SHIPPED_TOOLS = {"0.4.0": EXPECTED_TOOLS}
+# On main but not yet in any release (#145). Moves into SHIPPED_TOOLS and
+# mcpb/manifest.json in the release that ships it.
+UNRELEASED_TOOLS = {"convert_mbox"}
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
@@ -75,11 +81,27 @@ def test_python_requirements_agree_on_3_12():
     assert (MCPB_ROOT / ".python-version").read_text(encoding="utf-8").strip() == "3.12"
 
 
-def test_manifest_tools_match_the_registered_server_tools():
+def pinned_package_version() -> str:
+    (dependency,) = load_toml(MCPB_ROOT / "pyproject.toml")["project"]["dependencies"]
+    return dependency.split("==", 1)[1]
+
+
+def test_manifest_tools_match_the_pinned_runtime():
+    """The default bundle installs the pinned PyPI package; list its tools only.
+
+    Releasing a version not in SHIPPED_TOOLS fails here until its tool list is
+    recorded, so a new tool reaches the manifest in the release that ships it.
+    """
+    pinned = pinned_package_version()
+    assert pinned in SHIPPED_TOOLS, (
+        f"record the MCP tools shipped in {pinned} in SHIPPED_TOOLS and mcpb/manifest.json"
+    )
     manifest_tools = [tool["name"] for tool in load_manifest()["tools"]]
-    assert manifest_tools == EXPECTED_TOOLS
+    assert manifest_tools == SHIPPED_TOOLS[pinned]
     assert all(tool["description"].strip() for tool in load_manifest()["tools"])
 
+
+def test_checkout_tools_cover_the_manifest_with_only_unreleased_extras():
     from dead_letter.backend.mcp_server import mcp
 
     manager = getattr(mcp, "_tool_manager", None)
@@ -88,7 +110,37 @@ def test_manifest_tools_match_the_registered_server_tools():
         pytest.skip(
             "MCP server does not expose a synchronous tool registry to introspect"
         )
-    assert sorted(registered) == sorted(EXPECTED_TOOLS)
+    declared = {tool["name"] for tool in load_manifest()["tools"]}
+    assert declared <= set(registered)
+    assert set(registered) - declared <= UNRELEASED_TOOLS
+
+
+def test_bundle_smoke_compares_runtime_with_manifest():
+    import smoke_mcpb
+
+    published = set(EXPECTED_TOOLS)
+    checkout = published | UNRELEASED_TOOLS
+    assert smoke_mcpb.compare_tools(published, published, local_source=False) == set()
+    # A published bundle whose runtime and manifest disagree fails either way.
+    with pytest.raises(smoke_mcpb.SmokeFailure):
+        smoke_mcpb.compare_tools(checkout, published, local_source=False)
+    with pytest.raises(smoke_mcpb.SmokeFailure):
+        smoke_mcpb.compare_tools(published, checkout, local_source=False)
+    # A local-source bundle may run ahead of the manifest, never behind it.
+    assert smoke_mcpb.compare_tools(checkout, published, local_source=True) == UNRELEASED_TOOLS
+    with pytest.raises(smoke_mcpb.SmokeFailure):
+        smoke_mcpb.compare_tools(published - {"get_diagnostics"}, published, local_source=True)
+
+
+@pytest.mark.parametrize("local", [False, True])
+def test_bundle_smoke_detects_local_source_bundles(tmp_path, local):
+    import smoke_mcpb
+
+    pyproject = (MCPB_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    if local:
+        pyproject += '\n[tool.uv.sources]\ndead-letter = { path = "/checkout", editable = true }\n'
+    (tmp_path / "pyproject.toml").write_text(pyproject, encoding="utf-8")
+    assert smoke_mcpb.is_local_source(tmp_path) is local
 
 
 def test_check_versions_accepts_the_committed_sources():
