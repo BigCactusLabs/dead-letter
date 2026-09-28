@@ -412,7 +412,9 @@ runs the same importer for small exports, with fixed bounds:
 
 - one flat `.mbox` file (suffix checked case-insensitively); compressed
   archives and Apple Mail `.mbox` directories are rejected;
-- at most 256 MiB of source, checked before conversion;
+- at most 256 MiB of source, checked before conversion and again on the bytes
+  read. An archive that grows past the cap or changes during the call fails
+  with a partial report marked `failed`;
 - at most 1000 messages per call. When an archive holds more, the call stops
   cleanly and returns `truncated: true`; the remaining messages are not
   converted and there is no resume. Use the CLI for the whole archive;

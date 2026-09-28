@@ -310,7 +310,8 @@ def convert_mbox(
         raise ToolError(f"MBOX path is not a regular file: {path}")
     if not os.access(source, os.R_OK):
         raise ToolError(f"File not readable: {path}")
-    size = source.stat().st_size
+    admitted = source.stat()
+    size = admitted.st_size
     if size > MCP_MAX_MBOX_BYTES:
         raise ToolError(
             f"MCP MBOX conversion supports archives up to {MCP_MAX_MBOX_BYTES // (1024 * 1024)} MiB; "
@@ -319,7 +320,7 @@ def convert_mbox(
 
     root = Path(output_directory).expanduser().resolve()
     try:
-        return _run_mcp_mbox(source, size, root, options, bundles=bundles)
+        return _run_mcp_mbox(source, admitted, root, options, bundles=bundles)
     except (OSError, ValueError) as exc:
         # Core validation (e.g. output is a file) and filesystem failures carry
         # no message content; surface them instead of the SDK's generic text.
@@ -337,9 +338,19 @@ def _publish_mcp_report(report: StreamingReport, root: Path, **kwargs: object) -
         raise
 
 
+class _McpMboxLimitError(Exception):
+    """The archive outgrew or changed after admission; never a message error."""
+
+
+def _stat_identity(value: os.stat_result) -> tuple[int, ...]:
+    return (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns)
+
+
 def _run_mcp_mbox(
-    source: Path, size: int, root: Path, options: ConvertOptions, *, bundles: bool,
+    source: Path, admitted: os.stat_result, root: Path, options: ConvertOptions, *, bundles: bool,
 ) -> str:
+    size = admitted.st_size
+    last_end: int | None = None
     limits = MboxLimits()
     started = monotonic()
     processed = converted = skipped = failed = 0
@@ -380,12 +391,26 @@ def _run_mcp_mbox(
                     converted += 1
                 if report is not None:
                     report.append(entry)
+                if item.mbox is not None and int(item.mbox["end_offset"]) > MCP_MAX_MBOX_BYTES:
+                    # The admission stat is a fast path only; enforce the cap on
+                    # the bytes actually read in case the file grew or was swapped.
+                    raise _McpMboxLimitError(
+                        "MBOX archive exceeds the MCP limit of "
+                        f"{MCP_MAX_MBOX_BYTES // (1024 * 1024)} MiB; use the dead-letter CLI"
+                    )
                 if processed >= MCP_MAX_MBOX_MESSAGES:
-                    # Stop before framing another record. The archive holds more
-                    # messages only if this record ended before EOF.
-                    end = item.mbox["end_offset"] if item.mbox is not None else size
-                    truncated = int(end) < size
+                    # Stop before framing another record.
+                    last_end = int(item.mbox["end_offset"]) if item.mbox is not None else size
                     break
+            try:
+                current = _stat_identity(source.stat())
+            except OSError:
+                current = None
+            if current != _stat_identity(admitted):
+                raise _McpMboxLimitError("MBOX changed during MCP conversion; use an immutable export")
+            # The archive holds more messages only if the last record ended
+            # before the admitted (and re-verified) end of file.
+            truncated = last_end is not None and last_end < size
         except Exception as exc:
             # Like the CLI's interrupted path: outputs already written still get
             # a published report (status "failed") before the error surfaces.

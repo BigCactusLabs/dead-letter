@@ -836,7 +836,11 @@ These differ from the CLI and the Python API:
     `.mbox` (case-insensitive). Compressed archives, other suffixes and Apple
     Mail `.mbox` directories are rejected before any output is written.
   - The archive must be at most `MCP_MAX_MBOX_BYTES` (256 MiB); a larger one is
-    rejected before conversion.
+    rejected before conversion. The cap is also enforced on the bytes actually
+    read: if a record ends past 256 MiB (the file grew or was swapped after
+    the check), conversion stops at that record. After iteration the source is
+    re-stated; a changed device, inode, size or modification time fails the
+    call. Both cases publish the partial report as `"failed"`.
   - Conversion stops after `MCP_MAX_MBOX_MESSAGES` (1000) records. The
     iterator is closed, nothing further is converted, and `truncated` is `true`
     when the last processed record ended before end of file. The rest of the
@@ -884,7 +888,9 @@ tool convert_mbox: `:
   error before any message was processed
 - `MBOX conversion failed after <n> messages: <reason>; partial report: <path>`
   — an error after conversion started (for example, a full disk while
-  spooling the report). Outputs already written stay in place and the report
+  spooling the report, `MBOX archive exceeds the MCP limit of 256 MiB; use the
+  dead-letter CLI`, or `MBOX changed during MCP conversion; use an immutable
+  export`). Outputs already written stay in place and the report
   is still published with `job.status` `"failed"`; it lists the entries
   committed before the error. If the report itself cannot be written, the
   message ends with `the report could not be written: <reason>` instead.

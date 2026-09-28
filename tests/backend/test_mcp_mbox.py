@@ -375,3 +375,77 @@ def test_report_placeholder_is_removed_when_close_fails(tmp_path, monkeypatch):
 
     assert not list(out.glob(".dead-letter-report*"))
     assert len(list(out.glob("*.md"))) == 1
+
+
+def swap_before_open(monkeypatch, change):
+    """Run ``change`` after the admission stat, just before the importer opens."""
+    real = mcp_server._convert_mbox_records
+
+    def swapped(source, **kwargs):
+        change(Path(source))
+        return real(source, **kwargs)
+
+    monkeypatch.setattr(mcp_server, "_convert_mbox_records", swapped)
+
+
+def test_growth_past_byte_cap_after_admission_stops_with_failed_report(tmp_path, monkeypatch):
+    source = tmp_path / "mail.mbox"
+    small = write_mbox(source, 2)
+    monkeypatch.setattr(mcp_server, "MCP_MAX_MBOX_BYTES", len(small))
+    grown = POSTMARK + message(1) + POSTMARK + message(2) + b"".join(
+        POSTMARK + message(n) for n in range(3, 11)
+    )
+    swap_before_open(monkeypatch, lambda path: path.write_bytes(grown))
+    out = tmp_path / "out"
+
+    with pytest.raises(ToolError, match="failed after 3 messages: MBOX archive exceeds the MCP limit"):
+        convert_mbox(path=str(source), output_directory=str(out))
+
+    report = json.loads((out / ".dead-letter-report.json").read_text())
+    assert report["job"]["status"] == "failed"
+    # Records 1-2 fit; record 3 crossed the cap and conversion stopped there.
+    assert [row["mbox"]["index"] for row in report["results"]] == [1, 2, 3]
+    assert len(list(out.glob("*.md"))) == 3
+
+
+def test_enlarged_within_cap_after_admission_is_rejected(tmp_path, monkeypatch):
+    source = tmp_path / "mail.mbox"
+    write_mbox(source, 2)
+    swap_before_open(monkeypatch, lambda path: path.write_bytes(path.read_bytes() + POSTMARK + message(3)))
+    out = tmp_path / "out"
+
+    with pytest.raises(ToolError, match="MBOX changed during MCP conversion; use an immutable export"):
+        convert_mbox(path=str(source), output_directory=str(out))
+
+    report = json.loads((out / ".dead-letter-report.json").read_text())
+    assert report["job"]["status"] == "failed"
+    assert report["summary"]["total"] == 3
+
+
+def test_replaced_file_after_admission_is_rejected(tmp_path, monkeypatch):
+    source = tmp_path / "mail.mbox"
+    data = write_mbox(source, 2)
+
+    def replace(path):
+        other = tmp_path / "other.mbox"
+        other.write_bytes(data)  # same size and bytes, different file
+        os.replace(other, path)
+
+    swap_before_open(monkeypatch, replace)
+    out = tmp_path / "out"
+
+    with pytest.raises(ToolError, match="MBOX changed during MCP conversion"):
+        convert_mbox(path=str(source), output_directory=str(out))
+
+    report = json.loads((out / ".dead-letter-report.json").read_text())
+    assert report["job"]["status"] == "failed"
+
+
+def test_truncation_at_cap_still_uses_admitted_size(tmp_path, monkeypatch):
+    monkeypatch.setattr(mcp_server, "MCP_MAX_MBOX_MESSAGES", 2)
+    source = tmp_path / "mail.mbox"
+    write_mbox(source, 3)
+    result = run(path=str(source), output_directory=str(tmp_path / "out"))
+    assert (result["processed"], result["truncated"]) == (2, True)
+    report = json.loads(Path(result["report_path"]).read_text())
+    assert report["job"]["status"] == "succeeded"
