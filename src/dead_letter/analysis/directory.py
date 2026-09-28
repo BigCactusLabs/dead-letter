@@ -23,12 +23,26 @@ _THROTTLED = {
 }
 
 
-class DirectoryAnalysisInterrupted(asyncio.CancelledError):
-    """External cancellation, with the completed run's partial JSON summary."""
+def _path_key(path: Path) -> str:
+    return os.path.normcase(str(path)).casefold()
 
-    def __init__(self, summary: dict):
-        super().__init__()
-        self.summary = summary
+
+def _validate_output_root(source: Path, output: Path) -> None:
+    try:
+        if (output.exists() or output.is_symlink()) and not output.is_dir():
+            raise AnalysisError("analysis_output_invalid")
+        resolved = output.resolve()
+        if Path(_path_key(resolved)).is_relative_to(Path(_path_key(source))):
+            raise AnalysisError("analysis_output_inside_source")
+        # Existing ancestors provide filesystem identity even when spelling or
+        # mount aliases differ; the key comparison above covers a missing tail.
+        for ancestor in (output, *output.parents, resolved, *resolved.parents):
+            if ancestor.exists() and os.path.samefile(ancestor, source):
+                raise AnalysisError("analysis_output_inside_source")
+    except (OSError, RuntimeError, ValueError) as exc:
+        if isinstance(exc, AnalysisError):
+            raise
+        raise AnalysisError("analysis_output_invalid") from None
 
 
 async def analyze_directory(
@@ -42,8 +56,8 @@ async def analyze_directory(
     """Analyze each discovered EML independently and return a version 1 summary.
 
     Output must be outside the source tree. Reuse needs no credentials; fresh
-    work shares one lazy preflight. Cancellation propagates as
-    DirectoryAnalysisInterrupted with a partial summary after workers close.
+    work shares one lazy preflight. The original CancelledError propagates with
+    a dead_letter_summary attribute after workers close.
     """
     if allow_remote is not True:
         raise AnalysisError("remote_analysis_not_authorized")
@@ -58,8 +72,7 @@ async def analyze_directory(
         output = Path(output_dir).expanduser().absolute()
         if not source.is_dir():
             raise AnalysisError("invalid_analysis_directory")
-        if output.resolve().is_relative_to(source):
-            raise AnalysisError("analysis_output_inside_source")
+        _validate_output_root(source, output)
         files = _iter_source_eml_files(source)
     except (OSError, RuntimeError, ValueError) as exc:
         if isinstance(exc, AnalysisError):
@@ -77,7 +90,7 @@ async def analyze_directory(
         "counts": {}, "observed_models": {}, "usage": {},
         "items_with_unknown_usage": 0, "billing_status": "not_attempted", "items": items,
     }
-    aliases: dict[str, list[int]] = {}
+    aliases: dict[str, set[int]] = {}
     for index, target in enumerate(targets):
         # Resolve parent aliases as well as case aliases before starting any work.
         names = {str(target)}
@@ -87,12 +100,19 @@ async def analyze_directory(
             # Invalid destinations are refused per item by the sidecar path.
             pass
         for name in names:
-            key = os.path.normcase(name).casefold()
-            aliases.setdefault(key, []).append(index)
+            key = _path_key(Path(name))
+            aliases.setdefault(key, set()).add(index)
+    reserved = {key: set(indices) for key, indices in aliases.items()}
+    for key, indices in aliases.items():
+        reserved.setdefault(key + ".attempts", set()).update(indices)
     collisions = set()
-    for indices in aliases.values():
-        if len(set(indices)) > 1:
+    for key, indices in aliases.items():
+        if len(indices) > 1:
             collisions.update(indices)
+        for ancestor in Path(key).parents:
+            owners = reserved.get(str(ancestor), set())
+            if owners and len(owners | indices) > 1:
+                collisions.update(owners | indices)
     for index in collisions:
         items[index].update(outcome="failed", error_code="analysis_output_collision")
 
@@ -144,7 +164,8 @@ async def analyze_directory(
         if sidecar.get("outcome") == "write_failed":
             outcome, code = "failed", sidecar["error_code"]
         items[index].update(outcome=outcome, error_code=code)
-        if result["execution_status"] == "succeeded":
+        fresh_success = result["execution_status"] == "succeeded" and sidecar.get("outcome") == "written"
+        if fresh_success:
             returned_model = result["returned_model"]
             if returned_model is not None:
                 models = summary["observed_models"]
@@ -188,11 +209,9 @@ async def analyze_directory(
                     _preflight=check_preflight, _provider=remote,
                 )
             except asyncio.CancelledError as exc:
-                result = getattr(exc, "result", None)
+                result = getattr(exc, "dead_letter_result", None)
                 if result is not None:
                     record(index, result)
-                else:
-                    items[index].update(outcome="failed", error_code="analysis_interrupted")
                 raise
             except Exception as exc:
                 code = exc.code if isinstance(exc, AnalysisError) else "analysis_item_failed"
@@ -209,20 +228,21 @@ async def analyze_directory(
             # Even immediate fake/local completions must allow cancellation and peers.
             await asyncio.sleep(0)
 
-    interrupted = False
+    def finish() -> dict:
+        counts = {name: 0 for name in ("succeeded", "reused", "skipped", "failed", "not_started")}
+        for item in items:
+            counts[item["outcome"]] += 1
+        summary["counts"] = {"discovered": len(files), **counts}
+        return summary
+
     try:
         async with asyncio.TaskGroup() as group:
             for _ in range(jobs):
                 workers.append(group.create_task(worker()))
-    except asyncio.CancelledError:
-        interrupted = True
+    except asyncio.CancelledError as exc:
         summary.update(status="interrupted", stop_reason="interrupted")
-    if not interrupted and stop.is_set():
+        exc.dead_letter_summary = finish()
+        raise
+    if stop.is_set():
         summary["status"] = "stopped"
-    counts = {name: 0 for name in ("succeeded", "reused", "skipped", "failed", "not_started")}
-    for item in items:
-        counts[item["outcome"]] += 1
-    summary["counts"] = {"discovered": len(files), **counts}
-    if interrupted:
-        raise DirectoryAnalysisInterrupted(summary) from None
-    return summary
+    return finish()

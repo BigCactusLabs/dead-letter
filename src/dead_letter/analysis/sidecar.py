@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import errno
 import json
 import math
@@ -19,7 +20,7 @@ from dead_letter.analysis.contracts import DEFAULT_MODEL, AnalysisError, canonic
 from dead_letter.analysis.eml import PreparedEmail, prepare_eml
 from dead_letter.analysis.profiles import get_profile
 from dead_letter.analysis.providers.typesafe import (
-    SDK_VERSION, _AnalysisInterrupted, TypeSafeConfig, emit_disclosure, preflight,
+    SDK_VERSION, TypeSafeConfig, emit_disclosure, preflight,
 )
 from dead_letter.analysis.responses import validate_response
 from dead_letter.analysis.service import RESULT_SCHEMA_VERSION, _result_envelope, analyze_prepared
@@ -406,13 +407,14 @@ async def analyze_to_sidecar(
     try:
         result = await analyze_prepared(prepared, allow_remote=True, config=effective,
                                         on_disclosure=on_disclosure, _provider=_provider)
-    except _AnalysisInterrupted as exc:
-        result = exc.result
-        result.update(created_at=_now().isoformat(), reuse_key=_reuse_key(result))
-        try:
-            _record_attempt(target, result)
-        except Exception:
-            result["sidecar"] = {"outcome": "write_failed", "error_code": "analysis_output_write_failed"}
+    except asyncio.CancelledError as exc:
+        result = getattr(exc, "dead_letter_result", None)
+        if result is not None:
+            result.update(created_at=_now().isoformat(), reuse_key=_reuse_key(result))
+            try:
+                _record_attempt(target, result)
+            except Exception:
+                result["sidecar"] = {"outcome": "write_failed", "error_code": "analysis_output_write_failed"}
         raise
     except AnalysisError as exc:
         result = _result_envelope(prepared)

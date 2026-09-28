@@ -224,15 +224,6 @@ def _failure_code(exc, sdk) -> str:
     return "provider_failed"
 
 
-class _AnalysisInterrupted(asyncio.CancelledError):
-    """Cancellation carrying only safe attempt metadata after client cleanup."""
-
-    def __init__(self, outcome: dict):
-        super().__init__()
-        self.outcome = outcome
-        self.result = None
-
-
 class TypeSafeProvider:
     """One prepared message per call, SDK-owned retries, bounded wall-clock budget."""
 
@@ -297,13 +288,13 @@ class TypeSafeProvider:
                             if isinstance(raw.get("model"), str) and key in raw["model"]:
                                 raise AnalysisError("invalid_response_metadata")
                             checked = validate_response(request, raw)
-            except asyncio.CancelledError:
+            except asyncio.CancelledError as exc:
                 if attempts:
-                    raise _AnalysisInterrupted({
+                    exc.dead_letter_outcome = {
                         "execution_status": "interrupted", "error_code": "analysis_interrupted",
                         "attempts": attempts, "retry_count": max(0, len(attempts) - 1),
                         "billing_status": "unknown", "sdk_version": SDK_VERSION,
-                    }) from None
+                    }
                 raise
             except sdk.TypeSafeAPITimeoutError:
                 # The SDK timeout is also a built-in TimeoutError. Catch it

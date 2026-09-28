@@ -6,6 +6,7 @@ credentials and SDK/HTTP objects are never included in a result envelope.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -13,7 +14,7 @@ from typing import Callable
 from dead_letter.analysis.contracts import DEFAULT_MODEL, AnalysisError
 from dead_letter.analysis.eml import PreparedEmail, prepare_eml
 from dead_letter.analysis.providers.typesafe import (
-    ADAPTER_VERSION, _AnalysisInterrupted, TypeSafeConfig, TypeSafeProvider, emit_disclosure, preflight,
+    ADAPTER_VERSION, TypeSafeConfig, TypeSafeProvider, emit_disclosure, preflight,
 )
 
 RESULT_SCHEMA_VERSION = 1
@@ -77,9 +78,11 @@ async def analyze_prepared(
     provider = _provider or TypeSafeProvider(config)
     try:
         outcome = await provider.evaluate(request, allow_remote=True, on_disclosure=on_disclosure)
-    except _AnalysisInterrupted as exc:
-        result.update(exc.outcome, assessment_status=None)
-        exc.result = result
+    except asyncio.CancelledError as exc:
+        outcome = getattr(exc, "dead_letter_outcome", None)
+        if outcome is not None:
+            result.update(outcome, assessment_status=None)
+            exc.dead_letter_result = result
         raise
     for key in ("execution_status", "error_code", "attempts", "retry_count", "billing_status", "sdk_version"):
         result[key] = outcome[key]

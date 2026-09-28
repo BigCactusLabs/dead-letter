@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from dead_letter.analysis import (
-    AnalysisError, DirectoryAnalysisInterrupted, analyze_directory, analyze_to_sidecar,
+    AnalysisError, analyze_directory, analyze_eml, analyze_to_sidecar,
 )
 from dead_letter.analysis import directory, sidecar
 from dead_letter.analysis.providers import typesafe
@@ -119,8 +119,9 @@ def test_nested_success_summary_reuse_and_single_preflight(tmp_path, monkeypatch
     resumed = run(source, output, model="jev-alias")
     assert resumed["counts"]["reused"] == 3 and resumed["counts"]["succeeded"] == 0
     assert resumed["billing_status"] == "not_attempted"
-    assert resumed["observed_models"] == result["observed_models"]
-    assert resumed["usage"] == result["usage"]
+    assert resumed["observed_models"] == {}
+    assert resumed["usage"] == {}
+    assert resumed["items_with_unknown_usage"] == 0
     assert {path: path.read_bytes() for path in before} == before
     assert len(wire["calls"]) == 3
     assert all(client.is_closed for client in wire["clients"])
@@ -316,16 +317,21 @@ def test_external_cancel_preserves_success_and_attempts(tmp_path, wire):
         await asyncio.wait_for(active.wait(), 5)
         saved = (output / "0.analysis.json").read_bytes()
         task.cancel()
-        with pytest.raises(DirectoryAnalysisInterrupted) as caught:
+        with pytest.raises(asyncio.CancelledError) as caught:
             await task
         assert task.cancelled()
+        assert type(caught.value) is asyncio.CancelledError
         assert (output / "0.analysis.json").read_bytes() == saved
-        return caught.value.summary
+        return caught.value.dead_letter_summary
 
     result = asyncio.run(scenario())
     assert result["status"] == result["stop_reason"] == "interrupted"
     assert result["counts"] == dict(discovered=7, succeeded=1, reused=0, skipped=0, failed=3, not_started=3)
     assert result["billing_status"] == "unknown"
+    for item in result["items"][1:4]:
+        assert item["outcome"] == "failed" and item["error_code"] == "analysis_interrupted"
+    for item in result["items"][4:]:
+        assert item["outcome"] == "not_started" and item["error_code"] is None
     assert all(client.is_closed for client in wire["clients"])
     attempts = list(output.glob("*.attempts/*.json"))
     assert len(attempts) == 3
@@ -342,6 +348,8 @@ def test_external_cancel_preserves_success_and_attempts(tmp_path, wire):
     wire["handler"] = success
     resumed = run(source, output)
     assert resumed["counts"]["reused"] == 1 and resumed["counts"]["succeeded"] == 6
+    assert resumed["usage"] == {"input_tokens": 738, "output_tokens": 60}
+    assert resumed["observed_models"] == {"jev-1.13.0": 6}
 
 
 def test_auth_cancels_inflight_and_closes_clients(tmp_path, wire):
@@ -394,12 +402,14 @@ def test_cancel_before_http_leaves_no_record(tmp_path, monkeypatch, wire):
         task = asyncio.create_task(analyze_directory(source, output, provider="typesafe", allow_remote=True))
         await ready.wait()
         task.cancel()
-        with pytest.raises(DirectoryAnalysisInterrupted) as caught:
+        with pytest.raises(asyncio.CancelledError) as caught:
             await task
-        return caught.value.summary
+        return caught.value.dead_letter_summary
 
     result = asyncio.run(scenario())
     assert result["billing_status"] == "not_attempted"
+    assert result["counts"]["not_started"] == 2 and result["counts"]["failed"] == 0
+    assert all(item["outcome"] == "not_started" and item["error_code"] is None for item in result["items"])
     assert not wire["calls"] and not list(output.rglob("*.json"))
 
 
@@ -543,10 +553,10 @@ def test_attempt_write_error_cannot_swallow_cancellation(tmp_path, monkeypatch, 
         task = asyncio.create_task(analyze_directory(source, output, provider="typesafe", allow_remote=True))
         await ready.wait()
         task.cancel()
-        with pytest.raises(DirectoryAnalysisInterrupted) as caught:
+        with pytest.raises(asyncio.CancelledError) as caught:
             await task
         assert task.cancelled()
-        return caught.value.summary
+        return caught.value.dead_letter_summary
 
     result = asyncio.run(scenario())
     assert result["status"] == "interrupted"
@@ -556,7 +566,8 @@ def test_attempt_write_error_cannot_swallow_cancellation(tmp_path, monkeypatch, 
     assert "synthetic private detail" not in json.dumps(result)
 
 
-def test_cli_sigint_subprocess_prints_partial_summary(tmp_path):
+@pytest.mark.parametrize("mode", ["directory", "single"])
+def test_cli_sigint_subprocess_prints_partial_summary(tmp_path, mode):
     source, output = tree(tmp_path, [f"{i}.eml" for i in range(5)])
     code = """
 import asyncio
@@ -570,28 +581,45 @@ os.environ['TYPESAFE_API_KEY'] = KEY
 os.environ.pop('TYPESAFE_BASE_URL', None)
 original = typesafe._guarded_http_client
 calls = 0
+single = sys.argv[3] == 'single'
 async def handler(request):
     global calls
     calls += 1
-    if calls == 1:
+    if calls == 1 and not single:
         return success(request)
-    if calls == 3:
+    if single or calls == 3:
         asyncio.get_running_loop().call_soon(signal.raise_signal, signal.SIGINT)
     await asyncio.Event().wait()
 def client(*args):
     return original(*args[:-1], httpx.MockTransport(handler))
 typesafe._guarded_http_client = client
-sys.exit(main([sys.argv[1], '--output-dir', sys.argv[2], '--provider', 'typesafe', '--jobs', '2']))
+if single:
+    from pathlib import Path
+    output = Path(sys.argv[2])
+    output.mkdir()
+    args = [str(Path(sys.argv[1]) / '0.eml'), '--output', str(output / '0.analysis.json'), '--provider', 'typesafe']
+else:
+    args = [sys.argv[1], '--output-dir', sys.argv[2], '--provider', 'typesafe', '--jobs', '2']
+sys.exit(main(args))
 """
     completed = subprocess.run(
-        [sys.executable, "-c", code, str(source), str(output)],
+        [sys.executable, "-c", code, str(source), str(output), mode],
         capture_output=True, text=True, timeout=10,
     )
     assert completed.returncode == 130, completed.stderr
-    result = json.loads(completed.stdout)
-    assert result["status"] == "interrupted"
-    assert result["counts"] == dict(discovered=5, succeeded=1, reused=0, skipped=0, failed=2, not_started=2)
-    assert len(list(output.glob("*.attempts/*.json"))) == 2
+    if mode == "single":
+        assert not completed.stdout
+        assert json.loads(completed.stderr.splitlines()[-1])["error_code"] == "analysis_interrupted"
+        attempts = list(output.glob("*.attempts/*.json"))
+        assert len(attempts) == 1
+        result = json.loads(attempts[0].read_text())
+        assert result["execution_status"] == "interrupted" and result["billing_status"] == "unknown"
+        assert not (output / "0.analysis.json").exists()
+    else:
+        result = json.loads(completed.stdout)
+        assert result["status"] == "interrupted"
+        assert result["counts"] == dict(discovered=5, succeeded=1, reused=0, skipped=0, failed=2, not_started=2)
+        assert len(list(output.glob("*.attempts/*.json"))) == 2
     assert not list(output.rglob("*.tmp"))
 
 
@@ -615,3 +643,252 @@ def test_resolved_parent_alias_collision(tmp_path, wire):
     assert result["counts"]["failed"] == 2
     assert all(item["error_code"] == "analysis_output_collision" for item in result["items"])
     assert not wire["calls"] and not list(output.rglob("*.json"))
+
+
+@pytest.mark.parametrize("api", ["eml", "sidecar"])
+@pytest.mark.parametrize("timeout_kind", ["timeout", "wait_for"])
+def test_outer_timeout_preserves_single_message_semantics(tmp_path, wire, api, timeout_kind):
+    source, output = tree(tmp_path, ["0.eml"])
+    output.mkdir()
+    cancellations = []
+
+    async def scenario():
+        async def handler(request):
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError as exc:
+                cancellations.append(exc)
+                raise
+
+        wire["handler"] = handler
+        options = dict(provider="typesafe", allow_remote=True, on_disclosure=lambda value: None)
+        call = (analyze_eml(source / "0.eml", **options) if api == "eml" else
+                analyze_to_sidecar(source / "0.eml", output / "0.analysis.json", **options))
+        with pytest.raises(TimeoutError) as caught:
+            if timeout_kind == "timeout":
+                async with asyncio.timeout(0.2):
+                    await call
+            else:
+                await asyncio.wait_for(call, 0.2)
+        assert caught.value.__cause__ is cancellations[0]
+        assert type(cancellations[0]) is asyncio.CancelledError
+        assert cancellations[0].dead_letter_result["execution_status"] == "interrupted"
+
+    asyncio.run(scenario())
+    assert len(wire["calls"]) == 1 and all(client.is_closed for client in wire["clients"])
+    attempts = list(output.glob("*.attempts/*.json"))
+    assert len(attempts) == (1 if api == "sidecar" else 0)
+    if attempts:
+        result = json.loads(attempts[0].read_text())
+        assert result["execution_status"] == "interrupted"
+        assert result["billing_status"] == "unknown"
+    assert not (output / "0.analysis.json").exists()
+    assert not list(output.rglob("*.tmp"))
+
+
+def test_cancel_in_taskgroup_body_is_original_cancelled_error(tmp_path, wire):
+    source, _ = tree(tmp_path, ["0.eml"])
+    cancellations = []
+
+    async def scenario():
+        ready = asyncio.Event()
+
+        async def handler(request):
+            ready.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError as exc:
+                cancellations.append(exc)
+                raise
+
+        async def body():
+            async with asyncio.TaskGroup():
+                await analyze_eml(source / "0.eml", provider="typesafe", allow_remote=True,
+                                  on_disclosure=lambda value: None)
+
+        wire["handler"] = handler
+        task = asyncio.create_task(body())
+        await asyncio.wait_for(ready.wait(), 5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError) as caught:
+            await task
+        assert task.cancelled()
+        assert type(caught.value) is asyncio.CancelledError
+        assert caught.value is cancellations[0]
+
+    asyncio.run(scenario())
+    assert all(client.is_closed for client in wire["clients"])
+
+
+def test_outer_wait_for_directory_keeps_completed_sidecars(tmp_path, wire):
+    source, output = tree(tmp_path, ["0.eml", "1.eml", "2.eml"])
+
+    async def scenario():
+        async def handler(request):
+            if len(wire["calls"]) == 1:
+                return success(request)
+            await asyncio.Event().wait()
+
+        wire["handler"] = handler
+        with pytest.raises(TimeoutError) as caught:
+            await asyncio.wait_for(analyze_directory(
+                source, output, provider="typesafe", allow_remote=True, jobs=1,
+                on_disclosure=lambda value: None,
+            ), 0.2)
+        assert type(caught.value.__cause__) is asyncio.CancelledError
+        return caught.value.__cause__.dead_letter_summary
+
+    result = asyncio.run(scenario())
+    assert result["status"] == "interrupted"
+    assert result["counts"] == dict(discovered=3, succeeded=1, reused=0, skipped=0, failed=1, not_started=1)
+    saved = (output / "0.analysis.json").read_bytes()
+    reused = asyncio.run(analyze_to_sidecar(source / "0.eml", output / "0.analysis.json", provider="typesafe"))
+    assert reused["sidecar"]["outcome"] == "reused"
+    assert (output / "0.analysis.json").read_bytes() == saved
+    assert all(client.is_closed for client in wire["clients"])
+
+
+@pytest.mark.parametrize("parent", ["x.analysis.json", "x.analysis.json.attempts"])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_prefix_collision_refuses_both_before_scheduling(tmp_path, monkeypatch, wire, parent, reverse):
+    source, output = tree(tmp_path, ["x.eml", f"{parent}/y.eml"])
+    files = _iter_source_eml_files(source)
+    monkeypatch.setattr(directory, "_iter_source_eml_files", lambda root: list(reversed(files)) if reverse else files)
+    result = run(source, output)
+    assert result["counts"]["failed"] == 2 and result["status"] == "completed"
+    assert all(item["error_code"] == "analysis_output_collision" for item in result["items"])
+    assert not output.exists() and not wire["calls"]
+
+
+def test_prefix_collision_through_resolved_parent_alias(tmp_path, wire):
+    source, output = tree(tmp_path, ["a/x.eml", "b/y.eml"])
+    reserved = output / "a" / "x.analysis.json.attempts"
+    reserved.mkdir(parents=True)
+    (output / "b").symlink_to(reserved, target_is_directory=True)
+    result = run(source, output)
+    assert result["counts"]["failed"] == 2
+    assert all(item["error_code"] == "analysis_output_collision" for item in result["items"])
+    assert not wire["calls"] and not list(output.rglob("*.json"))
+
+
+@pytest.mark.parametrize("tail", ["out", "existing/out"])
+def test_case_alias_output_inside_source_is_rejected(tmp_path, wire, tail):
+    source, _ = tree(tmp_path, ["0.eml"])
+    alias = source.with_name(source.name.upper())
+    if not alias.exists():
+        pytest.skip("case-alias regression requires a case-insensitive filesystem")
+    assert alias.samefile(source)
+    (source / "existing").mkdir()
+    output = alias / tail
+    with pytest.raises(AnalysisError, match="^analysis_output_inside_source$"):
+        run(source, output)
+    assert not output.exists() and not wire["calls"]
+
+
+@pytest.mark.parametrize("kind", ["file", "symlink_file", "symlink_loop"])
+def test_output_root_invalid_is_argument_error_before_work(tmp_path, wire, capsys, kind):
+    source, output = tree(tmp_path, ["0.eml"])
+    if kind == "file":
+        output.write_text("preserve")
+    elif kind == "symlink_file":
+        target = tmp_path / "target"
+        target.write_text("preserve")
+        output.symlink_to(target)
+    else:
+        output.symlink_to(output.name)
+    before = set(tmp_path.rglob("*"))
+    with pytest.raises(AnalysisError, match="^analysis_output_invalid$"):
+        run(source, output)
+    assert cli.main(["analyze", str(source), "--provider", "typesafe", "--output-dir", str(output)]) == 2
+    captured = capsys.readouterr()
+    assert not captured.out and json.loads(captured.err)["error_code"] == "analysis_output_invalid"
+    assert set(tmp_path.rglob("*")) == before and not wire["calls"]
+    if kind != "symlink_loop":
+        assert output.read_text() == "preserve"
+
+
+@pytest.mark.parametrize("value", ["1_6", "+4", " 4", "4 ", "٤", "", "0", "17"])
+def test_jobs_accepts_only_ascii_digits_in_range(tmp_path, capsys, value):
+    source, output = tree(tmp_path, ["0.eml"])
+    assert cli.main(["analyze", str(source), "--provider", "typesafe", "--output-dir", str(output), "--jobs", value]) == 2
+    assert json.loads(capsys.readouterr().err)["error_code"] == "invalid_analysis_jobs"
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("value", ["4", "99", "1_6"])
+def test_file_input_rejects_jobs(tmp_path, capsys, value):
+    source, output = tree(tmp_path, ["0.eml"])
+    assert cli.main(["analyze", str(source / "0.eml"), "--provider", "typesafe", "--jobs", value]) == 2
+    assert json.loads(capsys.readouterr().err)["error_code"] == "invalid_analysis_arguments"
+    assert not output.exists()
+
+
+def test_cancel_before_prepare_or_reuse_is_not_started(tmp_path, monkeypatch, wire):
+    source, output = tree(tmp_path, ["0.eml", "1.eml"])
+
+    async def scenario():
+        ready = asyncio.Event()
+        original = directory.analyze_to_sidecar
+
+        async def before_source(*args, **kwargs):
+            ready.set()
+            await asyncio.Event().wait()
+            return await original(*args, **kwargs)
+
+        monkeypatch.setattr(directory, "analyze_to_sidecar", before_source)
+        task = asyncio.create_task(analyze_directory(source, output, provider="typesafe", allow_remote=True))
+        await ready.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError) as caught:
+            await task
+        return caught.value.dead_letter_summary
+
+    result = asyncio.run(scenario())
+    assert result["counts"]["not_started"] == 2 and result["counts"]["failed"] == 0
+    assert all(item["outcome"] == "not_started" and item["error_code"] is None for item in result["items"])
+    assert not wire["calls"] and not list(output.rglob("*.json"))
+
+
+def test_discarded_fresh_success_is_reused_with_unknown_usage(tmp_path, monkeypatch, wire):
+    source, output = tree(tmp_path, ["0.eml"])
+    prior_output = tmp_path / "prior"
+    run(source, prior_output)
+    stored = json.loads((prior_output / "0.analysis.json").read_text())
+    original = sidecar._publish
+    target = output / "0.analysis.json"
+
+    def race(path, result):
+        if path == target:
+            original(path, stored)
+        original(path, result)
+
+    monkeypatch.setattr(sidecar, "_publish", race)
+    result = run(source, output)
+    assert result["counts"]["reused"] == 1 and result["counts"]["succeeded"] == 0
+    assert result["billing_status"] == "unknown" and result["items_with_unknown_usage"] == 1
+    assert result["usage"] == {} and result["observed_models"] == {}
+    assert len(wire["calls"]) == 2
+    assert json.loads(target.read_text()) == stored
+
+
+def test_unpublished_fresh_success_has_unknown_usage(tmp_path, monkeypatch, wire):
+    source, output = tree(tmp_path, ["0.eml"])
+
+    def cannot_write(*args):
+        raise OSError("private synthetic detail")
+
+    monkeypatch.setattr(sidecar, "_publish", cannot_write)
+    result = run(source, output)
+    assert result["items"][0]["error_code"] == "analysis_output_write_failed"
+    assert result["usage"] == {} and result["observed_models"] == {}
+    assert result["items_with_unknown_usage"] == 1 and result["billing_status"] == "unknown"
+
+
+def test_non_throttle_failure_resets_throttle_streak(tmp_path, wire):
+    source, output = tree(tmp_path, [f"{i}.eml" for i in range(4)])
+    sequence(wire, [429, 503, 404, 429])
+    result = run(source, output, jobs=1)
+    assert result["status"] == "completed" and result["stop_reason"] is None
+    assert result["counts"]["failed"] == 4 and result["counts"]["not_started"] == 0
+    assert result["items"][2]["error_code"] == "provider_not_found"
+    assert len(wire["calls"]) == 4

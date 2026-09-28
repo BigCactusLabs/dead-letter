@@ -37,7 +37,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         help="Include private normalized evidence locally; requires --dry-run")
     parser.add_argument("--output", help="Write or reuse a validated no-clobber analysis sidecar")
     parser.add_argument("--output-dir", help="Required destination for directory analysis")
-    parser.add_argument("--jobs", default=4, help="Directory workers (1-16; default: 4)")
+    parser.add_argument("--jobs", default=None, help="Directory workers (1-16; default: 4)")
     parser.add_argument("--alias-max-age", type=float, default=86400,
                         help="Maximum reused alias age in seconds (default: 86400)")
     parser.add_argument("--timeout-seconds", type=float, default=15.0,
@@ -69,14 +69,6 @@ def main(argv: list[str] | None = None) -> int:
         _error("invalid_analysis_arguments", hint="Use dead-letter analyze --help.")
         return 2
     try:
-        args.jobs = int(args.jobs)
-    except ValueError:
-        _error("invalid_analysis_jobs")
-        return 2
-    if not 1 <= args.jobs <= 16:
-        _error("invalid_analysis_jobs")
-        return 2
-    try:
         is_directory = Path(args.input_path).expanduser().is_dir()
     except (OSError, RuntimeError, ValueError):
         _error("analysis_output_invalid" if args.output is not None else "invalid_analysis_arguments")
@@ -88,9 +80,21 @@ def main(argv: list[str] | None = None) -> int:
         if args.output is not None or args.dry_run or args.show_state:
             _error("invalid_analysis_arguments")
             return 2
-    elif args.output_dir is not None:
+    elif args.output_dir is not None or args.jobs is not None:
         _error("invalid_analysis_arguments")
         return 2
+    if args.jobs is not None:
+        if not args.jobs.isascii() or not args.jobs.isdecimal():
+            _error("invalid_analysis_jobs")
+            return 2
+        try:
+            args.jobs = int(args.jobs)
+        except ValueError:
+            _error("invalid_analysis_jobs")
+            return 2
+        if not 1 <= args.jobs <= 16:
+            _error("invalid_analysis_jobs")
+            return 2
     if args.show_state and not args.dry_run:
         _error("show_state_requires_dry_run")
         return 2
@@ -112,16 +116,19 @@ def main(argv: list[str] | None = None) -> int:
                        max_context_segments=args.max_context_segments,
                        model=DEFAULT_MODEL if args.model is None else args.model)
         if is_directory:
-            from dead_letter.analysis import analyze_directory, DirectoryAnalysisInterrupted
+            from dead_letter.analysis import analyze_directory
 
             async def run_directory():
                 try:
                     return await analyze_directory(
                         args.input_path, args.output_dir, provider=args.provider, allow_remote=True,
-                        jobs=args.jobs, config=config, alias_max_age=args.alias_max_age, **options,
+                        jobs=4 if args.jobs is None else args.jobs, config=config, alias_max_age=args.alias_max_age, **options,
                     )
-                except DirectoryAnalysisInterrupted as exc:
-                    return exc.summary
+                except asyncio.CancelledError as exc:
+                    summary = getattr(exc, "dead_letter_summary", None)
+                    if summary is None:
+                        raise
+                    return summary
 
             result = asyncio.run(run_directory())
         elif args.dry_run:
