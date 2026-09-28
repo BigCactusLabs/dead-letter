@@ -84,7 +84,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compressed Takeout hardening: bounded ZIP/ZIP64 directory admission and TAR
   metadata, strict TAR end-marker validation, staging access/space checks, and
   report-only container paths/stat signatures. Record provenance keeps `archive`
-  as a basename string and adds `container` details (Refs #144).
+  as a basename string and adds `container` details. ZIP entry counts are taken
+  from the central directory itself rather than the EOCD record, TGZ input is
+  refused if the tarfile hooks behind its metadata limits are unavailable, and
+  macOS `._*` / `__MACOSX/` metadata is never an MBOX candidate (Refs #144).
 - The MCP `convert_directory` inputSchema now lists `output_directory` as
   required, matching the existing runtime requirement, and an empty
   `output_directory` is rejected instead of writing into the server's working

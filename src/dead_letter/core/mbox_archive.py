@@ -54,6 +54,13 @@ def _safe_name(name: str) -> str:
     return json.dumps(name[:512], ensure_ascii=True)
 
 
+def _macos_metadata(name: str) -> bool:
+    # AppleDouble ``._*`` resource forks and Finder's ``__MACOSX/`` tree carry
+    # file metadata, never mail, even when named ``*.mbox``.
+    normalized = name.replace("\\", "/")
+    return normalized.startswith("__MACOSX/") or normalized.rsplit("/", 1)[-1].startswith("._")
+
+
 def _validate_name(name: str) -> None:
     if ("\x00" in name or name.startswith(("/", "\\"))
             or PureWindowsPath(name).drive or ".." in name.replace("\\", "/").split("/")):
@@ -73,7 +80,7 @@ class _Selection:
         if self.count > self.limits.max_members:
             raise _ArchiveError("limit_exceeded", "Archive member count exceeds configured limit")
         _validate_name(name)
-        if not name.lower().endswith(".mbox"):
+        if not name.lower().endswith(".mbox") or _macos_metadata(name):
             if name == self.member:
                 raise _ArchiveError("unsupported", "Selected member must be a regular .mbox file")
             return False
@@ -293,9 +300,16 @@ class _CheckedGzipInput:
             pass
 
 
+_TAR_HOOKS_MISSING = "This Python's tarfile lacks the header hooks TGZ metadata limits require"
+
+
 def _stage_tgz(raw: BinaryIO, target: Path, selection: _Selection) -> dict[str, Any]:
+    # The metadata/sparse limits below rely on a private tarfile hook. Fail
+    # closed if this CPython does not provide it, rather than parse unbounded.
+    if not callable(getattr(tarfile.TarInfo, "_proc_member", None)):
+        raise _ArchiveError("unsupported", _TAR_HOOKS_MISSING)
     checked = _CheckedGzipInput(raw, selection.limits.max_decompressed_bytes)
-    metadata_bytes = depth = 0
+    metadata_bytes = depth = hook_calls = 0
     saw_end_marker = False
 
     class BoundedTarInfo(tarfile.TarInfo):
@@ -323,7 +337,8 @@ def _stage_tgz(raw: BinaryIO, target: Path, selection: _Selection) -> dict[str, 
         def _proc_member(self, tar):
             # This hook runs before extension processing on both 3.12 and newer
             # readers (newer readers bypass the public frombuf/fromtarfile).
-            nonlocal metadata_bytes, depth
+            nonlocal metadata_bytes, depth, hook_calls
+            hook_calls += 1
             if self.size < 0:
                 raise _ArchiveError("corrupt", "Negative TAR member size")
             if self.type in (tarfile.XHDTYPE, tarfile.XGLTYPE, tarfile.SOLARIS_XHDTYPE,
@@ -358,8 +373,13 @@ def _stage_tgz(raw: BinaryIO, target: Path, selection: _Selection) -> dict[str, 
                 self.members.clear()
 
     metadata = None
+    checked_calls = 0
     with BoundedTarFile.open(fileobj=checked, mode="r|gz", tarinfo=BoundedTarInfo) as container:
         while (info := container.next()) is not None:
+            if hook_calls <= checked_calls:
+                # A reader that bypassed the hook applied none of the limits.
+                raise _ArchiveError("unsupported", _TAR_HOOKS_MISSING)
+            checked_calls = hook_calls
             if info.size < 0:
                 raise _ArchiveError("corrupt", "Negative TAR member size")
             regular = info.type in (tarfile.REGTYPE, tarfile.AREGTYPE) and info.sparse is None
@@ -408,7 +428,8 @@ def _check_zip_directory(raw: BinaryIO, limits: ArchiveLimits) -> None:
     """Bound the central index before ZipFile can allocate it.
 
     Read at most the 22-byte EOCD plus its 65535-byte comment, then fixed-size
-    ZIP64 records if present. Do not trust offsets enough to allocate from them.
+    ZIP64 records if present. Only after the declared directory size passes the
+    metadata limit is the directory read and its entries counted.
     """
     def corrupt() -> None:
         raise _ArchiveError("corrupt", "Malformed ZIP end-of-central-directory records")
@@ -459,4 +480,18 @@ def _check_zip_directory(raw: BinaryIO, limits: ArchiveLimits) -> None:
         corrupt()
     if count > limits.max_members or cd_size > limits.max_metadata_bytes:
         raise _ArchiveError("limit_exceeded", "ZIP central directory exceeds configured member or metadata limit")
+    # zipfile ignores the declared count and builds every entry within cd_size,
+    # so count the (already size-bounded) fixed headers ourselves.
+    directory = read_at(cd_offset, cd_size)
+    walked = consumed = 0
+    while consumed < cd_size:
+        if cd_size - consumed < 46 or directory[consumed:consumed + 4] != b"PK\x01\x02":
+            corrupt()
+        name_size, extra_size, comment_size = struct.unpack_from("<3H", directory, consumed + 28)
+        consumed += 46 + name_size + extra_size + comment_size
+        walked += 1
+        if walked > limits.max_members:
+            raise _ArchiveError("limit_exceeded", "ZIP central directory exceeds configured member or metadata limit")
+    if consumed != cd_size or walked != count:
+        corrupt()
     raw.seek(0)

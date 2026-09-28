@@ -63,7 +63,9 @@ uv run dead-letter convert takeout.tar.gz --mbox-member "Takeout/Mail/All mail.m
   with escaped names (up to 20, each limited to 512 characters in diagnostics).
   `--mbox-member NAME` / Python `member=` selects the exact, case-sensitive archive
   name. Other files, including nested ZIPs, are ignored and never opened as
-  members. Reports count all non-selected entries as ignored. Each split Takeout
+  members. macOS metadata is never a candidate: AppleDouble entries whose
+  basename starts with `._` and anything under a top-level `__MACOSX/` folder
+  are ignored even when named `*.mbox`, and cannot be selected with `--mbox-member`. Reports count all non-selected entries as ignored. Each split Takeout
   part is an independent archive: run once per part, preferably into separate
   output directories. Do not concatenate parts. In single-pass TGZ auto-selection,
   the first mailbox may be fully staged before a second candidate is found; that
@@ -88,12 +90,22 @@ uv run dead-letter convert takeout.tar.gz --mbox-member "Takeout/Mail/All mail.m
   max_members=100_000, max_metadata_bytes=16 * 1024**2)` sets the defaults
   (256 GiB expanded bytes, 100,000 members, 16 MiB metadata). Before constructing
   the ZIP index, a bounded tail read checks EOCD/ZIP64 counts and central-directory
-  size against the member and metadata limits. ZIP also checks selected-member
+  size against the member and metadata limits. The declared count is not trusted:
+  the size-bounded central directory is then walked entry by entry, the real count
+  is checked against the member limit, and a count that disagrees with the
+  EOCD/ZIP64 record is corrupt. The central directory must sit at its recorded
+  offset and the file must end with the EOCD record and its comment, so
+  self-extracting ZIPs with prepended data and files with trailing bytes after
+  the EOCD are rejected as `mbox_archive_corrupt`, even though some unzip tools
+  accept them. ZIP also checks selected-member
   declared size and actual bytes read. TGZ counts the entire expanded TAR stream,
   including ignored data, headers and padding, because ignored-member bombs still
   cost decompression CPU. PAX/GNU extension payload bytes count toward the total
   metadata budget, not the member count. Each extension header is limited to
-  64 KiB, with at most 64 nested headers. Processed TAR member records are
+  64 KiB, with at most 64 nested headers. These TAR limits use a private CPython
+  `tarfile` hook; if the running Python lacks it or does not call it for every
+  header, TGZ input is refused as `mbox_archive_unsupported` rather than parsed
+  without limits. Processed TAR member records are
   discarded instead of accumulated. No ratio limit is used.
   The CLI uses the defaults; existing MBOX flags still apply to the staged member,
   including `--mbox-timeout` and the worker resource budgets below, which are

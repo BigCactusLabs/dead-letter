@@ -616,3 +616,97 @@ def test_record_container_metadata_is_detached(tmp_path, extension):
         first.mbox["container"]["member_name"] = "mutated"
         second = next(rows)
     assert second.mbox["container"]["member_name"] == summary["member_name"] == "mail.mbox"
+
+
+def set_eocd_count(path, count):
+    data = bytearray(path.read_bytes())
+    at = data.rindex(b"PK\x05\x06")
+    struct.pack_into("<2H", data, at + 8, count, count)
+    path.write_bytes(data)
+
+
+def test_zip_understated_eocd_count_is_bounded_before_zipfile_construction(tmp_path, monkeypatch):
+    # zipfile builds every entry inside cd_size and ignores the declared count.
+    source = make_archive(tmp_path / "mail.zip", [(f"{i:07d}", b"") for i in range(50)])
+    set_eocd_count(source, 1)
+    monkeypatch.setattr(zipfile, "ZipFile", lambda *a, **k: pytest.fail("central index was constructed"))
+    fatal(tmp_path, source, "limit_exceeded", archive_limits=ArchiveLimits(max_members=10))
+
+
+@pytest.mark.parametrize("declared", [1, 4, 6])
+def test_zip_eocd_count_must_match_central_directory(tmp_path, monkeypatch, declared):
+    source = make_archive(tmp_path / "mail.zip", [("a.mbox", MAIL), *((f"{i}.json", b"{}") for i in range(4))])
+    set_eocd_count(source, declared)
+    monkeypatch.setattr(zipfile, "ZipFile", lambda *a, **k: pytest.fail("central index was constructed"))
+    fatal(tmp_path, source, "corrupt")
+
+
+def test_zip64_count_must_match_central_directory(tmp_path):
+    source = make_archive(tmp_path / "mail.zip", [("a.mbox", MAIL), ("b.json", b"{}")])
+    zip64_end_records(source)
+    data = bytearray(source.read_bytes())
+    record = data.rindex(b"PK\x06\x06")
+    struct.pack_into("<2Q", data, record + 24, 1, 1)
+    source.write_bytes(data)
+    fatal(tmp_path, source, "corrupt")
+
+
+def test_zip_central_directory_walk_rejects_bad_entry_signature(tmp_path):
+    source = make_archive(tmp_path / "mail.zip", [("a.mbox", MAIL), ("b.json", b"{}")])
+    data = bytearray(source.read_bytes())
+    at = data.rindex(b"PK\x01\x02")
+    data[at:at + 4] = b"PK\x09\x09"
+    source.write_bytes(data)
+    fatal(tmp_path, source, "corrupt")
+
+
+@pytest.mark.parametrize("extension", ["zip", "tgz"])
+def test_macos_metadata_members_are_ignored_and_never_opened(tmp_path, monkeypatch, extension):
+    apple_double = b"\x00\x05\x16\x07\x00\x02\x00\x00Mac OS X        " + b"\x00" * 64
+    source = make_archive(tmp_path / f"mail.{extension}", [
+        ("Takeout/Mail/All mail.mbox", MAIL),
+        ("Takeout/Mail/._All mail.mbox", apple_double),
+        ("__MACOSX/Takeout/Mail/._All mail.mbox", apple_double),
+        ("__MACOSX/Takeout/Mail/Other.mbox", apple_double),
+    ])
+    opened = []
+    if extension == "zip":
+        original = zipfile.ZipFile.open
+        def tracked(self, name, *args, **kwargs):
+            opened.append(getattr(name, "orig_filename", name))
+            return original(self, name, *args, **kwargs)
+        monkeypatch.setattr(zipfile.ZipFile, "open", tracked)
+    else:
+        original = tarfile.TarFile.extractfile
+        def tracked(self, member):
+            opened.append(member.name)
+            return original(self, member)
+        monkeypatch.setattr(tarfile.TarFile, "extractfile", tracked)
+    summary = {}
+    with closing(archive._convert_mbox_archive(source, archive_summary=summary,
+                                               options=ConvertOptions(dry_run=True))) as rows:
+        [row] = list(rows)
+    assert row.success and row.mbox["container"]["member_name"] == "Takeout/Mail/All mail.mbox"
+    assert summary["ignored_member_count"] == 3
+    assert opened == ["Takeout/Mail/All mail.mbox"]
+    # macOS metadata cannot be selected as the mailbox either.
+    fatal(tmp_path, source, "unsupported", member="Takeout/Mail/._All mail.mbox")
+
+
+def test_tgz_refused_when_tarfile_hook_is_missing(tmp_path, monkeypatch):
+    source = make_archive(tmp_path / "mail.tgz")
+    monkeypatch.delattr(tarfile.TarInfo, "_proc_member")
+    row = fatal(tmp_path, source, "unsupported")
+    assert "header hooks" in row.error["message"]
+
+
+def test_tgz_refused_when_reader_bypasses_tarfile_hook(tmp_path, monkeypatch):
+    # Model a future reader that parses headers without calling our subclass.
+    source = make_archive(tmp_path / "mail.tgz", [("a.mbox", MAIL), ("b.json", b"{}")])
+    original = tarfile.TarFile.next
+    def bypass(self):
+        self.tarinfo = tarfile.TarInfo
+        return original(self)
+    monkeypatch.setattr(tarfile.TarFile, "next", bypass)
+    row = fatal(tmp_path, source, "unsupported")
+    assert "header hooks" in row.error["message"]
