@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "dead-letter-mcp",
   "display_name": "dead-letter",
-  "version": "0.4.0",
+  "version": "0.4.5",
   "description": "Convert .eml email exports to Markdown with YAML front matter",
   "long_description": "dead-letter converts .eml email exports into Markdown with YAML front matter. All processing happens locally on this machine; no message content is uploaded anywhere. Email content is treated as untrusted data: HTML is sanitized before conversion and message text is never followed as instructions.",
   "author": {
@@ -37,6 +37,10 @@
     {
       "name": "convert_directory",
       "description": "Convert a directory of .eml files, capped at 50 per call, and return a JSON summary."
+    },
+    {
+      "name": "convert_mbox",
+      "description": "Convert one flat .mbox archive, such as a Gmail Takeout export, to Markdown files, capped at 256 MiB and 1000 messages per call, and return a JSON summary."
     },
     {
       "name": "get_diagnostics",
