@@ -148,10 +148,14 @@ def followed_by_header_line(text: str, end: int, *, quoted: bool) -> bool:
     return False
 
 
+def _clean_text(value: str) -> str:
+    """Drop Markdown emphasis from a parsed heading field."""
+    return _WHITESPACE_RE.sub(" ", _EMPHASIS_RE.sub("", value)).strip()
+
+
 def _clean_sender(value: str) -> str:
     """Drop Markdown emphasis and doubled angle brackets from a parsed sender."""
-    value = _EMPHASIS_RE.sub("", value)
-    return _WHITESPACE_RE.sub(" ", _DOUBLE_ANGLE_RE.sub(r"<\1>", value)).strip()
+    return _clean_text(_DOUBLE_ANGLE_RE.sub(r"<\1>", value))
 
 
 def parse_forward_headers(text: str) -> tuple[dict[str, str], str] | None:
@@ -159,7 +163,7 @@ def parse_forward_headers(text: str) -> tuple[dict[str, str], str] | None:
 
     The block is the run of header lines before the first blank line; in the
     Apple Mail layout (bold labels, blank-separated) it runs to the first
-    non-header line instead. The first From, Date (or Sent) and Subject lines
+    line that is not a bold-label header instead. The first From, Date (or Sent) and Subject lines
     become ``fields`` for the section heading and are removed from ``rest``;
     To/Cc/Bcc/Reply-To and repeated labels stay in ``rest``. Returns None
     when no From line is found, so the caller keeps the text unchanged.
@@ -177,6 +181,10 @@ def parse_forward_headers(text: str) -> tuple[dict[str, str], str] | None:
             end = index
             break
         match = _FORWARD_HEADER_LINE_RE.match(candidate)
+        if apple_layout and not candidate.startswith("**"):
+            # Apple Mail header labels are bold; a plain "Date: ..." line
+            # after them is forwarded body text.
+            match = None
         if match is None:
             end = index
             break
@@ -190,6 +198,8 @@ def parse_forward_headers(text: str) -> tuple[dict[str, str], str] | None:
     if "from" not in fields:
         return None
     fields["from"] = _clean_sender(fields["from"])
+    if "subject" in fields:
+        fields["subject"] = _clean_text(fields["subject"])
     kept = [
         line
         for index, line in enumerate(lines[:end])

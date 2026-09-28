@@ -86,6 +86,18 @@ def test_marker_patterns_drive_plain_regex() -> None:
         assert pattern in FORWARD_MARKER_RE.pattern
 
 
+def test_apple_bold_header_block_ends_at_plain_header_like_line() -> None:
+    text = (
+        "**From:** Shop <shop@example.com>\n\n**Subject:** **Receipt**\n\n"
+        "Date: Friday is the pickup day\n\nThank you."
+    )
+    parsed = parse_forward_headers(text)
+    assert parsed is not None
+    fields, rest = parsed
+    assert fields == {"from": "Shop <shop@example.com>", "subject": "Receipt"}
+    assert rest == "Date: Friday is the pickup day\n\nThank you."
+
+
 def test_parse_forward_headers_requires_from() -> None:
     parsed = parse_forward_headers("From: A <a@example.com>  \nDate: today  \nSubject: Hi\n\nBody")
     assert parsed is not None
@@ -144,6 +156,9 @@ def test_legacy_gmail_forward_is_leading_separator_text() -> None:
         '<blockquote style="margin:0">Old.</blockquote>',
         '<div class="gmail_attr">Le mer. 4 mars 2026, Bob a\u00a0écrit\u00a0:<br></div>'
         '<div><blockquote class="gmail_quote">Old.</blockquote></div>',
+        # Chinese attribution ending in a fullwidth colon.
+        '<div class="gmail_attr">Bob &lt;bob@example.com&gt; 于2026年3月4日周三 09:00写道：<br></div>'
+        '<blockquote style="margin:0">Old.</blockquote>',
     ],
 )
 def test_gmail_attr_ending_in_colon_is_reply(quote: str) -> None:
@@ -442,7 +457,7 @@ def test_thunderbird_and_apple_forwards_kept_in_latest(
     ("name", "header", "last_line"),
     [
         ("thunderbird_forward.eml", "## Forwarded message", "Minutes from the Wednesday meeting."),
-        ("apple_mail_forward.eml", "## Forwarded from Shop &lt;shop@example.com&gt; — **Receipt**",
+        ("apple_mail_forward.eml", "## Forwarded from Shop &lt;shop@example.com&gt; — Receipt",
          "Thank you for your order."),
     ],
 )

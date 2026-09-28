@@ -81,8 +81,9 @@ def _quote_match(node) -> tuple[str, str] | None:
 
 
 # Upper bound on forward blocks split out of one message. The last split
-# block also takes its following siblings, and any forward left uncollected
-# stays in the body, so no content is dropped or reordered past the cap.
+# block also takes the siblings that follow it in the same parent, and any
+# forward left uncollected stays in the body (rendered before the forwards),
+# so no content is dropped past the cap; wrapped layouts can be reordered.
 _MAX_FORWARD_BLOCKS = 64
 _WHITESPACE_RE = re.compile(r"\s+")
 
@@ -118,8 +119,8 @@ def _is_forward_block(node) -> bool:
 
     A direct-child ``blockquote.gmail_quote`` marks a reply. Otherwise, when
     the first element child is ``div.gmail_attr``, its first line decides: a
-    forward separator is a forward, a line ending in ``:`` ("On ... wrote:",
-    "Le ... a écrit :") is a reply, and anything else is kept as a forward.
+    forward separator is a forward, a line ending in ``:`` or a fullwidth
+    ``：`` ("On ... wrote:", "Le ... a écrit :", "... 写道：") is a reply, and anything else is kept as a forward.
     Legacy Gmail forwards have no ``gmail_attr`` and open with the separator
     as the block's own text.
     """
@@ -135,7 +136,7 @@ def _is_forward_block(node) -> bool:
         line = _attr_first_line(children[0])
         if is_forward_marker_line(line):
             return True
-        return not line.endswith(":")
+        return not line.endswith((":", "\uff1a"))
     if any("gmail_attr" in _class_tokens(child) for child in children):
         return False
     return is_forward_marker_line(_leading_text_line(node))
