@@ -662,6 +662,25 @@ async def test_mcp_client_bundle_root_mkdir_failure_is_reported(tmp_path: Path):
 
 
 @pytest.mark.anyio
+async def test_mcp_client_output_write_failure_reports_generic_code(tmp_path: Path):
+    """Core reports write errors as failed results; clients get only the code."""
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("x", encoding="utf-8")
+
+    result = await _call_tool(
+        "convert_eml",
+        {
+            "eml_path": str(FIXTURES / "plain_text.eml"),
+            "output_path": str(blocker / "out"),
+        },
+    )
+
+    assert result.is_error is True
+    text = result.content[0].text
+    assert text == "Error executing tool convert_eml: Conversion failed: conversion_error"
+
+
+@pytest.mark.anyio
 async def test_mcp_client_conversion_failure_hides_raw_error(monkeypatch, caplog):
     def _fail(source, *, output, options):
         return ConvertResult(

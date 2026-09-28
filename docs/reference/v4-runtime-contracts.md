@@ -873,7 +873,8 @@ check that the text contains one of these messages:
   not create `bundle_root`
 - `Conversion failed: <error_code>` — pipeline failure in `convert_eml`,
   `convert_eml_to_bundle` or `get_diagnostics`, where `<error_code>` is
-  `html_markdown_failed` or `conversion_error`, optionally followed by
+  `html_markdown_failed` or `conversion_error` (any other failure the core
+  pipeline reports, including an output write error), optionally followed by
   `Plain text fallback is available.` and/or `HTML repair is available.` The
   raw parser or renderer error is logged on the server (stderr for stdio) and
   is not sent to the client, because it can quote email content.
@@ -884,8 +885,10 @@ check that the text contains one of these messages:
 - `MCP convert_eml_to_bundle only supports source_handling='copy'; use the CLI/API for move/delete.`
 - `output_directory is required for MCP directory conversion`
 
-Any other exception (a write failure, an unexpected crash) reaches the client
-only as `Error executing tool <name>`, with no further text. MCP SDK 2.1 and
+Any other exception (one that escapes the core pipeline, such as a failure
+reading back the converted Markdown, a broken internal invariant or an
+unexpected crash) reaches the client only as `Error executing tool <name>`,
+with no further text. MCP SDK 2.1 and
 later mask these by design, and dead-letter relies on that so internal and
 email-derived text stays on the server.
 
