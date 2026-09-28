@@ -181,7 +181,7 @@ bypass those requirements.
 **Repository:** https://github.com/BigCactusLabs/dead-letter  
 **Registry identity:** `io.github.BigCactusLabs/dead-letter`  
 **Transport:** local stdio, not remote HTTP  
-**Description:** Convert .eml email exports to clean Markdown for RAG, LLM
+**Description:** Convert .eml and .mbox email to clean Markdown for RAG, LLM
 pipelines, and local knowledge bases. Supports attachment bundles and
 conversion diagnostics without a mailbox account or upload service.  
 **License:** PolyForm Noncommercial 1.0.0; commercial use requires separate permission.
