@@ -7,8 +7,9 @@ import shutil
 from pathlib import Path
 
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 
-from dead_letter.core.types import ConvertOptions, ConvertResult
+from dead_letter.core.types import BundleResult, ConvertOptions, ConvertResult
 
 
 def test_resolve_options_default_preset():
@@ -122,7 +123,7 @@ def test_convert_eml_with_flag_override():
 def test_convert_eml_file_not_found():
     from dead_letter.backend.mcp_server import convert_eml
 
-    with pytest.raises(FileNotFoundError, match="not_real.eml"):
+    with pytest.raises(ToolError, match="File not found: /tmp/not_real.eml"):
         convert_eml(eml_path="/tmp/not_real.eml")
 
 
@@ -202,7 +203,7 @@ def test_convert_eml_to_bundle_rejects_source_handling(tmp_path: Path, source_ha
 def test_convert_eml_to_bundle_file_not_found():
     from dead_letter.backend.mcp_server import convert_eml_to_bundle
 
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(ToolError, match="File not found: /tmp/not_real.eml"):
         convert_eml_to_bundle(
             eml_path="/tmp/not_real.eml",
             bundle_root="/tmp/cabinet",
@@ -278,7 +279,7 @@ def test_convert_directory_requires_output_directory(tmp_path: Path, output_dire
 
     eml_dir = _make_eml_dir(tmp_path, count=1)
 
-    with pytest.raises(ValueError, match="output_directory"):
+    with pytest.raises(ToolError, match="output_directory"):
         convert_directory(directory=str(eml_dir), output_directory=output_directory)
 
     assert not list(eml_dir.glob("*.md"))
@@ -302,7 +303,7 @@ def test_convert_directory_dry_run(tmp_path: Path):
 def test_convert_directory_not_found(tmp_path: Path):
     from dead_letter.backend.mcp_server import convert_directory
 
-    with pytest.raises(FileNotFoundError, match="not_a_real_dir"):
+    with pytest.raises(ToolError, match="Directory not found: /tmp/not_a_real_dir"):
         convert_directory(
             directory="/tmp/not_a_real_dir",
             output_directory=str(tmp_path / "output"),
@@ -340,7 +341,7 @@ def test_convert_directory_rejects_more_than_fifty_files_before_writes(
 
     monkeypatch.setattr(mcp_server, "convert_dir", _fail_convert_dir)
 
-    with pytest.raises(ValueError, match="at most 50"):
+    with pytest.raises(ToolError, match="at most 50"):
         mcp_server.convert_directory(
             directory=str(eml_dir),
             output_directory=str(tmp_path / "output"),
@@ -437,7 +438,7 @@ def test_get_diagnostics_default_preset_reports_stripped_images(tmp_path: Path):
 def test_get_diagnostics_file_not_found():
     from dead_letter.backend.mcp_server import get_diagnostics
 
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(ToolError, match="File not found: /tmp/not_real.eml"):
         get_diagnostics(eml_path="/tmp/not_real.eml")
 
 
@@ -535,6 +536,195 @@ async def test_mcp_client_convert_bundle_rejects_source_handling(tmp_path: Path,
     assert "source_handling='copy'" in result.content[0].text
     assert source.read_bytes() == original
     assert not cabinet.exists()
+
+
+# ---------------------------------------------------------------------------
+# Client-visible tool errors (MCP SDK 2.1+ masks non-ToolError exceptions)
+# ---------------------------------------------------------------------------
+
+
+async def _call_tool(name: str, arguments: dict):
+    from mcp import Client
+
+    from dead_letter.backend.mcp_server import mcp
+
+    async with Client(mcp) as client:
+        return await client.call_tool(name, arguments)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("tool_name", "extra_args"),
+    [
+        ("convert_eml", {}),
+        ("convert_eml_to_bundle", {"bundle_root": "/tmp/dead-letter-missing-cabinet"}),
+        ("get_diagnostics", {}),
+    ],
+)
+async def test_mcp_client_missing_file_reports_path(tool_name: str, extra_args: dict):
+    result = await _call_tool(tool_name, {"eml_path": "/tmp/not_real.eml", **extra_args})
+
+    assert result.is_error is True
+    assert "File not found: /tmp/not_real.eml" in result.content[0].text
+
+
+@pytest.mark.anyio
+async def test_mcp_client_missing_directory_reports_path(tmp_path: Path):
+    result = await _call_tool(
+        "convert_directory",
+        {"directory": "/tmp/not_a_real_dir", "output_directory": str(tmp_path / "output")},
+    )
+
+    assert result.is_error is True
+    assert "Directory not found: /tmp/not_a_real_dir" in result.content[0].text
+
+
+@pytest.mark.anyio
+async def test_mcp_client_empty_output_directory_is_reported(tmp_path: Path):
+    eml_dir = _make_eml_dir(tmp_path, count=1)
+
+    result = await _call_tool(
+        "convert_directory", {"directory": str(eml_dir), "output_directory": ""}
+    )
+
+    assert result.is_error is True
+    assert (
+        "output_directory is required for MCP directory conversion"
+        in result.content[0].text
+    )
+
+
+@pytest.mark.anyio
+async def test_mcp_client_directory_over_cap_is_reported(tmp_path: Path):
+    eml_dir = tmp_path / "emails"
+    eml_dir.mkdir()
+    for index in range(51):
+        _write_minimal_eml(eml_dir / f"{index:02d}.eml")
+
+    result = await _call_tool(
+        "convert_directory",
+        {"directory": str(eml_dir), "output_directory": str(tmp_path / "output")},
+    )
+
+    assert result.is_error is True
+    assert (
+        "MCP directory conversion supports at most 50 .eml files; found 51."
+        in result.content[0].text
+    )
+    assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool_name", ["convert_eml", "convert_eml_to_bundle", "get_diagnostics"])
+async def test_mcp_client_non_eml_source_is_reported(tmp_path: Path, tool_name: str):
+    source = tmp_path / "message.txt"
+    shutil.copy2(FIXTURES / "plain_text.eml", source)
+    cabinet = tmp_path / "cabinet"
+    arguments = {"eml_path": str(source)}
+    if tool_name == "convert_eml_to_bundle":
+        arguments["bundle_root"] = str(cabinet)
+
+    result = await _call_tool(tool_name, arguments)
+
+    assert result.is_error is True
+    assert f"Expected a .eml file: {source}" in result.content[0].text
+    assert not cabinet.exists()
+
+
+@pytest.mark.anyio
+async def test_mcp_client_bundle_root_mkdir_failure_is_reported(tmp_path: Path):
+    source = tmp_path / "plain_text.eml"
+    shutil.copy2(FIXTURES / "plain_text.eml", source)
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory", encoding="utf-8")
+    bundle_root = blocker / "cabinet"
+
+    result = await _call_tool(
+        "convert_eml_to_bundle", {"eml_path": str(source), "bundle_root": str(bundle_root)}
+    )
+
+    assert result.is_error is True
+    assert f"Cannot create bundle_root {bundle_root}: " in result.content[0].text
+
+
+@pytest.mark.anyio
+async def test_mcp_client_conversion_failure_hides_raw_error(monkeypatch, caplog):
+    def _fail(source, *, output, options):
+        return ConvertResult(
+            source=Path(source),
+            output=None,
+            subject="",
+            sender="unknown",
+            date=None,
+            attachments=[],
+            success=False,
+            error="SECRET-EMAIL-TEXT",
+            error_code="html_markdown_failed",
+            plain_text_fallback_available=True,
+            html_repair_available=True,
+            dry_run=False,
+        )
+
+    monkeypatch.setattr(mcp_server, "convert", _fail)
+
+    with caplog.at_level("WARNING", logger="dead_letter.backend.mcp_server"):
+        result = await _call_tool("convert_eml", {"eml_path": str(FIXTURES / "plain_text.eml")})
+
+    text = result.content[0].text
+    assert result.is_error is True
+    assert (
+        "Conversion failed: html_markdown_failed Plain text fallback is available. "
+        "HTML repair is available."
+    ) in text
+    assert "SECRET-EMAIL-TEXT" not in text
+    assert "SECRET-EMAIL-TEXT" in caplog.text
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool_name", ["convert_eml_to_bundle", "get_diagnostics"])
+async def test_mcp_client_bundle_conversion_failure_hides_raw_error(
+    monkeypatch, tmp_path: Path, tool_name: str
+):
+    def _fail(source, *, bundle_root, options, source_handling="copy"):
+        return (
+            BundleResult(
+                source=Path(source),
+                bundle=None,
+                markdown=None,
+                source_artifact=None,
+                attachments=[],
+                success=False,
+                error="SECRET-EMAIL-TEXT",
+                dry_run=False,
+            ),
+            None,
+        )
+
+    monkeypatch.setattr(mcp_server, "convert_to_bundle_with_diagnostics", _fail)
+    arguments = {"eml_path": str(FIXTURES / "plain_text.eml")}
+    if tool_name == "convert_eml_to_bundle":
+        arguments["bundle_root"] = str(tmp_path / "cabinet")
+
+    result = await _call_tool(tool_name, arguments)
+
+    text = result.content[0].text
+    assert result.is_error is True
+    assert "Conversion failed: conversion_error" in text
+    assert "SECRET-EMAIL-TEXT" not in text
+
+
+@pytest.mark.anyio
+async def test_mcp_client_unexpected_errors_stay_masked(monkeypatch):
+    def _crash(*_args, **_kwargs):
+        raise RuntimeError("SECRET-INTERNAL")
+
+    monkeypatch.setattr(mcp_server, "convert", _crash)
+
+    result = await _call_tool("convert_eml", {"eml_path": str(FIXTURES / "plain_text.eml")})
+
+    assert result.is_error is True
+    assert "Error executing tool convert_eml" in result.content[0].text
+    assert "SECRET-INTERNAL" not in result.content[0].text
 
 
 # ---------------------------------------------------------------------------

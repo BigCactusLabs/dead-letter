@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import tempfile
 from pathlib import Path
 from typing import Literal
@@ -13,6 +14,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 from dead_letter.core import convert, convert_dir
 from dead_letter.core._pipeline import _iter_source_eml_files, convert_to_bundle_with_diagnostics
 from dead_letter.core.types import ConvertOptions
+
+logger = logging.getLogger(__name__)
 
 mcp = MCPServer("dead-letter")
 MCP_MAX_DIRECTORY_FILES = 50
@@ -70,16 +73,37 @@ def _build_options(local_vars: dict) -> ConvertOptions:
     )
 
 
+def _check_eml_source(eml_path: str) -> Path:
+    """Return the source path, or raise ToolError if it is missing or not .eml."""
+    source = Path(eml_path)
+    if not source.exists():
+        raise ToolError(f"File not found: {eml_path}")
+    if source.resolve().suffix.lower() != ".eml":
+        raise ToolError(f"Expected a .eml file: {eml_path}")
+    return source
+
+
 def _raise_on_failure(result: object) -> None:
-    """Raise RuntimeError if a ConvertResult or BundleResult indicates failure."""
+    """Raise ToolError if a ConvertResult or BundleResult indicates failure.
+
+    The client sees only the stable error code. The raw error text can quote
+    email content, so it is logged on the server instead.
+    """
     if getattr(result, "success", True):
         return
-    parts = [f"Conversion failed: {getattr(result, 'error', 'unknown error')}"]
+    error_code = getattr(result, "error_code", None) or "conversion_error"
+    logger.warning(
+        "Conversion failed (%s) for %s: %s",
+        error_code,
+        getattr(result, "source", None),
+        getattr(result, "error", None),
+    )
+    parts = [f"Conversion failed: {error_code}"]
     if getattr(result, "plain_text_fallback_available", None):
         parts.append("Plain text fallback is available.")
     if getattr(result, "html_repair_available", None):
         parts.append("HTML repair is available.")
-    raise RuntimeError(" ".join(parts))
+    raise ToolError(" ".join(parts))
 
 
 @mcp.tool()
@@ -113,9 +137,7 @@ def convert_eml(
     Individual flags override the preset when provided.
     """
     options = _build_options(locals())
-    source = Path(eml_path)
-    if not source.exists():
-        raise FileNotFoundError(f"File not found: {eml_path}")
+    source = _check_eml_source(eml_path)
 
     if output_path is not None:
         result = convert(source, output=Path(output_path), options=options)
@@ -167,12 +189,15 @@ def convert_eml_to_bundle(
         )
 
     options = _build_options(locals())
-    source = Path(eml_path)
-    if not source.exists():
-        raise FileNotFoundError(f"File not found: {eml_path}")
+    source = _check_eml_source(eml_path)
 
     bundle_path = Path(bundle_root)
-    bundle_path.mkdir(parents=True, exist_ok=True)
+    try:
+        bundle_path.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ToolError(
+            f"Cannot create bundle_root {bundle_root}: {exc.strerror or type(exc).__name__}"
+        ) from exc
 
     result, diagnostics = convert_to_bundle_with_diagnostics(
         source,
@@ -223,13 +248,13 @@ def convert_directory(
     options = _build_options(locals())
     dir_path = Path(directory).expanduser().resolve()
     if not dir_path.is_dir():
-        raise FileNotFoundError(f"Directory not found: {directory}")
+        raise ToolError(f"Directory not found: {directory}")
     if not output_directory:
-        raise ValueError("output_directory is required for MCP directory conversion")
+        raise ToolError("output_directory is required for MCP directory conversion")
 
     files = _iter_source_eml_files(dir_path)
     if len(files) > MCP_MAX_DIRECTORY_FILES:
-        raise ValueError(
+        raise ToolError(
             "MCP directory conversion supports at most "
             f"{MCP_MAX_DIRECTORY_FILES} .eml files; found {len(files)}."
         )
@@ -277,9 +302,7 @@ def get_diagnostics(
     appears only when images were removed, and attachments only when the
     message had attachments eligible for retention.
     """
-    source = Path(eml_path)
-    if not source.exists():
-        raise FileNotFoundError(f"File not found: {eml_path}")
+    source = _check_eml_source(eml_path)
 
     options = _build_options(locals())
 
