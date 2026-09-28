@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Unreleased single-message analysis sidecars with `--output` and async
+  `analyze_to_sidecar`: no-clobber writes, separate failure/skip attempts, strict
+  source/effective-input binding, validated offline reuse, alias-age limits and
+  concurrent-winner checks. Sources remain unchanged; saved results contain no
+  body/attachment text. See the [contract](docs/reference/experimental-analysis.md)
+  for filesystem durability limits (#164).
 - Five [conversion recipes](docs/recipes/README.md) for Markdown/Obsidian,
   RAG preprocessing, local MCP conversion, Cabinet archiving, and report/quality
   auditing, with shared synthetic mail and a released-package smoke check (#162).
@@ -29,8 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filters, redirect/response-size guards, SDK-owned bounded retries, safe attempt
   records and versioned result envelopes keep failures distinct from predictions.
   `doctor` reports SDK/key presence without contacting the provider. Dry-run and
-  ordinary conversion remain local; sidecars/resume and batches
-  remain pending. See [experimental analysis](docs/reference/experimental-analysis.md).
+  ordinary conversion remain local; batches remain pending. See
+  [experimental analysis](docs/reference/experimental-analysis.md).
 - Optional `typesafe` extra with the exact SDK pin in `uv.lock`, plus isolated
   wheel/sdist checks for offline previews and real-SDK fake-HTTP contracts.
   Base installs and the UI launcher remain SDK-free; installing the extra does
@@ -61,6 +67,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [Takeout recipe](docs/reference/gmail-takeout.md#content-length-framing-mboxcl-and-mboxcl2) (#143).
 
 ### Fixed
+
+- Unreleased analysis sidecars now reject unusable destinations before inference,
+  preserve full results on write failure, and run provider preflight before new
+  source reads. Reuse binds adapter/SDK versions, reports the current source
+  basename, tolerates bounded clock skew, and retries a vanished target once.
+  Failure/skip records use `attempt_recorded`; macOS file writes request
+  `F_FULLFSYNC` where supported (#164).
 
 - The MCP `convert_directory` inputSchema now lists `output_directory` as
   required, matching the existing runtime requirement, and an empty
