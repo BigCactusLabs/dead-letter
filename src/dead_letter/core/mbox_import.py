@@ -28,7 +28,7 @@ class MboxConversion:
     source: str
     output: Path | None
     success: bool
-    mbox: dict[str, str | int] | None = None
+    mbox: dict[str, Any] | None = None
     diagnostics: dict[str, Any] | None = None
     error: dict[str, str] | None = None
 
@@ -41,9 +41,12 @@ def _convert_record(
     *,
     bundles: bool,
     unescape: UnescapeMode,
+    archive: dict[str, Any] | None = None,
 ) -> MboxConversion:
     locator = f"{source.name}#message-{record.index:08d}"
     provenance = {**record.provenance(source), "unescape": unescape}
+    if archive is not None:
+        provenance["archive"] = archive
     if record.path is None:
         return MboxConversion(
             locator, None, False, provenance,
@@ -127,6 +130,24 @@ def convert_mbox(
     message, including dry runs. This is a worker wall-time budget, not a memory
     limit, security sandbox, or deadline for framing/final output publication.
     """
+    yield from _convert_mbox(
+        path, output=output, options=options, limits=limits, unescape=unescape,
+        bundles=bundles, timeout_seconds=timeout_seconds,
+    )
+
+
+def _convert_mbox(
+    path: str | Path,
+    *,
+    output: str | Path | None = None,
+    options: ConvertOptions | None = None,
+    limits: MboxLimits | None = None,
+    unescape: UnescapeMode = "preserve",
+    bundles: bool = False,
+    timeout_seconds: float | None = None,
+    archive: dict[str, Any] | None = None,
+) -> Iterator[MboxConversion]:
+    # Both public importers use this pipeline; only the provenance differs.
     if timeout_seconds is not None:
         from dead_letter.core.mbox_isolation import convert_record_isolated, validate_timeout
         validate_timeout(timeout_seconds)
@@ -139,20 +160,22 @@ def convert_mbox(
     root = Path(output).expanduser().resolve() if output is not None else source.with_suffix(".markdown")
     if root == source or root.suffix.lower() == ".md" or (root.exists() and not root.is_dir()):
         raise ValueError("MBOX output must be a directory distinct from the source")
+    label = Path(archive["member_name"]) if archive is not None else source
+    provenance_options = {"archive": archive} if archive is not None else {}
     opts = replace(opts, delete_eml=False)
     try:
         with closing(iter_mbox(source, limits=limits, unescape=unescape)) as records:
             for record in records:
                 if timeout_seconds is not None and record.path is not None:
                     yield convert_record_isolated(
-                        record, source, root, opts, bundles=bundles,
-                        unescape=unescape, timeout=timeout_seconds,
+                        record, label, root, opts, bundles=bundles,
+                        unescape=unescape, timeout=timeout_seconds, **provenance_options,
                     )
                 else:
-                    yield _convert_record(record, source, root, opts, bundles=bundles, unescape=unescape)
+                    yield _convert_record(record, label, root, opts, bundles=bundles, unescape=unescape, **provenance_options)
     except (MboxFormatError, OSError, ValueError) as exc:
         yield MboxConversion(
-            source.name, None, False,
+            label.name, None, False,
             error={"code": "mbox_archive_error", "stage": "mbox",
-                   "message": str(exc).replace(str(source), source.name)},
+                   "message": str(exc).replace(str(source), label.name)},
         )

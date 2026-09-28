@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- CLI/Python ZIP and TGZ Takeout ingestion with exact MBOX member selection,
+  private staging, byte/member budgets, integrity and source-change checks,
+  and archive provenance in Markdown and reports. ZIP requires Python 3.12.3+.
+  MCP/web ingestion is unchanged. See the [compressed-input guide](docs/reference/gmail-takeout.md#compressed-input-unreleased)
+  (Refs #144).
+
 - Five [conversion recipes](docs/recipes/README.md) for Markdown/Obsidian,
   RAG preprocessing, local MCP conversion, Cabinet archiving, and report/quality
   auditing, with shared synthetic mail and a released-package smoke check (#162).

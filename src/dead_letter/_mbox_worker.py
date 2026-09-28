@@ -38,7 +38,7 @@ def run(request_path: Path) -> int:
         raise ValueError("A worker must never delete its input")
     result = _convert_record(
         record, Path(request["archive_name"]), request_path.parent / "artifacts", options,
-        bundles=request["bundles"], unescape=request["unescape"],
+        bundles=request["bundles"], unescape=request["unescape"], archive=request.get("archive"),
     )
     # A receipt carries only status/diagnostics, never a serialized MIME object
     # or a path for the parent to follow. Exit without a receipt on oversize.

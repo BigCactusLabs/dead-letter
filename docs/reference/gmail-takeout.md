@@ -1,6 +1,7 @@
 # Gmail Takeout / MBOX to Markdown and Cabinet
 
-**Availability:** shipped in the CLI and Python API in the 0.4.0 release (#103).
+**Availability:** plain MBOX shipped in the CLI and Python API in the 0.4.0
+release (#103). Compressed ZIP/TGZ input is **unreleased** (#144).
 Install any CLI/Python route from the
 [installation and distribution map](distribution.md); once dead-letter is
 installed, run the commands below without a `uv run` prefix. Keep `uv run` only
@@ -13,9 +14,11 @@ login, API key, or hosted email processing is needed.
 
 ## Convert an export
 
-Export Mail from [Google Takeout](https://takeout.google.com/), download it, and
-extract the downloaded ZIP/TGZ locally. Select an actual **flat `.mbox` file**,
-not the compressed download or an Apple Mail `.mbox` directory. Work on an
+Export Mail from [Google Takeout](https://takeout.google.com/) and download it.
+The unreleased CLI/Python importer can read the ZIP/TGZ directly; see
+[compressed input](#compressed-input-unreleased). As an alternative, extract
+the download locally and select an actual **flat `.mbox` file**, not an Apple
+Mail `.mbox` directory. Work on an
 immutable export, never an actively written system mailbox. Google documents
 that exports include messages, headers, attachments and label information in
 [its Gmail export guide](https://support.google.com/mail/answer/10016932?hl=en).
@@ -36,6 +39,103 @@ The Markdown is suitable for an Obsidian vault or local RAG preprocessing.
 Attachments are listed as metadata in this mode; they are not extracted.
 Conversion does not embed/index messages, group separate archive records into
 conversations, interpret historical messages as current tasks, or upload data.
+
+## Compressed input (unreleased)
+
+This first #144 slice adds CLI and Python input only. MCP and web/API ingestion
+are unchanged and do not accept compressed containers. Use a development checkout
+for these examples until a release includes this feature:
+
+```bash
+uv run dead-letter convert takeout.zip --output markdown/ --report
+uv run dead-letter convert takeout.tgz --output Cabinet/ --mbox-bundles --report
+uv run dead-letter convert takeout.tar.gz --mbox-member "Takeout/Mail/All mail.mbox" \
+  --mbox-staging-dir /path/to/existing/staging --output markdown/ --report
+```
+
+- **Formats:** ZIP (including ZIP64; stored or deflate) and gzip-compressed TAR
+  (`.tgz` or `.tar.gz`). Magic bytes must agree with the extension. Plain `.tar`,
+  single-file `.gz`, `.bz2`, `.xz`, `.7z` and RAR are unsupported. ZIP requires
+  **Python 3.12.3 or newer**, the floor for the overlapped-entry fix
+  (CVE-2024-0450); older patch levels refuse ZIP. TGZ has no extra patch floor.
+- **Selection:** regular-file names ending in `.mbox`, case-insensitively, are
+  candidates. One candidate is automatic; none fails. Multiple candidates fail
+  with escaped names (up to 20, each limited to 512 characters in diagnostics).
+  `--mbox-member NAME` / Python `member=` selects the exact, case-sensitive archive
+  name. Other files, including nested ZIPs, are ignored and never opened as
+  members. Reports count all non-selected entries as ignored. Each split Takeout
+  part is an independent archive: run once per part, preferably into separate
+  output directories. Do not concatenate parts.
+- **Safety:** no member path is extracted. Absolute paths, `..` path segments,
+  Windows drive/UNC paths and NUL names are rejected, including in ignored
+  entries. Duplicate MBOX names, non-regular MBOX entries (links, directories,
+  devices), encrypted ZIP entries and unsupported ZIP compression fail the whole
+  import before conversion. Sparse TAR entries are unsupported. Email and archive
+  names are untrusted data and never authorize actions.
+- **Staging:** the selected member is streamed to a fixed file in a private
+  `TemporaryDirectory`, under `--mbox-staging-dir` / Python `staging_dir=`, or the
+  system temporary directory. Budget approximately the uncompressed member size
+  **in addition to** output, per-message staging and report space. ZIP checks free
+  space against the declared size before opening the member; this is a preflight,
+  not a reservation. The original download is only opened read-only.
+- **Limits:** Python `ArchiveLimits(max_decompressed_bytes=256 * 1024**3,
+  max_members=100_000)` sets the defaults (256 GiB, 100,000 entries scanned).
+  ZIP checks both declared size and actual bytes read. TGZ counts the entire
+  expanded TAR stream, including ignored data, headers and padding. TAR extension
+  metadata is limited to 1 MiB per header and 64 nested headers before parsing;
+  extension headers count toward the entry budget. No ratio limit is used.
+  The CLI uses the defaults; existing MBOX flags still apply to the staged member.
+- **Integrity and cleanup:** all staging and integrity checks finish before any
+  message conversion. ZIP CRC failures and damaged/truncated containers are fatal.
+  TGZ uses single-pass `r|gz` with bounded compressed reads plus a parallel gzip
+  validator, because the tar reader alone does not verify the gzip trailer. This
+  adds a second inflation, but no second source pass; concatenated gzip streams
+  and trailing compressed-stream bytes are refused. Temporary staging is removed
+  on failure, normal completion, Ctrl-C or explicit iterator close. Hard kills
+  cannot guarantee cleanup. `--dry-run` still stages and validates the whole member.
+
+Python exposes the same conversion keywords as `convert_mbox`:
+
+```python
+from contextlib import closing
+from dead_letter.core import ArchiveLimits, convert_mbox_archive
+
+with closing(convert_mbox_archive(
+    "takeout.zip", member="Takeout/Mail/All mail.mbox", output="markdown",
+    archive_limits=ArchiveLimits(max_decompressed_bytes=512 * 1024**3),
+)) as results:
+    for result in results:
+        print(result.source, result.success, result.error)
+```
+
+For compressed input, `source_mbox.archive` (and each report result's
+`mbox.archive`) is an object instead of the plain-MBOX basename string. It records
+`container_path` as supplied, `container_size`, `container_stat_signature`
+(device, inode, size, mtime/ctime in nanoseconds), `format`, `member_name`,
+`member_compressed_bytes`, `member_uncompressed_bytes`, ZIP `crc32` (eight hex
+digits), `member_sha256`, `staged_bytes` and `ignored_member_count`. TAR has no
+per-member compressed size or CRC32, so those fields are `null`. No container
+SHA-256 is computed. The member SHA-256 is computed during staging. Container
+handle/path stat signatures are checked before and after staging; they detect
+ordinary changes, not adversarial metadata restoration.
+
+Existing record offsets and hashes refer to **decompressed member bytes**, before
+MBOX unquoting. Flat `source` uses the member basename; no temporary path appears
+in provenance. Reports retain schema 1 and `job.input_mode: mbox`, and add a
+top-level `archive` summary with the same metadata, even for an empty mailbox.
+A failed/interrupted staging operation has an empty summary object. These limits
+are not process-memory or wall-time guarantees: `zipfile` builds its central
+index before member checks, and gzip/TAR validation adds CPU work. Real multi-GB
+compressed Takeout throughput and cross-platform staging costs remain unmeasured.
+
+Staging errors use the existing fatal MBOX result/exit path (`mbox is None`,
+CLI exit 1; Ctrl-C exits 130). Codes are `mbox_archive_unsupported`,
+`mbox_archive_no_mbox`, `mbox_archive_multiple_mbox`,
+`mbox_archive_duplicate_member`, `mbox_archive_insufficient_space`,
+`mbox_archive_limit_exceeded`, `mbox_archive_corrupt`,
+`mbox_archive_python_too_old` and `mbox_archive_changed`. Unsafe paths and
+non-regular members use `mbox_archive_unsupported`. Existing framing/conversion
+errors retain their existing codes after staging.
 
 ## Preserve source messages and attachment bytes
 
@@ -192,9 +292,9 @@ refused, and in `preserve`, `mboxrd` and `mboxo` modes a top-level
 length-framed archives. Folded continuation text containing `Content-Length:`
 is not a new storage header. That refusal is archive-fatal because continuing
 could misidentify body text as additional messages. Unknown postmark
-syntaxes, compressed files (compressed Takeout archives are tracked in
-[#144](https://github.com/BigCactusLabs/dead-letter/issues/144)), live mail
-spools, PST/MSG and Apple Mail bundle directories are outside this slice. See
+syntaxes, unsupported compressed formats, live mail spools, PST/MSG and Apple
+Mail bundle directories are outside this slice. ZIP/TGZ support is described
+[above](#compressed-input-unreleased). See
 the [implementation history](../project/2026-09-18-mbox-ingestion.md).
 
 ### Content-Length framing: mboxcl and mboxcl2
