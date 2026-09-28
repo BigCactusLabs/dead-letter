@@ -783,9 +783,15 @@ Exit codes:
 ## MCP Server (`dead_letter.backend.mcp_server`)
 
 Published as the `dead-letter-mcp` console script (`dead-letter[mcp]`, MCP Python
-SDK 2.x) and described by `server.json` for the MCP Registry. Released packages
-(0.4.0 and earlier) expose the first four tools below. `convert_mbox` is on
-`main` and unreleased (#145). Five tools on `main`:
+SDK 2.x) and described by `server.json` for the MCP Registry.
+
+On `main` (unreleased), `serverInfo` also carries a `title`, `description`,
+`websiteUrl`, the package `version`, and a 64×64 PNG icon embedded as a
+`data:` URI (no network fetch), and each tool has a human-readable `title`.
+Clients decide whether and where to display these fields.
+
+Released packages (0.4.0 and earlier) expose the first four tools below.
+`convert_mbox` is on `main` and unreleased (#145). Five tools on `main`:
 
 | Tool | Required arguments | Returns |
 | --- | --- | --- |
