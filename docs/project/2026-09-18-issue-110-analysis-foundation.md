@@ -55,8 +55,15 @@ The checkout recipe is now `uv run --locked --extra typesafe dead-letter analyze
 ... --provider typesafe`. Base/development installs do not select the extra.
 This remains unreleased; the published 0.4.0 package has no TypeSafe extra.
 
-**Not implemented:** atomic sidecars, resume, directory processing, batch
-scheduling or empirical inference evaluation. Core conversion, bundles, existing
+The unreleased #164 continuation adds single-message `--output` and exported
+`analyze_to_sidecar`: no-clobber publication, separate failed/skipped attempts,
+strict successful-result reuse with source/effective-input binding, alias age,
+and concurrent-winner validation. Reuse needs no SDK/key or network. Privacy
+and existing stdout-only execution are preserved. See the public contract for
+fallback filesystem durability limits.
+
+**Not implemented:** directory processing, batch scheduling or empirical
+inference evaluation. Core conversion, bundles, existing
 four MCP tools, UI and release versions are unchanged by this continuation.
 
 ### SDK pin decision — September 23, 2026
@@ -89,17 +96,12 @@ TypeSafe install probes. No live inference was used.
 
 ## Next work, in implementation order
 
-1. Add atomic, no-clobber sidecars and validated-result-only reuse (#164). Bind source,
-   effective inputs, schema/profile/normalizer/model/endpoint to the saved artifact.
-   Keep successful results separate from attempts. Reject corrupted, incomplete,
-   failed, mismatched or stale-alias cached artifacts. Expose age/returned model;
-   do not call an alias cache entry fresh inference. No raw SDK/body dumps.
-2. Add directory output and bounded worker scheduling (#165), safe collision handling,
+1. Add directory output and bounded worker scheduling (#165), safe collision handling,
    auth fail-fast, cancellation and partial-success persistence. The adapter
    already owns retries: do not introduce a second retry loop in batch code.
    External cancellation currently propagates and cleans up the current client;
    persisting completed work/attempts across interruption is still batch work.
-3. Review/expand the synthetic seed with authorized data (#166); create a family-separated
+2. Review/expand the synthetic seed with authorized data (#166); create a family-separated
    held-out set. Compare separate Nouls and response-expectation Choice, context
    and cleanup variants and a simple baseline. Optional live runs require separate
    authorization, never an incidental CI/install/doctor request. Measure per-label
@@ -155,8 +157,9 @@ Local checks passed on Python 3.12:
 The full source results preceded the bounded launcher/probe repair; focused
 repair checks and final artifact checks cover that delta. This is local evidence,
 not a new CI run, release, live-provider test or profile-quality evaluation.
-The SDK-free development environment was restored. Sidecars, resume, batches and
-reviewed held-out evaluation remain pending.
+The SDK-free development environment was restored. At that checkpoint, sidecars,
+resume, batches and reviewed held-out evaluation remained pending; #164 now
+covers single-message sidecars and validated reuse as described above.
 
 ### Original foundation evidence
 

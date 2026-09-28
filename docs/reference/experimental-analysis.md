@@ -59,9 +59,9 @@ uv run --locked --extra typesafe dead-letter analyze message.eml \
 Selecting `--provider typesafe` without `--dry-run` is the CLI opt-in. Before the
 request, a JSON disclosure on stderr identifies the effective destination host,
 scope and experimental profile. If the disclosure sink fails, nothing is sent.
-Results are JSON on stdout. No file is written, no email is moved/deleted, and
-front matter is not changed. Directory input, `--output`, sidecars and resume are
-not implemented yet. Shell redirection is not an atomic sidecar/cache contract.
+Results are JSON on stdout. Without `--output`, no file is written. Source email
+and front matter are never changed. Directory input is not implemented yet.
+Shell redirection is not an atomic sidecar/reuse contract.
 
 Results can still be sensitive: they contain local source basenames, configured
 identity aliases, provenance and judgments. They do not contain raw body text,
@@ -74,6 +74,85 @@ Exit codes: 0 for success or a documented skip; 1 for preparation/provider failu
 stderr JSON. Provider failures return a failed result envelope on stdout with a
 safe error code. Always inspect `execution_status` and `assessment_status`; a
 zero exit alone does not mean a semantic assessment occurred.
+
+## Saved single-message results (unreleased, #164)
+
+Add `--output PATH` to write a result or reuse a validated saved success:
+
+```bash
+uv run --locked --extra typesafe dead-letter analyze message.eml \
+  --provider typesafe --output message.analysis.json --alias-max-age 86400
+```
+
+The parent directory must already exist. A directory, symlink (including a
+broken link), or other non-regular output target is refused before preparation
+or inference with `analysis_output_invalid` (exit 2). The source `.eml` is read
+once and is never written or moved. `--output` with `--dry-run` is rejected;
+previews remain local and write no files.
+
+If PATH is absent, a successful envelope is saved there. Any non-success result
+(failed or skipped) is instead saved as a separate record under `PATH.attempts/`,
+with a unique filename. These records carry the safe status/error code, attempts,
+retry count, fingerprints and creation time; they are never reused as success.
+Provider preflight failures after preparation also produce attempt records. A
+source/preparation error cannot produce a bound result and returns the existing
+safe error without a sidecar. Cancellation still propagates; this is not a batch
+interruption journal. Skips keep exit 0 and failures keep exit 1.
+
+Stored envelopes add UTC ISO-8601 `created_at` and `reuse_key`. The key hashes
+canonical JSON containing the result schema version, exact source SHA-256 and
+byte size, existing `PreparedRequest.fingerprint`, profile SHA-256,
+normalizer/state-builder versions, state SHA-256, provider, endpoint and requested
+model. State identity covers the focus identity and context selection. Native
+answers, distributions and the provider-returned model retain their existing
+meaning. No body/attachment text, raw SDK response, headers or keys are added.
+
+An existing result must parse as strict JSON, pass envelope and native-answer
+validation, have `execution_status: succeeded`, and match the current reuse key.
+Reuse performs local preparation and validation only: no provider call, network,
+SDK import, or API key is needed. It does not claim fresh inference. Source
+location alone does not change identity; the original saved source reference is
+retained. An unknown or invalid schema, truncated/corrupt JSON, or malformed
+answers produces `analysis_output_corrupt`. A valid non-success envelope or a
+different binding produces `analysis_output_mismatch`. Both return exit 1,
+leave PATH untouched, and tell the user to choose another path or remove the
+existing file. Unknown extra fields are rejected, not passed through.
+
+If returned model differs from requested model, `--alias-max-age SECONDS`
+(default 86400; finite and nonnegative) limits reuse age. An older result is
+refused with `analysis_output_stale_alias` (exit 1). A missing returned model
+also uses this conservative age limit; it cannot prove an exact model pin.
+Exact matches have no age limit. Invalid/future creation times are corrupt,
+and invalid age arguments return `invalid_alias_max_age` (exit 2).
+
+Stdout still contains the result JSON, with a transient `sidecar` object:
+`path` and `outcome` (`written` or `reused`). For failures/skips, `path` points to
+the written attempt record. Reuse also reports `created_at`, `age_seconds` and
+`returned_model`. This object is not stored in the result file.
+
+Writes use a unique `.<name>.<uuid>.tmp` in the destination directory, exclusive
+creation, file fsync, and no-clobber hard-link publication. Supported platforms
+also fsync the directory. If a competing writer publishes first, our temporary
+file is discarded and the winner goes through the same validation and age
+rules. A reused winner includes `sidecar.discarded_fresh_result: true`; a refused
+winner reports `discarded_fresh_result: true` in stderr JSON. **The discarded
+provider call was still billed; reuse cannot undo its charge.** Provider usage
+for that discarded result is not added to the winner's usage.
+
+Publication is atomic on local POSIX filesystems that support hard links.
+Windows uses the same no-clobber link operation where available. If hard links
+are unsupported, both platforms fall back to exclusive creation of PATH,
+write, and file fsync; no existing path is replaced. This fallback prevents
+clobbering but is not atomic for concurrent readers: an incomplete file is
+refused, never reused. Windows directory fsync is not available through this
+API. Network filesystems and power-loss durability are best-effort. A hard kill
+in the exclusive-create fallback can leave an incomplete PATH; choose another
+path or remove it after inspection. Catchable write exceptions clean up owned
+temporary files (and an owned partial fallback output). Other temporary files
+are never read as results or automatically deleted. Write/fsync errors return
+`analysis_output_write_failed`; an error after publication can leave a complete
+result that a later run can validate. Files are created with mode 0600 and new
+attempt directories with mode 0700, subject to platform permission semantics.
 
 ## Python consumer recipes
 
@@ -105,7 +184,24 @@ result = asyncio.run(analyze_eml(
 print(result["execution_status"], result["assessment_status"])
 ```
 
-Inside an existing event loop, await `analyze_eml` directly. `analyze_prepared`
+For the saved-result contract, use the exported async helper with the same
+execution options plus `output` and `alias_max_age`:
+
+```python
+from dead_letter.analysis import analyze_to_sidecar
+
+result = asyncio.run(analyze_to_sidecar(
+    "message.eml", "message.analysis.json", provider="typesafe",
+    allow_remote=True, alias_max_age=86400,
+))
+```
+
+`analyze_to_sidecar` can reuse a matching result with `allow_remote=False`
+(the default); a missing result requires explicit remote permission. It prepares
+locally before provider preflight so reuse works without the optional SDK/key.
+The stdout-only `analyze_eml` retains its preflight-before-source-read behavior.
+
+Inside an existing event loop, await either helper directly. `analyze_prepared`
 executes a `PreparedEmail` with the same explicit permission and disclosure.
 Endpoint configuration must agree with the prepared request; changing the
 process endpoint after preparation cannot silently redirect a previously
@@ -235,8 +331,8 @@ JEV inference, accuracy, calibration or latency benchmarks. No real key or priva
 email was submitted during this implementation. Human-review/expand the seed and
 compare both profiles on a family-separated held-out set before freezing semantics.
 
-Still pending: atomic collision-safe sidecars, valid-result-only resume/alias-age
-handling, directory concurrency and partial-success persistence. See the
+Still pending: directory output, bounded concurrency and batch partial-success
+persistence (#165), plus reviewed held-out evaluation (#166). See the
 [implementation checkpoint](../project/2026-09-18-issue-110-analysis-foundation.md).
 
 ## First-party implementation references
