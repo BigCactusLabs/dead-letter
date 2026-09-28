@@ -871,11 +871,15 @@ check that the text contains one of these messages:
 - `Directory not found: <path>` — missing directory
 - `Cannot create bundle_root <path>: <reason>` — `convert_eml_to_bundle` could
   not create `bundle_root`
-- `Conversion failed: <error_code>` — pipeline failure, where `<error_code>` is
+- `Conversion failed: <error_code>` — pipeline failure in `convert_eml`,
+  `convert_eml_to_bundle` or `get_diagnostics`, where `<error_code>` is
   `html_markdown_failed` or `conversion_error`, optionally followed by
   `Plain text fallback is available.` and/or `HTML repair is available.` The
   raw parser or renderer error is logged on the server (stderr for stdio) and
   is not sent to the client, because it can quote email content.
+  `convert_directory` does not raise for per-file failures: its JSON `errors[]`
+  entries still carry each file's raw error text, which can include
+  email-derived text such as subject-based output filenames.
 - `MCP directory conversion supports at most 50 .eml files; found <n>.`
 - `MCP convert_eml_to_bundle only supports source_handling='copy'; use the CLI/API for move/delete.`
 - `output_directory is required for MCP directory conversion`

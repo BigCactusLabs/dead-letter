@@ -459,7 +459,9 @@ def test_mcp_extra_requires_supported_sdk_major():
     )
 
     assert Version("1.29.0") not in mcp_requirement.specifier
-    assert Version("2.0.0") in mcp_requirement.specifier
+    # 2.1 is the first SDK that masks unanticipated tool exceptions.
+    assert Version("2.0.0") not in mcp_requirement.specifier
+    assert Version("2.1.0") in mcp_requirement.specifier
     assert Version("3.0.0") not in mcp_requirement.specifier
 
 
@@ -567,6 +569,17 @@ async def test_mcp_client_missing_file_reports_path(tool_name: str, extra_args: 
 
     assert result.is_error is True
     assert "File not found: /tmp/not_real.eml" in result.content[0].text
+
+
+@pytest.mark.anyio
+async def test_mcp_client_expands_home_in_eml_path(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    shutil.copy2(FIXTURES / "plain_text.eml", tmp_path / "plain_text.eml")
+
+    result = await _call_tool("convert_eml", {"eml_path": "~/plain_text.eml"})
+
+    assert result.is_error is False
+    assert result.content[0].text.startswith("---")
 
 
 @pytest.mark.anyio

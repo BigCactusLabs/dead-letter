@@ -88,7 +88,7 @@ def _build_options(local_vars: dict) -> ConvertOptions:
 
 def _check_eml_source(eml_path: str) -> Path:
     """Return the source path, or raise ToolError if it is missing or not .eml."""
-    source = Path(eml_path)
+    source = Path(eml_path).expanduser()
     if not source.exists():
         raise ToolError(f"File not found: {eml_path}")
     if source.resolve().suffix.lower() != ".eml":
