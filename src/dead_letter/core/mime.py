@@ -120,9 +120,8 @@ def _extract_raw_attachments_from_stdlib(raw: bytes) -> list[dict[str, Any]]:
         if not isinstance(payload, bytes):
             payload = b""
 
-        encoded_payload = base64.b64encode(payload).decode("ascii") if payload else ""
-        if not encoded_payload:
-            continue
+        # Keep empty attachments: zero bytes is a valid payload, not absence.
+        encoded_payload = base64.b64encode(payload).decode("ascii")
 
         extracted.append(
             {

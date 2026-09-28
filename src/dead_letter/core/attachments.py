@@ -47,7 +47,9 @@ def collect_inline_cid_data_uris(raw_attachments: list[dict[str, Any]]) -> dict[
     for part in raw_attachments:
         content_id = str(part.get("content-id") or "").strip().strip("<>")
         content_type = str(part.get("mail_content_type") or "").strip().lower()
-        payload = str(part.get("payload") or "").strip()
+        # MIME folds base64 across lines; Markdown destinations cannot contain
+        # that whitespace. Only normalize the URI, never the attachment bytes.
+        payload = "".join(str(part.get("payload") or "").split())
         transfer_encoding = str(part.get("content_transfer_encoding") or "").strip().lower()
 
         if not content_id or not content_type or not payload:
@@ -73,9 +75,12 @@ def collect_attachment_parts(raw_attachments: list[dict[str, Any]]) -> list[Atta
 
     for part in raw_attachments:
         filename = _sanitize_attachment_filename(part.get("filename"))
-        payload = str(part.get("payload") or "")
-        if not filename or not payload:
+        # An explicitly empty payload is a valid zero-byte attachment.
+        # Metadata-only entries still must not invent an attachment file.
+        raw_payload = part.get("payload")
+        if not filename or raw_payload is None:
             continue
+        payload = str(raw_payload)
 
         transfer_encoding = str(part.get("content_transfer_encoding") or "").strip().lower()
         charset = str(part.get("charset") or "utf-8").strip() or "utf-8"
