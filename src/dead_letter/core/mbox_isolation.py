@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import secrets
 import shutil
 import signal
 import stat
@@ -20,7 +21,8 @@ from tempfile import TemporaryDirectory
 from time import monotonic
 from typing import TYPE_CHECKING, Any
 
-from dead_letter._mbox_worker import EXIT_BUDGET_APPLY_FAILED, EXIT_MEMORY_LIMIT
+from dead_letter import _mbox_worker
+from dead_letter._mbox_worker import BUDGET_STATUS_FILE, EXIT_BUDGET_APPLY_FAILED, EXIT_MEMORY_LIMIT
 
 if TYPE_CHECKING:
     from dead_letter.core.mbox import MboxRecord, UnescapeMode
@@ -103,8 +105,36 @@ def validate_budgets(budgets: WorkerBudgets, *, worker_mode: bool) -> None:
             )
 
 
-def _exceeded_limit(returncode: int, budgets: WorkerBudgets) -> str | None:
-    if budgets.memory_limit_mib is not None and returncode == EXIT_MEMORY_LIMIT:
+def _budget_outcome(workspace: Path, returncode: int, nonce: str) -> str | None:
+    """Accept a budget exit status only with a matching control file.
+
+    An ordinary exit (or native ``_exit``) with the same number cannot supply
+    the per-launch nonce, so it remains an abnormal worker exit.
+    """
+    expected = {EXIT_BUDGET_APPLY_FAILED: "apply_failed", EXIT_MEMORY_LIMIT: "memory_limit"}.get(returncode)
+    if expected is None:
+        return None
+    path = workspace / BUDGET_STATUS_FILE
+    try:
+        _regular(path)
+        with path.open("rb") as stream:
+            raw = stream.read(4097)
+        if len(raw) > 4096:
+            return None
+        data = json.loads(raw, object_pairs_hook=_json_object)
+    except (OSError, ValueError, RecursionError):
+        return None
+    if (
+        isinstance(data, dict) and set(data) == {"nonce", "outcome"}
+        and isinstance(data["nonce"], str) and secrets.compare_digest(data["nonce"], nonce)
+        and data["outcome"] == expected
+    ):
+        return expected
+    return None
+
+
+def _exceeded_limit(returncode: int, budgets: WorkerBudgets, outcome: str | None = None) -> str | None:
+    if budgets.memory_limit_mib is not None and outcome == "memory_limit":
         return "memory"
     xcpu, xfsz = getattr(signal, "SIGXCPU", None), getattr(signal, "SIGXFSZ", None)
     if budgets.cpu_seconds is not None and xcpu is not None and returncode == -xcpu:
@@ -128,7 +158,13 @@ def validate_timeout(value: float | None) -> None:
 def _worker_command(request: Path, *budget_args: str) -> list[str]:
     # -I excludes CWD/PYTHONPATH shadowing. The package must be installed in this
     # interpreter (including uv's editable install); do not invoke a shell/uvx.
-    return [sys.executable, "-I", "-m", "dead_letter._mbox_worker", str(request), *budget_args]
+    if not budget_args:
+        return [sys.executable, "-I", "-m", "dead_letter._mbox_worker", str(request)]
+    # Budgeted: run the worker file as a script so importing the dead_letter
+    # package (and its parsers) waits until limits are applied. -I keeps the
+    # script directory off sys.path; -B disables bytecode writes.
+    script = str(Path(_mbox_worker.__file__).resolve())
+    return [sys.executable, "-I", "-B", script, str(request), *budget_args]
 
 
 def _run_worker(request: Path, timeout: float, budget_args: tuple[str, ...] = ()) -> int:
@@ -286,7 +322,8 @@ def convert_record_isolated(
         }, ensure_ascii=True), encoding="utf-8")
         try:
             # Without budgets, launch exactly as before this option existed.
-            budget_args = budgets.worker_args()
+            nonce = secrets.token_hex(16)
+            budget_args = (*budgets.worker_args(), f"nonce={nonce}") if budgets.requested() else ()
             returncode = (_run_worker(request, timeout, budget_args) if budget_args
                           else _run_worker(request, timeout))
         except subprocess.TimeoutExpired:
@@ -294,12 +331,13 @@ def convert_record_isolated(
         # Launch failures propagate as archive errors rather than trying to start
         # an unavailable interpreter once for every remaining message. So does a
         # requested budget the worker could not apply: the guarantee is unmet.
-        if budgets.requested() and returncode == EXIT_BUDGET_APPLY_FAILED:
+        outcome = _budget_outcome(workspace, returncode, nonce) if budget_args else None
+        if outcome == "apply_failed":
             raise MboxBudgetError(
                 "mbox_budget_apply_failed",
                 "a message worker could not apply the requested resource budgets; import aborted",
             )
-        limit = _exceeded_limit(returncode, budgets)
+        limit = _exceeded_limit(returncode, budgets, outcome)
         if limit is not None:
             # Withheld exactly like a timeout: the private workspace, including
             # any partial artifact, is discarded without publication.
