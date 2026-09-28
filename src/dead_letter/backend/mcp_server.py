@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
 import tempfile
 from contextlib import ExitStack, closing
+from importlib.resources import files
 from pathlib import Path
 from time import monotonic
 from typing import Literal
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import Icon
 
+from dead_letter import __version__
 from dead_letter.core import convert, convert_dir
 from dead_letter.core._pipeline import (
     _iter_source_eml_files,
@@ -27,7 +31,23 @@ from dead_letter.core.types import ConvertOptions
 
 logger = logging.getLogger(__name__)
 
-mcp = MCPServer("dead-letter")
+# Embedded as a data: URI so clients can show the icon without a network fetch.
+_ICON_PNG = files("dead_letter.backend").joinpath("assets/mcp-icon.png").read_bytes()
+
+mcp = MCPServer(
+    "dead-letter",
+    title="dead-letter",
+    description="Convert .eml and .mbox email to Markdown with YAML front matter.",
+    website_url="https://github.com/BigCactusLabs/dead-letter",
+    icons=[
+        Icon(
+            src="data:image/png;base64," + base64.b64encode(_ICON_PNG).decode("ascii"),
+            mime_type="image/png",
+            sizes=["64x64"],
+        )
+    ],
+    version=__version__,
+)
 MCP_MAX_DIRECTORY_FILES = 50
 MCP_MAX_MBOX_BYTES = 256 * 1024 * 1024
 MCP_MAX_MBOX_MESSAGES = 1000
@@ -119,7 +139,7 @@ def _raise_on_failure(result: object) -> None:
     raise ToolError(" ".join(parts))
 
 
-@mcp.tool()
+@mcp.tool(title="Convert email")
 def convert_eml(
     eml_path: str,
     output_path: str | None = None,
@@ -165,7 +185,7 @@ def convert_eml(
         return result.output.read_text(encoding="utf-8")
 
 
-@mcp.tool()
+@mcp.tool(title="Convert email to bundle")
 def convert_eml_to_bundle(
     eml_path: str,
     bundle_root: str,
@@ -230,7 +250,7 @@ def convert_eml_to_bundle(
     return json.dumps(response, indent=2)
 
 
-@mcp.tool()
+@mcp.tool(title="Convert email folder")
 def convert_directory(
     directory: str,
     output_directory: str,
@@ -288,7 +308,7 @@ def convert_directory(
     return json.dumps(summary, indent=2)
 
 
-@mcp.tool()
+@mcp.tool(title="Convert MBOX archive")
 def convert_mbox(
     path: str,
     output_directory: str,
@@ -485,7 +505,7 @@ def _run_mcp_mbox(
     return json.dumps(response, indent=2)
 
 
-@mcp.tool()
+@mcp.tool(title="Get conversion diagnostics")
 def get_diagnostics(
     eml_path: str,
     preset: Literal["default", "clean", "verbose", "raw"] = "default",

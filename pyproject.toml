@@ -96,7 +96,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-"dead_letter" = ["frontend/**/*"]
+"dead_letter" = ["frontend/**/*", "backend/assets/*.png"]
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"

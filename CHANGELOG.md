@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The MCP server now reports a title, description, website URL, package
+  version and embedded icon in `serverInfo`, and each tool has a display
+  `title` (for example "Convert email"), so MCP clients can show dead-letter
+  with its logo and readable tool names.
 - Opt-in resource budgets for MBOX message workers: `--mbox-cpu-seconds` and
   `--mbox-max-output-mib` (Linux and macOS) and `--mbox-memory-mib` (Linux),
   with matching `convert_mbox` parameters. Budgets require `--mbox-timeout`;

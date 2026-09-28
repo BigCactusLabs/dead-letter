@@ -878,3 +878,33 @@ def test_get_diagnostics_threads_options_to_core(monkeypatch, tmp_path) -> None:
     assert captured and captured[0].thread_mode is ThreadMode.STRUCTURED
     parsed = json.loads(result_json)
     assert "state" in parsed or "selected_body" in parsed
+
+
+def test_server_identity_metadata():
+    import base64
+
+    from dead_letter import __version__
+    from dead_letter.backend.mcp_server import mcp
+
+    assert mcp.title == "dead-letter"
+    assert mcp.website_url == "https://github.com/BigCactusLabs/dead-letter"
+    assert mcp.version == __version__
+    (icon,) = mcp.icons
+    assert icon.mime_type == "image/png"
+    prefix = "data:image/png;base64,"
+    assert icon.src.startswith(prefix)
+    assert base64.b64decode(icon.src[len(prefix) :]).startswith(b"\x89PNG\r\n\x1a\n")
+
+
+@pytest.mark.anyio
+async def test_tools_have_titles():
+    from dead_letter.backend.mcp_server import mcp
+
+    tools = await mcp.list_tools()
+    assert {tool.name: tool.title for tool in tools} == {
+        "convert_eml": "Convert email",
+        "convert_eml_to_bundle": "Convert email to bundle",
+        "convert_directory": "Convert email folder",
+        "convert_mbox": "Convert MBOX archive",
+        "get_diagnostics": "Get conversion diagnostics",
+    }
