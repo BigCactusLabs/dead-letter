@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timezone
+from email.errors import HeaderParseError
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
 
@@ -12,11 +13,23 @@ def parse_subject(raw_subject: str | None) -> str:
     if not raw_subject:
         return ""
 
+    try:
+        decoded_parts = decode_header(raw_subject)
+    except HeaderParseError:
+        # Preserve malformed encoded words rather than aborting conversion.
+        return raw_subject.strip()
+
     parts: list[str] = []
-    for value, encoding in decode_header(raw_subject):
+    for value, encoding in decoded_parts:
         if isinstance(value, bytes):
             codec = encoding or "utf-8"
-            parts.append(value.decode(codec, errors="replace"))
+            try:
+                decoded = value.decode(codec, errors="replace")
+            except (LookupError, UnicodeError):
+                # Email-supplied charset names can be unknown or name codecs
+                # that do not support text decoding with replacement.
+                decoded = value.decode("utf-8", errors="replace")
+            parts.append(decoded)
         else:
             parts.append(value)
     return "".join(parts).strip()

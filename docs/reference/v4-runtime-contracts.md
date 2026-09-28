@@ -26,6 +26,8 @@ Rules:
 - `path` must have `.eml` suffix.
 - Writes markdown output unless `dry_run=True`.
 - If `output` is omitted, writes next to source using a slugified subject filename. If the subject slugifies to empty (for example a subject in a non-Latin script with no ASCII decomposition), falls back to the slugified source filename stem, and only then to `email`.
+- A `Subject` with an unsupported or non-text charset decodes as UTF-8 with replacement characters; a malformed RFC 2047 encoded word is kept as its original text. Neither aborts conversion.
+- `embed_inline_images` data URIs are single-line: MIME base64 line folding is removed from the URI, not from attachment bytes.
 - If output path collides, appends incrementing suffix (`-2`, `-3`, ...).
 - If `delete_eml=True`, source deletion occurs only after successful write.
 - If source deletion fails after writing markdown, the written markdown file is removed and conversion returns failure.
@@ -56,6 +58,7 @@ Rules:
 - `message.md` is always the bundle markdown filename.
 - Retained extracted attachments and calendar files are written under `attachments/` when present. Inline signature/tracking assets stripped from the rendered output, or inline CID assets no longer referenced by the retained output, are omitted.
 - Attachment filenames are normalized to safe basenames before writing; directory segments from MIME-provided names are stripped.
+- A named attachment with an empty payload is written as a zero-byte file. A metadata-only part with no payload creates no file. A text attachment whose declared charset cannot encode it (unknown, non-text, `idna`, `undefined`) is written as UTF-8.
 - An embedded `message/rfc822` part (e.g. Outlook/Apple Mail "Forward as Attachment") is recorded as an attachment with content type `message/rfc822`; its filename is the part's own filename if present, else the embedded message's slugified `Subject` plus `.eml`, else `forwarded-message.eml`. Parts with `Content-Transfer-Encoding: base64` or `quoted-printable` are decoded first, so the attachment payload is the original embedded-message bytes rather than a double-encoded copy; otherwise the part is re-serialized as-is. That payload is written under `attachments/` like any other attachment. Body text (plain and HTML) is collected only from the top-level entity, so the embedded message never replaces or leaks into the outer body; this also applies to `multipart/digest` containers.
 - When retained attachments are written, markdown front matter includes relative `attachment_files` entries such as `attachments/logo.png`.
 - `source_handling="move"` moves the original `.eml` into the bundle root.
