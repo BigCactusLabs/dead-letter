@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path and at most 20 failure entries, never message content. Compressed archives
   are rejected, the source is never modified, and MCP call cancellation is not
   supported. See the [runtime contract](docs/reference/v4-runtime-contracts.md#mcp-server-dead_letterbackendmcp_server) (#145).
+- Claude plugin: a user-typed `/dead-letter:mbox <path> [output-dir]` command
+  calls `convert_mbox` with an explicit output folder (`outputs/mbox/<run-id>`
+  in Cowork, the given folder or a fresh temp directory in Claude Code), never
+  beside the source. The context skill redirects natural-language MBOX requests
+  to it instead of calling the tool directly; compressed or oversized archives
+  are pointed at the CLI.
 - CLI/Python ZIP and TGZ Takeout ingestion with exact MBOX member selection,
   private staging, byte/member budgets, integrity and source-change checks,
   and archive provenance in Markdown and reports. ZIP requires Python 3.12.3+.

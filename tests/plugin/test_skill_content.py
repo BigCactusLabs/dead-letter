@@ -42,9 +42,15 @@ def test_skill_has_required_frontmatter():
 
 @pytest.mark.parametrize(
     "command",
-    ["/dead-letter:convert", "/dead-letter:summarize", "/dead-letter:triage", "/dead-letter:cabinet"],
+    [
+        "/dead-letter:convert",
+        "/dead-letter:summarize",
+        "/dead-letter:triage",
+        "/dead-letter:cabinet",
+        "/dead-letter:mbox",
+    ],
 )
-def test_skill_lists_all_four_commands(command):
+def test_skill_lists_all_five_commands(command):
     _, body = _read_skill()
     assert command in body, f"SKILL.md must reference {command}"
 
@@ -98,6 +104,9 @@ def test_skill_redirects_side_effecting_asks_to_slash_commands():
     assert "/dead-letter:cabinet" in body, "skill must redirect bundle asks to /dead-letter:cabinet"
     # Must explicitly redirect triage-style asks
     assert "/dead-letter:triage" in body, "skill must redirect folder asks to /dead-letter:triage"
+    # Must explicitly redirect mbox asks
+    assert "/dead-letter:mbox" in body, "skill must redirect mbox asks to /dead-letter:mbox"
+    assert "Do NOT invoke `convert_mbox` directly" in body
     # Must use "do not" language for at least one of the side-effecting cases
     assert "do not invoke" in body_lower or "not invoke" in body_lower or "don't invoke" in body_lower, (
         "skill must use explicit do-not-invoke language for side-effecting MCP tools"

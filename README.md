@@ -43,7 +43,7 @@ Or install with Homebrew or pip below. Agents and MCP clients can use the client
 - **Install validation** — `dead-letter doctor` checks your runtime environment
 - **Conversion report** — opt-in JSON report with per-file diagnostics, including attachment referenced/retained counts for automation and audit
 - **MCP server** — integrate with Claude Desktop, Claude Code, Codex, and other MCP clients
-- **Claude plugin** — marketplace install in Claude Code or Cowork with four slash commands (`/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`)
+- **Claude plugin** — marketplace install in Claude Code or Cowork with five slash commands (`/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`, `/dead-letter:mbox`)
 - **Portable Agent Skill** — teaches skill-aware agents when and how to convert `.eml` files
 - **Python API** — `from dead_letter import convert` and you're off
 
@@ -337,7 +337,7 @@ Merge the entry rather than replacing existing client settings. VS Code and othe
 /plugin install dead-letter
 ```
 
-The plugin launches the MCP server via `uvx` and adds four slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`. Local Claude Code needs `uv` on `PATH`; see [`plugin/`](https://github.com/BigCactusLabs/dead-letter/tree/main/plugin/) for runtime-specific setup and updates. Email content is treated as untrusted data, not instructions: embedded requests for tool use, credentials, or exfiltration are not followed.
+The plugin launches the MCP server via `uvx` and adds five slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`, `/dead-letter:mbox`. Local Claude Code needs `uv` on `PATH`; see [`plugin/`](https://github.com/BigCactusLabs/dead-letter/tree/main/plugin/) for runtime-specific setup and updates. Email content is treated as untrusted data, not instructions: embedded requests for tool use, credentials, or exfiltration are not followed.
 
 The marketplace pins the plugin tag and commit, and its launcher pins an exact published Python package. Claude Code and Cowork keep separate installed copies; update and verify each client. Those pins do not freeze every transitive dependency.
 

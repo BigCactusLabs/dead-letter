@@ -124,7 +124,34 @@ def test_cabinet_command_documents_source_stem_naming():
     assert "outputs" in body_lower  # Cowork default
 
 
-@pytest.mark.parametrize("name", ["convert", "summarize", "triage", "cabinet"])
+def test_mbox_command_uses_convert_mbox_with_controlled_output():
+    fm, body = _read_command("mbox")
+    assert fm["description"]
+    assert "convert_mbox" in body
+    assert "output_directory=" in body, "mbox.md must pass an explicit output_directory"
+    assert "outputs/mbox" in body, "mbox.md must use outputs/mbox/<run-id> in Cowork"
+    assert "mktemp -d -t dead-letter-mbox-" in body, "mbox.md must default to a temp dir in Claude Code"
+    assert "never write next to the source" in body.lower()
+
+
+def test_mbox_command_matches_server_bounds_and_defers_to_cli():
+    _, body = _read_command("mbox")
+    assert "256 MiB" in body and "1000 messages" in body
+    assert "truncated" in body
+    assert "gmail-takeout.md" in body, "mbox.md must point oversized or compressed input at the CLI guide"
+    for option in ("dry_run=true", "bundles=true"):
+        assert option in body
+    # Only parameters that convert_mbox actually accepts.
+    import inspect
+
+    from dead_letter.backend.mcp_server import convert_mbox
+
+    accepted = set(inspect.signature(convert_mbox).parameters)
+    for name in ("path", "output_directory", "preset", "dry_run", "bundles"):
+        assert name in accepted
+
+
+@pytest.mark.parametrize("name", ["convert", "summarize", "triage", "cabinet", "mbox"])
 def test_all_commands_disable_model_invocation(name):
     """Commands must not be model-invocable.
 
@@ -141,7 +168,7 @@ def test_all_commands_disable_model_invocation(name):
     )
 
 
-@pytest.mark.parametrize("name", ["convert", "summarize", "triage", "cabinet"])
+@pytest.mark.parametrize("name", ["convert", "summarize", "triage", "cabinet", "mbox"])
 def test_all_commands_have_argument_hint(name):
     """Each command should declare its argument shape so the UI can render hints."""
     fm, _ = _read_command(name)
@@ -151,7 +178,7 @@ def test_all_commands_have_argument_hint(name):
     )
 
 
-@pytest.mark.parametrize("name", ["convert", "summarize", "triage", "cabinet"])
+@pytest.mark.parametrize("name", ["convert", "summarize", "triage", "cabinet", "mbox"])
 def test_all_commands_treat_email_content_as_untrusted(name):
     _, body = _read_command(name)
     body_lower = body.lower()

@@ -44,14 +44,22 @@ Run this checklist before each plugin release. Most can run in Cowork; some requ
 2. Grant access; type `/dead-letter:triage <that-folder>`.
 3. Expect: refusal message; no batch conversion runs.
 
-### 7. Host-path remediation
+### 7. MBOX conversion
+
+1. Upload a small synthetic flat `.mbox` file with a few messages (for example, build one from fixture `.eml` files with `From ` separator lines).
+2. Type `/dead-letter:mbox <uploaded-filename>`.
+3. Expect: Markdown files and a `.dead-letter-report.json` under `outputs/mbox/<run-id>/`, and a reply with the `processed`, `converted`, `skipped`, and `failed` counts. Nothing is written next to the upload.
+4. Type `/dead-letter:mbox <a .zip file>`.
+5. Expect: the MCP error about flat `.mbox` files and a pointer to the dead-letter CLI; no workaround is attempted.
+
+### 8. Host-path remediation
 
 1. Without any granted directory, type `/dead-letter:convert /Users/<you>/Desktop/some.eml`.
 2. Expect: an error result from the MCP server whose text contains `File not found: <path>`, followed by Claude suggesting "drag the file into the chat" (per the SKILL.md path-resolution rule).
 
 ## Claude Code session checks
 
-### 8. Diagnostics tool
+### 9. Diagnostics tool
 
 1. In a Claude Code session, ask Claude to call the `get_diagnostics` MCP tool on
    `tests/core/fixtures/<some-fixture>.eml`.
@@ -61,13 +69,13 @@ Run this checklist before each plugin release. Most can run in Cowork; some requ
    only when the fixture actually had images stripped or attachments retained,
    so their absence is not a failure.
 
-### 9. Convert (filesystem path)
+### 10. Convert (filesystem path)
 
 1. In a Claude Code session, install the plugin.
 2. Type `/dead-letter:convert tests/core/fixtures/<some-fixture>.eml`.
 3. Expect: rendered Markdown.
 
-### 10. uv-missing error (optional)
+### 11. uv-missing error (optional)
 
 1. On a machine without `uv`, install the plugin and try any command.
 2. Expect: a clear error message about the missing `uv` binary, with a pointer to https://docs.astral.sh/uv/getting-started/installation/.
