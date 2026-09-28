@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Experimental BYOK directory analysis with required `--output-dir`, bounded
+  `--jobs` (default 4, range 1–16), mirrored no-clobber sidecars and keyless reuse.
+  Independent per-message execution preserves completed results and safe
+  interrupted attempts, stops on provider failure thresholds, and reports a JSON
+  summary. Python consumers can use async `analyze_directory` (#165).
+
 ### Fixed
 
 - Gmail forwarded messages are no longer dropped as quoted reply history.

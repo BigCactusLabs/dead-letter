@@ -5,6 +5,7 @@ Implementation: [PR #117](https://github.com/BigCactusLabs/dead-letter/pull/117)
 merged to `main` on September 21, 2026 and first released in 0.4.5.
 
 **Status: experimental single-message analysis, released in 0.4.5.**
+Directory execution (#165) is an unreleased source capability.
 Local EML preparation now connects to an explicitly enabled TypeSafe SDK adapter.
 CLI and async Python consumers receive versioned JSON results. Neither candidate
 profile has empirical email-triage quality results. Ordinary conversion, bundles,
@@ -61,8 +62,9 @@ uv run --locked --extra typesafe dead-letter analyze message.eml \
 Selecting `--provider typesafe` without `--dry-run` is the CLI opt-in. Before the
 request, a JSON disclosure on stderr identifies the effective destination host,
 scope and experimental profile. If the disclosure sink fails, nothing is sent.
-Results are JSON on stdout. Without `--output`, no file is written. Source email
-and front matter are never changed. Directory input is not implemented yet.
+Single-message results are JSON on stdout. Without `--output`, single-message
+execution writes no file. Directory execution requires `--output-dir`, as described
+below. Source email and front matter are never changed.
 Shell redirection is not an atomic sidecar/reuse contract.
 
 Results can still be sensitive: they contain local source basenames, configured
@@ -196,6 +198,116 @@ a complete result that a later run can validate. Files are created with mode
 0600 and new attempt directories with mode 0700, subject to platform permission
 semantics.
 
+## Directory execution (#165)
+
+This capability is **unreleased**. From this checkout, analyze a directory with
+one independent inference per message:
+
+```bash
+uv run --locked --extra typesafe dead-letter analyze ./mail \
+  --provider typesafe --output-dir ./analysis --jobs 4
+```
+
+`--output-dir` is required for a directory (`analysis_output_dir_required`, exit
+2). Directory input rejects `--output`, `--dry-run` and `--show-state`; file input
+rejects `--output-dir`. `--jobs` defaults to 4 and accepts integers 1–16
+(`invalid_analysis_jobs`, exit 2). The existing profile, identity, context, model,
+alias-age, timeout, budget and retry options apply separately to each message.
+Per-request disclosures still go to stderr. No messages are merged into one state.
+
+Discovery uses the exact `convert_dir` helper: recursive `Path.rglob("*")`,
+case-insensitive `.eml` suffix matching, regular-file checks, exclusion of resolved
+paths outside the source root, deduplication by resolved path and final path
+sorting. File symlinks inside the root can be selected; symlink directories are
+not traversed by this glob. The first encountered alias supplies the retained
+path, before sorting. Output must be outside the resolved source tree; a nested
+output (including a root symlink alias) returns `analysis_output_inside_source`,
+exit 2. This avoids rediscovering output content on later runs.
+
+The output tree mirrors source-relative paths; parent directories are created:
+
+```text
+mail/a/b/x.eml  -> analysis/a/b/x.analysis.json
+                  analysis/a/b/x.analysis.json.attempts/<unique-id>.json
+```
+
+All targets are computed before scheduling. Sources with colliding target names,
+including case-insensitive aliases and resolved parent aliases, each fail with
+`analysis_output_collision` and make no request. Existing targets use the same
+strict reuse/refusal rules as single-message sidecars. Corrupt, mismatched or
+stale-alias results are never overwritten. Other items can continue.
+
+A fixed pool of `jobs` async workers consumes a bounded queue. Preflight runs once,
+lazily before the first fresh item: authorization is checked before discovery,
+and key/SDK checks precede reading a fresh source. A run that only reuses valid
+sidecars needs no key or SDK import. Failed preflight stops scheduling with
+`preflight_failed`; the failing item reports the safe preflight error code.
+There is no directory retry loop. The SDK remains the only retry owner. In
+particular, a server `Retry-After` at or above the call budget surfaces as
+`provider_rate_limited` with `retry_count: 0`.
+
+| Trigger | New work | In-flight work | `stop_reason` |
+| --- | --- | --- | --- |
+| Authentication or permission failure | Stop | Cancel | `authentication_failed` |
+| First three provider-attempted completions all have validation/bad-request errors | Stop | Finish | `request_rejected` |
+| Three consecutive rate-limit, unavailable, timeout, budget or connection failures | Stop | Finish | `provider_throttled` |
+| External cancellation / Ctrl-C | Stop | Cancel | `interrupted` |
+| Local input/output error, collision or no-authored-text skip | Continue | Continue | None |
+
+A provider success or other provider outcome resets the throttle streak. Local
+errors, skips and offline reuse do not affect either provider-completion counter.
+Stop thresholds follow completion order, so concurrent calls can already be in
+flight when a threshold is reached. Queued items not started get no output or
+attempt record and count as `not_started`.
+
+Completed sidecars remain reusable after failure or interruption. Re-run the
+same command to resume: sidecars decide reuse, never a summary or attempt file.
+A cancelled item with at least one HTTP attempt records `execution_status:
+interrupted`, `error_code: analysis_interrupted` and `billing_status: unknown`
+under its attempts directory. A cancelled item with no HTTP attempt writes no
+record. Client cleanup and owned temporary-file cleanup precede propagation of
+cancellation. A persistence failure is reported safely as
+`analysis_output_write_failed`; it cannot make cancellation succeed or prove a
+request was unbilled. Hard kills and storage failures retain the filesystem
+limitations described for single-message sidecars.
+
+Stdout is a JSON summary; no summary file is written. Python returns the same
+`dict` from exported async `analyze_directory(source_dir, output_dir, *, provider,
+allow_remote=False, jobs=4, ...)`. Its remaining options match
+`analyze_to_sidecar`. `allow_remote` must be exactly `True`, including for offline
+resume, or `remote_analysis_not_authorized` is raised before source reads.
+Cancellation raises exported `DirectoryAnalysisInterrupted`, an
+`asyncio.CancelledError` subclass with a `.summary` attribute; callers can inspect
+that partial summary while preserving cancellation.
+
+Summary schema version 1:
+
+- `schema_version: 1`, `artifact_type: directory_analysis`.
+- `status`: `completed`, `stopped` or `interrupted`; `stop_reason`: the code above
+  or null. A completed run can contain per-item failures.
+- `counts`: `discovered`, `succeeded`, `reused`, `skipped`, `failed`, `not_started`.
+  Each discovered item occupies exactly one outcome count; interrupted started
+  items count as failed.
+- `observed_models`: returned model IDs and counts from successful results,
+  including reused results. Missing model IDs are omitted, never replaced by the
+  requested alias.
+- `usage`: sums of only the supplied successful-response usage fields, including
+  reused results. Missing fields are not filled with zero. These are result
+  totals, not new-run billing totals or estimates of SDK retry usage.
+- `items_with_unknown_usage`: successful/reused items with no usage fields, plus
+  attempted failed/interrupted items without a successful result. Never-started
+  and local-only items do not enter this count.
+- `billing_status`: `unknown` if this run attempted any request, otherwise
+  `not_attempted`; offline reuse does not count an old request as a new one.
+- `items`: source-sorted entries with `source` and `output` paths relative to the
+  supplied roots, `outcome` and `error_code` (null when absent). `output` is the
+  intended success path, even for failed attempts. Paths can be sensitive.
+
+Exit 0 means every discovered item succeeded, reused or skipped (also an empty
+run). Exit 1 means any item failed or scheduling stopped early. Exit 130 prints
+an interrupted partial summary. Argument errors return exit 2 with safe stderr
+JSON. A second forced interrupt or a hard kill cannot guarantee a summary.
+
 ## Python consumer recipes
 
 Preparation remains entirely local and takes an explicit endpoint parameter;
@@ -321,7 +433,8 @@ identity scope, message-time policy, coverage, timestamps, attempts, usage and
 native answers. Missing returned model/request ID/token data remain unknown.
 Source hash alone is never presented as sufficient input identity.
 
-`execution_status` is `succeeded`, `failed` or `skipped`. A failed call has no
+`execution_status` is `succeeded`, `failed` or `skipped`; persisted cancelled
+attempts use `interrupted`. A failed call has no
 assessment or filled-in answers. A message with no authored evidence is skipped
 locally as `insufficient_context`, without asking about quoted text as though it
 were newly authored. Successful candidate results are `review_suggested` under
@@ -375,8 +488,7 @@ JEV inference, accuracy, calibration or latency benchmarks. No real key or priva
 email was submitted during this implementation. Human-review/expand the seed and
 compare both profiles on a family-separated held-out set before freezing semantics.
 
-Still pending: directory output, bounded concurrency and batch partial-success
-persistence (#165), plus reviewed held-out evaluation (#166). See the
+Still pending: reviewed held-out evaluation (#166). See the
 [implementation checkpoint](../project/2026-09-18-issue-110-analysis-foundation.md).
 
 ## First-party implementation references
