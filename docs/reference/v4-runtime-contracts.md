@@ -28,6 +28,8 @@ Rules:
 - If `output` is omitted, writes next to source using a slugified subject filename. If the subject slugifies to empty (for example a subject in a non-Latin script with no ASCII decomposition), falls back to the slugified source filename stem, and only then to `email`.
 - A `Subject` with an unsupported or non-text charset decodes as UTF-8 with replacement characters; a malformed RFC 2047 encoded word is kept as its original text. Neither aborts conversion.
 - `embed_inline_images` data URIs are single-line: MIME base64 line folding is removed from the URI, not from attachment bytes.
+- `output` is treated as the Markdown filename when it ends in `.md`, unless it ends with a path separator or names an existing directory; otherwise it is a directory and the slugified filename is written inside it.
+- With `strip_signature_images` or `strip_tracking_pixels`, a stripped inline asset is omitted from rendered Markdown and attachment output only when no remaining body image references its Content-ID. With `embed_inline_images`, rendered data URIs count as references, so embedded images keep their attachment files and metadata.
 - If output path collides, appends incrementing suffix (`-2`, `-3`, ...).
 - If `delete_eml=True`, source deletion occurs only after successful write.
 - If source deletion fails after writing markdown, the written markdown file is removed and conversion returns failure.
@@ -46,6 +48,7 @@ Rules:
 - Deduplicates in-tree alias paths that resolve to the same source file.
 - Returns one `ConvertResult` per file.
 - In directory mode with `output` set, source-relative subdirectories are mirrored under output root.
+- `output` is always a directory, even when a component ends in `.md`; output subdirectories are created only when a file is written, so `dry_run=True` creates nothing.
 
 ### `convert_to_bundle(path, *, bundle_root, options=None, source_handling="move") -> BundleResult`
 
