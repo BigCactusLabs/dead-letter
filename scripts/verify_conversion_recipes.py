@@ -16,7 +16,7 @@ import subprocess
 import sys
 import tempfile
 
-from smoke_mcpb import EXPECTED_TOOLS, SmokeFailure, StdioClient, result_text
+from smoke_mcpb import PUBLISHED_TOOLS, SmokeFailure, StdioClient, result_text
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -227,7 +227,7 @@ def check(python: Path) -> dict[str, object]:
             require(bool(initialized.get("serverInfo")), "MCP initialize failed")
             mcp.notify("notifications/initialized")
             names = {item["name"] for item in mcp.request("tools/list")["tools"]}
-            require(names == EXPECTED_TOOLS, f"unexpected MCP tools: {sorted(names)}")
+            require(names == PUBLISHED_TOOLS, f"unexpected MCP tools: {sorted(names)}")
 
             def call(name: str, arguments: dict[str, str]) -> str:
                 result = mcp.request(

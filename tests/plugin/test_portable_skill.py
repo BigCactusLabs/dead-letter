@@ -80,7 +80,7 @@ def test_skill_documents_the_uvx_invocation():
 
 @pytest.mark.parametrize(
     "tool",
-    ["convert_eml", "convert_directory", "convert_eml_to_bundle", "get_diagnostics"],
+    ["convert_eml", "convert_directory", "convert_eml_to_bundle", "get_diagnostics", "convert_mbox"],
 )
 def test_skill_names_every_mcp_tool(tool):
     _, body = _read_skill()

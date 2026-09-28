@@ -41,6 +41,10 @@
     {
       "name": "get_diagnostics",
       "description": "Report quality and structure JSON for one .eml file without writing anything permanent."
+    },
+    {
+      "name": "convert_mbox",
+      "description": "Convert one flat .mbox archive (at most 256 MiB, first 1000 messages) to Markdown files plus a JSON report, returning a bounded summary."
     }
   ],
   "keywords": ["email", "eml", "markdown", "mcp"],
