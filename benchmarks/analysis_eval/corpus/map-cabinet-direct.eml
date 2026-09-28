@@ -1,0 +1,25 @@
+From: Oren Vale <oren@example.test>
+To: Mira Fen <mira@example.test>
+Cc: Niko Reed <niko@example.test>
+Date: Sat, 22 Jun 2002 10:00:00 +0000
+Message-ID: <map-cabinet-direct@example.test>
+Subject: Map cabinet
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="analysis-eval-map-cabinet-direct-0"
+
+--analysis-eval-map-cabinet-direct-0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+The cabinet delivery is complete. I will file the map index this afternoon.
+
+--analysis-eval-map-cabinet-direct-0
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<html><body><pre>The cabinet delivery is complete. I will file the map index =
+this afternoon.</pre></body></html>
+
+--analysis-eval-map-cabinet-direct-0--
