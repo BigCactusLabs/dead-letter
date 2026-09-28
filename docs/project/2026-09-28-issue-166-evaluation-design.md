@@ -1,8 +1,8 @@
 # Issue #166: synthetic profile evaluation design
 
-Design date: September 28, 2026. **Not yet run.** Corpus milestone complete;
-baseline, scorer and metric regression tests are pending. This document freezes
-the intended protocol before inference. It contains no model-quality results.
+Design date: September 28, 2026. **Live evaluation not yet run.** Offline corpus,
+baseline, identity staging, scorer and metric regression tests are implemented.
+This document freezes the intended protocol before inference. It contains no model-quality results.
 The [corpus guide](../../benchmarks/analysis_eval/README.md) records current commands.
 Directory execution belongs to #165; this work does not implement it.
 
@@ -72,13 +72,19 @@ current author's text. Tests verify substantial context survives normalization
 and that both profiles remain within request byte limits. Use the default three
 context segments, not a hidden special long-thread configuration.
 
-## Frozen scoring policy for the continuation
+## Frozen scoring policy
 
 The scorer consumes successful sidecar envelopes only (`execution_status` is
 `succeeded`), but counts every missing, skipped, failed and malformed item. Match
 by preserved corpus path/basename and reject duplicate case matches. Validate the
 profile identity; do not silently pool runs. Capture usage and attempt durations
 only when present; missing usage remains unknown, never zero inferred billing.
+Use `attempts[].duration_ms` and its per-record sum; these exclude retry sleeps and
+local processing. Input tokens come from response `usage.input_tokens`, which does
+not establish total billed usage. Preserve requested/returned model, profile hash,
+SDK and adapter provenance. Sidecar state hashes must match the recorded aliases.
+Identity staging copies each alias set into a deterministic directory; the scorer
+reads the resulting output tree by globally unique case basename.
 
 For each binary question fit a Noul threshold using **dev clean determinate**
 items only. Candidate thresholds are 0.10 through 0.90 in steps of 0.05. Minimize
@@ -91,7 +97,8 @@ Map reply/action booleans to `none`, `reply_only`, `non_reply_action_only`, `bot
 Choice marginal probabilities are P(reply_only)+P(both) and
 P(non_reply_action_only)+P(both), without renormalizing away insufficient-context
 mass. Derive supported Choice keys from the runtime profile and fail on drift.
-Compute argmax from distributions and count disagreement with returned `choice`.
+Compute argmax from distributions (alphabetical tie-break) and count disagreement
+with returned `choice`, including ties.
 The runtime rejects substantive mismatches; offline foreign/fake results still
 need a diagnostic. Do not interpret the native `confidence` statistic as P(correct).
 
@@ -106,6 +113,8 @@ Report binary Brier for Nouls and marginalized Choice; unnormalized multiclass
 Brier for Choice/urgency; top-label calibration based on maximum probability;
 ten equal-width ECE bins on [0,1], with the last bin including 1. SmoothECE is
 optional through a lazy `relplot` import, reported as `not computed` when absent.
+The optional package supplies the scalar only; SmoothECE plots/confidence bands
+are outside this phase-1 harness. Paired intervals below use the stdlib bootstrap.
 No new locked dependency. The optional invocation is `uv run --with relplot ...`.
 
 Pair the two profiles on intersecting successful determinate items. Report
@@ -116,11 +125,22 @@ Degenerate or empty samples must report their limits rather than fabricate bound
 
 Risk/coverage ranks by decision probability, not vendor confidence, with case ID
 as a deterministic tie-break. Report all curve points, AURC, AUGRC and selective
-error at 10% and 20% review budgets, counting explicit abstentions as review.
-For Nouls select an abstention band on dev clean cases: half-width candidates
-0, .05, .10, .15, .20, .25 around each fitted threshold, clipped to [0,1]. Choose
+error at 10% and 20% review budgets, counting explicit abstentions as review. Use
+right-endpoint discrete sums divided by the determinate successful sample count,
+over attainable coverage only; report
+maximum coverage alongside areas. No acceptance means no area estimate. Accept
+`floor(n * (1 - budget))` items at each budget, capped by non-abstentions, and report
+actual review fraction and whether mandatory abstentions exceed the budget.
+Choice ranking uses the returned category probability; Noul ranking uses the
+minimum probability of its two binary decisions, without a joint distribution.
+Baseline ties use case ID. Missing/failed/unknown-label cases have separate counts.
+For Nouls select a shared reply/action abstention half-width on dev clean cases:
+candidates 0, .05, .10, .15, .20, .25 around each fitted threshold. Evaluate
+`abs(p - threshold) < half_width` within the probability domain [0,1]. Choose
 maximum coverage meeting <=10% observed selective error; if none qualifies,
-report no qualifying band. Do not describe this small-dev policy as calibrated.
+report no qualifying band and route all items to review. The band uses a strict
+interior; width zero abstains on none. Forced four-way confusion remains separate
+from review policy. Do not describe this small-dev policy as calibrated.
 
 Report insufficient-context precision against the ambiguity annotation and
 separately against the missing-context arm. Report CC'd-but-not-asked false
