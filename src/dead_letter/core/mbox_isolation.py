@@ -126,7 +126,9 @@ def _budget_outcome(workspace: Path, returncode: int, nonce: str) -> str | None:
         return None
     if (
         isinstance(data, dict) and set(data) == {"nonce", "outcome"}
-        and isinstance(data["nonce"], str) and secrets.compare_digest(data["nonce"], nonce)
+        and isinstance(data["nonce"], str) and data["nonce"].isascii()
+        # compare_digest raises TypeError on non-ASCII str; a malformed file is a crash.
+        and secrets.compare_digest(data["nonce"], nonce)
         and data["outcome"] == expected
     ):
         return expected

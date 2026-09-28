@@ -259,14 +259,15 @@ nonce = [a for a in sys.argv[3:] if a.startswith("nonce=")][0][6:]
 body = {"right": {"nonce": nonce, "outcome": "apply_failed"},
         "wrong-nonce": {"nonce": "f" * 32, "outcome": "apply_failed"},
         "wrong-outcome": {"nonce": nonce, "outcome": "memory_limit"},
-        "extra-field": {"nonce": nonce, "outcome": "apply_failed", "x": 1}}.get(mode)
+        "extra-field": {"nonce": nonce, "outcome": "apply_failed", "x": 1},
+        "non-ascii-nonce": {"nonce": "\u00e9" * 32, "outcome": "apply_failed"}}.get(mode)
 if body is not None:
     (request.parent / "budget-status.json").write_text(json.dumps(body), encoding="utf-8")
 raise SystemExit(3)
 """
 
 
-@pytest.mark.parametrize("mode", ["right", "wrong-nonce", "wrong-outcome", "extra-field", "missing"])
+@pytest.mark.parametrize("mode", ["right", "wrong-nonce", "wrong-outcome", "extra-field", "non-ascii-nonce", "missing"])
 def test_budget_exit_status_needs_matching_nonce_control_file(tmp_path, monkeypatch, mode):
     monkeypatch.setattr(isolation, "_worker_command", lambda request, *args: [
         sys.executable, "-I", "-c", _CONTROL_WORKER, str(request), mode, *args])
