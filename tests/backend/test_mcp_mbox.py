@@ -297,3 +297,81 @@ async def test_real_stdio_round_trip(tmp_path):
     assert rejected.is_error is True
     assert "only a flat .mbox file" in rejected.content[0].text
     assert digest(source) == before
+
+
+def test_append_failure_publishes_partial_failed_report(tmp_path, monkeypatch):
+    real = mcp_server.StreamingReport
+
+    class FullSpool(real):
+        def append(self, entry):
+            if self.total == 2:
+                raise OSError("No space left on device")
+            super().append(entry)
+
+    monkeypatch.setattr(mcp_server, "StreamingReport", FullSpool)
+    source = tmp_path / "mail.mbox"
+    write_mbox(source, 4)
+    out = tmp_path / "out"
+
+    with pytest.raises(ToolError, match="failed after 3 messages: No space left.*partial report"):
+        convert_mbox(path=str(source), output_directory=str(out))
+
+    report = json.loads((out / ".dead-letter-report.json").read_text())
+    assert report["job"]["status"] == "failed"
+    assert report["summary"]["total"] == 2
+    assert [row["mbox"]["index"] for row in report["results"]] == [1, 2]
+    # Message 3 was converted before its append failed; message 4 never was.
+    assert len(list(out.glob("*.md"))) == 3
+
+
+def test_importer_error_mid_stream_publishes_partial_failed_report(tmp_path, monkeypatch):
+    real = mcp_server._convert_mbox_records
+
+    def failing(source, **kwargs):
+        results = real(source, **kwargs)
+        try:
+            for count, item in enumerate(results, 1):
+                yield item
+                if count == 2:
+                    raise OSError("disk went away")
+        finally:
+            results.close()
+
+    monkeypatch.setattr(mcp_server, "_convert_mbox_records", failing)
+    source = tmp_path / "mail.mbox"
+    write_mbox(source, 4)
+    out = tmp_path / "out"
+
+    with pytest.raises(ToolError, match="failed after 2 messages: disk went away"):
+        convert_mbox(path=str(source), output_directory=str(out))
+
+    report = json.loads((out / ".dead-letter-report.json").read_text())
+    assert report["job"]["status"] == "failed"
+    assert report["summary"] == {"total": 2, "written": 2, "skipped": 0, "errors": 0}
+
+
+def test_report_placeholder_is_removed_when_close_fails(tmp_path, monkeypatch):
+    real = mcp_server._open_collision_safe_output
+
+    class BadHandle:
+        def __init__(self, handle):
+            self._handle = handle
+
+        def close(self):
+            self._handle.close()
+            raise OSError("close failed")
+
+    def reserve(target):
+        handle, path = real(target)
+        return BadHandle(handle), path
+
+    monkeypatch.setattr(mcp_server, "_open_collision_safe_output", reserve)
+    source = tmp_path / "mail.mbox"
+    write_mbox(source, 1)
+    out = tmp_path / "out"
+
+    with pytest.raises(ToolError, match="close failed"):
+        convert_mbox(path=str(source), output_directory=str(out))
+
+    assert not list(out.glob(".dead-letter-report*"))
+    assert len(list(out.glob("*.md"))) == 1

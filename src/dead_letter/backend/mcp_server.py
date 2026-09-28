@@ -326,6 +326,17 @@ def convert_mbox(
         raise ToolError(f"MBOX conversion failed: {exc}") from exc
 
 
+def _publish_mcp_report(report: StreamingReport, root: Path, **kwargs: object) -> Path:
+    """Publish under a reserved collision-safe name; never leave the placeholder."""
+    handle, reserved = _open_collision_safe_output(root / ".dead-letter-report.json")
+    try:
+        handle.close()
+        return report.finish(root, filename=reserved.name, job_id="mcp", **kwargs)  # type: ignore[arg-type]
+    except BaseException:
+        reserved.unlink(missing_ok=True)
+        raise
+
+
 def _run_mcp_mbox(
     source: Path, size: int, root: Path, options: ConvertOptions, *, bundles: bool,
 ) -> str:
@@ -335,63 +346,75 @@ def _run_mcp_mbox(
     truncated = fatal = False
     failures: list[dict[str, object]] = []
     report_path: Path | None = None
+    error: Exception | None = None
     with ExitStack() as stack:
         report = None if options.dry_run else stack.enter_context(StreamingReport())
-        results = stack.enter_context(closing(_convert_mbox_records(
-            source, output=root, options=options, limits=limits, bundles=bundles,
-        )))
-        for item in results:
-            processed += 1
-            fatal = fatal or item.mbox is None
-            entry: dict[str, object] = {"source": item.source, "output": None, "success": item.success}
-            if item.output is not None:
-                entry["output"] = item.output.relative_to(root).as_posix()
-            if item.mbox is not None:
-                entry["mbox"] = item.mbox
-            if item.diagnostics is not None:
-                entry["diagnostics"] = item.diagnostics
-            if item.error is not None:
-                entry["error"] = item.error
-            if not item.success:
-                failed += 1
-                if len(failures) < MCP_MAX_MBOX_FAILURES_RETURNED:
-                    error = item.error or {}
-                    failures.append({
-                        "index": item.mbox["index"] if item.mbox is not None else None,
-                        "code": error.get("code"),
-                        "message": error.get("message"),
-                    })
-            elif item.output is None:
-                skipped += 1
-            else:
-                converted += 1
-            if report is not None:
-                report.append(entry)
-            if processed >= MCP_MAX_MBOX_MESSAGES:
-                # Stop before framing another record. The archive holds more
-                # messages only if this record ended before EOF.
-                end = item.mbox["end_offset"] if item.mbox is not None else size
-                truncated = int(end) < size
-                break
-        if report is not None:
-            handle, reserved = _open_collision_safe_output(root / ".dead-letter-report.json")
-            handle.close()
+        try:
+            results = stack.enter_context(closing(_convert_mbox_records(
+                source, output=root, options=options, limits=limits, bundles=bundles,
+            )))
+            for item in results:
+                processed += 1
+                fatal = fatal or item.mbox is None
+                entry: dict[str, object] = {"source": item.source, "output": None, "success": item.success}
+                if item.output is not None:
+                    entry["output"] = item.output.relative_to(root).as_posix()
+                if item.mbox is not None:
+                    entry["mbox"] = item.mbox
+                if item.diagnostics is not None:
+                    entry["diagnostics"] = item.diagnostics
+                if item.error is not None:
+                    entry["error"] = item.error
+                if not item.success:
+                    failed += 1
+                    if len(failures) < MCP_MAX_MBOX_FAILURES_RETURNED:
+                        error_info = item.error or {}
+                        failures.append({
+                            "index": item.mbox["index"] if item.mbox is not None else None,
+                            "code": error_info.get("code"),
+                            "message": error_info.get("message"),
+                        })
+                elif item.output is None:
+                    skipped += 1
+                else:
+                    converted += 1
+                if report is not None:
+                    report.append(entry)
+                if processed >= MCP_MAX_MBOX_MESSAGES:
+                    # Stop before framing another record. The archive holds more
+                    # messages only if this record ended before EOF.
+                    end = item.mbox["end_offset"] if item.mbox is not None else size
+                    truncated = int(end) < size
+                    break
+        except Exception as exc:
+            # Like the CLI's interrupted path: outputs already written still get
+            # a published report (status "failed") before the error surfaces.
+            error = exc
+        if report is not None and (error is None or processed):
             try:
-                report_path = report.finish(
-                    root, options=options, input_path=str(source),
+                report_path = _publish_mcp_report(
+                    report, root, options=options, input_path=str(source),
                     duration_ms=int((monotonic() - started) * 1000),
-                    status="failed" if fatal else None,
+                    status="failed" if fatal or error is not None else None,
                     import_options={"unescape": "preserve", "bundles": bundles,
                                     "max_message_bytes": limits.max_message_bytes,
                                     "max_line_bytes": limits.max_line_bytes,
                                     "timeout_seconds": None,
                                     "max_messages": MCP_MAX_MBOX_MESSAGES,
                                     "truncated": truncated},
-                    filename=reserved.name, job_id="mcp",
                 )
-            except BaseException:
-                reserved.unlink(missing_ok=True)
-                raise
+            except Exception as report_exc:
+                if error is None:
+                    raise
+                raise ToolError(
+                    f"MBOX conversion failed after {processed} messages: {error}; "
+                    f"the report could not be written: {report_exc}"
+                ) from error
+    if error is not None:
+        if not processed:
+            raise ToolError(f"MBOX conversion failed: {error}") from error
+        partial = f"; partial report: {report_path}" if report_path is not None else ""
+        raise ToolError(f"MBOX conversion failed after {processed} messages: {error}{partial}") from error
 
     response: dict[str, object] = {
         "output_directory": str(root),

@@ -881,7 +881,13 @@ tool convert_mbox: `:
 - `MCP MBOX conversion supports archives up to 256 MiB; found <n> bytes. Use the dead-letter CLI for larger archives.`
 - `MBOX conversion failed: <reason>` — core output validation (for example,
   `MBOX output must be a directory distinct from the source`) or a filesystem
-  error
+  error before any message was processed
+- `MBOX conversion failed after <n> messages: <reason>; partial report: <path>`
+  — an error after conversion started (for example, a full disk while
+  spooling the report). Outputs already written stay in place and the report
+  is still published with `job.status` `"failed"`; it lists the entries
+  committed before the error. If the report itself cannot be written, the
+  message ends with `the report could not be written: <reason>` instead.
 
 Per-message failures are not tool errors; they appear in `failures` and the
 report with the importer's error codes (for example `mbox_empty_message`).
