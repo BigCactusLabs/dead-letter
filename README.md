@@ -417,7 +417,9 @@ CI also validates plugin/skill schemas, frontend syntax, maintained Markdown lin
 
 ## ⚠️ Known Limitations
 
-- `.eml` input only; MBOX/Gmail Takeout containers, PST, and MSG are not shipped input formats. No live-mailbox connection.
+- CLI/Python accept `.eml` and flat `.mbox` exports. ZIP/TGZ Takeout support is
+  unreleased; see the [Takeout guide](docs/reference/gmail-takeout.md). MCP/web
+  remain EML-only. PST, MSG and live-mailbox connections are unsupported.
 - Local-only, single-user, single-machine; no remote server or authentication service. An MCP host may send results to its model provider.
 - In-memory job registry: state resets on restart. Retained binary attachments need a separate parser for text indexing.
 

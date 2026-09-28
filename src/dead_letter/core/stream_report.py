@@ -75,6 +75,7 @@ class StreamingReport:
         import_options: dict[str, Any] | None = None,
         filename: str = ".dead-letter-report.json",
         job_id: str = "cli",
+        archive_summary: dict[str, Any] | None = None,
     ) -> Path:
         # Ctrl-C may have stopped an append halfway through a JSON token/comma.
         # Publish the committed prefix, never arbitrary bytes beyond it.
@@ -95,6 +96,8 @@ class StreamingReport:
         }
         if import_options is not None:
             report["mbox_options"] = _sanitize_value(import_options)
+        if archive_summary is not None:
+            report["archive"] = _sanitize_value(archive_summary)
         del report["results"]
         directory.mkdir(parents=True, exist_ok=True)
         target = directory / filename

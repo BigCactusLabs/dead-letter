@@ -163,7 +163,7 @@ def run(request_path: Path, budgets: dict[str, int] | None = None,
         raise RuntimeError("A memory budget requires a MemoryError watch")
     result = _convert_record(
         record, Path(request["archive_name"]), request_path.parent / "artifacts", options,
-        bundles=request["bundles"], unescape=request["unescape"],
+        bundles=request["bundles"], unescape=request["unescape"], archive=request.get("archive"),
         # Under a memory budget an allocation failure is a resource-limit
         # outcome for the parent to report, not an ordinary conversion error.
         reraise=(MemoryError,) if memory_budget else (),

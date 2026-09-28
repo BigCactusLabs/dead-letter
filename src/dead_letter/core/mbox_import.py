@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from collections.abc import Iterator
 from contextlib import closing
@@ -17,7 +18,7 @@ from dead_letter.core._pipeline import (
     _write_attachment_parts,
 )
 from dead_letter.core.mbox import MboxFormatError, MboxLimits, MboxRecord, UnescapeMode, iter_mbox
-from dead_letter.core.mbox_isolation import MboxBudgetError
+from dead_letter.core.mbox_isolation import MboxBudgetError, WorkerBudgets
 from dead_letter.core.render import serialize_markdown
 from dead_letter.core.types import ConvertOptions
 
@@ -29,7 +30,7 @@ class MboxConversion:
     source: str
     output: Path | None
     success: bool
-    mbox: dict[str, str | int] | None = None
+    mbox: dict[str, Any] | None = None
     diagnostics: dict[str, Any] | None = None
     error: dict[str, str] | None = None
 
@@ -42,10 +43,14 @@ def _convert_record(
     *,
     bundles: bool,
     unescape: UnescapeMode,
+    archive: dict[str, Any] | None = None,
     reraise: tuple[type[BaseException], ...] = (),
 ) -> MboxConversion:
     locator = f"{source.name}#message-{record.index:08d}"
     provenance = {**record.provenance(source), "unescape": unescape}
+    if archive is not None:
+        provenance["archive"] = archive["container_basename"]
+        provenance["container"] = dict(archive)
     if record.path is None:
         return MboxConversion(
             locator, None, False, provenance,
@@ -137,17 +142,46 @@ def convert_mbox(
     platform cannot enforce raises ``MboxBudgetError`` before any conversion.
     They are resource limits, not filesystem or network isolation.
     """
+    yield from _convert_mbox(
+        path, output=output, options=options, limits=limits, unescape=unescape,
+        bundles=bundles, timeout_seconds=timeout_seconds,
+        memory_limit_mib=memory_limit_mib, cpu_seconds=cpu_seconds, max_output_mib=max_output_mib,
+    )
+
+
+def _worker_budgets(
+    timeout_seconds: float | None, memory_limit_mib: int | None,
+    cpu_seconds: int | None, max_output_mib: int | None,
+) -> WorkerBudgets | None:
+    """Validate worker-mode options before any conversion; ``None`` means in-process."""
     budget_values = (memory_limit_mib, cpu_seconds, max_output_mib)
-    if timeout_seconds is not None or any(value is not None for value in budget_values):
-        from dead_letter.core.mbox_isolation import (
-            WorkerBudgets,
-            convert_record_isolated,
-            validate_budgets,
-            validate_timeout,
-        )
-        validate_timeout(timeout_seconds)
-        budgets = WorkerBudgets(*budget_values)
-        validate_budgets(budgets, worker_mode=timeout_seconds is not None)
+    if timeout_seconds is None and all(value is None for value in budget_values):
+        return None
+    from dead_letter.core.mbox_isolation import validate_budgets, validate_timeout
+    validate_timeout(timeout_seconds)
+    budgets = WorkerBudgets(*budget_values)
+    validate_budgets(budgets, worker_mode=timeout_seconds is not None)
+    return budgets
+
+
+def _convert_mbox(
+    path: str | Path,
+    *,
+    output: str | Path | None = None,
+    options: ConvertOptions | None = None,
+    limits: MboxLimits | None = None,
+    unescape: UnescapeMode = "preserve",
+    bundles: bool = False,
+    timeout_seconds: float | None = None,
+    memory_limit_mib: int | None = None,
+    cpu_seconds: int | None = None,
+    max_output_mib: int | None = None,
+    archive: dict[str, Any] | None = None,
+) -> Iterator[MboxConversion]:
+    # Both public importers use this pipeline; only the provenance differs.
+    budgets = _worker_budgets(timeout_seconds, memory_limit_mib, cpu_seconds, max_output_mib)
+    if budgets is not None:
+        from dead_letter.core.mbox_isolation import convert_record_isolated
     source = Path(path).expanduser().resolve()
     opts = options or ConvertOptions()
     if opts.delete_eml:
@@ -157,26 +191,32 @@ def convert_mbox(
     root = Path(output).expanduser().resolve() if output is not None else source.with_suffix(".markdown")
     if root == source or root.suffix.lower() == ".md" or (root.exists() and not root.is_dir()):
         raise ValueError("MBOX output must be a directory distinct from the source")
+    label = Path(archive["member_name"]) if archive is not None else source
+    provenance_options = {"archive": archive} if archive is not None else {}
     opts = replace(opts, delete_eml=False)
     try:
         with closing(iter_mbox(source, limits=limits, unescape=unescape)) as records:
             for record in records:
                 if timeout_seconds is not None and record.path is not None:
                     yield convert_record_isolated(
-                        record, source, root, opts, bundles=bundles,
+                        record, label, root, opts, bundles=bundles,
                         unescape=unescape, timeout=timeout_seconds, budgets=budgets,
+                        **provenance_options,
                     )
                 else:
-                    yield _convert_record(record, source, root, opts, bundles=bundles, unescape=unescape)
+                    yield _convert_record(record, label, root, opts, bundles=bundles, unescape=unescape, **provenance_options)
     except MboxBudgetError as exc:
         # A worker could not apply a requested budget: abort the whole import.
         yield MboxConversion(
-            source.name, None, False,
+            label.name, None, False,
             error={"code": exc.code, "stage": "worker", "message": exc.message},
         )
     except (MboxFormatError, OSError, ValueError) as exc:
+        message = str(exc).replace(str(source), label.name)
+        if archive is not None:
+            message = json.dumps(message[:512], ensure_ascii=True)
         yield MboxConversion(
-            source.name, None, False,
+            label.name, None, False,
             error={"code": "mbox_archive_error", "stage": "mbox",
-                   "message": str(exc).replace(str(source), source.name)},
+                   "message": message},
         )

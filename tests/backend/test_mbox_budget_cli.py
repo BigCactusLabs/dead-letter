@@ -80,3 +80,43 @@ def test_cli_budgets_reach_real_worker_and_report(tmp_path):
     assert report["mbox_options"]["cpu_seconds"] == 30
     assert report["mbox_options"]["max_output_mib"] == 16
     assert report["mbox_options"]["memory_limit_mib"] == (4096 if sys.platform == "linux" else None)
+
+
+@pytest.mark.skipif(sys.platform not in ("linux", "darwin"),
+                    reason="CPU/output worker budgets are implemented only on Linux and macOS in this slice")
+def test_cli_budgets_reach_real_worker_for_archive_input(tmp_path, monkeypatch):
+    import zipfile
+
+    from dead_letter.core import mbox_isolation as isolation
+
+    calls = []
+    real = isolation._worker_command
+    monkeypatch.setattr(isolation, "_worker_command",
+                        lambda request, *args: calls.append(args) or real(request, *args))
+    source = tmp_path / "takeout.zip"
+    with zipfile.ZipFile(source, "w") as out:
+        out.writestr("Takeout/Mail/All mail.mbox", POSTMARK + MESSAGE)
+    root = tmp_path / "out"
+    assert cli.main([str(source), "--output", str(root), "--report", "--mbox-timeout", "30",
+                     "--mbox-cpu-seconds", "30", "--mbox-max-output-mib", "16"]) == 0
+    report = json.loads((root / ".dead-letter-report.json").read_text(encoding="utf-8"))
+    assert report["summary"]["written"] == 1
+    assert report["mbox_options"]["cpu_seconds"] == 30
+    assert report["mbox_options"]["max_output_mib"] == 16
+    assert report["archive"]["container_basename"] == "takeout.zip"
+    assert len(calls) == 1 and calls[0][:2] == ("cpu_seconds=30", "max_output_mib=16")
+
+
+@pytest.mark.parametrize("flag", BUDGET_FLAGS)
+def test_archive_unsupported_platform_budget_is_rejected_before_outputs(tmp_path, monkeypatch, capsys, flag):
+    import zipfile
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    source = tmp_path / "takeout.zip"
+    with zipfile.ZipFile(source, "w") as out:
+        out.writestr("Takeout/Mail/All mail.mbox", POSTMARK + MESSAGE)
+    root = tmp_path / "out"
+    assert cli.main([str(source), "--output", str(root), "--report", "--mbox-timeout", "30", *flag]) == 1
+    err = capsys.readouterr().err
+    assert "mbox_budget_unsupported" in err and flag[0] in err
+    assert not root.exists()

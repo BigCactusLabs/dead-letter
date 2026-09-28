@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path and at most 20 failure entries, never message content. Compressed archives
   are rejected, the source is never modified, and MCP call cancellation is not
   supported. See the [runtime contract](docs/reference/v4-runtime-contracts.md#mcp-server-dead_letterbackendmcp_server) (#145).
+- CLI/Python ZIP and TGZ Takeout ingestion with exact MBOX member selection,
+  private staging, byte/member budgets, integrity and source-change checks,
+  and archive provenance in Markdown and reports. ZIP requires Python 3.12.3+.
+  MCP/web ingestion is unchanged. See the [compressed-input guide](docs/reference/gmail-takeout.md#compressed-input-unreleased)
+  (Refs #144).
 - Five [conversion recipes](docs/recipes/README.md) for Markdown/Obsidian,
   RAG preprocessing, local MCP conversion, Cabinet archiving, and report/quality
   auditing, with shared synthetic mail and a released-package smoke check (#162).
@@ -76,6 +81,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Compressed Takeout hardening: bounded ZIP/ZIP64 directory admission and TAR
+  metadata, strict TAR end-marker validation, staging access/space checks, and
+  report-only container paths/stat signatures. Record provenance keeps `archive`
+  as a basename string and adds `container` details (Refs #144).
 - The MCP `convert_directory` inputSchema now lists `output_directory` as
   required, matching the existing runtime requirement, and an empty
   `output_directory` is rejected instead of writing into the server's working

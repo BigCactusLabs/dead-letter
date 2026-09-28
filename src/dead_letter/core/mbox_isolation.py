@@ -299,12 +299,17 @@ def _publish(staged: Path, root: Path, *, bundles: bool) -> Path:
 def convert_record_isolated(
     record: MboxRecord, source: Path, root: Path, options: ConvertOptions, *,
     bundles: bool, unescape: UnescapeMode, timeout: float, budgets: WorkerBudgets | None = None,
+    archive: dict[str, Any] | None = None,
 ) -> MboxConversion:
     from dead_letter.core.mbox_import import MboxConversion
 
     validate_timeout(timeout)
     locator = f"{source.name}#message-{record.index:08d}"
     provenance = {**record.provenance(source), "unescape": unescape}
+
+    if archive is not None:
+        provenance["archive"] = archive["container_basename"]
+        provenance["container"] = dict(archive)
 
     budgets = budgets or WorkerBudgets()
 
@@ -319,7 +324,7 @@ def convert_record_isolated(
         record_data = asdict(record)
         record_data["path"] = str(record.path)
         request.write_text(json.dumps({
-            "record": record_data, "archive_name": source.name,
+            "record": record_data, "archive_name": source.name, "archive": archive,
             "options": asdict(options), "bundles": bundles, "unescape": unescape,
         }, ensure_ascii=True), encoding="utf-8")
         try:
