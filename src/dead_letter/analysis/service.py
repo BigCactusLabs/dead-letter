@@ -13,7 +13,7 @@ from typing import Callable
 from dead_letter.analysis.contracts import DEFAULT_MODEL, AnalysisError
 from dead_letter.analysis.eml import PreparedEmail, prepare_eml
 from dead_letter.analysis.providers.typesafe import (
-    ADAPTER_VERSION, TypeSafeConfig, TypeSafeProvider, emit_disclosure, preflight,
+    ADAPTER_VERSION, _AnalysisInterrupted, TypeSafeConfig, TypeSafeProvider, emit_disclosure, preflight,
 )
 
 RESULT_SCHEMA_VERSION = 1
@@ -75,7 +75,12 @@ async def analyze_prepared(
         result["reason"] = "no_authored_text"
         return result
     provider = _provider or TypeSafeProvider(config)
-    outcome = await provider.evaluate(request, allow_remote=True, on_disclosure=on_disclosure)
+    try:
+        outcome = await provider.evaluate(request, allow_remote=True, on_disclosure=on_disclosure)
+    except _AnalysisInterrupted as exc:
+        result.update(exc.outcome, assessment_status=None)
+        exc.result = result
+        raise
     for key in ("execution_status", "error_code", "attempts", "retry_count", "billing_status", "sdk_version"):
         result[key] = outcome[key]
     if outcome["execution_status"] == "succeeded":

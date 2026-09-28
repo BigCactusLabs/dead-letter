@@ -19,7 +19,7 @@ from dead_letter.analysis.contracts import DEFAULT_MODEL, AnalysisError, canonic
 from dead_letter.analysis.eml import PreparedEmail, prepare_eml
 from dead_letter.analysis.profiles import get_profile
 from dead_letter.analysis.providers.typesafe import (
-    SDK_VERSION, TypeSafeConfig, emit_disclosure, preflight,
+    SDK_VERSION, _AnalysisInterrupted, TypeSafeConfig, emit_disclosure, preflight,
 )
 from dead_letter.analysis.responses import validate_response
 from dead_letter.analysis.service import RESULT_SCHEMA_VERSION, _result_envelope, analyze_prepared
@@ -349,12 +349,29 @@ def _reuse(path: Path, prepared: PreparedEmail, alias_max_age: float) -> dict:
     return result
 
 
+def _record_attempt(target: Path, result: dict) -> None:
+    attempts = target.with_name(target.name + ".attempts")
+    attempts.mkdir(mode=0o700, exist_ok=True)
+    if attempts.is_symlink() or not attempts.is_dir():
+        raise AnalysisError("analysis_output_invalid")
+    _fsync_directory(attempts.parent)
+    while True:
+        attempt = attempts / f"{uuid.uuid4().hex}.json"
+        try:
+            _publish(attempt, result)
+            break
+        except FileExistsError:
+            continue
+    result["sidecar"] = {"path": str(attempt), "outcome": "attempt_recorded"}
+
+
 async def analyze_to_sidecar(
     path: str | Path, output: str | Path, *, provider: str, allow_remote: bool = False,
     profile_name: str = "triage-v1", focus_identity: tuple[str, ...] = (),
     max_context_segments: int = 3, model: str = DEFAULT_MODEL,
     config: TypeSafeConfig | None = None, alias_max_age: float = 86400,
     on_disclosure: Callable[[dict], None] = emit_disclosure,
+    _preflight=None, _provider=None,
 ) -> dict:
     """Reuse a validated success offline, or execute and persist one prepared email.
 
@@ -377,7 +394,7 @@ async def analyze_to_sidecar(
                    base_url=effective.base_url)
     for check in range(2):
         if not _validate_destination(target):
-            preflight(allow_remote=allow_remote)
+            (_preflight or preflight)(allow_remote=allow_remote)
             break
         prepared = prepare_eml(path, **options)
         try:
@@ -388,26 +405,22 @@ async def analyze_to_sidecar(
     prepared = prepare_eml(path, **options)
     try:
         result = await analyze_prepared(prepared, allow_remote=True, config=effective,
-                                        on_disclosure=on_disclosure)
+                                        on_disclosure=on_disclosure, _provider=_provider)
+    except _AnalysisInterrupted as exc:
+        result = exc.result
+        result.update(created_at=_now().isoformat(), reuse_key=_reuse_key(result))
+        try:
+            _record_attempt(target, result)
+        except Exception:
+            result["sidecar"] = {"outcome": "write_failed", "error_code": "analysis_output_write_failed"}
+        raise
     except AnalysisError as exc:
         result = _result_envelope(prepared)
         result.update(execution_status="failed", assessment_status=None, error_code=exc.code)
     result.update(created_at=_now().isoformat(), reuse_key=_reuse_key(result))
     try:
         if result["execution_status"] != "succeeded":
-            attempts = target.with_name(target.name + ".attempts")
-            attempts.mkdir(mode=0o700, exist_ok=True)
-            if attempts.is_symlink() or not attempts.is_dir():
-                raise AnalysisError("analysis_output_invalid")
-            _fsync_directory(attempts.parent)
-            while True:
-                attempt = attempts / f"{uuid.uuid4().hex}.json"
-                try:
-                    _publish(attempt, result)
-                    break
-                except FileExistsError:
-                    continue
-            result["sidecar"] = {"path": str(attempt), "outcome": "attempt_recorded"}
+            _record_attempt(target, result)
         else:
             try:
                 _publish(target, result)
