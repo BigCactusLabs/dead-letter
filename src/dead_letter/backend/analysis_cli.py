@@ -34,6 +34,9 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         help="Local preview only; no network, SDK import or API key required")
     parser.add_argument("--show-state", action="store_true",
                         help="Include private normalized evidence locally; requires --dry-run")
+    parser.add_argument("--output", help="Write or reuse a validated no-clobber analysis sidecar")
+    parser.add_argument("--alias-max-age", type=float, default=86400,
+                        help="Maximum reused alias age in seconds (default: 86400)")
     parser.add_argument("--timeout-seconds", type=float, default=15.0,
                         help="Per-operation HTTP timeout (default: 15 seconds)")
     parser.add_argument("--budget-seconds", type=float, default=45.0,
@@ -42,10 +45,12 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         help="SDK retries after initial request (0-3; default: 2)")
 
 
-def _error(code: str, *, hint: str | None = None) -> None:
+def _error(code: str, *, hint: str | None = None, discarded_fresh_result: bool = False) -> None:
     result = {"execution_status": "failed", "stage": "analysis", "error_code": code}
     if hint:
         result["hint"] = hint
+    if discarded_fresh_result:
+        result["discarded_fresh_result"] = True
     print(json.dumps(result, sort_keys=True), file=sys.stderr)
 
 
@@ -62,6 +67,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.show_state and not args.dry_run:
         _error("show_state_requires_dry_run")
+        return 2
+    if args.dry_run and args.output is not None:
+        _error("invalid_analysis_arguments", hint="--output cannot be combined with --dry-run.")
         return 2
 
     from dead_letter.analysis import AnalysisError, prepare_eml
@@ -80,15 +88,27 @@ def main(argv: list[str] | None = None) -> int:
         if args.dry_run:
             prepared = prepare_eml(args.input_path, base_url=config.base_url, **options)
             result = prepared.preview(include_state=args.show_state)
+        elif args.output is not None:
+            from dead_letter.analysis import analyze_to_sidecar
+            result = asyncio.run(analyze_to_sidecar(
+                args.input_path, args.output, provider=args.provider, allow_remote=True,
+                config=config, alias_max_age=args.alias_max_age, **options,
+            ))
         else:
             from dead_letter.analysis.service import analyze_eml
             result = asyncio.run(analyze_eml(args.input_path, provider=args.provider,
                                             allow_remote=True, config=config, **options))
         print(json.dumps(result, ensure_ascii=False, allow_nan=False, indent=2, sort_keys=True))
-        return 1 if result["execution_status"] == "failed" else 0
+        return 1 if (result["execution_status"] == "failed"
+                     or result.get("sidecar", {}).get("outcome") == "write_failed") else 0
     except AnalysisError as exc:
-        _error(exc.code)
-        return 1
+        hint = None
+        if exc.code in {"analysis_output_corrupt", "analysis_output_mismatch",
+                        "analysis_output_stale_alias"}:
+            hint = "Choose another output path or remove the existing file."
+        _error(exc.code, hint=hint,
+               discarded_fresh_result=getattr(exc, "discarded_fresh_result", False))
+        return 2 if exc.code in {"analysis_output_invalid", "invalid_alias_max_age"} else 1
     except KeyboardInterrupt:
         _error("analysis_interrupted")
         return 130
