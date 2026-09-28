@@ -37,13 +37,11 @@ contract. No catalog enrollment or license change is implied by this runbook.
 
 ## Prepare The Release
 
-Start from a reviewed working branch, named outside the reserved `release`
-ref — for example `chore/release-X.Y.Z`. A branch literally named
-`release/...` is rejected by the remote: the repository already has a
-`release` branch, and Git treats the two as a directory/file conflict.
-Choose the next package version
-explicitly; the helper does not choose a version, create tags, or publish a
-package. Python 3.12+ is sufficient for the offline commands:
+Start from a reviewed working branch such as `chore/release-X.Y.Z`. Do not
+name it `release/...`: the repository already has a `release` branch, and the
+remote rejects `release/...` as a directory/file conflict. Choose the next
+package version explicitly; the helper does not choose a version, create tags,
+or publish a package. Python 3.12+ is sufficient for the offline commands:
 
 ```bash
 python scripts/release.py check

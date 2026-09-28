@@ -25,7 +25,8 @@ Recover it from the release workflow's run-scoped `python-package-<commit>`
 Actions artifact:
 
 ```bash
-gh run download RELEASE_RUN_ID -n "python-package-$RELEASE_SHA"
+gh run download RELEASE_RUN_ID -n "python-package-$RELEASE_SHA" \
+  -D "python-package-$RELEASE_SHA"
 python scripts/release.py status --version X.Y.Z \
   --checksums "python-package-$RELEASE_SHA/SHA256SUMS"
 ```
