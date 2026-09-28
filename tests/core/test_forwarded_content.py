@@ -136,6 +136,21 @@ def test_legacy_gmail_forward_is_leading_separator_text() -> None:
     assert _kinds(html) == [ZoneKind.BODY, ZoneKind.FORWARDED_BODY]
 
 
+@pytest.mark.parametrize(
+    "quote",
+    [
+        # Attribution plus a reply blockquote that is unclassed or not a direct child.
+        '<div class="gmail_attr">On Wed, Mar 4, 2026 Bob &lt;<a>bob@example.com</a>&gt; wrote:<br></div>'
+        '<blockquote style="margin:0">Old.</blockquote>',
+        '<div class="gmail_attr">Le mer. 4 mars 2026, Bob a\u00a0écrit\u00a0:<br></div>'
+        '<div><blockquote class="gmail_quote">Old.</blockquote></div>',
+    ],
+)
+def test_gmail_attr_ending_in_colon_is_reply(quote: str) -> None:
+    html = f'<div>Note.</div><div class="gmail_quote">{quote}</div>'
+    assert _kinds(html) == [ZoneKind.BODY, ZoneKind.QUOTED]
+
+
 def test_gmail_quote_without_attr_or_separator_keeps_reply_handling() -> None:
     html = '<div>Note.</div><div class="gmail_quote"><div>Body.</div></div>'
     assert _kinds(html) == [ZoneKind.BODY, ZoneKind.QUOTED]
@@ -173,6 +188,54 @@ def test_html_segmentation_survives_deep_forward_nesting() -> None:
     assert 1 <= len(forwards) <= 64
     # Past the cap, nested forwards stay inside the last block: nothing is lost.
     assert "Body 300." in forwards[-1].content
+
+
+def test_html_forwards_past_cap_are_kept_once_in_order(tmp_path: Path) -> None:
+    html = "<div>Note.</div>" + "".join(
+        f'<div class="gmail_quote"><div class="gmail_attr">{MARKER_LINE}<br>'
+        f"From: P{n} &lt;p{n}@example.com&gt;<br></div><div>Note body from person {n}.</div></div>"
+        for n in range(1, 71)
+    )
+    source = tmp_path / "many.eml"
+    source.write_text(
+        "From: a@example.com\nTo: b@example.com\nSubject: Fwd\n"
+        "Date: Thu, 05 Mar 2026 10:00:00 +0000\nMIME-Version: 1.0\n"
+        f"Content-Type: text/html; charset=utf-8\n\n{html}\n",
+        encoding="utf-8",
+    )
+    for mode in ("latest", "structured"):
+        result = convert(source, output=tmp_path / f"{mode}.md", options=ConvertOptions(thread_mode=mode))
+        assert result.success, result.error
+        body = Path(result.output).read_text(encoding="utf-8")
+        needles = [f"Note body from person {n}." for n in range(1, 71)]
+        for needle in needles:
+            assert body.count(needle) == 1, (mode, needle)
+        _positions(body, needles)
+
+
+def test_marker_patterns_do_not_span_lines() -> None:
+    assert not FORWARD_MARKER_RE.search("----\n\nForwarded message\n----")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Outlook reply history containing a localized separator.
+        "Danke!\n\n________________________________\nFrom: Bob <b@example.com>\n"
+        "Sent: Wednesday\nTo: Alice\nSubject: WG: P\n\nOld.\n\n"
+        "-------- Weitergeleitete Nachricht --------\nVon: Erin\n\nText",
+        # Separator-shaped line in prose, not followed by headers.
+        "Hello,\nthe old subject said\n----- Mensaje reenviado -----\nand nothing else.\n\n"
+        "On Wed, Mar 4, 2026 at 9:00 AM Bob <b@example.com> wrote:\n> Old.",
+        # Indented separator inside quoted history.
+        "Thanks\n\nOn Wed, Mar 4, 2026 at 9:00 AM Bob <b@example.com> wrote:\n> hi\n"
+        f"    {MARKER_LINE}\n> more",
+    ],
+)
+def test_plain_markers_after_reply_boundary_or_in_prose_are_not_forwards(text: str) -> None:
+    for split in (False, True):
+        zones = segment_text_conversation(text, split_forwards=split).zones
+        assert not any(zone.kind is ZoneKind.FORWARD_HEADER for zone in zones)
 
 
 def test_plain_segmentation_splits_every_marker_when_requested() -> None:
@@ -253,11 +316,92 @@ def test_single_gmail_forward_structured_has_one_section(tmp_path: Path) -> None
     assert "thread_messages: 1" in front
     assert "Forwarded message ---" not in body
     assert body.count("## ") == 1
+    # Emphasis from <strong class="gmail_sendername"> is not carried into the
+    # heading; To stays in the section content.
     assert (
-        "## Forwarded from **Vendor** &lt;vendor@example.net&gt; "
-        "(Thu, Mar 5, 2026 at 8:00 AM) — Vendor Note\n\nPlease review the attached quote."
+        "## Forwarded from Vendor &lt;vendor@example.net&gt; "
+        "(Thu, Mar 5, 2026 at 8:00 AM) — Vendor Note\n\n"
+        "To: Alice <alice@example.com>  \n\nPlease review the attached quote."
     ) in body
     _positions(body, ["FYI, see the vendor note below.", "## Forwarded from"])
+
+
+def test_real_gmail_sender_markup_gives_clean_heading(tmp_path: Path) -> None:
+    _, body = _body("gmail_forward_body_headers.eml", tmp_path, thread_mode="structured")
+
+    assert (
+        "## Forwarded from Dave &lt;dave@example.com&gt; (Wed, Mar 4, 2026 at 10:00 AM) — Budget"
+    ) in body
+    assert "**Dave**" not in body.split("\n\n", 2)[1]
+
+
+def test_forward_body_header_lines_and_recipients_are_kept(tmp_path: Path) -> None:
+    _, body = _body("gmail_forward_body_headers.eml", tmp_path, thread_mode="structured")
+
+    section = body.split("## Forwarded from Dave", 1)[1]
+    _positions(
+        section,
+        [
+            "To: <alice@example.com>",
+            "Cc: Carol <carol@example.com>",
+            "To: All staff",
+            "Date: Friday is a holiday",
+            "From: HR",
+            "Office closed.",
+        ],
+    )
+    assert "Subject: Budget" not in section
+    assert "Date: Wed, Mar 4" not in section
+
+
+@pytest.mark.parametrize(
+    ("name", "heading", "kept"),
+    [
+        (
+            "gmail_forward_empty_body.eml",
+            "## Forwarded from Dave &lt;dave@example.com&gt; (Wed, Mar 4, 2026 at 10:00 AM) — Budget",
+            ["To: <alice@example.com>", "Cc: Carol <carol@example.com>"],
+        ),
+        (
+            "plain_forward_empty_body.eml",
+            "## Forwarded from Dave &lt;dave@example.com&gt; (Wed, Mar 4, 2026) — Invoice",
+            ["To: alice@example.com", "Cc: Carol &lt;carol@example.com&gt;"],
+        ),
+    ],
+)
+def test_empty_body_forward_keeps_heading_and_headers(
+    name: str, heading: str, kept: list[str], tmp_path: Path
+) -> None:
+    front, body = _body(name, tmp_path, thread_mode="structured")
+
+    assert "thread_messages: 1" in front
+    _positions(body, [heading, *kept])
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        (
+            "forwarded.eml",
+            ["From: Vendor <vendor@example.net>", "Date: Thu, Mar 5, 2026 at 8:00 AM", "Subject: Vendor Note"],
+        ),
+        (
+            "gmail_forward_body_headers.eml",
+            ["From: **Dave** <<dave@example.com>>", "Date: Wed, Mar 4, 2026 at 10:00 AM", "Subject: Budget"],
+        ),
+    ],
+)
+def test_snapshot_keeps_forwarded_header_text(name: str, expected: list[str]) -> None:
+    from dead_letter.core.snapshot import read_snapshot
+
+    snapshot = read_snapshot(FIXTURES / name)
+    forwarded = [zone for zone in snapshot.zones if zone.kind == "forwarded_body"]
+
+    assert len(forwarded) == 1
+    text = forwarded[0].text.replace("\r\n", "\n")
+    _positions(text, expected)
+    # Forwarded authors stay unknown to analysis readers.
+    assert forwarded[0].author is None
 
 
 def test_french_gmail_forward_detected_structurally(tmp_path: Path) -> None:
@@ -390,6 +534,19 @@ def test_plain_text_multiple_markers(tmp_path: Path) -> None:
 # --- Byte identity for output that must not change ---------------------------
 
 
+# Option sets the goldens were captured with (keys end in the preset name).
+_PRESETS: dict[str, dict[str, bool]] = {
+    "none": {},
+    "default": {"strip_signatures": True, "strip_tracking_pixels": True, "strip_signature_images": True},
+    "clean": {
+        "strip_signatures": True,
+        "strip_tracking_pixels": True,
+        "strip_signature_images": True,
+        "strip_disclaimers": True,
+        "strip_quoted_headers": True,
+    },
+    "embed": {"embed_inline_images": True},
+}
 _GOLDEN = json.loads((FIXTURES / "pre_forward_fix_golden.json").read_text(encoding="utf-8"))
 
 
@@ -397,16 +554,19 @@ _GOLDEN = json.loads((FIXTURES / "pre_forward_fix_golden.json").read_text(encodi
 def test_output_that_must_not_change_is_byte_identical(key: str, tmp_path: Path) -> None:
     """Goldens were captured from main before forward handling changed.
 
-    Covers every fixture without a forward, a reply quote that contains a
-    forward (still reply history), and latest-mode output for plain-text,
-    Thunderbird and Apple Mail forwards, which were already kept.
+    Covers every fixture without a forward (including reply markup that must
+    not be mistaken for a forward, and separators inside reply history or
+    prose), a reply quote that contains a forward, and latest-mode output for
+    plain-text, Thunderbird and Apple Mail forwards, across option presets.
     """
-    name, mode, order = key.split("|")
+    name, mode, order, preset = key.split("|")
     output = tmp_path / "out.md"
     result = convert(
         FIXTURES / name,
         output=output,
-        options=ConvertOptions(thread_mode=ThreadMode(mode), thread_order=ThreadOrder(order)),
+        options=ConvertOptions(
+            thread_mode=ThreadMode(mode), thread_order=ThreadOrder(order), **_PRESETS[preset]
+        ),
     )
     assert result.success, result.error
     assert output.read_text(encoding="utf-8") == _GOLDEN[key]
