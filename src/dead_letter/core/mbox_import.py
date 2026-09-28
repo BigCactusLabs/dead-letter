@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from collections.abc import Iterator
 from contextlib import closing
@@ -46,7 +47,8 @@ def _convert_record(
     locator = f"{source.name}#message-{record.index:08d}"
     provenance = {**record.provenance(source), "unescape": unescape}
     if archive is not None:
-        provenance["archive"] = archive
+        provenance["archive"] = archive["container_basename"]
+        provenance["container"] = dict(archive)
     if record.path is None:
         return MboxConversion(
             locator, None, False, provenance,
@@ -174,8 +176,11 @@ def _convert_mbox(
                 else:
                     yield _convert_record(record, label, root, opts, bundles=bundles, unescape=unescape, **provenance_options)
     except (MboxFormatError, OSError, ValueError) as exc:
+        message = str(exc).replace(str(source), label.name)
+        if archive is not None:
+            message = json.dumps(message[:512], ensure_ascii=True)
         yield MboxConversion(
             label.name, None, False,
             error={"code": "mbox_archive_error", "stage": "mbox",
-                   "message": str(exc).replace(str(source), label.name)},
+                   "message": message},
         )

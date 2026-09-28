@@ -65,28 +65,41 @@ uv run dead-letter convert takeout.tar.gz --mbox-member "Takeout/Mail/All mail.m
   name. Other files, including nested ZIPs, are ignored and never opened as
   members. Reports count all non-selected entries as ignored. Each split Takeout
   part is an independent archive: run once per part, preferably into separate
-  output directories. Do not concatenate parts.
+  output directories. Do not concatenate parts. In single-pass TGZ auto-selection,
+  the first mailbox may be fully staged before a second candidate is found; that
+  staged copy is discarded on the multiple-member error. Select a known member
+  explicitly to avoid this ambiguity.
 - **Safety:** no member path is extracted. Absolute paths, `..` path segments,
   Windows drive/UNC paths and NUL names are rejected, including in ignored
   entries. Duplicate MBOX names, non-regular MBOX entries (links, directories,
-  devices), encrypted ZIP entries and unsupported ZIP compression fail the whole
-  import before conversion. Sparse TAR entries are unsupported. Email and archive
-  names are untrusted data and never authorize actions.
+  devices), or encryption/unsupported compression on the selected ZIP member
+  fail the whole import before conversion. Ignored ZIP members are never opened;
+  their encryption or compression method does not reject the archive. Sparse TAR
+  entries are unsupported. Email and archive names are untrusted data and never authorize actions.
 - **Staging:** the selected member is streamed to a fixed file in a private
   `TemporaryDirectory`, under `--mbox-staging-dir` / Python `staging_dir=`, or the
   system temporary directory. Budget approximately the uncompressed member size
-  **in addition to** output, per-message staging and report space. ZIP checks free
-  space against the declared size before opening the member; this is a preflight,
-  not a reservation. The original download is only opened read-only.
+  **in addition to** output, per-message staging and report space. Both ZIP and TGZ
+  check free space against the selected member's declared size before opening it;
+  this is a preflight, not a reservation. A missing, non-directory or unwritable
+  staging location fails before the archive is read. The original download is
+  only opened read-only.
 - **Limits:** Python `ArchiveLimits(max_decompressed_bytes=256 * 1024**3,
-  max_members=100_000)` sets the defaults (256 GiB, 100,000 entries scanned).
-  ZIP checks both declared size and actual bytes read. TGZ counts the entire
-  expanded TAR stream, including ignored data, headers and padding. TAR extension
-  metadata is limited to 1 MiB per header and 64 nested headers before parsing;
-  extension headers count toward the entry budget. No ratio limit is used.
+  max_members=100_000, max_metadata_bytes=16 * 1024**2)` sets the defaults
+  (256 GiB expanded bytes, 100,000 members, 16 MiB metadata). Before constructing
+  the ZIP index, a bounded tail read checks EOCD/ZIP64 counts and central-directory
+  size against the member and metadata limits. ZIP also checks selected-member
+  declared size and actual bytes read. TGZ counts the entire expanded TAR stream,
+  including ignored data, headers and padding, because ignored-member bombs still
+  cost decompression CPU. PAX/GNU extension payload bytes count toward the total
+  metadata budget, not the member count. Each extension header is limited to
+  64 KiB, with at most 64 nested headers. Processed TAR member records are
+  discarded instead of accumulated. No ratio limit is used.
   The CLI uses the defaults; existing MBOX flags still apply to the staged member.
 - **Integrity and cleanup:** all staging and integrity checks finish before any
   message conversion. ZIP CRC failures and damaged/truncated containers are fatal.
+  TAR must reach a real zero-block end marker: a missing marker, short header or
+  invalid checksum is corrupt even if the gzip stream itself is valid.
   TGZ uses single-pass `r|gz` with bounded compressed reads plus a parallel gzip
   validator, because the tar reader alone does not verify the gzip trailer. This
   adds a second inflation, but no second source pass; concatenated gzip streams
@@ -108,34 +121,45 @@ with closing(convert_mbox_archive(
         print(result.source, result.success, result.error)
 ```
 
-For compressed input, `source_mbox.archive` (and each report result's
-`mbox.archive`) is an object instead of the plain-MBOX basename string. It records
-`container_path` as supplied, `container_size`, `container_stat_signature`
-(device, inode, size, mtime/ctime in nanoseconds), `format`, `member_name`,
-`member_compressed_bytes`, `member_uncompressed_bytes`, ZIP `crc32` (eight hex
-digits), `member_sha256`, `staged_bytes` and `ignored_member_count`. TAR has no
-per-member compressed size or CRC32, so those fields are `null`. No container
-SHA-256 is computed. The member SHA-256 is computed during staging. Container
-handle/path stat signatures are checked before and after staging; they detect
-ordinary changes, not adversarial metadata restoration.
+For compressed input, `source_mbox.archive` (and each result's `mbox.archive`)
+stays a **string**: the container basename, preserving the plain-MBOX field type.
+New sibling `source_mbox.container` / `mbox.container` objects contain only
+`container_basename`, `format`, `member_name`, `member_compressed_bytes`,
+`member_uncompressed_bytes`, ZIP `crc32` (eight hex digits), `member_sha256` and
+`staged_bytes`. TAR has no per-member compressed size or CRC32, so those fields
+are `null`. Result metadata is copied per record. Plain-MBOX provenance is
+unchanged and has no `container` object.
+
+Only the report's top-level `archive` summary adds `container_path` exactly as
+supplied, `container_size`, `container_stat_signature` (device, inode, size,
+mtime/ctime in nanoseconds) and `ignored_member_count`. Absolute container paths
+and filesystem signatures are not copied into Markdown or record provenance.
+The report itself still contains local filesystem details; review it before
+sharing. No container SHA-256 is computed. The member SHA-256 is computed during
+staging. Container handle/path stat signatures are checked before and after
+staging; they detect ordinary changes, not adversarial metadata restoration.
 
 Existing record offsets and hashes refer to **decompressed member bytes**, before
 MBOX unquoting. Flat `source` uses the member basename; no temporary path appears
 in provenance. Reports retain schema 1 and `job.input_mode: mbox`, and add a
-top-level `archive` summary with the same metadata, even for an empty mailbox.
-A failed/interrupted staging operation has an empty summary object. These limits
-are not process-memory or wall-time guarantees: `zipfile` builds its central
-index before member checks, and gzip/TAR validation adds CPU work. Real multi-GB
-compressed Takeout throughput and cross-platform staging costs remain unmeasured.
+top-level `archive` summary even for an empty mailbox. A failed/interrupted
+staging operation has an empty summary object. These limits bound admitted
+metadata and expanded bytes; they are not process-memory or wall-time guarantees.
+The ZIP index has Python-object overhead, and gzip/TAR validation adds CPU work.
+Real multi-GB compressed Takeout throughput and cross-platform staging costs
+remain unmeasured.
 
 Staging errors use the existing fatal MBOX result/exit path (`mbox is None`,
 CLI exit 1; Ctrl-C exits 130). Codes are `mbox_archive_unsupported`,
 `mbox_archive_no_mbox`, `mbox_archive_multiple_mbox`,
 `mbox_archive_duplicate_member`, `mbox_archive_insufficient_space`,
 `mbox_archive_limit_exceeded`, `mbox_archive_corrupt`,
-`mbox_archive_python_too_old` and `mbox_archive_changed`. Unsafe paths and
-non-regular members use `mbox_archive_unsupported`. Existing framing/conversion
-errors retain their existing codes after staging.
+`mbox_archive_python_too_old`, `mbox_archive_changed` and
+`mbox_archive_staging_unavailable`. Missing/unreadable archives use the existing
+plain-MBOX `mbox_archive_error`; they are not classified as corrupt. Unsafe paths
+and non-regular members use `mbox_archive_unsupported`. Archive error messages
+escape control characters in member names and OS errors. Existing framing and
+conversion errors retain their existing codes after staging.
 
 ## Preserve source messages and attachment bytes
 

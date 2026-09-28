@@ -191,7 +191,8 @@ def convert_record_isolated(
     provenance = {**record.provenance(source), "unescape": unescape}
 
     if archive is not None:
-        provenance["archive"] = archive
+        provenance["archive"] = archive["container_basename"]
+        provenance["container"] = dict(archive)
 
     def failed(code: str) -> MboxConversion:
         return MboxConversion(locator, None, False, provenance, error={

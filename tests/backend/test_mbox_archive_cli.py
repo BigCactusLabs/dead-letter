@@ -49,7 +49,13 @@ def test_cli_end_to_end_and_report(tmp_path, monkeypatch, extension, dry_run):
     assert report["archive"]["member_name"] == "Takeout/two.MBOX"
     assert report["archive"]["staged_bytes"] == len(MAIL)
     assert report["archive"]["format"] == ("zip" if extension == "zip" else "tgz")
-    assert report["results"][0]["mbox"]["archive"] == report["archive"]
+    record = report["results"][0]["mbox"]
+    assert record["archive"] == source.name
+    assert record["container"]["container_basename"] == source.name
+    assert report["archive"]["container_stat_signature"]["mtime_ns"] == source.stat().st_mtime_ns
+    assert report["archive"]["container_size"] == source.stat().st_size
+    assert not {"container_path", "container_stat_signature", "container_size", "ignored_member_count"} & record["container"].keys()
+    assert record["container"] == {key: report["archive"][key] for key in record["container"]}
     assert report["mbox_options"]["timeout_seconds"] == 10
     if not dry_run:
         output = tmp_path / "out" / report["results"][0]["output"]
@@ -131,3 +137,41 @@ def test_unsupported_container_cli_error_code(tmp_path, extension, capsys):
     source.write_bytes(b"unsupported")
     assert cli.main([str(source)]) == 1
     assert "mbox_archive_unsupported" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("extension", ["zip", "tar", "tgz"])
+def test_archive_named_directory_keeps_eml_conversion(tmp_path, extension):
+    source = tmp_path / f"mail.{extension}"
+    source.mkdir()
+    (source / "message.eml").write_bytes(b"Subject: directory\n\nBody\n")
+    output = tmp_path / "out"
+    assert cli.main([str(source), "--output", str(output), "--report"]) == 0
+    report = json.loads((output / ".dead-letter-report.json").read_text())
+    assert report["job"]["input_mode"] == "directory"
+    assert report["summary"]["written"] == 1
+
+
+def test_archive_pipeline_oserror_is_escaped_in_report_and_stderr(tmp_path, monkeypatch, capsys):
+    from dead_letter.core import mbox_import
+
+    source = tmp_path / "mail.zip"
+    name = "hostile\n\x1b[31m.mbox"
+    make_archive(source, [(name, MAIL)])
+    def failed(path, **kwargs):
+        raise OSError(f"Cannot read {path}\n{name}")
+    monkeypatch.setattr(mbox_import, "iter_mbox", failed)
+    output = tmp_path / "out"
+    assert cli.main([str(source), "--output", str(output), "--report"]) == 1
+    report = json.loads((output / ".dead-letter-report.json").read_text())
+    message = report["results"][0]["error"]["message"]
+    assert "\x1b" not in message and "\n" not in message
+    assert "\\u001b" in message and "\\n" in message
+    assert "\x1b" not in capsys.readouterr().err
+
+
+def test_missing_archive_uses_plain_mbox_fatal_code(tmp_path):
+    for extension in ("mbox", "zip"):
+        root = tmp_path / extension
+        assert cli.main([str(tmp_path / f"missing.{extension}"), "--output", str(root), "--report"]) == 1
+        report = json.loads((root / ".dead-letter-report.json").read_text())
+        assert report["results"][0]["error"]["code"] == "mbox_archive_error"

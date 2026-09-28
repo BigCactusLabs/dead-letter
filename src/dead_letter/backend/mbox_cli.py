@@ -64,7 +64,8 @@ def run_mbox(
         except KeyboardInterrupt:
             interrupted = True
         except (OSError, ValueError) as exc:
-            print(f"MBOX import failed: {exc}", file=sys.stderr)
+            message = json.dumps(str(exc), ensure_ascii=True) if archive_input else str(exc)
+            print(f"MBOX import failed: {message}", file=sys.stderr)
             return 1
         if report is not None:
             try:
@@ -82,7 +83,8 @@ def run_mbox(
                 print("MBOX report publication interrupted; previous report retained if present", file=sys.stderr)
                 return 130
             except OSError as exc:
-                print(f"MBOX report could not be written: {exc}", file=sys.stderr)
+                message = json.dumps(str(exc), ensure_ascii=True) if archive_input else str(exc)
+                print(f"MBOX report could not be written: {message}", file=sys.stderr)
                 return 1
     print(f"MBOX: {total - failures} succeeded, {failures} errors" +
           (" (interrupted)" if interrupted else ""), file=sys.stderr)

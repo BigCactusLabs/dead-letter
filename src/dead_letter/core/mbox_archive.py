@@ -8,12 +8,13 @@ import json
 import os
 import shutil
 import stat
+import struct
 import sys
 import tarfile
 import zipfile
 import zlib
 from collections.abc import Iterator
-from contextlib import closing
+from contextlib import ExitStack, closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from tempfile import TemporaryDirectory
@@ -32,10 +33,11 @@ class ArchiveLimits:
 
     max_decompressed_bytes: int = 256 * 1024**3
     max_members: int = 100_000
+    max_metadata_bytes: int = 16 * 1024**2
 
     def __post_init__(self) -> None:
         if any(type(value) is not int or value < 1 for value in (
-            self.max_decompressed_bytes, self.max_members,
+            self.max_decompressed_bytes, self.max_members, self.max_metadata_bytes,
         )):
             raise ValueError("Archive limits must be positive integers")
 
@@ -106,6 +108,7 @@ def _copy_member(stream: BinaryIO, target: Path, limits: ArchiveLimits) -> tuple
 
 
 def _stage_zip(raw: BinaryIO, target: Path, selection: _Selection) -> dict[str, Any]:
+    _check_zip_directory(raw, selection.limits)
     with zipfile.ZipFile(raw) as container:
         chosen = None
         for info in container.infolist():
@@ -113,12 +116,12 @@ def _stage_zip(raw: BinaryIO, target: Path, selection: _Selection) -> dict[str, 
             mode = info.external_attr >> 16
             regular = not info.is_dir() and stat.S_IFMT(mode) in (0, stat.S_IFREG)
             selected = selection.consider(info.orig_filename, regular)
-            if info.flag_bits & 1 or info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
-                raise _ArchiveError("unsupported", "Encrypted or unsupported ZIP compression")
             if selected:
                 chosen = info
         selection.finish()
         assert chosen is not None
+        if chosen.flag_bits & 1 or chosen.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+            raise _ArchiveError("unsupported", "Encrypted or unsupported ZIP compression")
         if chosen.file_size > selection.limits.max_decompressed_bytes:
             raise _ArchiveError("limit_exceeded", "Declared MBOX size exceeds configured limit")
         if shutil.disk_usage(target.parent).free < chosen.file_size:
@@ -190,42 +193,45 @@ def _convert_mbox_archive(
         raise ValueError("MBOX output must be a directory distinct from the source")
     selection = _Selection(member, archive_limits or ArchiveLimits())
     try:
-        if not source.is_file():
-            raise _ArchiveError("unsupported", "Archive input must be an existing regular file")
-        with source.open("rb") as raw:
-            initial, initial_path = os.fstat(raw.fileno()), source.stat()
-            if not stat.S_ISREG(initial.st_mode):
-                raise _ArchiveError("unsupported", "Archive input must be a regular file")
-            _check_container(raw, source, initial, initial_path)
-            format_name = _format(source, raw)
-            staging_parent = Path(staging_dir).expanduser() if staging_dir is not None else None
-            with TemporaryDirectory(prefix="dead-letter-archive-", dir=staging_parent) as temporary:
-                staged = Path(temporary) / "member.mbox"
+        # Validate the destination before reading even the archive's magic bytes.
+        with _staging_file(staging_dir) as staged:
+            if not source.is_file():
+                raise _ArchiveError("error", "Expected a regular exported archive file")
+            with source.open("rb") as raw:
+                initial, initial_path = os.fstat(raw.fileno()), source.stat()
+                if not stat.S_ISREG(initial.st_mode):
+                    raise _ArchiveError("error", "Expected a regular exported archive file")
+                _check_container(raw, source, initial, initial_path)
+                format_name = _format(source, raw)
                 try:
                     metadata = (_stage_zip if format_name == "zip" else _stage_tgz)(raw, staged, selection)
                 except Exception:
-                    # Mutation may first appear as a decoder/CRC error. Preserve
-                    # the more useful immutable-source failure in that case.
                     _check_container(raw, source, initial, initial_path)
                     raise
                 _check_container(raw, source, initial, initial_path)
-                metadata.update({
-                    "container_path": str(path), "container_size": initial.st_size,
-                    "container_stat_signature": dict(zip(
-                        ("device", "inode", "size", "mtime_ns", "ctime_ns"),
-                        _source_signature(initial), strict=True,
-                    )),
-                })
+                # Only this detached, restricted object reaches Markdown, records
+                # and worker requests. Filesystem locations stay in the summary.
+                record_metadata = {key: value for key, value in metadata.items()
+                                   if key != "ignored_member_count"}
+                record_metadata["container_basename"] = source.name
                 if archive_summary is not None:
                     archive_summary.update(metadata)
-                with closing(_convert_mbox(staged, output=root, archive=metadata, **conversion_options)) as results:
+                    archive_summary.update({
+                        "container_basename": source.name,
+                        "container_path": str(path), "container_size": initial.st_size,
+                        "container_stat_signature": dict(zip(
+                            ("device", "inode", "size", "mtime_ns", "ctime_ns"),
+                            _source_signature(initial), strict=True,
+                        )),
+                    })
+                with closing(_convert_mbox(staged, output=root, archive=record_metadata, **conversion_options)) as results:
                     yield from results
     except _ArchiveError as exc:
         yield MboxConversion(source.name, None, False, error={
             "code": exc.code, "message": str(exc), "stage": "mbox",
         })
     except (OSError, EOFError, zipfile.BadZipFile, tarfile.TarError, zlib.error, RecursionError) as exc:
-        code = "insufficient_space" if isinstance(exc, OSError) and exc.errno == errno.ENOSPC else "corrupt"
+        code = ("insufficient_space" if exc.errno == errno.ENOSPC else "error") if isinstance(exc, OSError) else "corrupt"
         yield MboxConversion(source.name, None, False, error={
             "code": f"mbox_archive_{code}", "message": f"Archive staging failed ({type(exc).__name__})",
             "stage": "mbox",
@@ -279,22 +285,42 @@ class _CheckedGzipInput:
 
 def _stage_tgz(raw: BinaryIO, target: Path, selection: _Selection) -> dict[str, Any]:
     checked = _CheckedGzipInput(raw, selection.limits.max_decompressed_bytes)
-    scanned = depth = 0
+    metadata_bytes = depth = 0
+    saw_end_marker = False
 
     class BoundedTarInfo(tarfile.TarInfo):
+        @classmethod
+        def _parse_header(cls, buf, encoding, errors, **kwargs):
+            nonlocal saw_end_marker
+            # Python 3.14 calls _frombuf internally; 3.12 uses frombuf.
+            parse = getattr(tarfile.TarInfo, "_frombuf", tarfile.TarInfo.frombuf)
+            try:
+                return parse.__func__(cls, buf, encoding, errors, **kwargs)
+            except tarfile.EOFHeaderError:
+                saw_end_marker = True
+                raise
+            except tarfile.HeaderError:
+                raise _ArchiveError("corrupt", "Missing, truncated or invalid TAR header") from None
+
+        @classmethod
+        def frombuf(cls, buf, encoding, errors):
+            return cls._parse_header(buf, encoding, errors)
+
+        @classmethod
+        def _frombuf(cls, buf, encoding, errors, **kwargs):
+            return cls._parse_header(buf, encoding, errors, **kwargs)
+
         def _proc_member(self, tar):
             # This hook runs before extension processing on both 3.12 and newer
             # readers (newer readers bypass the public frombuf/fromtarfile).
-            nonlocal scanned, depth
-            scanned += 1
-            if scanned > selection.limits.max_members:
-                raise _ArchiveError("limit_exceeded", "Archive member count exceeds configured limit")
+            nonlocal metadata_bytes, depth
             if self.size < 0:
                 raise _ArchiveError("corrupt", "Negative TAR member size")
             if self.type in (tarfile.XHDTYPE, tarfile.XGLTYPE, tarfile.SOLARIS_XHDTYPE,
                              tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK):
-                if self.size > 1024 * 1024:
-                    raise _ArchiveError("limit_exceeded", "TAR extended metadata exceeds 1 MiB")
+                metadata_bytes += self.size
+                if self.size > 64 * 1024 or metadata_bytes > selection.limits.max_metadata_bytes:
+                    raise _ArchiveError("limit_exceeded", "TAR extension metadata exceeds configured limit")
             if self.type == tarfile.GNUTYPE_SPARSE:
                 raise _ArchiveError("unsupported", "Sparse TAR members are not supported")
             depth += 1
@@ -312,15 +338,26 @@ def _stage_tgz(raw: BinaryIO, target: Path, selection: _Selection) -> dict[str, 
         _proc_gnusparse_01 = _reject_sparse
         _proc_gnusparse_10 = _reject_sparse
 
+    class BoundedTarFile(tarfile.TarFile):
+        def next(self):
+            try:
+                return super().next()
+            finally:
+                # Stream mode still caches TarInfo on older Python versions.
+                # Neither link lookup nor getmembers() is used by this importer.
+                self.members.clear()
+
     metadata = None
-    with tarfile.open(fileobj=checked, mode="r|gz", tarinfo=BoundedTarInfo) as container:
-        for info in container:
+    with BoundedTarFile.open(fileobj=checked, mode="r|gz", tarinfo=BoundedTarInfo) as container:
+        while (info := container.next()) is not None:
             if info.size < 0:
                 raise _ArchiveError("corrupt", "Negative TAR member size")
             regular = info.type in (tarfile.REGTYPE, tarfile.AREGTYPE) and info.sparse is None
             if selection.consider(info.name, regular):
                 if info.size > selection.limits.max_decompressed_bytes:
                     raise _ArchiveError("limit_exceeded", "Declared MBOX size exceeds configured limit")
+                if shutil.disk_usage(target.parent).free < info.size:
+                    raise _ArchiveError("insufficient_space", "Insufficient staging space for declared MBOX size")
                 with container.extractfile(info) as stream:
                     size, digest = _copy_member(stream, target, selection.limits)
                 if size != info.size:
@@ -332,8 +369,84 @@ def _stage_tgz(raw: BinaryIO, target: Path, selection: _Selection) -> dict[str, 
                 }
         # Consume through the gzip trailer, including TAR padding after its EOF
         # blocks. Even damage after a fully staged MBOX must prevent conversion.
+        if not saw_end_marker:
+            raise _ArchiveError("corrupt", "Missing TAR end-of-archive marker")
         checked.finish()
     selection.finish()
     assert metadata is not None
     metadata["ignored_member_count"] = selection.count - 1
     return metadata
+
+
+@contextmanager
+def _staging_file(staging_dir: str | Path | None) -> Iterator[Path]:
+    with ExitStack() as stack:
+        try:
+            parent = Path(staging_dir).expanduser() if staging_dir is not None else None
+            temporary = stack.enter_context(TemporaryDirectory(prefix="dead-letter-archive-", dir=parent))
+            staged = Path(temporary) / "member.mbox"
+            # A real create proves access; os.access alone is subject to races
+            # and ACL/platform differences. No archive read precedes this check.
+            with staged.open("xb"):
+                pass
+        except OSError:
+            raise _ArchiveError("staging_unavailable", "Staging directory is unavailable or not writable") from None
+        yield staged
+
+
+def _check_zip_directory(raw: BinaryIO, limits: ArchiveLimits) -> None:
+    """Bound the central index before ZipFile can allocate it.
+
+    Read at most the 22-byte EOCD plus its 65535-byte comment, then fixed-size
+    ZIP64 records if present. Do not trust offsets enough to allocate from them.
+    """
+    def corrupt() -> None:
+        raise _ArchiveError("corrupt", "Malformed ZIP end-of-central-directory records")
+
+    def read_at(offset: int, size: int) -> bytes:
+        if offset < 0 or offset + size > length:
+            corrupt()
+        raw.seek(offset)
+        data = raw.read(size)
+        if len(data) != size:
+            corrupt()
+        return data
+
+    raw.seek(0, os.SEEK_END)
+    length = raw.tell()
+    tail_size = min(length, 22 + 65535)
+    tail = read_at(length - tail_size, tail_size)
+    at = tail.rfind(b"PK\x05\x06")
+    if at < 0 or len(tail) - at < 22:
+        corrupt()
+    _, disk, cd_disk, disk_count, count, cd_size, cd_offset, comment_size = struct.unpack_from("<4s4H2IH", tail, at)
+    if at + 22 + comment_size != len(tail):
+        corrupt()
+    eocd_offset = length - tail_size + at
+    directory_end = eocd_offset
+    locator = read_at(eocd_offset - 20, 20) if eocd_offset >= 20 else b""
+    if locator.startswith(b"PK\x06\x07"):
+        _, locator_disk, record_offset, disks = struct.unpack("<4sIQI", locator)
+        if locator_disk != 0 or disks != 1 or record_offset + 56 > eocd_offset - 20:
+            corrupt()
+        record = struct.unpack("<4sQ2H2I4Q", read_at(record_offset, 56))
+        signature, record_size, _, _, disk64, cd_disk64, disk_count64, count64, cd_size64, cd_offset64 = record
+        if signature != b"PK\x06\x06" or record_size < 44 or record_offset + 12 + record_size != eocd_offset - 20:
+            corrupt()
+        for legacy, actual, sentinel in (
+            (disk, disk64, 0xFFFF), (cd_disk, cd_disk64, 0xFFFF),
+            (disk_count, disk_count64, 0xFFFF), (count, count64, 0xFFFF),
+            (cd_size, cd_size64, 0xFFFFFFFF), (cd_offset, cd_offset64, 0xFFFFFFFF),
+        ):
+            if legacy != sentinel and legacy != actual:
+                corrupt()
+        disk, cd_disk, disk_count, count = disk64, cd_disk64, disk_count64, count64
+        cd_size, cd_offset = cd_size64, cd_offset64
+        directory_end = record_offset
+    elif cd_size == 0xFFFFFFFF or cd_offset == 0xFFFFFFFF:
+        corrupt()
+    if disk != 0 or cd_disk != 0 or disk_count != count or cd_offset + cd_size != directory_end:
+        corrupt()
+    if count > limits.max_members or cd_size > limits.max_metadata_bytes:
+        raise _ArchiveError("limit_exceeded", "ZIP central directory exceeds configured member or metadata limit")
+    raw.seek(0)

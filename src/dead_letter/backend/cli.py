@@ -192,7 +192,10 @@ def _run_convert(args: argparse.Namespace) -> int:
     options = _to_core_options(args)
     started_at = monotonic()
 
-    archive_input = input_path.suffix.lower() in {".zip", ".tgz", ".gz", ".tar", ".bz2", ".xz", ".7z", ".rar"}
+    archive_suffix = input_path.suffix.lower() in {".zip", ".tgz", ".gz", ".tar", ".bz2", ".xz", ".7z", ".rar"}
+    # Existing directories keep EML-directory conversion. Missing archive paths
+    # use the archive error/report path, just as missing plain MBOX paths do.
+    archive_input = archive_suffix and (input_path.is_file() or not input_path.exists())
     if input_path.suffix.lower() == ".mbox" or archive_input:
         if not archive_input and (args.mbox_member is not None or args.mbox_staging_dir is not None):
             print("Archive-specific options require a ZIP/TGZ input", file=sys.stderr)
