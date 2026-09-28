@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from dead_letter.core.attribution import annotate_quoted_zones
 from dead_letter.core.text_conversation import segment_text_conversation
 from dead_letter.core.types import ConvertOptions, ThreadedContent, ThreadMode, Zone
@@ -20,7 +22,10 @@ def build_zones(
     result = segment_text_conversation(
         plain_text, split_forwards=opts.thread_mode is ThreadMode.STRUCTURED,
     )
-    annotated = annotate_quoted_zones(result.zones, opts)
+    # Label zones with the real source before annotation: forward headings
+    # unwrap Markdown emphasis only in HTML-derived text.
+    zones_in = [replace(zone, source_kind=source_kind) for zone in result.zones]
+    annotated = annotate_quoted_zones(zones_in, opts)
     cleaned = cleanup_zones(annotated, opts)
 
     zones: list[Zone] = []

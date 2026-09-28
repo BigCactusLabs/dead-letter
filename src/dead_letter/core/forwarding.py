@@ -103,7 +103,9 @@ _HARD_BREAK_RE = re.compile(r"(?:\s|\\)+$")
 # Labels folded into a forward section heading; other header lines stay in
 # the forwarded content.
 _HEADING_LABELS = {"from": "from", "date": "date", "sent": "date", "subject": "subject"}
-_EMPHASIS_RE = re.compile(r"\*\*|__")
+# A ``**text**`` / ``__text__`` wrapper, not a delimiter inside a word such as
+# ``deploy__prod``.
+_EMPHASIS_RE = re.compile(r"(?<![\w*])(\*\*|__)(?=\S)(.+?)(?<=\S)\1(?![\w*])")
 _DOUBLE_ANGLE_RE = re.compile(r"<<([^<>]*)>>")
 
 _FORWARD_HEADER_LINE_RE = re.compile(
@@ -148,17 +150,27 @@ def followed_by_header_line(text: str, end: int, *, quoted: bool) -> bool:
     return False
 
 
-def _clean_text(value: str) -> str:
-    """Drop Markdown emphasis from a parsed heading field."""
-    return _WHITESPACE_RE.sub(" ", _EMPHASIS_RE.sub("", value)).strip()
+def _clean_text(value: str, *, markdown: bool) -> str:
+    """Unwrap Markdown emphasis from a parsed heading field.
+
+    Plain-text values keep literal ``**``/``__``: the header line is removed
+    from the section body, so the heading is the only copy of the value.
+    """
+    if markdown:
+        value = _EMPHASIS_RE.sub(r"\2", value)
+    return _WHITESPACE_RE.sub(" ", value).strip()
 
 
-def _clean_sender(value: str) -> str:
-    """Drop Markdown emphasis and doubled angle brackets from a parsed sender."""
-    return _clean_text(_DOUBLE_ANGLE_RE.sub(r"<\1>", value))
+def _clean_sender(value: str, *, markdown: bool) -> str:
+    """Unwrap Markdown emphasis and doubled angle brackets from a parsed sender."""
+    if markdown:
+        value = _DOUBLE_ANGLE_RE.sub(r"<\1>", value)
+    return _clean_text(value, markdown=markdown)
 
 
-def parse_forward_headers(text: str) -> tuple[dict[str, str], str] | None:
+def parse_forward_headers(
+    text: str, *, markdown: bool = True
+) -> tuple[dict[str, str], str] | None:
     """Parse the header block at the top of a forward.
 
     The block is the run of header lines before the first blank line; in the
@@ -167,6 +179,7 @@ def parse_forward_headers(text: str) -> tuple[dict[str, str], str] | None:
     become ``fields`` for the section heading and are removed from ``rest``;
     To/Cc/Bcc/Reply-To and repeated labels stay in ``rest``. Returns None
     when no From line is found, so the caller keeps the text unchanged.
+    ``markdown`` is False for plain-text sources, whose values stay literal.
     """
     lines = text.split("\n")
     fields: dict[str, str] = {}
@@ -197,9 +210,9 @@ def parse_forward_headers(text: str) -> tuple[dict[str, str], str] | None:
             consumed.add(index)
     if "from" not in fields:
         return None
-    fields["from"] = _clean_sender(fields["from"])
+    fields["from"] = _clean_sender(fields["from"], markdown=markdown)
     if "subject" in fields:
-        fields["subject"] = _clean_text(fields["subject"])
+        fields["subject"] = _clean_text(fields["subject"], markdown=markdown)
     kept = [
         line
         for index, line in enumerate(lines[:end])

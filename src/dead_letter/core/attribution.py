@@ -201,7 +201,7 @@ def _annotate_forwarded_zone(zone: ConversationZone) -> ConversationZone:
     snapshot readers take ``attribution_from`` as a segment author, and
     forwarded authors stay unknown there.
     """
-    parsed = parse_forward_headers(zone.content)
+    parsed = parse_forward_headers(zone.content, markdown=zone.source_kind == "html")
     if parsed is None:
         return zone
     fields, _rest = parsed

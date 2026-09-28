@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from email.message import EmailMessage
 from pathlib import Path
 
 import pytest
@@ -96,6 +97,40 @@ def test_apple_bold_header_block_ends_at_plain_header_like_line() -> None:
     fields, rest = parsed
     assert fields == {"from": "Shop <shop@example.com>", "subject": "Receipt"}
     assert rest == "Date: Friday is the pickup day\n\nThank you."
+
+
+def test_forward_heading_keeps_literal_emphasis_delimiters() -> None:
+    text = "From: deploy__bot <a**b@example.com>\nSubject: deploy__prod **now\n\nBody"
+    for markdown in (True, False):
+        parsed = parse_forward_headers(text, markdown=markdown)
+        assert parsed is not None
+        fields, _rest = parsed
+        assert fields["from"] == "deploy__bot <a**b@example.com>"
+        assert fields["subject"] == "deploy__prod **now"
+
+    wrapped = "From: **Dave** <dave@example.com>\nSubject: __Budget__\n\nBody"
+    parsed = parse_forward_headers(wrapped, markdown=False)
+    assert parsed is not None
+    assert parsed[0]["subject"] == "__Budget__"
+    parsed = parse_forward_headers(wrapped)
+    assert parsed is not None
+    assert parsed[0] == {"from": "Dave <dave@example.com>", "subject": "Budget"}
+
+
+def test_plain_text_forward_heading_keeps_underscores(tmp_path: Path) -> None:
+    message = EmailMessage()
+    message["From"] = "me@example.com"
+    message["Subject"] = "Fwd: deploy"
+    message["Date"] = "Mon, 28 Sep 2026 10:00:00 +0000"
+    message.set_content(
+        "FYI\n\n---------- Forwarded message ---------\n"
+        "From: Ops <ops@example.com>\nSubject: deploy__prod\n\nShipped."
+    )
+    source = tmp_path / "fwd.eml"
+    source.write_bytes(bytes(message))
+    result = convert(source, output=tmp_path / "out.md", options=ConvertOptions(thread_mode="structured"))
+    assert result.success
+    assert "— deploy__prod" in (tmp_path / "out.md").read_text(encoding="utf-8")
 
 
 def test_parse_forward_headers_requires_from() -> None:
