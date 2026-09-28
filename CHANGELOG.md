@@ -110,6 +110,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PyPI upload delay and refuses early `--write` attempts before changing the tap.
   Failed public Homebrew commands include a bounded, sanitized stderr detail
   to help diagnose resolver failures (#133).
+- MCP tool errors for a missing file or directory, invalid arguments, and
+  conversion failures again reach clients with their documented message under
+  MCP SDK 2.1 and later, as `Error executing tool <name>: <message>`. Single-file
+  conversion failures now report a stable error code (`html_markdown_failed` or
+  `conversion_error`) instead of raw parser text, which is logged on the server;
+  `convert_directory` per-file `errors[]` entries are unchanged. Unexpected
+  errors stay generic, and the `mcp` extra now requires SDK 2.1 or later, the
+  first release that withholds their text.
 
 ## [0.4.0] - 2026-09-19
 

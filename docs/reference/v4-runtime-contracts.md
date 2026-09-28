@@ -820,7 +820,7 @@ These differ from the CLI and the Python API:
   every tool call, whatever the preset. MCP output can therefore differ from an
   equivalent CLI run on a malformed HTML body.
 - **`convert_eml_to_bundle` is copy-only.** `source_handling` accepts `"copy"`;
-  `"move"` and `"delete"` are rejected with a `ValueError`. The original `.eml`
+  `"move"` and `"delete"` are rejected with a `ToolError`. The original `.eml`
   is never modified over MCP.
 - **`convert_directory` requires `output_directory`.** Unlike `convert_dir`, it
   has no in-place default. The inputSchema lists it as required, and an empty
@@ -860,18 +860,37 @@ These differ from the CLI and the Python API:
 
 ### Error contract
 
-Tool failures do **not** reach the client as exceptions. Under SDK 2 the server
-catches them and returns a `CallToolResult` with `is_error=True` whose only
-content is `str(exception)` — the exception class name is never transmitted.
-Clients must key on the message text:
+Tool failures do **not** reach the client as exceptions. The server catches
+them and returns a `CallToolResult` with `is_error=True`; the exception class
+name is never transmitted. Anticipated failures raise `ToolError`, and the
+client receives the text `Error executing tool <name>: <message>`. Clients must
+check that the text contains one of these messages:
 
-- `File not found: <path>` — missing `.eml`
+- `File not found: <path>` — missing `.eml`; `<path>` is the caller's argument
+- `Expected a .eml file: <path>` — the source exists but is not a `.eml` file
 - `Directory not found: <path>` — missing directory
-- `Conversion failed: <reason>` — pipeline failure, optionally followed by
-  `Plain text fallback is available.` and/or `HTML repair is available.`
+- `Cannot create bundle_root <path>: <reason>` — `convert_eml_to_bundle` could
+  not create `bundle_root`
+- `Conversion failed: <error_code>` — pipeline failure in `convert_eml`,
+  `convert_eml_to_bundle` or `get_diagnostics`, where `<error_code>` is
+  `html_markdown_failed` or `conversion_error` (any other failure the core
+  pipeline reports, including an output write error), optionally followed by
+  `Plain text fallback is available.` and/or `HTML repair is available.` The
+  raw parser or renderer error is logged on the server (stderr for stdio) and
+  is not sent to the client, because it can quote email content.
+  `convert_directory` does not raise for per-file failures: its JSON `errors[]`
+  entries still carry each file's raw error text, which can include
+  email-derived text such as subject-based output filenames.
 - `MCP directory conversion supports at most 50 .eml files; found <n>.`
 - `MCP convert_eml_to_bundle only supports source_handling='copy'; use the CLI/API for move/delete.`
 - `output_directory is required for MCP directory conversion`
+
+Any other exception (one that escapes the core pipeline, such as a failure
+reading back the converted Markdown, a broken internal invariant or an
+unexpected crash) reaches the client only as `Error executing tool <name>`,
+with no further text. MCP SDK 2.1 and
+later mask these by design, and dead-letter relies on that so internal and
+email-derived text stays on the server.
 
 `convert_mbox` raises `ToolError`, so the MCP Python SDK 2.2 locked in
 `uv.lock` delivers its message to the client, prefixed by `Error executing
