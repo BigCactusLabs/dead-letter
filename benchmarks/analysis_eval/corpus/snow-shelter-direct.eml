@@ -1,0 +1,26 @@
+From: Oren Vale <oren@example.test>
+To: Mira Fen <mira@example.test>
+Cc: Niko Reed <niko@example.test>
+Date: Wed, 19 Jun 2002 10:00:00 +0000
+Message-ID: <snow-shelter-direct@example.test>
+Subject: Snow shelter
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="analysis-eval-snow-shelter-direct-0"
+
+--analysis-eval-snow-shelter-direct-0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Inspect the shelter latch now; the delay is already causing trouble. I'll bri=
+ng a new latch tomorrow.
+
+--analysis-eval-snow-shelter-direct-0
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<html><body><pre>Inspect the shelter latch now; the delay is already causing =
+trouble. I&#x27;ll bring a new latch tomorrow.</pre></body></html>
+
+--analysis-eval-snow-shelter-direct-0--

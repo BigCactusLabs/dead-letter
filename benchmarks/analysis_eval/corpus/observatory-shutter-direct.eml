@@ -1,0 +1,25 @@
+From: Oren Vale <oren@example.test>
+To: Mira Fen <mira@example.test>
+Cc: Niko Reed <niko@example.test>
+Date: Sun, 16 Jun 2002 10:00:00 +0000
+Message-ID: <observatory-shutter-direct@example.test>
+Subject: Observatory shutter
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="analysis-eval-observatory-shutter-direct-0"
+
+--analysis-eval-observatory-shutter-direct-0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Please give the shutter fault prompt attention and tell me what you find.
+
+--analysis-eval-observatory-shutter-direct-0
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<html><body><pre>Please give the shutter fault prompt attention and tell me w=
+hat you find.</pre></body></html>
+
+--analysis-eval-observatory-shutter-direct-0--

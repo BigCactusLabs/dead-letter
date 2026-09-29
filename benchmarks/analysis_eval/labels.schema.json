@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Synthetic analysis evaluation model pre-labels",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "synthetic": {
+      "const": true
+    },
+    "generator_family": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "split_policy": {
+      "type": "string"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]+$"
+          },
+          "file": {
+            "type": "string",
+            "pattern": "^corpus/[a-z0-9-]+\\.eml$"
+          },
+          "thread_root": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+@example\\.test$"
+          },
+          "template_family": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mailbox": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+@example\\.test$"
+          },
+          "sent_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "split": {
+            "enum": [
+              "dev",
+              "test"
+            ]
+          },
+          "arm": {
+            "enum": [
+              "clean",
+              "missing_context",
+              "adversarial",
+              "long_thread"
+            ]
+          },
+          "pair_of": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "focus_identity": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          },
+          "labels": {
+            "type": "object",
+            "properties": {
+              "action_deadline_present": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "expressed_urgency": {
+                "enum": [
+                  0,
+                  1,
+                  2,
+                  null
+                ]
+              },
+              "non_reply_action_request_present": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "reply_request_present": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "sender_commitment_present": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "response_expectation": {
+                "enum": [
+                  "both",
+                  "insufficient_context",
+                  "non_reply_action_only",
+                  "none",
+                  "reply_only"
+                ]
+              }
+            },
+            "required": [
+              "action_deadline_present",
+              "expressed_urgency",
+              "non_reply_action_request_present",
+              "reply_request_present",
+              "sender_commitment_present",
+              "response_expectation"
+            ],
+            "additionalProperties": false
+          },
+          "ambiguity": {
+            "type": "boolean"
+          },
+          "ambiguity_note": {
+            "type": "string"
+          },
+          "label_source": {
+            "const": "model_prelabel"
+          },
+          "human_review_status": {
+            "const": "unreviewed"
+          },
+          "attribution": {
+            "enum": [
+              "recipient_group",
+              "to",
+              "cc_not_asked",
+              "not_addressed",
+              "alias"
+            ]
+          },
+          "attack_location": {
+            "enum": [
+              null,
+              "authored",
+              "quoted",
+              "forwarded",
+              "metadata",
+              "attachment"
+            ]
+          },
+          "seed_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "case_id",
+          "file",
+          "thread_root",
+          "template_family",
+          "mailbox",
+          "sent_at",
+          "split",
+          "arm",
+          "pair_of",
+          "focus_identity",
+          "labels",
+          "ambiguity",
+          "ambiguity_note",
+          "label_source",
+          "human_review_status",
+          "attribution",
+          "attack_location",
+          "seed_id"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "synthetic",
+    "generator_family",
+    "status",
+    "split_policy",
+    "cases"
+  ],
+  "additionalProperties": false
+}
