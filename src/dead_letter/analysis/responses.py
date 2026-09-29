@@ -12,9 +12,22 @@ import re
 
 from dead_letter.analysis.contracts import AnalysisError, PreparedRequest
 
-PROBABILITY_SUM_TOLERANCE = 1e-6
-# Numerical serialization tolerance, not a classification/review threshold.
+# TypeSafe serializes each probability and each Score at two decimals, rounded
+# independently, so each value may be off by half a unit. These are numeric
+# serialization tolerances, not classification/review thresholds.
+WIRE_HALF_UNIT = 0.005
+_FLOAT_SLACK = 1e-9
+# Rounding preserves order, so the Choice maximum check needs no wire allowance.
 ANSWER_CONSISTENCY_TOLERANCE = 1e-6
+
+
+def probability_sum_tolerance(options: int) -> float:
+    return WIRE_HALF_UNIT * options + _FLOAT_SLACK
+
+
+def score_tolerance(levels: int) -> float:
+    """Each level's rounding error scales by its index; the Score adds one more."""
+    return WIRE_HALF_UNIT * (sum(range(levels)) + 1) + _FLOAT_SLACK
 _METADATA_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,255}\Z")
 
 
@@ -53,7 +66,7 @@ def _probabilities(value: object, keys: set[str], *, levels: bool = False) -> di
         raise AnalysisError("invalid_answer_levels")
     checked = {key: _number(probabilities[key]) for key in sorted(keys)}
     if not math.isclose(sum(checked.values()), 1.0, rel_tol=0.0,
-                        abs_tol=PROBABILITY_SUM_TOLERANCE):
+                        abs_tol=probability_sum_tolerance(len(keys))):
         raise AnalysisError("invalid_probability_sum")
     return checked
 
@@ -98,7 +111,7 @@ def validate_response(request: PreparedRequest, response: object) -> dict:
             expected_score = math.fsum(int(level) * probability
                                        for level, probability in probabilities.items())
             if not math.isclose(score, expected_score, rel_tol=0.0,
-                                abs_tol=ANSWER_CONSISTENCY_TOLERANCE * (len(keys) - 1)):
+                                abs_tol=score_tolerance(len(keys))):
                 raise AnalysisError("inconsistent_score_distribution")
             validated[question_id] = {
                 "type": kind, "score": score,
