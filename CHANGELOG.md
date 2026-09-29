@@ -22,8 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Experimental analysis no longer rejects valid TypeSafe answers as
   `inconsistent_score_distribution` or `invalid_probability_sum` when the
-  provider's two-decimal rounding makes a Score or probability sum differ
-  slightly from the exact weighted value.
+  provider's two-decimal precision makes a Score or probability sum differ
+  slightly from the exact value.
 - Gmail forwarded messages are no longer dropped as quoted reply history.
   In the default `latest` thread mode, Gmail HTML forwards are kept inline,
   including sequential and nested forwards and any reply quoted inside a

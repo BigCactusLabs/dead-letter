@@ -12,12 +12,13 @@ import re
 
 from dead_letter.analysis.contracts import AnalysisError, PreparedRequest
 
-# TypeSafe serializes each probability and each Score at two decimals, rounded
-# independently, so each value may be off by half a unit. These are numeric
-# serialization tolerances, not classification/review thresholds.
+# TypeSafe returns probabilities and Scores at two-decimal precision. Sums are
+# usually exactly 1 but can miss by 0.01, and a Score can miss its weighted
+# level mean by 0.01; bound both by half a unit per rounded value. These are
+# numeric serialization tolerances, not classification/review thresholds.
 WIRE_HALF_UNIT = 0.005
 _FLOAT_SLACK = 1e-9
-# Rounding preserves order, so the Choice maximum check needs no wire allowance.
+# The returned Choice held the maximum in every live answer seen so far.
 ANSWER_CONSISTENCY_TOLERANCE = 1e-6
 
 

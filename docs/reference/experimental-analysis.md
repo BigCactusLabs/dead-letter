@@ -471,9 +471,10 @@ validated. This is not a probability cutoff or calibration claim. A returned
 response-expectation Choice of `insufficient_context` preserves that assessment.
 
 Noul remains a yes-probability, never an invented confidence score. Score/Choice
-retain their full distributions and native confidence. TypeSafe rounds each
-probability and each Score to two decimals independently, so distributions must
-sum to 1 within `0.005 * option_count`, and Score must agree with its weighted
+retain their full distributions and native confidence. TypeSafe returns
+probabilities and Scores at two-decimal precision; sums usually equal 1 exactly
+but can miss by 0.01. Distributions must sum to 1 within `0.005 * option_count`,
+and Score must agree with its weighted
 level mean within `0.005 * (sum of level indexes + 1)` (0.02 for three levels).
 Choice must select a maximum-probability alternative within `1e-6`, with ties
 allowed. These tolerances address numeric serialization, not semantic correctness. There are no universal
