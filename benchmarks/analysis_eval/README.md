@@ -74,7 +74,7 @@ rules are a stated limitation for the multilingual arm.
 
 ## Phase 2: lead-run pilot and full inference
 
-**These directory commands require #165, which is not implemented on this branch.**
+These commands use directory analysis from #165 (unreleased).
 The lead owns paid inference. Human review and adjudication must precede a held-out
 quality claim. Keep the original model pre-labels and the reviewed annotation
 revision distinguishable. The phase-1 tests establish structure, not label truth.
@@ -84,7 +84,7 @@ For focused cases add every alias as a repeated `--identity ALIAS`. Inspect
 normalized authored/context segments locally; no key is required for dry-run.
 
 Start with the staged ten-item dev pilot. Do not run the corpus with one global
-identity. After integrating #165, the following lead-run example invokes each
+identity. The following lead-run example invokes each
 profile once per identity group, pins `jev-1.13.0`, and preserves the mirrored
 output tree and stdout summaries. It makes live requests and needs the lead's
 configured key. Do not execute it during phase 1.
