@@ -66,9 +66,10 @@ and full stdout results on persistence failure. Failed/skipped attempt records
 use `attempt_recorded`; skips still exit 0 without creating the success path.
 See the public contract for sensitive metadata and filesystem durability limits.
 
-**Not implemented:** directory processing, batch scheduling or empirical
-inference evaluation. Core conversion, bundles, existing
-four MCP tools, UI and release versions are unchanged by this continuation.
+**Not implemented:** empirical inference evaluation. The unreleased #165
+continuation adds directory execution, bounded scheduling and resumable results.
+Core conversion, bundles, existing four MCP tools, UI and release versions are
+unchanged by this continuation.
 
 ### SDK pin decision — September 23, 2026
 
@@ -100,11 +101,10 @@ TypeSafe install probes. No live inference was used.
 
 ## Next work, in implementation order
 
-1. Add directory output and bounded worker scheduling (#165), safe collision handling,
-   auth fail-fast, cancellation and partial-success persistence. The adapter
-   already owns retries: do not introduce a second retry loop in batch code.
-   External cancellation currently propagates and cleans up the current client;
-   persisting completed work/attempts across interruption is still batch work.
+1. **Done in unreleased source (#165):** directory output, bounded worker scheduling,
+   collision refusal, auth fail-fast, cancellation records and partial-success
+   persistence. The SDK remains the sole retry owner. See the verification record
+   below and the public directory contract.
 2. Review/expand the synthetic seed with authorized data (#166); create a family-separated
    held-out set. Compare separate Nouls and response-expectation Choice, context
    and cleanup variants and a simple baseline. Optional live runs require separate
@@ -138,6 +138,44 @@ can explicitly select insufficient_context. Missing coverage alone does not
 become a negative result, and no classification authorizes mailbox actions.
 
 ## Verification record
+
+### #165 directory continuation — unreleased
+
+Initial implementation, before adversarial review:
+
+- Added 41 directory contract cases using synthetic EML and the actual pinned
+  SDK with `httpx2.MockTransport`. The final directory/provider/sidecar set passed
+  209 tests on Python 3.12.13. The earlier 206-case set also passed on Python
+  3.14.5; final quick checks cover the additional cases on that interpreter.
+- The final quick runner passed all three checks: core (1456 passed, two
+  platform skips), backend (695 passed) and frontend syntax. The standalone
+  backend command passed 692 tests before the last three regressions were added.
+- Verified mirrored results, strict keyless reuse, one lazy preflight, collision
+  refusal, provider stop thresholds and in-flight completion/cancellation.
+  External cancellation and real CLI SIGINT preserve completed sidecars, record
+  attempted interruptions safely, close clients and return a partial summary.
+- Initial checks found and repaired a CLI path-error regression. A further test
+  reproduced a Python 3.12 cyclic-output-symlink failure; target validation now
+  stays in the per-item sidecar path, so other messages can continue.
+
+Repair round 1 preserves the original cancellation exception, including outer
+`TimeoutError` conversion and TaskGroup cancellation on Python 3.12. Prefix
+collisions and output-root aliases are checked before work, CLI `--jobs` is
+strict and directory-only, and cancelled unsent items remain `not_started`.
+Summary models/usage now count only fresh successes published in the current
+run; discarded fresh calls remain unknown usage. Single-message interrupted
+attempt persistence is explicitly documented and tested with real CLI SIGINT.
+
+The directory/provider/sidecar/EML/CLI set passed 276 tests on each of Python
+3.12.13 and 3.14.5. The full backend suite passed 727 tests. The quick runner
+passed core (1456 passed, two platform skips), backend (727 passed) and frontend
+syntax. The added regressions include both prefix-overlap orders, case aliases on the case-insensitive host,
+output-root refusal, cancellation identity, concurrent-winner accounting and a
+non-success throttle-streak reset. All provider calls used fake HTTP.
+
+These are fake-HTTP execution and persistence checks, not profile-quality,
+provider-latency, billing, publication or release evidence. Reviewed held-out
+inference evaluation remains #166.
 
 ### #163 packaging continuation — September 24, 2026
 

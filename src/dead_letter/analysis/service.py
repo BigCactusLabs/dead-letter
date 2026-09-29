@@ -6,6 +6,7 @@ credentials and SDK/HTTP objects are never included in a result envelope.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -75,7 +76,14 @@ async def analyze_prepared(
         result["reason"] = "no_authored_text"
         return result
     provider = _provider or TypeSafeProvider(config)
-    outcome = await provider.evaluate(request, allow_remote=True, on_disclosure=on_disclosure)
+    try:
+        outcome = await provider.evaluate(request, allow_remote=True, on_disclosure=on_disclosure)
+    except asyncio.CancelledError as exc:
+        outcome = getattr(exc, "dead_letter_outcome", None)
+        if outcome is not None:
+            result.update(outcome, assessment_status=None)
+            exc.dead_letter_result = result
+        raise
     for key in ("execution_status", "error_code", "attempts", "retry_count", "billing_status", "sdk_version"):
         result[key] = outcome[key]
     if outcome["execution_status"] == "succeeded":
