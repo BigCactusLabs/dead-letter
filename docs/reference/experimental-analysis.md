@@ -333,7 +333,8 @@ Summary schema version 1:
 Exit 0 means every discovered item succeeded, reused or skipped (also an empty
 run). Exit 1 means any item failed or scheduling stopped early. Exit 130 prints
 an interrupted partial summary. Argument errors return exit 2 with safe stderr
-JSON. A second forced interrupt or a hard kill cannot guarantee a summary.
+JSON. A second forced interrupt or a hard kill cannot guarantee a summary or an
+attempt record for every in-flight request, and may print an asyncio traceback.
 
 ## Python consumer recipes
 

@@ -328,6 +328,7 @@ def test_external_cancel_preserves_success_and_attempts(tmp_path, wire):
     assert result["status"] == result["stop_reason"] == "interrupted"
     assert result["counts"] == dict(discovered=7, succeeded=1, reused=0, skipped=0, failed=3, not_started=3)
     assert result["billing_status"] == "unknown"
+    assert result["items_with_unknown_usage"] == 3
     for item in result["items"][1:4]:
         assert item["outcome"] == "failed" and item["error_code"] == "analysis_interrupted"
     for item in result["items"][4:]:
@@ -381,6 +382,7 @@ def test_auth_cancels_inflight_and_closes_clients(tmp_path, wire):
     result = asyncio.run(scenario())
     assert result["status"] == "stopped" and result["stop_reason"] == "authentication_failed"
     assert result["counts"]["failed"] == 3 and result["counts"]["not_started"] == 3
+    assert result["items_with_unknown_usage"] == 3
     assert [item["error_code"] for item in result["items"][:3]] == ["provider_authentication_failed", "analysis_interrupted", "analysis_interrupted"]
     assert all(client.is_closed for client in wire["clients"])
 
