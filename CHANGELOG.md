@@ -7,8 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Experimental BYOK directory analysis with required `--output-dir`, bounded
+  `--jobs` (default 4, range 1–16), mirrored no-clobber sidecars and keyless reuse.
+  Independent per-message execution preserves completed results and safe
+  interrupted attempts, stops on provider failure thresholds, and reports a JSON
+  summary of this run's fresh work. Python consumers can use async
+  `analyze_directory` (#165). Single-message `--output` also preserves a safe
+  interrupted attempt record after HTTP starts, with billing status unknown;
+  cancellation and outer timeout behavior are preserved.
+
 ### Fixed
 
+- Experimental analysis no longer rejects valid TypeSafe answers as
+  `inconsistent_score_distribution` or `invalid_probability_sum` when the
+  provider's two-decimal precision makes a Score or probability sum differ
+  slightly from the exact value.
 - Gmail forwarded messages are no longer dropped as quoted reply history.
   In the default `latest` thread mode, Gmail HTML forwards are kept inline,
   including sequential and nested forwards and any reply quoted inside a

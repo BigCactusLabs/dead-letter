@@ -1,0 +1,29 @@
+From: Oren Vale <oren@example.test>
+To: Mira Fen <mira@example.test>
+Cc: Niko Reed <niko@example.test>
+Date: Mon, 01 Jul 2002 10:00:00 +0000
+Message-ID: <wind-harp-context@example.test>
+Subject: Wind harp
+In-Reply-To: <wind-harp-root@example.test>
+References: <wind-harp-root@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="analysis-eval-wind-harp-context-0"
+
+--analysis-eval-wind-harp-context-0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Please perform the operation specified in the enclosed note.
+
+On Monday, Mira <mira@example.test> wrote:
+> Enclosed note transcription: secure the wind harp frame to its base.
+
+--analysis-eval-wind-harp-context-0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="work-note.txt"
+MIME-Version: 1.0
+
+Enclosed note transcription: secure the wind harp frame to its base.
+
+--analysis-eval-wind-harp-context-0--

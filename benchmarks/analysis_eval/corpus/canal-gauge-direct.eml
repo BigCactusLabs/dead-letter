@@ -1,0 +1,26 @@
+From: Oren Vale <oren@example.test>
+To: Mira Fen <mira@example.test>
+Cc: Niko Reed <niko@example.test>
+Date: Thu, 07 Jun 2001 10:00:00 +0000
+Message-ID: <canal-gauge-direct@example.test>
+Subject: Canal gauge
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="analysis-eval-canal-gauge-direct-0"
+
+--analysis-eval-canal-gauge-direct-0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+The gauge inspection is complete. No reply needed. I will archive the reading=
+s tonight.
+
+--analysis-eval-canal-gauge-direct-0
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<html><body><pre>The gauge inspection is complete. No reply needed. I will ar=
+chive the readings tonight.</pre></body></html>
+
+--analysis-eval-canal-gauge-direct-0--
