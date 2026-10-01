@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in `--mbox-resume` / Python `convert_mbox(..., resume=True)` for flat
+  Markdown imports, including timed workers: durable source/options/converter-bound
+  receipts, hash-verified reuse, reconciliation after output/report interruptions,
+  missing/failed-record retries, and no-clobber publication. Modified or conflicting
+  files stop the import rather than being overwritten; a message whose receipt
+  exceeds 1 MiB fails only that record. Resume reports retain source
+  order, add recovery status/attempt counts, and never overwrite earlier reports.
+  Requires a trusted local filesystem with hard-link support. Bundle, compressed,
+  dry-run, MCP and web/UI resume remain unsupported; this is not a universal
+  power-loss guarantee. See [MBOX resume](docs/reference/mbox-resume.md) (#139, first slice).
+
 ### Fixed
 
 - MBOX MCP failures now use stable codes and errno-derived OS reasons instead
