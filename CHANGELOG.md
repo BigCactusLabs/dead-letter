@@ -160,7 +160,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stripped-image diagnostics still report the removed occurrence.
 - Named zero-byte attachments are retained in MIME fallback extraction and
   bundle output instead of silently disappearing. Metadata-only entries with
-  no payload still do not create files. Text attachments whose
+  no payload still do not create attachment files. Text attachments whose
   declared charset cannot encode (unknown, non-text, `idna`, `undefined`) fall
   back to UTF-8 instead of aborting conversion.
 - Inline-image data URIs remove MIME base64 line wrapping so embedded Markdown
@@ -324,7 +324,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Signature-image detection no longer strips full-size inline images on a
   bare substring match: it now requires a small or absent rendered
   dimension and matches against filename tokens rather than the whole URL.
-- `diagnostics.attachments.referenced` now counts attachments before
+  `diagnostics.attachments.referenced` now counts attachments before
   `filter_images` exclusions, so images removed by any filtering layer are
   reflected in the referenced/retained counts (#94).
 
@@ -511,7 +511,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Manual Job input field now has a visible label.
 - Setup modal traps keyboard focus and marks background content as `inert`,
   preventing tab navigation to elements behind the overlay.
-- Batch confirmation overlay marks the idle drop zone as `inert`,
+- Batch confirmation overlay now marks the idle drop zone as `inert`,
   preventing keyboard interaction with the file input behind the dialog.
 - History row expansion no longer collapses when clicking on expanded
   detail content (output paths, error messages, diagnostics).
