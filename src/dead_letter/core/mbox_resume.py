@@ -6,6 +6,7 @@ format. It contains no executable paths. MIME conversion stays in mbox_import.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -21,6 +22,10 @@ from typing import Any, Iterator
 
 MAX_RECEIPT_BYTES = 1024 * 1024
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
+# os.link errnos meaning the output filesystem cannot provide no-clobber links.
+_NO_LINK_ERRNOS = frozenset(
+    getattr(errno, name) for name in ("EPERM", "ENOTSUP", "EOPNOTSUPP", "EXDEV") if hasattr(errno, name)
+)
 
 
 class MboxResumeError(ValueError):
@@ -250,11 +255,12 @@ class ResumeJournal:
         self._cleanup(identity)
 
     def prepare(self, identity: dict[str, Any], diagnostics: dict[str, Any] | None) -> None:
+        # Size-check the receipt first; an oversized one leaves the record started.
+        receipt = _json({"diagnostics": diagnostics})
         stage = self.stage(identity)
         _directory(stage)
         size, digest = _digest(stage / self.name(identity), sync=True)
         _sync_directory(stage)
-        receipt = _json({"diagnostics": diagnostics})
         with self.db:
             self.db.execute(
                 "UPDATE records SET phase='prepared', receipt=?, size=?, digest=? WHERE id=?",
@@ -270,6 +276,9 @@ class ResumeJournal:
         if os.path.lexists(target):
             if _digest(target) != expected:
                 raise _conflict(f"Output for record {identity['index']} was modified; nothing was overwritten")
+            if row["phase"] == "complete" and not os.path.lexists(self.stage(identity)):
+                # Verified and already durable: no directory sync or journal write.
+                return target, row["receipt"], "reused", row["attempt"]
         else:
             if row["phase"] == "complete":
                 return None  # A removed output must be retried, not called complete.
@@ -289,6 +298,12 @@ class ResumeJournal:
             except FileExistsError:
                 if _digest(target) != expected:
                     raise _conflict(f"Output for record {identity['index']} changed during publication") from None
+            except OSError as exc:
+                if exc.errno in _NO_LINK_ERRNOS:
+                    raise MboxResumeError(
+                        "mbox_resume_io_error", "Output filesystem does not support hard links required for resume",
+                    ) from exc
+                raise
         _sync_directory(self.root)
         with self.db:
             self.db.execute("UPDATE records SET phase='complete' WHERE id=?", (identity["index"],))
@@ -303,7 +318,9 @@ def _engine_fingerprint() -> dict[str, Any]:
     digest = hashlib.sha256()
     for path in sorted(root.glob("*.py")) + [root.parent / "_mbox_worker.py", root.parent / "__init__.py"]:
         digest.update(path.name.encode())
-        digest.update(bytes.fromhex(_digest(path)[1]))
+        # Package sources, not resume artifacts: symlinked installs are fine.
+        with path.open("rb") as stream:
+            digest.update(hashlib.file_digest(stream, "sha256").digest())
     dependencies = ("mail-parser", "nh3", "html-to-markdown", "selectolax", "icalendar", "pyyaml", "mail-parser-reply")
     return {"source_sha256": digest.hexdigest(), "python": list(sys.version_info[:3]),
             "dependencies": {name: version(name) for name in dependencies}}
@@ -318,17 +335,17 @@ def convert_mbox_resumable(
     from dead_letter.core.mbox_import import MboxConversion, _convert_record
     from dead_letter.core.mbox_isolation import MboxBudgetError, convert_record_isolated
 
-    before = _signature(source.stat())
-    size, digest = _digest(source)
-    if _signature(source.stat()) != before:
-        raise _conflict("MBOX changed while fingerprinting")
-    conversion = asdict(options)
-    conversion.pop("report", None)  # A report can be added/rebuilt without reconversion.
-    contract = dict(schema=1, source=str(source), bytes=size, sha256=digest, output=str(root),
-                    options=conversion, limits=asdict(limits), unescape=unescape,
-                    timeout_seconds=timeout_seconds, budgets=asdict(budgets) if budgets else None,
-                    engine=_engine_fingerprint())
     try:
+        before = _signature(source.stat())
+        size, digest = _digest(source)
+        if _signature(source.stat()) != before:
+            raise _conflict("MBOX changed while fingerprinting")
+        conversion = asdict(options)
+        conversion.pop("report", None)  # A report can be added/rebuilt without reconversion.
+        contract = dict(schema=1, source=str(source), bytes=size, sha256=digest, output=str(root),
+                        options=conversion, limits=asdict(limits), unescape=unescape,
+                        timeout_seconds=timeout_seconds, budgets=asdict(budgets) if budgets else None,
+                        engine=_engine_fingerprint())
         with ResumeJournal(root, contract) as journal:
             if _signature(source.stat()) != before:
                 raise _conflict("MBOX changed before framing")
@@ -359,10 +376,20 @@ def convert_mbox_resumable(
                             expected = journal.stage(identity) / journal.name(identity)
                             if result.output != expected:
                                 raise _conflict("Converter returned an unexpected resume artifact")
-                            journal.prepare(identity, result.diagnostics)
-                            published = journal.recover(identity)
-                            assert published is not None
-                            result.output = published[0]
+                            try:
+                                journal.prepare(identity, result.diagnostics)
+                            except MboxResumeError as exc:
+                                if exc.code != "mbox_resume_receipt_limit":
+                                    raise
+                                # One untrusted message must not stop the import:
+                                # withhold its output and fail only this record.
+                                error = {"code": exc.code, "message": exc.message, "stage": "resume"}
+                                journal.failed(identity, error)
+                                result = MboxConversion(result.source, None, False, result.mbox, error=error)
+                            else:
+                                published = journal.recover(identity)
+                                assert published is not None
+                                result.output = published[0]
                         else:
                             journal.failed(identity, result.error)
                     result.recovery = {"status": outcome, "attempt": attempt}
@@ -373,9 +400,21 @@ def convert_mbox_resumable(
         yield MboxConversion(source.name, None, False, error={
             "code": exc.code, "message": exc.message, "stage": "resume",
         })
-    except (OSError, sqlite3.Error, MboxFormatError) as exc:
-        # Do not include private paths/parser text in the detached fatal receipt.
+    except MboxFormatError as exc:
+        # Fixed framing text, reported as the non-resume path does.
         yield MboxConversion(source.name, None, False, error={
-            "code": "mbox_resume_io_error", "message": "Resume import failed; journal and outputs retained",
+            "code": "mbox_archive_error", "message": str(exc).replace(str(source), source.name), "stage": "mbox",
+        })
+    except (OSError, sqlite3.Error) as exc:
+        # Name only a known errno/SQLite code; never paths, strerror or parser text.
+        reason = None
+        if isinstance(exc, OSError) and type(exc.errno) is int:
+            reason = errno.errorcode.get(exc.errno)
+        elif isinstance(exc, sqlite3.Error):
+            name = getattr(exc, "sqlite_errorname", None)
+            reason = name if isinstance(name, str) and re.fullmatch(r"SQLITE_[A-Z_]+", name) else None
+        detail = f" ({reason})" if reason else ""
+        yield MboxConversion(source.name, None, False, error={
+            "code": "mbox_resume_io_error", "message": f"Resume import failed{detail}; journal and outputs retained",
             "stage": "resume",
         })
