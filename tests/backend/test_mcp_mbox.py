@@ -313,7 +313,7 @@ def test_append_failure_publishes_partial_failed_report(tmp_path, monkeypatch):
     write_mbox(source, 4)
     out = tmp_path / "out"
 
-    with pytest.raises(ToolError, match="failed after 3 messages: No space left.*partial report"):
+    with pytest.raises(ToolError, match="failed after 3 messages: mbox_io_error.*partial report"):
         convert_mbox(path=str(source), output_directory=str(out))
 
     report = json.loads((out / ".dead-letter-report.json").read_text())
@@ -342,7 +342,7 @@ def test_importer_error_mid_stream_publishes_partial_failed_report(tmp_path, mon
     write_mbox(source, 4)
     out = tmp_path / "out"
 
-    with pytest.raises(ToolError, match="failed after 2 messages: disk went away"):
+    with pytest.raises(ToolError, match="failed after 2 messages: mbox_io_error"):
         convert_mbox(path=str(source), output_directory=str(out))
 
     report = json.loads((out / ".dead-letter-report.json").read_text())
@@ -370,7 +370,7 @@ def test_report_placeholder_is_removed_when_close_fails(tmp_path, monkeypatch):
     write_mbox(source, 1)
     out = tmp_path / "out"
 
-    with pytest.raises(ToolError, match="close failed"):
+    with pytest.raises(ToolError, match="report could not be written after 1 messages: mbox_io_error"):
         convert_mbox(path=str(source), output_directory=str(out))
 
     assert not list(out.glob(".dead-letter-report*"))

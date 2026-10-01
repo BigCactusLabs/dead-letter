@@ -105,7 +105,7 @@ audit events are preserved for the libc calls.
 
 | State found on restart | Action |
 | --- | --- |
-| Complete receipt and matching output | Return the existing Markdown path without invoking MIME conversion or a worker. |
+| Complete receipt and matching output | Return the existing Markdown path without invoking MIME conversion or a worker, writing the journal, or syncing directories. |
 | Prepared receipt and matching final output | Commit the missing completion receipt; do not create a second output. |
 | Prepared receipt, no final output, matching staged output | Publish the already-converted file or whole bundle and commit completion. |
 | Failed/unprepared record, or a wholly missing completed output | Retry at the original stable name. |
@@ -159,14 +159,29 @@ commit may omit that message. Rerunning with `--report` rebuilds source-order
 entries from verified receipts and new results. Neither a completed output nor a
 report by itself is treated as a completion receipt.
 
-Conflicts use `mbox_resume_conflict`; incompatible contracts use
-`mbox_resume_mismatch`; a competing writer uses `mbox_resume_busy`; oversized
-receipts or bundle inventories use `mbox_resume_receipt_limit`. Filesystem/database
-failures use `mbox_resume_io_error` and retain state for inspection/retry. Fatal
-resume errors have `mbox is None`, not a fabricated message identity. CLI success
-remains 0, errors 1, and Ctrl-C 130. Unsupported input combinations are rejected
-before conversion; a failed bundle-publication probe may leave an empty state
-store but no converted message output.
+A message whose receipt (mainly its diagnostics) would exceed 1 MiB is a
+per-record failure with `mbox_resume_receipt_limit`, not a fatal error. Its
+result has `success: false`, its `mbox` provenance and no output or diagnostics.
+The staged Markdown is removed, nothing is published for that record, and the
+import continues. A rerun retries the record at its stable name; with unchanged
+options it fails the same way without blocking or overwriting other records.
+With timed workers, the worker's own 1 MiB result cap reports such a message as
+`mbox_worker_invalid_result` instead. In bundle mode an oversized bundle
+inventory or receipt also uses `mbox_resume_receipt_limit`.
+
+The following stop the import. Conflicts use `mbox_resume_conflict`;
+incompatible contracts use `mbox_resume_mismatch`; a competing writer uses
+`mbox_resume_busy`. MBOX framing failures use `mbox_archive_error` with the same
+fixed message as a non-resume import. Filesystem/database failures use
+`mbox_resume_io_error` and retain state for inspection/retry. When hard-link
+publication fails with `EPERM`, `ENOTSUP`, `EOPNOTSUPP` or `EXDEV`, the message
+is "Output filesystem does not support hard links required for resume". Other
+messages name only a known errno or SQLite result code, such as `ENOSPC`, never
+paths or OS-provided text. Fatal resume errors, including an unreadable source,
+are yielded with `mbox is None`, not raised and not given a fabricated message
+identity. CLI success remains 0, errors 1, and Ctrl-C 130. Unsupported input
+combinations are rejected before conversion; a failed bundle-publication probe
+may leave an empty state store but no converted message output.
 
 ## Concurrency, durability and limits
 
@@ -178,7 +193,10 @@ stop consuming. Non-resume runs and external editors do not participate in this
 lock, so do not write to the same output directory concurrently.
 
 SQLite uses rollback-journal `DELETE` mode with `synchronous=EXTRA`. Staged file
-contents are flushed before the prepared receipt. POSIX directory flush failures
+contents are flushed before the prepared receipt. Each newly converted record
+therefore costs several file, directory and database flushes, so a first resume
+run is noticeably slower than an ordinary import; reruns only hash and verify
+completed outputs. POSIX directory flush failures
 stop the import; Windows has no portable directory-flush operation here, so its
 power-loss durability is weaker. The database and output still are **not one
 atomic filesystem transaction**; reconciliation bridges their process-crash gap.

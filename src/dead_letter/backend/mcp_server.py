@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import errno
 import json
 import logging
 import os
@@ -345,7 +346,7 @@ def convert_mbox(
 
     Returns a JSON summary (processed, converted, skipped, failed, truncated,
     report_path, and at most 20 failure entries), never message content.
-    Cancellation is not supported; the bounds limit call duration.
+    Cancellation is not supported; byte/message caps are not a time limit.
     """
     options = _build_options(locals())
     if not output_directory:
@@ -373,10 +374,10 @@ def convert_mbox(
     root = Path(output_directory).expanduser().resolve()
     try:
         return _run_mcp_mbox(source, admitted, root, options, bundles=bundles)
-    except (OSError, ValueError) as exc:
-        # Core validation (e.g. output is a file) and filesystem failures carry
-        # no message content; surface them instead of the SDK's generic text.
-        raise ToolError(f"MBOX conversion failed: {exc}") from exc
+    except ToolError:
+        raise
+    except Exception as exc:
+        raise ToolError(f"MBOX conversion failed: {_mcp_mbox_error(exc)}") from exc
 
 
 def _publish_mcp_report(report: StreamingReport, root: Path, **kwargs: object) -> Path:
@@ -392,6 +393,49 @@ def _publish_mcp_report(report: StreamingReport, root: Path, **kwargs: object) -
 
 class _McpMboxLimitError(Exception):
     """The archive outgrew or changed after admission; never a message error."""
+
+
+# Only fixed, reviewed descriptions leave the MBOX summary boundary. Archive
+# errors can contain paths, parser text or MIME-derived attachment filenames.
+_MCP_MBOX_FAILURE_MESSAGES = {
+    "mbox_empty_message": "Stored message is empty or exceeds configured resource limits",
+    "mbox_message_too_large": "Stored message is empty or exceeds configured resource limits",
+    "mbox_line_too_long": "Stored message is empty or exceeds configured resource limits",
+    "mbox_invalid_message": "Stored message is empty or exceeds configured resource limits",
+    "mbox_archive_error": "Archive conversion failed; inspect the local report for details",
+    "html_markdown_failed": "HTML-to-Markdown conversion failed",
+    "conversion_error": "Message conversion failed",
+}
+
+
+def _mcp_mbox_error(error: Exception) -> str:
+    """Log private details locally; return only fixed text or an OS errno reason."""
+    logger.warning("MBOX conversion exception", exc_info=(type(error), error, error.__traceback__))
+    if isinstance(error, _McpMboxLimitError):
+        # This private exception is constructed only from MCP-owned limit text.
+        return str(error)
+    if isinstance(error, OSError):
+        # Even strerror may be application-supplied. Derive the reason from a
+        # known numeric errno, never filename/filename2, args or exception text.
+        if type(error.errno) is int and error.errno in errno.errorcode:
+            return f"mbox_io_error ({errno.errorcode[error.errno]}: {os.strerror(error.errno)})"
+        return "mbox_io_error"
+    if isinstance(error, ValueError):
+        # Preserve the one reviewed core validation message reachable from MCP.
+        if type(error) is ValueError and error.args == (
+            "MBOX output must be a directory distinct from the source",
+        ):
+            return "MBOX output must be a directory distinct from the source"
+        return "mbox_invalid_input"
+    return "mbox_conversion_error"
+
+
+def _mcp_mbox_failure(error: dict[str, str] | None) -> dict[str, str]:
+    """Bound both failure strings, leaving full importer details in the report."""
+    code = (error or {}).get("code")
+    if code not in _MCP_MBOX_FAILURE_MESSAGES:
+        code = "conversion_error"
+    return {"code": code, "message": _MCP_MBOX_FAILURE_MESSAGES[code]}
 
 
 def _stat_identity(value: os.stat_result) -> tuple[int, ...]:
@@ -413,47 +457,47 @@ def _run_mcp_mbox(
     with ExitStack() as stack:
         report = None if options.dry_run else stack.enter_context(StreamingReport())
         try:
-            results = stack.enter_context(closing(_convert_mbox_records(
+            # Close the importer inside the failure/report boundary. In
+            # particular, early-stop cleanup must finish before success is saved.
+            with closing(_convert_mbox_records(
                 source, output=root, options=options, limits=limits, bundles=bundles,
-            )))
-            for item in results:
-                processed += 1
-                fatal = fatal or item.mbox is None
-                entry: dict[str, object] = {"source": item.source, "output": None, "success": item.success}
-                if item.output is not None:
-                    entry["output"] = item.output.relative_to(root).as_posix()
-                if item.mbox is not None:
-                    entry["mbox"] = item.mbox
-                if item.diagnostics is not None:
-                    entry["diagnostics"] = item.diagnostics
-                if item.error is not None:
-                    entry["error"] = item.error
-                if not item.success:
-                    failed += 1
-                    if len(failures) < MCP_MAX_MBOX_FAILURES_RETURNED:
-                        error_info = item.error or {}
-                        failures.append({
-                            "index": item.mbox["index"] if item.mbox is not None else None,
-                            "code": error_info.get("code"),
-                            "message": error_info.get("message"),
-                        })
-                elif item.output is None:
-                    skipped += 1
-                else:
-                    converted += 1
-                if report is not None:
-                    report.append(entry)
-                if item.mbox is not None and int(item.mbox["end_offset"]) > MCP_MAX_MBOX_BYTES:
-                    # The admission stat is a fast path only; enforce the cap on
-                    # the bytes actually read in case the file grew or was swapped.
-                    raise _McpMboxLimitError(
-                        "MBOX archive exceeds the MCP limit of "
-                        f"{MCP_MAX_MBOX_BYTES // (1024 * 1024)} MiB; use the dead-letter CLI"
-                    )
-                if processed >= MCP_MAX_MBOX_MESSAGES:
-                    # Stop before framing another record.
-                    last_end = int(item.mbox["end_offset"]) if item.mbox is not None else size
-                    break
+            )) as results:
+                for item in results:
+                    processed += 1
+                    fatal = fatal or item.mbox is None
+                    entry: dict[str, object] = {"source": item.source, "output": None, "success": item.success}
+                    if item.output is not None:
+                        entry["output"] = item.output.relative_to(root).as_posix()
+                    if item.mbox is not None:
+                        entry["mbox"] = item.mbox
+                    if item.diagnostics is not None:
+                        entry["diagnostics"] = item.diagnostics
+                    if item.error is not None:
+                        entry["error"] = item.error
+                    if not item.success:
+                        failed += 1
+                        if len(failures) < MCP_MAX_MBOX_FAILURES_RETURNED:
+                            failures.append({
+                                "index": item.mbox["index"] if item.mbox is not None else None,
+                                **_mcp_mbox_failure(item.error),
+                            })
+                    elif item.output is None:
+                        skipped += 1
+                    else:
+                        converted += 1
+                    if report is not None:
+                        report.append(entry)
+                    if item.mbox is not None and int(item.mbox["end_offset"]) > MCP_MAX_MBOX_BYTES:
+                        # The admission stat is a fast path only; enforce the cap on
+                        # the bytes actually read in case the file grew or was swapped.
+                        raise _McpMboxLimitError(
+                            "MBOX archive exceeds the MCP limit of "
+                            f"{MCP_MAX_MBOX_BYTES // (1024 * 1024)} MiB; use the dead-letter CLI"
+                        )
+                    if processed >= MCP_MAX_MBOX_MESSAGES:
+                        # Stop before framing another record.
+                        last_end = int(item.mbox["end_offset"]) if item.mbox is not None else size
+                        break
             try:
                 current = _stat_identity(source.stat())
             except OSError:
@@ -481,17 +525,23 @@ def _run_mcp_mbox(
                                     "truncated": truncated},
                 )
             except Exception as report_exc:
+                report_error = _mcp_mbox_error(report_exc)
                 if error is None:
-                    raise
+                    raise ToolError(
+                        f"MBOX report could not be written after {processed} messages: {report_error}"
+                    ) from report_exc
                 raise ToolError(
-                    f"MBOX conversion failed after {processed} messages: {error}; "
-                    f"the report could not be written: {report_exc}"
+                    f"MBOX conversion failed after {processed} messages: {_mcp_mbox_error(error)}; "
+                    f"the report could not be written: {report_error}"
                 ) from error
     if error is not None:
+        safe_error = _mcp_mbox_error(error)
         if not processed:
-            raise ToolError(f"MBOX conversion failed: {error}") from error
+            raise ToolError(f"MBOX conversion failed: {safe_error}") from error
         partial = f"; partial report: {report_path}" if report_path is not None else ""
-        raise ToolError(f"MBOX conversion failed after {processed} messages: {error}{partial}") from error
+        raise ToolError(
+            f"MBOX conversion failed after {processed} messages: {safe_error}{partial}"
+        ) from error
 
     response: dict[str, object] = {
         "output_directory": str(root),

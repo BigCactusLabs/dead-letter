@@ -85,6 +85,7 @@ class HomebrewTests(unittest.TestCase):
         self.fail_style = False
         self.extra_file = False
         self.change_install = False
+        self.fail_bump_after_write = False
 
     def fake_run(self, command, *, cwd, public=True):
         self.calls.append((command, public))
@@ -101,6 +102,8 @@ class HomebrewTests(unittest.TestCase):
             self.path.write_text(text)
             if self.extra_file:
                 (self.tap / "unexpected.txt").write_text("do not delete")
+            if self.fail_bump_after_write:
+                raise Unavailable("release check: brew bump-formula-pr failed (exit 1): Error: `brew audit` failed for dead-letter!")
             return ""
         if command[:2] == ["brew", "update-python-resources"]:
             self.path.write_text(self.path.read_text().replace(WHEEL, "six-1.17.0.tar.gz"))
@@ -143,6 +146,9 @@ class HomebrewTests(unittest.TestCase):
         self.assertIn("--python-package-name=dead-letter", recipe["commands"]["bump"])
         self.assertIn("--package-name=dead-letter", recipe["commands"]["fallback"])
         self.assertNotIn("--commit", recipe["commands"]["bump"])
+        # Homebrew 7 audits the intermediate sdist formula; the wheel layout is
+        # checked afterward by brew style and the native install checklist.
+        self.assertIn("--no-audit", recipe["commands"]["bump"])
         self.assertNotIn("--python-extra-packages", json.dumps(recipe))
         self.assertEqual(recipe["sdist_upload_time_utc"], "2026-09-19T16:00:00Z")
         self.assertEqual(recipe["homebrew_earliest_prepare_utc"], "2026-09-20T16:00:00Z")
@@ -300,6 +306,25 @@ class HomebrewTests(unittest.TestCase):
         with self.assertRaisesRegex(Conflict, "outside"):
             self.prepare()
         self.assertEqual(self.path.read_text(), TEXT)
+
+    def test_brew_failure_after_writing_restores_formula(self):
+        self.fail_bump_after_write = True
+        with self.assertRaisesRegex(Unavailable, "brew audit"):
+            self.prepare()
+        self.assertEqual(self.path.read_text(), TEXT)
+        self.assertFalse(self.output.exists())
+
+    def test_pyyaml_resource_gets_libyaml_dependency_once(self):
+        resource = '  resource "pyyaml" do\n    url "https://files.pythonhosted.org/p/pyyaml-6.0.3-cp314-cp314-macosx_11_0_arm64.whl"\n    sha256 "' + "c" * 64 + '"\n  end\n'
+        text = TEXT.replace('  depends_on "python@3.14"\n', '  depends_on "python@3.14"\n\n' + resource, 1)
+        updated = h.require_libyaml(text)
+        self.assertIn('  depends_on "libyaml"\n  depends_on "python@3.14"\n', updated)
+        self.assertEqual(h.require_libyaml(updated), updated)
+        self.assertEqual(h.require_libyaml(TEXT), TEXT)
+        # open-pr accepts exactly that added line and nothing else.
+        self.assertTrue(h.same_contract(text, updated))
+        self.assertFalse(h.same_contract(text, updated.replace('"libyaml"', '"openssl@3"')))
+        self.assertFalse(h.same_contract(TEXT, TEXT.replace('  depends_on "python', '  depends_on "libyaml"\n  depends_on "python')))
 
     def test_extra_file_is_not_deleted_or_silently_committed(self):
         self.extra_file = True

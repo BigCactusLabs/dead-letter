@@ -125,9 +125,16 @@ python scripts/release.py homebrew-prepare \
 
 The plan uses PyPI's exact released sdist URL/hash only after cross-checking the
 complete published wheel/sdist pair against the original build. It prints argv
-arrays for `brew bump-formula-pr --write-only --python-package-name=dead-letter`
+arrays for `brew bump-formula-pr --write-only --no-audit --python-package-name=dead-letter`
 and the `brew update-python-resources --package-name=dead-letter` fallback.
 It never passes `--commit`, extras, or an ignore-errors option to Homebrew.
+`--no-audit` is needed because Homebrew 7 audits the intermediate formula, whose
+sdist resources and explicit `version` line fail audit before the helper swaps
+in wheels (observed with Homebrew 7.0.7 on September 30, 2026). The final
+formula still goes through `brew style` and the native install checklist.
+When the formula has a `pyyaml` resource, the helper adds `depends_on "libyaml"`
+because Homebrew's `ResourceRequiresDependencies` style cop requires it, even
+though the PyYAML wheel bundles libyaml.
 
 Homebrew's Python resource resolver excludes PyPI uploads from the last
 24 hours (`--uploaded-prior-to=P1D`). The plan remains available during this
@@ -174,7 +181,7 @@ review files: `formula.patch`, `preparation.json`, and `pr-body.md`. The packet
 records the base commit and patch/formula SHA-256. `brew style` runs, but package
 installation, conversion, and `brew test` are **not** claimed. Failure restores
 only the known formula output when it still matches this invocation's recorded
-state; unrelated or concurrent edits are left for inspection. Inspect the tap
+state, including output a Homebrew command wrote before exiting nonzero; unrelated or concurrent edits are left for inspection. Inspect the tap
 and any partial review packet before rerunning.
 For a failed public `brew` command, the error includes the final nonempty stderr
 line, with known credential values and common token patterns redacted, control

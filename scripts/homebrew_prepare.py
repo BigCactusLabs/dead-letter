@@ -111,7 +111,7 @@ def plan(version: str, sdist: dict) -> dict:
             "homebrew_earliest_prepare_utc": _utc_text(earliest),
             "commands": {
                 "branch": ["git", "switch", "-c", branch],
-                "bump": ["brew", "bump-formula-pr", "--write-only", "--no-browse", "--python-package-name=dead-letter",
+                "bump": ["brew", "bump-formula-pr", "--write-only", "--no-browse", "--no-audit", "--python-package-name=dead-letter",
                          f"--version={version}", f"--url={sdist['url']}", f"--sha256={sdist['digests']['sha256']}", BREW_NAME],
                 "fallback": ["brew", "update-python-resources", "--package-name=dead-letter", f"--version={version}", BREW_NAME],
             }, "note": "Plan only. --write regenerates resources, selects matching Apple-silicon wheels, and produces a review packet. No merge or publication."}
@@ -153,6 +153,23 @@ def skeleton(text: str) -> str:
     text = RESOURCE.sub("", text)
     text = re.sub(r'^  (?:url|sha256|version) "[^"\n]+"\n|^  revision \d+\n', "", text, flags=re.M)
     return "\n".join(line.rstrip() for line in text.splitlines() if line.strip())
+
+
+def require_libyaml(text: str) -> str:
+    """Add the libyaml dependency Homebrew's style cop demands beside pyyaml.
+
+    ResourceRequiresDependencies flags any `pyyaml` resource without
+    `depends_on "libyaml"`, although the tap installs PyYAML's wheel, which
+    bundles libyaml. Keeping the line also covers an sdist build.
+    """
+    if '  depends_on "libyaml"\n' in text or not any(normalized(name) == "pyyaml" for name, _ in RESOURCE.findall(text)):
+        return text
+    return re.sub(r'^(  depends_on "python@)', '  depends_on "libyaml"\n\\1', text, count=1, flags=re.M)
+
+
+def same_contract(before: str, after: str) -> bool:
+    """Release fields and resources may change; otherwise only require_libyaml's line."""
+    return skeleton(require_libyaml(before)) == skeleton(after)
 
 
 def wheel_resources(client: Client, items: list[dict], wheels: Path) -> dict[str, dict]:
@@ -211,13 +228,19 @@ def prepare_tap(tap: Path, output: Path, recipe: dict, *, client: Client) -> dic
     base = run(["git", "rev-parse", "HEAD"], cwd=tap).strip()
     owned = before
     try:
-        run(recipe["commands"]["bump"], cwd=tap)
-        generated = path.read_text(encoding="utf-8")
-        owned = generated
+        # Homebrew may write the formula and then exit nonzero, so its output is
+        # this invocation's to restore whether or not the command succeeds.
+        try:
+            run(recipe["commands"]["bump"], cwd=tap)
+        finally:
+            owned = path.read_text(encoding="utf-8")
+        generated = owned
         if RESOURCE.findall(generated) == RESOURCE.findall(before):
-            run(recipe["commands"]["fallback"], cwd=tap)
-            generated = path.read_text(encoding="utf-8")
-            owned = generated
+            try:
+                run(recipe["commands"]["fallback"], cwd=tap)
+            finally:
+                owned = path.read_text(encoding="utf-8")
+            generated = owned
         data = formula(generated)
         if (data["version"] != version or data["url"] != recipe["sdist_url"]
                 or data["sha256"] != recipe["sdist_sha256"] or skeleton(generated) != skeleton(before)):
@@ -234,7 +257,7 @@ def prepare_tap(tap: Path, output: Path, recipe: dict, *, client: Client) -> dic
         def block(match):
             item = selected[normalized(match[1])]
             return f'  resource "{match[1]}" do\n    url "{item["url"]}"\n    sha256 "{item["sha256"]}"\n  end\n'
-        final = RESOURCE.sub(block, generated)
+        final = require_libyaml(RESOURCE.sub(block, generated))
         formula(final)
         if path.is_symlink() or path.read_text(encoding="utf-8") != owned:
             raise Conflict("formula changed concurrently; leave it for explicit reconciliation")
@@ -318,7 +341,7 @@ def open_pr(tap: Path, output: Path, recipe: dict, reviewed: str) -> dict:
     # Reconstruct the diff against the recorded base, not merely a caller-
     # editable hash field, before staging any bytes.
     before = run(["git", "show", "HEAD:" + FORMULA], cwd=tap)
-    if skeleton(before) != skeleton(current.decode("utf-8")):
+    if not same_contract(before, current.decode("utf-8")):
         raise Conflict("reviewed formula changes the tap installation contract")
     expected = "".join(difflib.unified_diff(before.splitlines(keepends=True), current.decode().splitlines(keepends=True),
                                           fromfile="a/" + FORMULA, tofile="b/" + FORMULA)).encode()
