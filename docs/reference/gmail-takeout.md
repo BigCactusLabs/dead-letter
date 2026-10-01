@@ -48,16 +48,23 @@ and enable the journal on the first run, then rerun the same command:
 
 ```bash
 dead-letter convert "Takeout/Mail/All mail.mbox" --output markdown/ --mbox-resume --report
+
+# Alternatively, retain the source messages and attachments in resumable bundles.
+dead-letter convert "Takeout/Mail/All mail.mbox" --output Cabinet/ \
+  --mbox-resume --mbox-bundles --report
 ```
 
 This verifies completed output hashes, reconciles published-but-unreceipted
-files, retries missing/failed records, and refuses modified/conflicting outputs.
-Reports distinguish `new`, `reused`, `recovered` and `retried` records and use
-collision-safe filenames. Python uses `convert_mbox(..., resume=True)`.
-Timed workers are supported; bundles, compressed input, dry runs, MCP and web/UI
-resume are not. Extract the actual `.mbox` before choosing this mode. Keep the
-same converter and options across runs. See the [resume contract](mbox-resume.md)
-for source binding, hard-link filesystem requirements, locking and durability
+files or bundles, retries missing/failed records, and refuses modified/conflicting
+outputs. Reports distinguish `new`, `reused`, `recovered` and `retried` records
+and use collision-safe filenames. Python uses `convert_mbox(..., resume=True)`;
+add `bundles=True` for Cabinet output.
+Timed workers and bundles are supported; compressed input, dry runs, MCP and
+web/UI resume are not. Bundle reuse verifies Markdown, source bytes and every
+retained attachment together; edited or missing individual members are conflicts.
+Extract the actual `.mbox` before choosing this mode. Keep the same converter,
+options and output layout across runs. See the [resume contract](mbox-resume.md)
+for source binding, no-replace filesystem requirements, locking and durability
 limits. The rest of this guide describes default conversion unless noted.
 
 ## Compressed input
@@ -286,8 +293,8 @@ completed file can be absent from the report if interruption occurs before its
 receipt commits. Counts describe committed receipts, not a post-interruption
 rescan of the destination. Default conversion is not resumability or exactly-once
 ingestion. The unreleased [opt-in resume mode](mbox-resume.md) reconciles this gap
-for flat Markdown exports. Bundle recovery remains in
-[#139](https://github.com/BigCactusLabs/dead-letter/issues/139); a real
+for flat Markdown and bundle output
+([#139](https://github.com/BigCactusLabs/dead-letter/issues/139)). A real
 multi-GB Takeout corpus has not been validated end-to-end, tracked in
 [#138](https://github.com/BigCactusLabs/dead-letter/issues/138).
 
@@ -323,7 +330,7 @@ recorded in `mbox_options.timeout_seconds`, including `null` when disabled.
 This is **not a memory cap or an OS security sandbox**. It adds process startup
 and temporary-copy overhead and does not time-limit framing or final publication.
 Default worker conversion does not journal progress. The unreleased
-[flat-output resume mode](mbox-resume.md) supports workers too; it does not add
+[flat-or-bundle resume mode](mbox-resume.md) supports workers too; it does not add
 process-tree cleanup after a hard-killed parent. See the
 [worker contract and practitioner sources](mbox-workers.md) for error codes,
 Python usage, tests, and precise limits.
