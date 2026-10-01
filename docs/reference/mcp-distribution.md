@@ -42,7 +42,7 @@ Official Registry and Awesome states, not the unresolved other directories.
 | Surface | Observed state (September 30) | Next concrete step |
 | --- | --- | --- |
 | Official MCP Registry | **present**. Exact identity active at **0.4.5** (latest, confirmed 2026-09-28 via `release.py status`), with PyPI `dead-letter` 0.4.5, the v0.4.5 MCPB release asset, and an OCI digest `ghcr.io/bigcactuslabs/dead-letter@sha256:18ff617fb594196e12e3574809caf8ff5b79bea8a831f801b8fc2ac6418a82a1`. Five versions are listed: 0.4.5, 0.4.0, 0.3.1, 0.2.5, 0.2.4; rechecked September 30. | Recheck after the next maintainer release; do not advertise unreleased artifacts as already published. |
-| Glama | **present**, unclaimed. [Listing](https://glama.ai/mcp/servers/BigCactusLabs/dead-letter) shows five tools, a Claim button, and no owner. Its schema changelog picked up v0.4.5 on September 30; `convert_directory` now states the required output directory and the 50-file limit. | Owner sign-in on the [claim page](https://glama.ai/mcp/servers/BigCactusLabs/dead-letter/admin). No re-sync is needed for the 0.4.5 text. |
+| Glama | **present, claimed**. The owner claimed the [listing](https://glama.ai/mcp/servers/BigCactusLabs/dead-letter) by GitHub sign-in on September 30; afterward the signed-out listing no longer shows a Claim button. Its schema changelog picked up v0.4.5 the same day; `convert_directory` states the required output directory and the 50-file limit. | None. Use the admin page to request a re-sync after a release if the listing lags. |
 | GitHub MCP Registry / VS Code gallery | **not_in_snapshot**. All 339 entries (September 30; 288 on September 23) of `api.mcp.github.com/v0.1/servers` were enumerated; dead-letter is not among them. | Onboarding route is contested; see [GitHub MCP Registry and Agent Finder](#github-mcp-registry-and-agent-finder). |
 | PulseMCP | **present**. [Listing](https://www.pulsemcp.com/servers/bigcactuslabs-dead-letter) shows registry name `io.github.BigCactusLabs/dead-letter` and "server.json file available"; the page does not say how it was ingested. A site banner says submissions and listing changes are paused. (September 23: unknown; APIs returned 410/401.) | None. Recheck when the listing copy matters. |
 | Cline `marketplace` | **not_in_snapshot**. Not in the 199-entry `api.cline.bot/v1/mcp/marketplace` response on September 30 (endpoint not confirmed as Cline's documented one), nor the complete **203-entry** published catalog (generated 2026-09-18); no open PR or repository path mentions dead-letter. 111 PRs are open and no fork PR has ever been merged. The validator pin `e59b03e` still matches the current schema (HEAD `6969aa8`). Native Linux CLI registration passed earlier. | Submit the prepared entry from an authorized fork and record review/outcome. |
@@ -99,7 +99,9 @@ delegated maintainers when needed; do not add it to imitate a completed claim.
 After sign-in, verify admin access and request a re-sync. Do not enable hosted
 email processing as a side effect. As of September 23 the listing shows a Claim
 button but no explicit claimed/unclaimed label, so the claim state is not
-confirmed. On September 30 it shows a Claim button and no owner.
+confirmed. On September 30 the owner signed in with the repository-owner
+GitHub account and claimed it; the signed-out listing then no longer showed a
+Claim button. GitHub sign-in requested `read:user user:email read:org`.
 
 Observed September 18: the overview said `convert_directory` has an optional
 output directory. On September 23 the listing shows this `convert_directory`
