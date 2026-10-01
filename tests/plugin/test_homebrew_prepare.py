@@ -314,6 +314,14 @@ class HomebrewTests(unittest.TestCase):
         self.assertEqual(self.path.read_text(), TEXT)
         self.assertFalse(self.output.exists())
 
+    def test_pyyaml_resource_gets_libyaml_dependency_once(self):
+        resource = '  resource "pyyaml" do\n    url "https://files.pythonhosted.org/p/pyyaml-6.0.3-cp314-cp314-macosx_11_0_arm64.whl"\n    sha256 "' + "c" * 64 + '"\n  end\n'
+        text = TEXT.replace('  depends_on "python@3.14"\n', '  depends_on "python@3.14"\n\n' + resource, 1)
+        updated = h.require_libyaml(text)
+        self.assertIn('  depends_on "libyaml"\n  depends_on "python@3.14"\n', updated)
+        self.assertEqual(h.require_libyaml(updated), updated)
+        self.assertEqual(h.require_libyaml(TEXT), TEXT)
+
     def test_extra_file_is_not_deleted_or_silently_committed(self):
         self.extra_file = True
         with self.assertRaises(Conflict):

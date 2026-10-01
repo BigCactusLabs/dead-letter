@@ -155,6 +155,18 @@ def skeleton(text: str) -> str:
     return "\n".join(line.rstrip() for line in text.splitlines() if line.strip())
 
 
+def require_libyaml(text: str) -> str:
+    """Add the libyaml dependency Homebrew's style cop demands beside pyyaml.
+
+    ResourceRequiresDependencies flags any `pyyaml` resource without
+    `depends_on "libyaml"`, although the tap installs PyYAML's wheel, which
+    bundles libyaml. Keeping the line also covers an sdist build.
+    """
+    if '  depends_on "libyaml"\n' in text or not any(normalized(name) == "pyyaml" for name, _ in RESOURCE.findall(text)):
+        return text
+    return re.sub(r'^(  depends_on "python@)', '  depends_on "libyaml"\n\\1', text, count=1, flags=re.M)
+
+
 def wheel_resources(client: Client, items: list[dict], wheels: Path) -> dict[str, dict]:
     selected = {}
     for path in wheels.iterdir():
@@ -240,7 +252,7 @@ def prepare_tap(tap: Path, output: Path, recipe: dict, *, client: Client) -> dic
         def block(match):
             item = selected[normalized(match[1])]
             return f'  resource "{match[1]}" do\n    url "{item["url"]}"\n    sha256 "{item["sha256"]}"\n  end\n'
-        final = RESOURCE.sub(block, generated)
+        final = require_libyaml(RESOURCE.sub(block, generated))
         formula(final)
         if path.is_symlink() or path.read_text(encoding="utf-8") != owned:
             raise Conflict("formula changed concurrently; leave it for explicit reconciliation")

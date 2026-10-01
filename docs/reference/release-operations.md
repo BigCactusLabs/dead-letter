@@ -132,6 +132,9 @@ It never passes `--commit`, extras, or an ignore-errors option to Homebrew.
 sdist resources and explicit `version` line fail audit before the helper swaps
 in wheels (observed with Homebrew 7.0.7 on September 30, 2026). The final
 formula still goes through `brew style` and the native install checklist.
+When the formula has a `pyyaml` resource, the helper adds `depends_on "libyaml"`
+because Homebrew's `ResourceRequiresDependencies` style cop requires it, even
+though the PyYAML wheel bundles libyaml.
 
 Homebrew's Python resource resolver excludes PyPI uploads from the last
 24 hours (`--uploaded-prior-to=P1D`). The plan remains available during this
