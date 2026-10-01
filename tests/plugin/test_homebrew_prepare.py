@@ -321,6 +321,10 @@ class HomebrewTests(unittest.TestCase):
         self.assertIn('  depends_on "libyaml"\n  depends_on "python@3.14"\n', updated)
         self.assertEqual(h.require_libyaml(updated), updated)
         self.assertEqual(h.require_libyaml(TEXT), TEXT)
+        # open-pr accepts exactly that added line and nothing else.
+        self.assertTrue(h.same_contract(text, updated))
+        self.assertFalse(h.same_contract(text, updated.replace('"libyaml"', '"openssl@3"')))
+        self.assertFalse(h.same_contract(TEXT, TEXT.replace('  depends_on "python', '  depends_on "libyaml"\n  depends_on "python')))
 
     def test_extra_file_is_not_deleted_or_silently_committed(self):
         self.extra_file = True

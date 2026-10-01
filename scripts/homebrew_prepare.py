@@ -167,6 +167,11 @@ def require_libyaml(text: str) -> str:
     return re.sub(r'^(  depends_on "python@)', '  depends_on "libyaml"\n\\1', text, count=1, flags=re.M)
 
 
+def same_contract(before: str, after: str) -> bool:
+    """Release fields and resources may change; otherwise only require_libyaml's line."""
+    return skeleton(require_libyaml(before)) == skeleton(after)
+
+
 def wheel_resources(client: Client, items: list[dict], wheels: Path) -> dict[str, dict]:
     selected = {}
     for path in wheels.iterdir():
@@ -336,7 +341,7 @@ def open_pr(tap: Path, output: Path, recipe: dict, reviewed: str) -> dict:
     # Reconstruct the diff against the recorded base, not merely a caller-
     # editable hash field, before staging any bytes.
     before = run(["git", "show", "HEAD:" + FORMULA], cwd=tap)
-    if skeleton(before) != skeleton(current.decode("utf-8")):
+    if not same_contract(before, current.decode("utf-8")):
         raise Conflict("reviewed formula changes the tap installation contract")
     expected = "".join(difflib.unified_diff(before.splitlines(keepends=True), current.decode().splitlines(keepends=True),
                                           fromfile="a/" + FORMULA, tofile="b/" + FORMULA)).encode()
