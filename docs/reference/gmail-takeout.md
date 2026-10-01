@@ -33,13 +33,32 @@ This writes one `.md` per message plus `.dead-letter-report.json`. Without
 Output names look like `00000001-0123456789abcdef.md`: one-based source ordinal
 and a short SHA-256 prefix, **not the subject**. Duplicate, blank, non-Latin, and
 path-like subjects cannot collide within an import or become filesystem paths.
-Rerunning does not overwrite earlier outputs; existing names receive suffixes.
-This is collision safety, not deduplication or resumable import.
+Ordinary reruns do not overwrite earlier outputs; existing names receive suffixes.
+This default is collision safety, not deduplication or resumable import.
 
 The Markdown is suitable for an Obsidian vault or local RAG preprocessing.
 Attachments are listed as metadata in this mode; they are not extracted.
 Conversion does not embed/index messages, group separate archive records into
 conversations, interpret historical messages as current tasks, or upload data.
+
+## Resume an interrupted flat export
+
+**Unreleased (#139), not available in 0.4.5.** Start with a fresh output directory
+and enable the journal on the first run, then rerun the same command:
+
+```bash
+dead-letter convert "Takeout/Mail/All mail.mbox" --output markdown/ --mbox-resume --report
+```
+
+This verifies completed output hashes, reconciles published-but-unreceipted
+files, retries missing/failed records, and refuses modified/conflicting outputs.
+Reports distinguish `new`, `reused`, `recovered` and `retried` records and use
+collision-safe filenames. Python uses `convert_mbox(..., resume=True)`.
+Timed workers are supported; bundles, compressed input, dry runs, MCP and web/UI
+resume are not. Extract the actual `.mbox` before choosing this mode. Keep the
+same converter and options across runs. See the [resume contract](mbox-resume.md)
+for source binding, hard-link filesystem requirements, locking and durability
+limits. The rest of this guide describes default conversion unless noted.
 
 ## Compressed input
 
@@ -122,7 +141,7 @@ dead-letter convert takeout.tar.gz --mbox-member "Takeout/Mail/All mail.mbox" \
   on failure, normal completion, Ctrl-C or explicit iterator close. Hard kills
   cannot guarantee cleanup. `--dry-run` still stages and validates the whole member.
 
-Python exposes the same conversion keywords as `convert_mbox`:
+Python exposes the ordinary conversion keywords of `convert_mbox`, but not `resume`:
 
 ```python
 from contextlib import closing
@@ -265,8 +284,9 @@ midway through an append cannot leave a dangling comma or incomplete JSON token.
 File output and report receipts are **not one atomic transaction**. The newest
 completed file can be absent from the report if interruption occurs before its
 receipt commits. Counts describe committed receipts, not a post-interruption
-rescan of the destination. This is not resumability or exactly-once ingestion.
-Durable resume is tracked in
+rescan of the destination. Default conversion is not resumability or exactly-once
+ingestion. The unreleased [opt-in resume mode](mbox-resume.md) reconciles this gap
+for flat Markdown exports. Bundle recovery remains in
 [#139](https://github.com/BigCactusLabs/dead-letter/issues/139); a real
 multi-GB Takeout corpus has not been validated end-to-end, tracked in
 [#138](https://github.com/BigCactusLabs/dead-letter/issues/138).
@@ -281,7 +301,8 @@ approach the report size.
 
 `--dry-run` parses and validates using temporary storage but creates no message
 outputs. `--dry-run --report` explicitly writes a report. Choose separate output
-directories for simultaneous imports: report publication is last-writer-wins.
+directories for simultaneous imports: default report publication is last-writer-wins.
+Resume reports instead use collision-safe names and resume writers share a lock.
 
 ## Optional timed message workers
 
@@ -301,7 +322,9 @@ recorded in `mbox_options.timeout_seconds`, including `null` when disabled.
 
 This is **not a memory cap or an OS security sandbox**. It adds process startup
 and temporary-copy overhead and does not time-limit framing or final publication.
-Hard-killed-parent recovery and durable resume remain unimplemented. See the
+Default worker conversion does not journal progress. The unreleased
+[flat-output resume mode](mbox-resume.md) supports workers too; it does not add
+process-tree cleanup after a hard-killed parent. See the
 [worker contract and practitioner sources](mbox-workers.md) for error codes,
 Python usage, tests, and precise limits.
 
@@ -428,8 +451,8 @@ runs the same importer for small exports, with fixed bounds:
 - the response is a bounded summary with counts, the report path and at most
   20 failure entries (index, error code, generic message). It never contains
   message content;
-- cancelling the MCP call does not stop the conversion; the bounds limit how
-  long it runs.
+- cancelling the MCP call does not stop the conversion. Byte/message caps are
+  not a wall-clock deadline.
 
 See the [runtime contract](v4-runtime-contracts.md#mcp-server-dead_letterbackendmcp_server)
 for the full inputs, outputs and error text.
