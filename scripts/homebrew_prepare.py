@@ -111,7 +111,7 @@ def plan(version: str, sdist: dict) -> dict:
             "homebrew_earliest_prepare_utc": _utc_text(earliest),
             "commands": {
                 "branch": ["git", "switch", "-c", branch],
-                "bump": ["brew", "bump-formula-pr", "--write-only", "--no-browse", "--python-package-name=dead-letter",
+                "bump": ["brew", "bump-formula-pr", "--write-only", "--no-browse", "--no-audit", "--python-package-name=dead-letter",
                          f"--version={version}", f"--url={sdist['url']}", f"--sha256={sdist['digests']['sha256']}", BREW_NAME],
                 "fallback": ["brew", "update-python-resources", "--package-name=dead-letter", f"--version={version}", BREW_NAME],
             }, "note": "Plan only. --write regenerates resources, selects matching Apple-silicon wheels, and produces a review packet. No merge or publication."}
@@ -211,13 +211,19 @@ def prepare_tap(tap: Path, output: Path, recipe: dict, *, client: Client) -> dic
     base = run(["git", "rev-parse", "HEAD"], cwd=tap).strip()
     owned = before
     try:
-        run(recipe["commands"]["bump"], cwd=tap)
-        generated = path.read_text(encoding="utf-8")
-        owned = generated
+        # Homebrew may write the formula and then exit nonzero, so its output is
+        # this invocation's to restore whether or not the command succeeds.
+        try:
+            run(recipe["commands"]["bump"], cwd=tap)
+        finally:
+            owned = path.read_text(encoding="utf-8")
+        generated = owned
         if RESOURCE.findall(generated) == RESOURCE.findall(before):
-            run(recipe["commands"]["fallback"], cwd=tap)
-            generated = path.read_text(encoding="utf-8")
-            owned = generated
+            try:
+                run(recipe["commands"]["fallback"], cwd=tap)
+            finally:
+                owned = path.read_text(encoding="utf-8")
+            generated = owned
         data = formula(generated)
         if (data["version"] != version or data["url"] != recipe["sdist_url"]
                 or data["sha256"] != recipe["sdist_sha256"] or skeleton(generated) != skeleton(before)):

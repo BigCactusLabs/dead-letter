@@ -85,6 +85,7 @@ class HomebrewTests(unittest.TestCase):
         self.fail_style = False
         self.extra_file = False
         self.change_install = False
+        self.fail_bump_after_write = False
 
     def fake_run(self, command, *, cwd, public=True):
         self.calls.append((command, public))
@@ -101,6 +102,8 @@ class HomebrewTests(unittest.TestCase):
             self.path.write_text(text)
             if self.extra_file:
                 (self.tap / "unexpected.txt").write_text("do not delete")
+            if self.fail_bump_after_write:
+                raise Unavailable("release check: brew bump-formula-pr failed (exit 1): Error: `brew audit` failed for dead-letter!")
             return ""
         if command[:2] == ["brew", "update-python-resources"]:
             self.path.write_text(self.path.read_text().replace(WHEEL, "six-1.17.0.tar.gz"))
@@ -143,6 +146,9 @@ class HomebrewTests(unittest.TestCase):
         self.assertIn("--python-package-name=dead-letter", recipe["commands"]["bump"])
         self.assertIn("--package-name=dead-letter", recipe["commands"]["fallback"])
         self.assertNotIn("--commit", recipe["commands"]["bump"])
+        # Homebrew 7 audits the intermediate sdist formula; the wheel layout is
+        # checked afterward by brew style and the native install checklist.
+        self.assertIn("--no-audit", recipe["commands"]["bump"])
         self.assertNotIn("--python-extra-packages", json.dumps(recipe))
         self.assertEqual(recipe["sdist_upload_time_utc"], "2026-09-19T16:00:00Z")
         self.assertEqual(recipe["homebrew_earliest_prepare_utc"], "2026-09-20T16:00:00Z")
@@ -300,6 +306,13 @@ class HomebrewTests(unittest.TestCase):
         with self.assertRaisesRegex(Conflict, "outside"):
             self.prepare()
         self.assertEqual(self.path.read_text(), TEXT)
+
+    def test_brew_failure_after_writing_restores_formula(self):
+        self.fail_bump_after_write = True
+        with self.assertRaisesRegex(Unavailable, "brew audit"):
+            self.prepare()
+        self.assertEqual(self.path.read_text(), TEXT)
+        self.assertFalse(self.output.exists())
 
     def test_extra_file_is_not_deleted_or_silently_committed(self):
         self.extra_file = True
