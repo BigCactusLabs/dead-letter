@@ -10,15 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Opt-in `--mbox-resume` / Python `convert_mbox(..., resume=True)` for flat
-  Markdown imports, including timed workers: durable source/options/converter-bound
-  receipts, hash-verified reuse, reconciliation after output/report interruptions,
-  missing/failed-record retries, and no-clobber publication. Modified or conflicting
-  files stop the import rather than being overwritten; a message whose receipt
-  exceeds 1 MiB fails only that record. Resume reports retain source
-  order, add recovery status/attempt counts, and never overwrite earlier reports.
-  Requires a trusted local filesystem with hard-link support. Bundle, compressed,
-  dry-run, MCP and web/UI resume remain unsupported; this is not a universal
-  power-loss guarantee. See [MBOX resume](docs/reference/mbox-resume.md) (#139, first slice).
+  Markdown and Cabinet-style bundle imports, including timed workers: durable
+  source/options/converter-bound receipts, hash-verified reuse, reconciliation
+  after output/report interruptions, missing/failed-record retries, and no-clobber
+  publication. Bundle receipts verify Markdown, source bytes, every retained
+  attachment and directory identity before reuse. Complete bundles publish through
+  a probed no-replace directory rename on Linux, macOS and Windows; flat files use
+  hard links. Edited, partially missing or conflicting output stops the import
+  rather than being overwritten or silently repaired; a message whose receipt
+  exceeds 1 MiB, or whose bundle exceeds 4096 files, fails only that record.
+  Unprepared partial bundles and one copy of an over-limit bundle are retained
+  privately as abandoned attempts, not recursively deleted; reruns fail an
+  over-limit record again without reconverting it. Bundle identity survives a
+  remount or reboot.
+  Resume reports retain source order, add recovery status/attempt counts, and
+  never overwrite earlier reports. Requires a trusted local filesystem with the
+  appropriate publication support. Compressed input, dry-run, MCP and web/UI resume
+  remain unsupported; this is not a universal power-loss guarantee. See
+  [MBOX resume](docs/reference/mbox-resume.md) (#139).
 
 ### Fixed
 

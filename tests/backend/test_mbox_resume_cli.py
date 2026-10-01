@@ -129,11 +129,11 @@ def test_report_write_failure_preserves_journal_and_completed_files(tmp_path, mo
     assert report["mbox_options"]["recovery_counts"]["reused"] == 3
 
 
-@pytest.mark.parametrize("flag", ["--mbox-bundles", "--dry-run", "--delete-eml"])
-def test_unsupported_combinations_write_nothing(tmp_path, flag):
+@pytest.mark.parametrize("flags", [["--mbox-bundles", "--dry-run"], ["--dry-run"], ["--delete-eml"]])
+def test_unsupported_combinations_write_nothing(tmp_path, flags):
     source = archive(tmp_path)
     root = tmp_path / "out"
-    assert main(["convert", str(source), "--output", str(root), "--mbox-resume", flag]) == 1
+    assert main(["convert", str(source), "--output", str(root), "--mbox-resume", *flags]) == 1
     assert not root.exists()
 
 

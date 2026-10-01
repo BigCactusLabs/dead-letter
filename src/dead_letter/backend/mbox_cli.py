@@ -45,8 +45,8 @@ def run_mbox(
     staging_dir: str | None = None,
     resume: bool = False,
 ) -> int:
-    if resume and (archive_input or bundles or options.dry_run):
-        print("MBOX resume supports only flat Markdown output, not bundles, dry runs or compressed input", file=sys.stderr)
+    if resume and (archive_input or options.dry_run):
+        print("MBOX resume does not support dry runs or compressed input", file=sys.stderr)
         return 1
     root = Path(output).expanduser().resolve() if output is not None else Path(source).expanduser().resolve().with_suffix(".markdown")
     started = monotonic()

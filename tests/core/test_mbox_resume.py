@@ -122,7 +122,7 @@ def test_mismatched_import_rejected_before_message_conversion(tmp_path, monkeypa
 
 
 @pytest.mark.parametrize("kwargs", [
-    {"bundles": True}, {"options": ConvertOptions(dry_run=True)},
+    {"bundles": "yes"}, {"options": ConvertOptions(dry_run=True)},
     {"options": ConvertOptions(delete_eml=True)}, {"resume": "yes"},
 ])
 def test_unsupported_resume_modes_fail_before_output(tmp_path, kwargs):
