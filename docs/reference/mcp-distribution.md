@@ -2,10 +2,11 @@
 
 Issue [#104](https://github.com/BigCactusLabs/dead-letter/issues/104) tracks
 catalog reach independently of local client installation. Reviewed
-**September 23, 2026 (America/New_York)**; machine receipts use UTC. The
-first review was September 18, 2026. A candidate, a submission, an accepted
-listing, and an observed client install are different states. No submission,
-sign-in, fork, payment, or release was made in the September 23 sweep.
+**September 30, 2026 (America/New_York)** after the 0.4.5 release; machine
+receipts use UTC. Earlier reviews were September 18 and 23, 2026. A candidate,
+a submission, an accepted listing, and an observed client install are
+different states. No submission, sign-in, fork, payment, or release was made in
+the September 23 or September 30 sweeps.
 
 ## Source of truth and evidence
 
@@ -18,7 +19,12 @@ need for catalog admission without bypassing client consent.
 Official Registry publication is not proof of a listing in GitHub's curated
 catalog, every Copilot host, PulseMCP, or another directory.
 
-The current checkpoint is the [September 23 evidence report](../project/discovery/2026-09-23T165452Z.json),
+The current checkpoint is the [September 30 refresh](../project/2026-09-30-distribution-refresh.md):
+read-only API, `gh`, and signed-out browser lookups after the 0.4.5 release.
+It records the Smithery CLI blocker and the revalidated Agent Finder entry.
+The table below reflects it.
+
+**Earlier checkpoint (September 23):** the [September 23 evidence report](../project/discovery/2026-09-23T165452Z.json),
 written by `scripts/audit_mcp_discovery.py` at 16:54:52 UTC (12:54 in New
 York). It was run locally, not in CI, so no Actions run backs it. The script
 covers the Official Registry, the Cline `marketplace` catalog, and Awesome.
@@ -33,23 +39,23 @@ at source commit `1c4a3cc`. The receipt time, September 19 at 03:02 UTC, is
 September 18 at 23:02 in New York. It superseded the first pass's unknown
 Official Registry and Awesome states, not the unresolved other directories.
 
-| Surface | Observed state (September 23) | Next concrete step |
+| Surface | Observed state (September 30) | Next concrete step |
 | --- | --- | --- |
-| Official MCP Registry | **present**. Exact identity active at **0.4.5** (latest, confirmed 2026-09-28 via `release.py status`), with PyPI `dead-letter` 0.4.5, the v0.4.5 MCPB release asset, and an OCI digest `ghcr.io/bigcactuslabs/dead-letter@sha256:18ff617fb594196e12e3574809caf8ff5b79bea8a831f801b8fc2ac6418a82a1`. Five versions are listed: 0.4.5, 0.4.0, 0.3.1, 0.2.5, 0.2.4. | Recheck after the next maintainer release; do not advertise unreleased artifacts as already published. |
-| Glama | **present**. [Listing](https://glama.ai/mcp/servers/BigCactusLabs/dead-letter) shows four tools and a Claim button; claim state is not confirmed. The `convert_directory` summary is the tool's docstring, which omits the required output directory and the 50-file limit. | Owner sign-in on the [claim page](https://glama.ai/mcp/servers/BigCactusLabs/dead-letter/admin); request a re-sync after the next release. |
-| GitHub MCP Registry / VS Code gallery | **not_in_snapshot**. All 288 entries of `api.mcp.github.com/v0.1/servers` were enumerated; dead-letter is not among them. | Onboarding route is contested; see [GitHub MCP Registry and Agent Finder](#github-mcp-registry-and-agent-finder). |
-| PulseMCP | **unknown**. The v0beta API returned 410 (sunset); the v0.1 API returned 401 and requires an `X-API-Key` header; the site search returned a Cloudflare 403. | Recheck with an API key or a manual owner lookup, and record a listing URL/version. |
-| Cline `marketplace` | **not_in_snapshot**. Not in the complete **203-entry** published catalog (generated 2026-09-18); no open PR or repository path mentions dead-letter. 111 PRs are open and no fork PR has ever been merged. The validator pin `e59b03e` still matches the current schema (HEAD `6969aa8`). Native Linux CLI registration passed earlier. | Submit the prepared entry from an authorized fork and record review/outcome. |
+| Official MCP Registry | **present**. Exact identity active at **0.4.5** (latest, confirmed 2026-09-28 via `release.py status`), with PyPI `dead-letter` 0.4.5, the v0.4.5 MCPB release asset, and an OCI digest `ghcr.io/bigcactuslabs/dead-letter@sha256:18ff617fb594196e12e3574809caf8ff5b79bea8a831f801b8fc2ac6418a82a1`. Five versions are listed: 0.4.5, 0.4.0, 0.3.1, 0.2.5, 0.2.4; rechecked September 30. | Recheck after the next maintainer release; do not advertise unreleased artifacts as already published. |
+| Glama | **present**, unclaimed. [Listing](https://glama.ai/mcp/servers/BigCactusLabs/dead-letter) shows five tools, a Claim button, and no owner. Its schema changelog picked up v0.4.5 on September 30; `convert_directory` now states the required output directory and the 50-file limit. | Owner sign-in on the [claim page](https://glama.ai/mcp/servers/BigCactusLabs/dead-letter/admin). No re-sync is needed for the 0.4.5 text. |
+| GitHub MCP Registry / VS Code gallery | **not_in_snapshot**. All 339 entries (September 30; 288 on September 23) of `api.mcp.github.com/v0.1/servers` were enumerated; dead-letter is not among them. | Onboarding route is contested; see [GitHub MCP Registry and Agent Finder](#github-mcp-registry-and-agent-finder). |
+| PulseMCP | **present**. [Listing](https://www.pulsemcp.com/servers/bigcactuslabs-dead-letter) shows registry name `io.github.BigCactusLabs/dead-letter` and "server.json file available"; the page does not say how it was ingested. A site banner says submissions and listing changes are paused. (September 23: unknown; APIs returned 410/401.) | None. Recheck when the listing copy matters. |
+| Cline `marketplace` | **not_in_snapshot**. Not in the 199-entry `api.cline.bot/v1/mcp/marketplace` response on September 30 (endpoint not confirmed as Cline's documented one), nor the complete **203-entry** published catalog (generated 2026-09-18); no open PR or repository path mentions dead-letter. 111 PRs are open and no fork PR has ever been merged. The validator pin `e59b03e` still matches the current schema (HEAD `6969aa8`). Native Linux CLI registration passed earlier. | Submit the prepared entry from an authorized fork and record review/outcome. |
 | Cline `mcp-marketplace` | **not_in_snapshot**. No open issue mentions dead-letter. The repository has 2,312 open issues; the last closure by someone other than the issue author was 2025-12-08. The route still requests an observed autonomous README-only install, which has not been done. | Complete that specific named-client test before making the required confirmation; avoid duplicate submissions. |
-| `punkpeye/awesome-mcp-servers` | **present**. Listed under Communication, line 920 at `77bbee449380650cd44d4343afce7c5cddbdebc1`. Full README length and Git blob identity verified before scanning. | Do not submit a duplicate. Verify the existing entry when its description or install contract changes. |
-| Smithery | **not_in_snapshot**. All 20 pages (191 records) of the `q=dead-letter` registry search contain no BigCactusLabs record; `api.smithery.ai/servers/bigcactuslabs/dead-letter` returned 404. | Owner-authenticated MCPB publishing after testing the uv requirement; see [below](#other-submission-copy-and-boundaries). |
+| `punkpeye/awesome-mcp-servers` | **present**. Listed under Communication, line 884 at `3c30195615095be4f22ac120a7cee82f215cf547` (September 30; line 920 at `77bbee4` on September 23). The entry does not mention `.mbox` or MCPB. Full README length and Git blob identity verified before scanning. | Do not submit a duplicate. Verify the existing entry when its description or install contract changes. |
+| Smithery | **not_in_snapshot**. `api.smithery.ai/servers/bigcactuslabs/dead-letter` returned 404 and the `q=dead-letter` search (191 records) has no BigCactusLabs record. **Blocked:** Smithery CLI 4.11.1 rejects bundles with `server.type: "uv"`. | Needs a bundle variant with a supported type or an upstream change; see [below](#other-submission-copy-and-boundaries). |
 | mcp.so | **not_in_snapshot**. Neither the `dead-letter` nor the exact repository search returned the project. Signed out, the site shows a $39 paid flow; its site strings also include a free queued-review option. | **Deferred** ([#154](https://github.com/BigCactusLabs/dead-letter/issues/154), owner decision 2026-09-23): no payment. The free queued review may be used later after owner sign-in. |
-| mcpservers.org | **unknown**. The search returned a Cloudflare 403 challenge. Free review ($0, within two weeks) requires a contact email; optional paid promotion is also offered. No form submitted. | Use the free path with real maintainer contact details and canonical copy below. |
+| mcpservers.org | **not_in_snapshot** for the query `dead-letter` (September 30, browser; September 23 got a Cloudflare 403). Free review ($0, within two weeks) requires a contact email; optional paid promotion is also offered. No form submitted; owner held submission on September 30. | Use the free path with real maintainer contact details and canonical copy below. |
 | cursor.directory | **unknown**. Lookups returned 429. | **Deferred** with Cursor Marketplace ([#155](https://github.com/BigCactusLabs/dead-letter/issues/155)); see [Cursor](#cursor-deferred). |
-| Agent Finder / ARD | **not_in_snapshot**. Not among the 2,107 entries of `ai-catalog.json`; no open PR mentions dead-letter; the complete repository tree has no dead-letter path. Portable skill and ARD metadata exist in main; natural-language retrieval not tested. | A GitHub MCP Registry listing is the primary route for the MCP entry; see [below](#github-mcp-registry-and-agent-finder) and [Agent Discovery](agent-discovery.md). |
+| Agent Finder / ARD | **not_in_snapshot**. Not among the 2,143 entries of `ai-catalog.json` at `abb4a13` (September 30); the prepared skill entry passes the catalog generator there, and the owner held submission; no open PR mentions dead-letter; the complete repository tree has no dead-letter path. Portable skill and ARD metadata exist in main; natural-language retrieval not tested. | A GitHub MCP Registry listing is the primary route for the MCP entry; see [below](#github-mcp-registry-and-agent-finder) and [Agent Discovery](agent-discovery.md). |
 
 No submission, sign-in, fork, comment, payment, catalog edit, or release was
-made in the September 23 sweep. No API key was used. No versions, release
+made in the September 23 or September 30 sweeps. No API key was used. No versions, release
 pointers, licenses, account permissions, or billing settings were changed.
 
 In the September 18 sweep, the connected GitHub actions could edit this
@@ -93,7 +99,7 @@ delegated maintainers when needed; do not add it to imitate a completed claim.
 After sign-in, verify admin access and request a re-sync. Do not enable hosted
 email processing as a side effect. As of September 23 the listing shows a Claim
 button but no explicit claimed/unclaimed label, so the claim state is not
-confirmed.
+confirmed. On September 30 it shows a Claim button and no owner.
 
 Observed September 18: the overview said `convert_directory` has an optional
 output directory. On September 23 the listing shows this `convert_directory`
@@ -108,7 +114,8 @@ The root cause is in the server, not Glama: the 0.4.0 MCP input schema marked
 `output_directory` optional, although the tool rejected a call without it and
 permitted at most 50 `.eml` files per call. The schema fix (requiring
 `output_directory` and documenting the 50-file limit) shipped in the 0.4.5
-release (2026-09-28). Glama needs a re-sync after the claim to pick it up. No
+release (2026-09-28). Glama re-indexed without a claim: on September 30 its
+schema tab reads "at most 50 per call … output_directory is required". No
 upstream listing edit was made here.
 
 ## Cline submission package and tested path
@@ -197,13 +204,14 @@ local MCPB uploads:
 smithery mcp publish ./dead-letter-mcp-X.Y.Z.mcpb -n OWNER_NAMESPACE/dead-letter
 ```
 
-Publishing requires `smithery auth login` first. The CLI runs the bundle
-manifest's command as written, so `uv` must be on the `PATH` of the machine
-that runs it. Smithery does not document whether its scan supports a uv-style
-bundle. Resolve the authenticated namespace, inspect the bundle/manifest,
-verify its checksum and live PyPI pin, and test Smithery's supported runtime
-first. Generic MCPB support does not establish support for this bundle.
-Do not use a remote URL entry for the local server.
+Publishing requires `smithery auth login` first. **This bundle is blocked
+today:** `@smithery/cli` 4.11.1 detects the runtime only from a `bun` command,
+`server.type` `python`/`node`/`binary`, or `bin/` entries, and otherwise throws
+"Could not determine bundle runtime from manifest". Our manifest declares
+`"type": "uv"`. See the [September 30 refresh](../project/2026-09-30-distribution-refresh.md#smithery-cli-rejects-uv-bundles).
+Publishing needs a bundle variant with a supported type or an upstream change;
+generic MCPB support does not establish support for this bundle. Do not use a
+remote URL entry for the local server.
 
 For [mcpservers.org](https://mcpservers.org/submit), use free review (no
 charge, reviewed within two weeks), supply real maintainer contact details and
@@ -231,7 +239,8 @@ see [client installation](client-installation.md).
 ## GitHub MCP Registry and Agent Finder
 
 GitHub's curated registry (`api.mcp.github.com/v0.1/servers`) was enumerated
-completely on September 23: 288 entries, none for dead-letter. The onboarding
+completely on September 23 (288 entries) and September 30 (339 entries);
+neither snapshot contains dead-letter. The onboarding
 route is contested. GitHub's
 [October 24, 2025 post](https://github.blog/ai-and-ml/generative-ai/how-to-find-install-and-manage-mcp-servers-with-the-github-mcp-registry/)
 says to email partnerships@github.com. A September 16, 2025 GitHub post
@@ -242,7 +251,8 @@ MCP catalog (`github/agentfinder-catalog` PR #20, August 24, 2026). A GitHub
 MCP Registry listing is therefore the primary route for the MCP server there
 as well. Direct catalog PRs remain possible for the skill entry described in
 [Agent Discovery](agent-discovery.md); on September 23, none of 16 merged PRs
-came from forks, and 28 of 32 open PRs were from forks.
+came from forks, and 28 of 32 open PRs were from forks. On September 30 the
+only merge since then was the repository's own catalog regeneration (#18).
 
 ## Remaining observed-client acceptance
 
@@ -265,7 +275,8 @@ and MCPB publication retain their separate release gates.
 ## Primary process references
 
 Reviewed September 18, 2026; the Smithery, Cline, Cursor, mcp.so, and
-mcpservers.org routes were rechecked September 23, 2026:
+mcpservers.org routes were rechecked September 23, 2026, and Smithery,
+mcpservers.org, PulseMCP, and Glama again on September 30, 2026:
 [VS Code install URLs](https://code.visualstudio.com/api/extension-guides/ai/mcp),
 [Cursor install links](https://cursor.com/docs/mcp/install-links),
 [Cline contribution rules](https://github.com/cline/marketplace/blob/main/CONTRIBUTING.md),
