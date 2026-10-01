@@ -33,6 +33,7 @@ class MboxConversion:
     mbox: dict[str, Any] | None = None
     diagnostics: dict[str, Any] | None = None
     error: dict[str, str] | None = None
+    recovery: dict[str, Any] | None = None
 
 
 def _convert_record(
@@ -126,6 +127,7 @@ def convert_mbox(
     memory_limit_mib: int | None = None,
     cpu_seconds: int | None = None,
     max_output_mib: int | None = None,
+    resume: bool = False,
 ) -> Iterator[MboxConversion]:
     """Lazily convert an immutable exported mailbox; never delete the archive.
 
@@ -141,11 +143,17 @@ def convert_mbox(
     per-worker resource limits and require ``timeout_seconds``. A budget this
     platform cannot enforce raises ``MboxBudgetError`` before any conversion.
     They are resource limits, not filesystem or network isolation.
+
+    ``resume=True`` opts into a source/options-bound journal for flat Markdown
+    output. Reuse verifies output hashes; conflicts stop without overwriting.
+    Bundles and dry runs are not supported in resume mode. The output filesystem
+    must support hard links. Results include ``recovery`` status/attempt data.
     """
     yield from _convert_mbox(
         path, output=output, options=options, limits=limits, unescape=unescape,
         bundles=bundles, timeout_seconds=timeout_seconds,
         memory_limit_mib=memory_limit_mib, cpu_seconds=cpu_seconds, max_output_mib=max_output_mib,
+        resume=resume,
     )
 
 
@@ -177,6 +185,7 @@ def _convert_mbox(
     cpu_seconds: int | None = None,
     max_output_mib: int | None = None,
     archive: dict[str, Any] | None = None,
+    resume: bool = False,
 ) -> Iterator[MboxConversion]:
     # Both public importers use this pipeline; only the provenance differs.
     budgets = _worker_budgets(timeout_seconds, memory_limit_mib, cpu_seconds, max_output_mib)
@@ -194,6 +203,19 @@ def _convert_mbox(
     label = Path(archive["member_name"]) if archive is not None else source
     provenance_options = {"archive": archive} if archive is not None else {}
     opts = replace(opts, delete_eml=False)
+    if type(resume) is not bool:
+        raise ValueError("MBOX resume must be a boolean")
+    if resume:
+        if bundles or opts.dry_run or archive is not None:
+            raise ValueError("MBOX resume supports only flat Markdown output, not bundles, dry runs or compressed input")
+        if source.suffix.lower() != ".mbox" or not source.is_file():
+            raise ValueError("MBOX resume requires an existing flat .mbox file")
+        from dead_letter.core.mbox_resume import convert_mbox_resumable
+        yield from convert_mbox_resumable(
+            source, root, opts, limits or MboxLimits(), unescape=unescape,
+            timeout_seconds=timeout_seconds, budgets=budgets,
+        )
+        return
     try:
         with closing(iter_mbox(source, limits=limits, unescape=unescape)) as records:
             for record in records:
