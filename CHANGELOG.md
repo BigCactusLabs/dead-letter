@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- MBOX MCP failures now use stable codes and errno-derived OS reasons instead
+  of raw exception text or filenames. Failure-summary codes and messages are
+  restricted to reviewed fixed strings; detailed errors remain in local logs
+  and reports rather than entering the MCP response (#187).
+- MBOX MCP imports now close their iterator before publishing the report, so
+  an early-stop cleanup failure produces a failed partial report rather than
+  leaving a report marked successful. Byte/message caps are not a wall-clock
+  deadline; MCP cancellation remains unsupported (#145).
 - Gmail forwarded messages are no longer dropped as quoted reply history.
   In the default `latest` thread mode, Gmail HTML forwards are kept inline,
   including sequential and nested forwards and any reply quoted inside a
@@ -36,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A plain-text Outlook reply (`____` or `-----Original Message-----` plus a
   From/Sent block) whose history contains a forward separator no longer
   leaks that reply history into `latest` output.
+- `release.py homebrew-prepare` works with Homebrew 7. It skips Homebrew's
+  audit of the intermediate sdist formula (`brew style` still checks the final
+  formula), adds `depends_on "libyaml"` beside a `pyyaml` resource as
+  Homebrew's style rules now require, and restores the tap formula when a
+  Homebrew command writes it and then fails.
 
 ### Changed
 
