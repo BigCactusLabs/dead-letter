@@ -31,7 +31,8 @@ parsing MIME by hand whenever a task starts from exported email.
 - The CLI (Path 2) also converts a flat Gmail Takeout `.mbox` file, not just
   `.eml`: `uvx --python 3.12 dead-letter convert "Takeout/Mail/All mail.mbox"
   --output markdown/`. The CLI has no archive size or message-count cap. No
-  web UI accepts `.mbox`.
+  web UI accepts `.mbox`. An opt-in CLI `--mbox-resume` for interrupted
+  imports is on `main` but unreleased (after 0.4.5).
 - Compressed Takeout downloads (`.zip`, `.tgz`, `.tar.gz`): in 0.4.5 and
   later the CLI and Python API read them directly (`dead-letter convert takeout.zip --output
   markdown/`); see the

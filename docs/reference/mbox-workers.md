@@ -225,7 +225,9 @@ Parent publication still uses the existing writers: a file can be visible while
 being copied, and ordinary exceptions trigger cleanup. Output plus report receipt
 are **not one transaction**. Parent SIGKILL/power loss, repeated interruption
 during cleanup, and a machine-wide resource failure remain outside recovery
-guarantees. Reruns remain collision-safe, not deduplicated or resumable. See the
+guarantees. Reruns remain collision-safe, not deduplicated or resumable, unless
+you opt into the unreleased `--mbox-resume` journal (on `main`, not in 0.4.5;
+see [resumable MBOX imports](mbox-resume.md)). See the
 [base Takeout contract](gmail-takeout.md) for immutable-source and dialect limits.
 
 ## Practitioner sources and design decisions
@@ -293,7 +295,7 @@ the same test-only command builder replacing one private pipeline function.
 The [synthetic worker benchmark](../project/2026-09-24-mbox-worker-benchmark.md)
 measures startup/copy overhead and defers reuse. Next foundation work remains:
 obtain representative real-corpus evidence; Windows Job Object budgets
-and a macOS memory control (#140 follow-up); and design durable resume around both file publication
-and report receipts, tracked in
-[#139](https://github.com/BigCactusLabs/dead-letter/issues/139). None is
-implied by this timeout option.
+and a macOS memory control (#140 follow-up). Durable resume (#139) is
+implemented separately and is unreleased; see
+[resumable MBOX imports](mbox-resume.md). Neither is implied by this timeout
+option.

@@ -422,6 +422,8 @@ CI also validates plugin/skill schemas, frontend syntax, maintained Markdown lin
   Takeout downloads; see the [Takeout guide](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/gmail-takeout.md). The web UI
   is EML-only. From 0.4.5 the MCP server adds a bounded `convert_mbox` tool for
   one flat `.mbox`. PST, MSG and live-mailbox connections are unsupported.
+  An opt-in resumable MBOX import (`--mbox-resume`, CLI/Python only) is on
+  `main` but unreleased; see the [resume contract](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/mbox-resume.md).
 - Local-only, single-user, single-machine; no remote server or authentication service. An MCP host may send results to its model provider.
 - In-memory job registry: state resets on restart. Retained binary attachments need a separate parser for text indexing.
 

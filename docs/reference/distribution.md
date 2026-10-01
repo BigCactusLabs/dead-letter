@@ -26,10 +26,11 @@ portable skill.
 The CLI and Python API routes above can also convert a Gmail Takeout `.mbox`
 export, not only `.eml` files or folders; see
 [Gmail Takeout / MBOX](gmail-takeout.md) and
-[MBOX Workers](mbox-workers.md). The MCP server and web UI accept `.eml` only —
-neither imports `.mbox` (tracked: MCP ingestion
-[#145](https://github.com/BigCactusLabs/dead-letter/issues/145), web/API import
-[#146](https://github.com/BigCactusLabs/dead-letter/issues/146)).
+[MBOX Workers](mbox-workers.md). Resumable MBOX imports (`--mbox-resume`) are
+unreleased on `main`; see [resume contract](mbox-resume.md). The web UI accepts
+`.eml` only. The MCP server accepts `.eml` and, from 0.4.5, one bounded flat
+`.mbox` through `convert_mbox`; neither it nor the web UI resumes imports (web/API
+import: [#146](https://github.com/BigCactusLabs/dead-letter/issues/146)).
 
 ## Artifacts are not listings
 
