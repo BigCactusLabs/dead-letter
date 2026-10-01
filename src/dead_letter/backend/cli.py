@@ -60,6 +60,10 @@ def _add_convert_flags(parser: argparse.ArgumentParser) -> None:
         "--mbox-bundles", action="store_true",
         help="MBOX: write Cabinet-style message.md, source.eml and attachment bundles.",
     )
+    parser.add_argument(
+        "--mbox-resume", action="store_true",
+        help="MBOX: journal flat Markdown imports and verify completed outputs on rerun; requires hard-link support.",
+    )
     parser.add_argument("--mbox-member", metavar="NAME", help="Archive: exact .mbox member name")
     parser.add_argument("--mbox-staging-dir", metavar="DIR", help="Archive: parent directory for private staging")
     parser.add_argument(
@@ -222,9 +226,9 @@ def _run_convert(args: argparse.Namespace) -> int:
             max_message_mib=args.max_message_mib, unescape=args.mbox_unescape,
             bundles=args.mbox_bundles, timeout_seconds=args.mbox_timeout,
             memory_limit_mib=args.mbox_memory_mib, cpu_seconds=args.mbox_cpu_seconds,
-            max_output_mib=args.mbox_max_output_mib,
+            max_output_mib=args.mbox_max_output_mib, resume=args.mbox_resume,
         )
-    if (args.mbox_bundles or args.mbox_unescape != "preserve" or args.max_message_mib != 64
+    if (args.mbox_bundles or args.mbox_resume or args.mbox_unescape != "preserve" or args.max_message_mib != 64
             or args.mbox_timeout is not None or args.mbox_memory_mib is not None
             or args.mbox_cpu_seconds is not None or args.mbox_max_output_mib is not None
             or args.mbox_member is not None or args.mbox_staging_dir is not None):
