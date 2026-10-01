@@ -17,7 +17,7 @@ payment, or catalog edit was made. Issues: #148–#153, #160.
 | Smithery | **not_in_snapshot**; `api.smithery.ai/servers/bigcactuslabs/dead-letter` returns 404. **Publishing blocker:** see below. | API search, CLI source |
 | Agent Finder | **not_in_snapshot**. `ai-catalog.json` at `abb4a13` has 2,143 entries, none for dead-letter; no PR mentions it; no fork PR merged since 2026-09-23. | [catalog@abb4a13](https://github.com/github/agentfinder-catalog/tree/abb4a13e3c27e46e66ee6a103cc3ca2ae370cbd8) |
 | mcpservers.org | **not_in_snapshot** for the query `dead-letter` (one unrelated Azure Service Bus result). Browser search was not blocked this time. | `mcpservers.org/search?query=dead-letter` |
-| Homebrew tap | **present but stale**: `Formula/dead-letter.rb` at `c5ab27e` is 0.4.0. | [formula](https://github.com/BigCactusLabs/homebrew-tap/blob/c5ab27ed42dfb52024c983ea3a3e5265c3b4af0e/Formula/dead-letter.rb) |
+| Homebrew tap | **present, updated to 0.4.5 the same day**. At lookup time the formula at `c5ab27e` was 0.4.0. See [Homebrew 0.4.5 update](#homebrew-045-update). | [formula@c5ab27e](https://github.com/BigCactusLabs/homebrew-tap/blob/c5ab27ed42dfb52024c983ea3a3e5265c3b4af0e/Formula/dead-letter.rb) |
 
 ## Smithery CLI rejects uv bundles
 
@@ -49,3 +49,20 @@ was added to a scratch clone of `github/agentfinder-catalog` at `abb4a13`.
 after merging GitHub's live MCP catalog). The entry matches existing skill
 entries' conventions (`sourceSet` as `owner/repo`, `blob/main` URL).
 Submission is held by the owner (2026-09-30); nothing was pushed.
+
+## Homebrew 0.4.5 update
+
+`release.py homebrew-prepare` failed on Homebrew 7.0.7. Fixed on main in
+`ab99fba`, `c972d96` and `61bf819`; see
+[Release Operations](../reference/release-operations.md#prepare-a-homebrew-update).
+The draft [tap PR #2](https://github.com/BigCactusLabs/homebrew-tap/pull/2)
+was tested on macOS arm64 and merged as `c4791f4`:
+
+- `brew upgrade --build-from-source` 0.4.0 → 0.4.5; `brew test` exit 0.
+- Only `dead-letter` is installed; no `dead-letter-mcp` or `dead-letter-ui`.
+- Synthetic fixture conversion: exit 0, source SHA-256 unchanged.
+- The PyYAML wheel loads its bundled libyaml (`__with_libyaml__ = True`).
+
+`release.py status --version 0.4.5` with the original build checksums then
+reported all six channels verified: PyPI, GitHub release, GHCR, MCP Registry,
+plugin marketplace, and Homebrew.

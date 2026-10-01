@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A plain-text Outlook reply (`____` or `-----Original Message-----` plus a
   From/Sent block) whose history contains a forward separator no longer
   leaks that reply history into `latest` output.
+- `release.py homebrew-prepare` works with Homebrew 7. It skips Homebrew's
+  audit of the intermediate sdist formula (`brew style` still checks the final
+  formula), adds `depends_on "libyaml"` beside a `pyyaml` resource as
+  Homebrew's style rules now require, and restores the tap formula when a
+  Homebrew command writes it and then fails.
 
 ### Changed
 
