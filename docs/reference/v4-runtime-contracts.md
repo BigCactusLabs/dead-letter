@@ -2,7 +2,7 @@
 title: dead-letter v4 Runtime Contracts
 doc_type: reference
 status: canonical
-last_updated: 2026-06-27
+last_updated: 2026-09-30
 audience:
   - maintainers
   - contributors
@@ -875,8 +875,8 @@ These differ from the CLI and the Python API:
   - The source archive is opened read-only and never modified, moved or
     deleted.
   - MCP request cancellation is **not supported**: a cancelled call keeps
-    running until it finishes or reaches a bound. The size and message caps
-    limit its duration.
+    running until it finishes or reaches a bound. Byte/message caps are not
+    a wall-clock deadline; parsing and filesystem I/O have no MCP time limit.
 
 ### Error contract
 
@@ -905,12 +905,12 @@ check that the text contains one of these messages:
 - `MCP convert_eml_to_bundle only supports source_handling='copy'; use the CLI/API for move/delete.`
 - `output_directory is required for MCP directory conversion`
 
-Any other exception (one that escapes the core pipeline, such as a failure
-reading back the converted Markdown, a broken internal invariant or an
-unexpected crash) reaches the client only as `Error executing tool <name>`,
-with no further text. MCP SDK 2.1 and
-later mask these by design, and dead-letter relies on that so internal and
-email-derived text stays on the server.
+For tools other than `convert_mbox`, any other exception (one that escapes the
+core pipeline, such as a failure reading back the converted Markdown, a broken
+internal invariant or an unexpected crash) reaches the client only as
+`Error executing tool <name>`, with no further text. MCP SDK 2.1 and later mask
+these by design, and dead-letter relies on that so internal and email-derived
+text stays on the server.
 
 `convert_mbox` raises `ToolError`, so the MCP Python SDK 2.2 locked in
 `uv.lock` delivers its message to the client, prefixed by `Error executing
@@ -923,8 +923,8 @@ tool convert_mbox: `:
 - `File not readable: <path>`
 - `MCP MBOX conversion supports archives up to 256 MiB; found <n> bytes. Use the dead-letter CLI for larger archives.`
 - `MBOX conversion failed: <reason>` — core output validation (for example,
-  `MBOX output must be a directory distinct from the source`) or a filesystem
-  error before any message was processed
+  `MBOX output must be a directory distinct from the source`) or a failure
+  before any message was processed
 - `MBOX conversion failed after <n> messages: <reason>; partial report: <path>`
   — an error after conversion started (for example, a full disk while
   spooling the report, `MBOX archive exceeds the MCP limit of 256 MiB; use the
@@ -933,9 +933,34 @@ tool convert_mbox: `:
   is still published with `job.status` `"failed"`; it lists the entries
   committed before the error. If the report itself cannot be written, the
   message ends with `the report could not be written: <reason>` instead.
+- `MBOX report could not be written after <n> messages: <reason>` — conversion
+  completed but report publication failed. Existing message outputs remain;
+  a failed report reservation is removed where filesystem cleanup succeeds.
+
+**Unreleased hardening (#187):** MBOX conversion/report failure reasons use
+`mbox_io_error` (optionally followed by a known errno name and the OS-generated
+reason), `mbox_invalid_input`, or `mbox_conversion_error`. The fixed core output
+validation message and MCP-owned archive-limit/change messages above remain
+readable. Raw exception text, custom `strerror`, filenames and arbitrary
+exception class names are never used as these reasons. Caller-provided input
+paths in validation errors and the requested output/report paths remain part
+of the response. Exception details are logged locally, not erased.
 
 Per-message failures are not tool errors; they appear in `failures` and the
-report with the importer's error codes (for example `mbox_empty_message`).
+report. In the unreleased hardening, summary codes are allowlisted:
+`mbox_empty_message`, `mbox_message_too_large`, `mbox_line_too_long`,
+`mbox_invalid_message`, `mbox_archive_error`, `html_markdown_failed` and
+`conversion_error`. Each has a fixed message; an unknown code becomes
+`conversion_error`. Both string fields are therefore bounded independently
+of the importer's error text. The report retains the original error details
+and provenance. Local reports and logs can contain private metadata and must
+not be treated as sanitized, model-safe summaries.
+
+**Unreleased cleanup ordering (#145):** the importer is closed before final
+source verification and report publication. A failure during early-stop
+iterator cleanup is inside the same failure boundary as iteration: the
+partial report is marked failed, never successful. This is not durable resume,
+transactional output/report publication or a power-loss recovery guarantee.
 
 ### Distribution
 
