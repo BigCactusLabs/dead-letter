@@ -62,7 +62,7 @@ def _add_convert_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--mbox-resume", action="store_true",
-        help="MBOX: journal flat Markdown imports and verify completed outputs on rerun; requires hard-link support.",
+        help="MBOX: journal Markdown or bundle imports and verify every output on rerun; requires no-replace publication support.",
     )
     parser.add_argument("--mbox-member", metavar="NAME", help="Archive: exact .mbox member name")
     parser.add_argument("--mbox-staging-dir", metavar="DIR", help="Archive: parent directory for private staging")
