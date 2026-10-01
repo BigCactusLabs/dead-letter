@@ -71,6 +71,31 @@ def test_bundle_bytes_provenance_diagnostics_and_reuse(tmp_path, monkeypatch, ti
     assert len(list(root.glob("0000000*"))) == 3
 
 
+def test_complete_bundle_rerun_skips_directory_sync_and_journal_write(tmp_path, monkeypatch):
+    import sqlite3
+    from contextlib import closing
+    from dead_letter.core import mbox_resume
+
+    source = archive(tmp_path)
+    root = tmp_path / "out"
+    first = run(source, root)
+    synced = []
+    original = mbox_resume._sync_directory
+    monkeypatch.setattr(mbox_resume, "_sync_directory", lambda path: (synced.append(path), original(path)))
+    database = root / ".dead-letter-resume" / "journal.sqlite3"
+    with closing(sqlite3.connect(database)) as db:
+        before = db.execute("SELECT * FROM records ORDER BY id").fetchall()
+    stamp = database.stat().st_mtime_ns
+    second = run(source, root)
+    assert [row.recovery["status"] for row in second] == ["reused"] * 3
+    assert [row.output for row in second] == [row.output for row in first]
+    # Only the journal open syncs the output root; reused bundles write nothing.
+    assert synced.count(root) == 1
+    assert database.stat().st_mtime_ns == stamp
+    with closing(sqlite3.connect(database)) as db:
+        assert db.execute("SELECT * FROM records ORDER BY id").fetchall() == before
+
+
 @pytest.mark.parametrize("timeout", [None, 30])
 def test_failed_record_is_retried_without_duplicate_bundles(tmp_path, timeout):
     source = archive(tmp_path, empty=True)

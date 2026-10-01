@@ -118,6 +118,7 @@ def test_mismatched_import_rejected_before_message_conversion(tmp_path, monkeypa
         monkeypatch.setattr(mbox_resume, "_engine_fingerprint", lambda: {"changed": True})
     rows = list(convert_mbox(source, output=root, resume=True, **kwargs))
     assert len(rows) == 1 and rows[0].error["code"] == "mbox_resume_mismatch"
+    assert "use a new output directory" in rows[0].error["message"]
     assert [row.output.read_bytes() for row in first] == originals
 
 

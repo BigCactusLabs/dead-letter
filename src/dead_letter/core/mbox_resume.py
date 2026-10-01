@@ -311,7 +311,9 @@ class ResumeJournal:
                     self.db.execute("INSERT INTO meta VALUES (1, ?)", (self.contract,))
                 elif saved[0] != self.contract:
                     raise MboxResumeError(
-                        "mbox_resume_mismatch", "Source, output, converter or options differ from the resume journal",
+                        "mbox_resume_mismatch",
+                        "Source, output, converter or options differ from the resume journal; "
+                        "use a new output directory",
                     )
             _sync_directory(self.state)
             _sync_directory(self.root)
@@ -557,6 +559,9 @@ class ResumeJournal:
         manifest, directory_id = _bundle_snapshot(candidate)
         if manifest != row["receipt"]["manifest"] or directory_id != row["receipt"]["directory_id"]:
             raise _conflict(f"Bundle for record {identity['index']} was modified or replaced; nothing was overwritten")
+        if present and row["phase"] == "complete" and not os.path.lexists(stage):
+            # Verified and already durable: no directory sync or journal write.
+            return target / "message.md", row["receipt"], "reused", row["attempt"]
         if not present:
             try:
                 self._publish_bundle(candidate, target)

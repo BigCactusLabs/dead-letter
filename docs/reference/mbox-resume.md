@@ -182,7 +182,8 @@ stopping all imports) makes the next run reconvert the message, which retains
 one new copy if it is still over a limit.
 
 The following stop the import. Conflicts use `mbox_resume_conflict`;
-incompatible contracts use `mbox_resume_mismatch`; a competing writer uses
+incompatible contracts use `mbox_resume_mismatch`, whose message directs you to a
+new output directory; a competing writer uses
 `mbox_resume_busy`. MBOX framing failures use `mbox_archive_error` with the same
 fixed message as a non-resume import. Filesystem/database failures use
 `mbox_resume_io_error` and retain state for inspection/retry. When hard-link
