@@ -18,8 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a probed no-replace directory rename on Linux, macOS and Windows; flat files use
   hard links. Edited, partially missing or conflicting output stops the import
   rather than being overwritten or silently repaired; a message whose receipt
-  exceeds 1 MiB fails only that record. Unprepared partial bundles
-  are retained privately as abandoned attempts, not recursively deleted.
+  exceeds 1 MiB, or whose bundle exceeds 4096 files, fails only that record.
+  Unprepared partial bundles and one copy of an over-limit bundle are retained
+  privately as abandoned attempts, not recursively deleted; reruns fail an
+  over-limit record again without reconverting it. Bundle identity survives a
+  remount or reboot.
   Resume reports retain source order, add recovery status/attempt counts, and
   never overwrite earlier reports. Requires a trusted local filesystem with the
   appropriate publication support. Compressed input, dry-run, MCP and web/UI resume

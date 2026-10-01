@@ -111,6 +111,59 @@ def test_whole_deleted_bundle_retries_without_changing_name(tmp_path):
     assert tree(bundle) == before
 
 
+def limit_archive(tmp_path, kind):
+    path = tmp_path / "limits.mbox"
+    with path.open("wb") as stream:
+        for index in range(1, 4):
+            message = EmailMessage()
+            message["From"] = "sender@example.test"
+            message["Subject"] = f"Synthetic limit {index}"
+            message["Message-ID"] = f"<limit-{index}@example.test>"
+            message.set_content(f"Body {index}\n")
+            # Only message 2 exceeds the (test-lowered) bundle limits.
+            for part in range(80 if index == 2 else 1):
+                name = f"{part:03d}-" + "\u6587" * 60 + ".txt" if kind == "receipt" else f"{part:03d}.txt"
+                message.add_attachment(b"x", maintype="text", subtype="plain", filename=name)
+            message.set_boundary(f"synthetic-limit-{index}")
+            stream.write(POSTMARK + message.as_bytes() + b"\n")
+    return path
+
+
+def footprint(root):
+    paths = sorted(root.rglob("*"))
+    return len(paths), sum(p.stat().st_size for p in paths if p.is_file() and p.suffix != ".json")
+
+
+@pytest.mark.parametrize("timeout", [None, 30])
+@pytest.mark.parametrize("kind", ["members", "receipt"])
+def test_over_limit_message_fails_only_its_record_on_every_run(tmp_path, monkeypatch, kind, timeout):
+    from dead_letter.core import mbox_resume
+    if kind == "members":
+        monkeypatch.setattr(mbox_resume, "MAX_BUNDLE_FILES", 40)
+    else:
+        monkeypatch.setattr(mbox_resume, "MAX_RECEIPT_BYTES", 16 * 1024)
+    source = limit_archive(tmp_path, kind)
+    root = tmp_path / "out"
+    first = run(source, root, timeout)
+    assert [row.success for row in first] == [True, False, True], first
+    assert first[1].mbox["index"] == 2 and first[1].output is None
+    assert first[1].error["code"] == "mbox_resume_receipt_limit"
+    assert not list(root.glob("00000002-*"))
+    sizes = []
+    for attempt in (2, 3):
+        rows = run(source, root, timeout)
+        assert [row.success for row in rows] == [True, False, True], rows
+        assert [row.recovery["status"] for row in rows] == ["reused", "retried", "reused"]
+        assert rows[1].recovery["attempt"] == attempt
+        assert rows[1].error["code"] == "mbox_resume_receipt_limit"
+        assert rows[1].mbox == first[1].mbox
+        assert [row.output for row in rows] == [row.output for row in first]
+        sizes.append(footprint(root))
+    assert sizes[0] == sizes[1]  # Reruns of the same record do not accumulate copies.
+    assert len(list((root / ".dead-letter-resume").glob(".abandoned-*"))) == 1
+    assert not list(root.glob("00000002-*"))
+
+
 BOOTSTRAP = r'''
 import os, sys, shutil
 from pathlib import Path

@@ -119,8 +119,10 @@ junctions, nested attachment directories and special files are rejected.
 
 Unprepared partial bundle staging is retained inside the private state directory
 as `.abandoned-<record>-<attempt>` before retry, rather than recursively deleting
-uncertain attachment data. Unexpected layout is a conflict. Successful publication
-moves the complete bundle out and removes only its empty staging wrapper. Recovery
+uncertain attachment data. An over-limit bundle is retained as
+`.abandoned-<record>-limit` (see [Results and reports](#results-and-reports)).
+Unexpected layout is a conflict. Successful publication moves the complete
+bundle out and removes only its empty staging wrapper. Recovery
 does not recursively delete final output. Retained abandoned attempts consume disk
 space and can contain private mail; inspect them locally after stopping all imports
 before any manual removal. Do not remove the active journal or lock to clear a conflict.
@@ -166,8 +168,18 @@ The staged Markdown is removed, nothing is published for that record, and the
 import continues. A rerun retries the record at its stable name; with unchanged
 options it fails the same way without blocking or overwriting other records.
 With timed workers, the worker's own 1 MiB result cap reports such a message as
-`mbox_worker_invalid_result` instead. In bundle mode an oversized bundle
-inventory or receipt also uses `mbox_resume_receipt_limit`.
+`mbox_worker_invalid_result` instead.
+
+In bundle mode the same per-record failure covers a bundle with more than 4096
+files (for example a message with thousands of attachments) or a bundle receipt
+over 1 MiB. Both limits are checked before members are hashed. Nothing is
+published for that record and later records continue. The converted bundle is
+retained once, privately, as `.abandoned-<record>-limit`, not recursively
+deleted. While that copy exists, a rerun records a new attempt (`retried`) and
+fails it with the same code without reconverting the message, so reruns neither
+block later records nor add another copy. Removing the retained copy (after
+stopping all imports) makes the next run reconvert the message, which retains
+one new copy if it is still over a limit.
 
 The following stop the import. Conflicts use `mbox_resume_conflict`;
 incompatible contracts use `mbox_resume_mismatch`; a competing writer uses
@@ -180,8 +192,10 @@ messages name only a known errno or SQLite result code, such as `ENOSPC`, never
 paths or OS-provided text. Fatal resume errors, including an unreadable source,
 are yielded with `mbox is None`, not raised and not given a fabricated message
 identity. CLI success remains 0, errors 1, and Ctrl-C 130. Unsupported input
-combinations are rejected before conversion; a failed bundle-publication probe
-may leave an empty state store but no converted message output.
+combinations are rejected before conversion. The bundle-publication probe runs
+before the journal records its layout, so a failed probe leaves only the state
+directory and its lock file, no converted message output, and the same output
+can still be used for a flat resume.
 
 ## Concurrency, durability and limits
 
@@ -205,7 +219,9 @@ flush or lock expectations. Use a trusted local filesystem with the appropriate
 publication support, not a network share or synchronized/cloud folder. Hostile
 concurrent filesystem mutation and edits to private journal state are outside
 the contract. Do not relocate or restore managed bundles while retaining the old
-journal: directory identity is part of bundle reuse.
+journal: directory identity is part of bundle reuse. The recorded identity is the
+bundle directory's inode number, not its device number, so remounting the same
+volume or rebooting does not by itself make completed bundles conflict.
 
 The state directory contains local source paths, hashes, conversion diagnostics
 and bundle attachment filenames; leftover staging can contain message text and

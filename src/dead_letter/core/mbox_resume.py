@@ -125,6 +125,7 @@ def _lock(path: Path) -> Iterator[None]:
 # The layout is fixed-depth; neither a receipt nor a MIME filename can choose
 # an arbitrary path. The count and JSON caps bound manifest memory per record.
 MAX_BUNDLE_FILES = 4096
+_LIMIT_MESSAGES = frozenset({"Resume receipt exceeds 1 MiB", "Resume bundle exceeds the file-count limit"})
 
 
 def _rename_directory_noreplace(source: Path, target: Path) -> None:
@@ -184,7 +185,7 @@ def _probe_bundle_publication(state: Path) -> None:
         raise MboxResumeError("mbox_resume_unsupported", "Filesystem cannot provide exclusive bundle publication") from exc
 
 
-def _bundle_files(bundle: Path, *, complete: bool = True) -> tuple[bool, list[Path]]:
+def _bundle_files(bundle: Path, *, complete: bool = True, bounded: bool = True) -> tuple[bool, list[Path]]:
     _directory(bundle)
     with os.scandir(bundle) as entries:
         names = {entry.name for _, entry in zip(range(4), entries)}
@@ -197,7 +198,7 @@ def _bundle_files(bundle: Path, *, complete: bool = True) -> tuple[bool, list[Pa
         _directory(bundle / "attachments")
         with os.scandir(bundle / "attachments") as entries:
             for entry in entries:
-                if len(paths) >= MAX_BUNDLE_FILES:
+                if bounded and len(paths) >= MAX_BUNDLE_FILES:
                     raise MboxResumeError("mbox_resume_receipt_limit", "Resume bundle exceeds the file-count limit")
                 paths.append(bundle / "attachments" / entry.name)
     for path in paths:
@@ -234,7 +235,7 @@ def _manifest_fingerprint(manifest: Any) -> tuple[int, str]:
     return total, hashlib.sha256(_json(manifest).encode("ascii")).hexdigest()
 
 
-def _bundle_snapshot(bundle: Path, *, sync: bool = False) -> tuple[dict[str, Any], list[int]]:
+def _bundle_snapshot(bundle: Path, *, sync: bool = False) -> tuple[dict[str, Any], int]:
     attachments, paths = _bundle_files(bundle)
     before = bundle.lstat()
     nested = (bundle / "attachments").lstat() if attachments else None
@@ -250,7 +251,9 @@ def _bundle_snapshot(bundle: Path, *, sync: bool = False) -> tuple[dict[str, Any
         nested is not None and _signature((bundle / "attachments").lstat()) != _signature(nested)
     ):
         raise _conflict("Resume bundle changed while hashing")
-    return manifest, [before.st_dev, before.st_ino]
+    # Only the inode: st_dev can change across a remount or reboot. The
+    # same-filesystem requirement is checked live when the journal opens.
+    return manifest, before.st_ino
 
 
 def _unique_json_fields(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -279,6 +282,11 @@ class ResumeJournal:
             self.state.mkdir(mode=0o700, exist_ok=True)
             _directory(self.state)
             self._stack.enter_context(_lock(self.state / "lock"))
+            if self.bundles:
+                # Probe before binding the layout, so a refusal leaves no contract.
+                if self.state.stat().st_dev != self.root.stat().st_dev:
+                    raise MboxResumeError("mbox_resume_unsupported", "Bundle staging and output must share a filesystem")
+                _probe_bundle_publication(self.state)
             database = self.state / "journal.sqlite3"
             # Do not let SQLite follow linked database/rollback-journal files.
             for path in (database, self.state / "journal.sqlite3-journal"):
@@ -307,10 +315,6 @@ class ResumeJournal:
                     )
             _sync_directory(self.state)
             _sync_directory(self.root)
-            if self.bundles:
-                if self.state.stat().st_dev != self.root.stat().st_dev:
-                    raise MboxResumeError("mbox_resume_unsupported", "Bundle staging and output must share a filesystem")
-                _probe_bundle_publication(self.state)
             return self
         except BaseException:
             self._stack.close()
@@ -358,10 +362,7 @@ class ResumeJournal:
             if self.bundles:
                 if _manifest_fingerprint(receipt["manifest"]) != (size, digest):
                     raise _conflict("Bundle manifest fingerprint is inconsistent")
-                directory_id = receipt["directory_id"]
-                if not isinstance(directory_id, list) or len(directory_id) != 2 or any(
-                    type(value) is not int or value < 0 for value in directory_id
-                ):
+                if type(receipt["directory_id"]) is not int or receipt["directory_id"] < 0:
                     raise _conflict("Invalid bundle directory identity")
         return dict(phase=phase, attempt=attempt, receipt=receipt, size=size, digest=digest)
 
@@ -381,16 +382,50 @@ class ResumeJournal:
                 row = self.load(identity)
                 if row is None or row["phase"] == "complete":
                     raise _conflict("Unexpected staging beside a completed bundle; nothing was removed")
-                _bundle_files(stage / name, complete=False)
+                _bundle_files(stage / name, complete=False, bounded=False)
                 # The manifest was not committed. Retain partial files privately
                 # rather than recursively deleting unknown attachment contents.
                 abandoned = self.state / f".abandoned-{name}-{row['attempt']}"
+                if self._limit_failure(identity) and not os.path.lexists(self._limit_copy(identity)):
+                    # One copy per over-limit record; retained_limit() then
+                    # fails reruns without reconverting into another copy.
+                    abandoned = self._limit_copy(identity)
                 _rename_directory_noreplace(stage, abandoned)
                 _sync_directory(self.state)
                 return
             (stage / name).unlink()
         stage.rmdir()
         _sync_directory(self.state)
+
+    def _limit_copy(self, identity: dict[str, Any]) -> Path:
+        return self.state / f".abandoned-{self.name(identity)}-limit"
+
+    def _limit_failure(self, identity: dict[str, Any]) -> str | None:
+        """The fixed message of a recorded receipt-limit failure, if any."""
+        row = self.db.execute("SELECT phase, receipt FROM records WHERE id=?", (identity["index"],)).fetchone()
+        if row is None or row[0] != "failed" or not isinstance(row[1], str) or len(row[1]) > MAX_RECEIPT_BYTES:
+            return None
+        try:
+            error = json.loads(row[1], object_pairs_hook=_unique_json_fields)
+        except (ValueError, RecursionError):
+            return None
+        if not isinstance(error, dict) or error.get("code") != "mbox_resume_receipt_limit":
+            return None
+        return error.get("message") if error.get("message") in _LIMIT_MESSAGES else None
+
+    def retained_limit(self, identity: dict[str, Any]) -> dict[str, str] | None:
+        """The failure to repeat for a record whose over-limit bundle is retained.
+
+        Under one contract a record converts deterministically, so a rerun
+        records a new failed attempt instead of reconverting into a new copy.
+        """
+        if not self.bundles or not os.path.lexists(self._limit_copy(identity)):
+            return None
+        row = self.load(identity)
+        if row is None or row["phase"] not in {"started", "failed"}:
+            return None
+        message = self._limit_failure(identity) or "Resume bundle exceeds a receipt limit"
+        return {"code": "mbox_resume_receipt_limit", "message": message, "stage": "resume"}
 
     def start(self, identity: dict[str, Any]) -> int:
         previous = self.load(identity)
@@ -485,7 +520,15 @@ class ResumeJournal:
     def _prepare_bundle(self, identity: dict[str, Any], diagnostics: dict[str, Any] | None) -> None:
         stage = self.stage(identity)
         _directory(stage)
-        manifest, directory_id = _bundle_snapshot(stage / self.name(identity), sync=True)
+        bundle = stage / self.name(identity)
+        # Check both limits before hashing: an equal-length placeholder digest
+        # gives the final receipt size, so an over-limit record costs no hashing.
+        attachments, paths = _bundle_files(bundle)
+        _json({"diagnostics": diagnostics, "directory_id": bundle.lstat().st_ino, "manifest": {
+            "attachments": attachments,
+            "files": {path.relative_to(bundle).as_posix(): [path.lstat().st_size, "0" * 64] for path in paths},
+        }})
+        manifest, directory_id = _bundle_snapshot(bundle, sync=True)
         size, digest = _manifest_fingerprint(manifest)
         _sync_directory(stage)
         receipt = _json({"diagnostics": diagnostics, "manifest": manifest, "directory_id": directory_id})
@@ -579,9 +622,16 @@ def convert_mbox_resumable(
                             {**identity, "unescape": unescape}, receipt["diagnostics"],
                         )
                     else:
+                        retained = journal.retained_limit(identity)
                         attempt = journal.start(identity)
                         outcome = "new" if attempt == 1 else "retried"
-                        if timeout_seconds is not None and record.path is not None:
+                        if retained is not None:
+                            journal.failed(identity, retained)
+                            result = MboxConversion(
+                                f"{source.name}#message-{record.index:08d}", None, False,
+                                {**identity, "unescape": unescape}, error=retained,
+                            )
+                        elif timeout_seconds is not None and record.path is not None:
                             result = convert_record_isolated(
                                 record, source, journal.stage(identity), options, bundles=bundles,
                                 unescape=unescape, timeout=timeout_seconds, budgets=budgets,

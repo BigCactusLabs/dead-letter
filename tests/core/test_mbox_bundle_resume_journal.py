@@ -169,8 +169,8 @@ def test_wholly_missing_bundle_retries_at_original_name(tmp_path):
 
 @pytest.mark.parametrize("field,value", [
     ("manifest", {}), ("manifest", {"attachments": False, "files": {}}),
-    ("directory_id", [True, 1]), ("directory_id", "../outside"),
-    ("directory_id", [0, -1]), ("diagnostics", []),
+    ("directory_id", True), ("directory_id", "../outside"),
+    ("directory_id", -1), ("directory_id", [0, 1]), ("diagnostics", []),
 ])
 def test_corrupt_bundle_receipts_fail_closed(tmp_path, field, value):
     with journal(tmp_path) as j:
@@ -198,16 +198,80 @@ def test_saved_manifest_cannot_choose_paths(tmp_path, name):
 
 
 @pytest.mark.parametrize("kind", ["members", "receipt"])
-def test_manifest_limits_withhold_publication(tmp_path, monkeypatch, kind):
+def test_manifest_limits_fail_record_and_retain_one_private_copy(tmp_path, monkeypatch, kind):
     with journal(tmp_path) as j:
         _, bundle = stage(j)
         if kind == "members":
             monkeypatch.setattr(resume, "MAX_BUNDLE_FILES", 3)
-        with pytest.raises(resume.MboxResumeError, match="limit|exceeds"):
+        def no_hashing(*args, **kwargs):
+            pytest.fail("limits are checked before members are hashed")
+        monkeypatch.setattr(resume, "_digest", no_hashing)
+        with pytest.raises(resume.MboxResumeError, match="mbox_resume_receipt_limit") as caught:
             j.prepare(IDENTITY, {"huge": "x" * resume.MAX_RECEIPT_BYTES} if kind == "receipt" else None)
         assert j.load(IDENTITY)["phase"] == "started"
-        assert tree(bundle) == FILES
+        # The importer then records a per-record failure; cleanup must not raise.
+        j.failed(IDENTITY, {"code": caught.value.code, "message": caught.value.message, "stage": "resume"})
+        assert j.load(IDENTITY)["phase"] == "failed"
+        assert not j.stage(IDENTITY).exists()
         assert not (tmp_path / j.name(IDENTITY)).exists()
+        retained = [p.name for p in j.state.glob(".abandoned-*")]
+        assert retained == [f".abandoned-{j.name(IDENTITY)}-limit"]
+        assert tree(j.state / retained[0] / j.name(IDENTITY)) == FILES
+        assert j.retained_limit(IDENTITY) == {
+            "code": "mbox_resume_receipt_limit", "message": caught.value.message, "stage": "resume",
+        }
+    with journal(tmp_path) as j:
+        assert j.recover(IDENTITY) is None
+        assert j.start(IDENTITY) == 2  # The retained copy never blocks a retry.
+
+
+def test_over_limit_unprepared_staging_does_not_block_retry(tmp_path, monkeypatch):
+    with journal(tmp_path) as j:
+        stage(j)
+    monkeypatch.setattr(resume, "MAX_BUNDLE_FILES", 3)
+    with journal(tmp_path) as j:
+        assert j.start(IDENTITY) == 2
+        abandoned = j.state / f".abandoned-{j.name(IDENTITY)}-1"
+        assert tree(abandoned / j.name(IDENTITY)) == FILES
+
+
+def test_remount_with_new_device_number_reuses_bundle(tmp_path, monkeypatch):
+    with journal(tmp_path) as j:
+        prepared(j)
+        output = j.recover(IDENTITY)[0].parent
+    real = Path.lstat
+
+    class Remounted:
+        def __init__(self, value):
+            self._value = value
+
+        def __getattr__(self, name):
+            return getattr(self._value, name)
+
+        @property
+        def st_dev(self):
+            return self._value.st_dev + 1
+
+    def lstat(path):
+        value = real(path)
+        return Remounted(value) if path in (output, output / "attachments") else value
+
+    monkeypatch.setattr(Path, "lstat", lstat)
+    with journal(tmp_path) as j:
+        assert j.recover(IDENTITY)[2:] == ("reused", 1)
+        assert tree(output) == FILES
+
+
+def test_failed_probe_leaves_layout_unbound(tmp_path, monkeypatch):
+    def unavailable(*args):
+        raise OSError("unsupported")
+    monkeypatch.setattr(resume, "_rename_directory_noreplace", unavailable)
+    with pytest.raises(resume.MboxResumeError, match="mbox_resume_unsupported"):
+        with journal(tmp_path):
+            pytest.fail("must not enter without publication support")
+    monkeypatch.undo()
+    with resume.ResumeJournal(tmp_path, CONTRACT):  # A flat rerun is not a mismatch.
+        pass
 
 
 def test_bundle_and_flat_layouts_cannot_share_journal(tmp_path):
