@@ -144,10 +144,11 @@ def convert_mbox(
     platform cannot enforce raises ``MboxBudgetError`` before any conversion.
     They are resource limits, not filesystem or network isolation.
 
-    ``resume=True`` opts into a source/options-bound journal for flat Markdown
-    output. Reuse verifies output hashes; conflicts stop without overwriting.
-    Bundles and dry runs are not supported in resume mode. The output filesystem
-    must support hard links. Results include ``recovery`` status/attempt data.
+    ``resume=True`` opts into a source/options-bound journal for Markdown or
+    bundles. Reuse verifies every output hash; conflicts stop without overwriting.
+    Flat publication needs hard links; bundles need exclusive directory rename.
+    Dry runs and compressed input are unsupported. Results include ``recovery``.
+    See docs/reference/mbox-resume.md for filesystem and durability limits.
     """
     yield from _convert_mbox(
         path, output=output, options=options, limits=limits, unescape=unescape,
@@ -206,14 +207,16 @@ def _convert_mbox(
     if type(resume) is not bool:
         raise ValueError("MBOX resume must be a boolean")
     if resume:
-        if bundles or opts.dry_run or archive is not None:
-            raise ValueError("MBOX resume supports only flat Markdown output, not bundles, dry runs or compressed input")
+        if type(bundles) is not bool:
+            raise ValueError("MBOX resume bundles must be a boolean")
+        if opts.dry_run or archive is not None:
+            raise ValueError("MBOX resume does not support dry runs or compressed input")
         if source.suffix.lower() != ".mbox" or not source.is_file():
             raise ValueError("MBOX resume requires an existing flat .mbox file")
         from dead_letter.core.mbox_resume import convert_mbox_resumable
         yield from convert_mbox_resumable(
             source, root, opts, limits or MboxLimits(), unescape=unescape,
-            timeout_seconds=timeout_seconds, budgets=budgets,
+            timeout_seconds=timeout_seconds, budgets=budgets, bundles=bundles,
         )
         return
     try:
