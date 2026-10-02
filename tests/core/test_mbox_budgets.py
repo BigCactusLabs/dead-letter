@@ -198,7 +198,7 @@ def test_default_budgets_add_no_worker_arguments():
 
 def test_budgeted_worker_is_launched_as_script_without_bytecode():
     command = isolation._worker_command(Path("request.json"), "cpu_seconds=5", "nonce=" + "a" * 32)
-    assert command[:3] == ["-I", "-B"]
+    assert command[:3] == [sys.executable, "-I", "-B"]
     assert Path(command[3]) == Path(worker.__file__).resolve() and Path(command[3]).is_file()
     assert command[4:] == ["request.json", "cpu_seconds=5", "nonce=" + "a" * 32]
 
