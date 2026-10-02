@@ -27,10 +27,13 @@ LARGE = b"From: bob@example.test\nSubject: Large\n\n" + (b"x" * 99 + b"\n") * 21
 
 posix_budgets = pytest.mark.skipif(
     sys.platform not in ("linux", "darwin"),
-    reason="CPU/output worker budgets are implemented only on Linux and macOS in this slice",
+    reason="POSIX signal/output/inherited-limit tests require Linux or macOS",
 )
-linux_only = pytest.mark.skipif(
-    sys.platform != "linux", reason="Worker memory budgets (RLIMIT_AS) are supported only on Linux",
+memory_budgets = pytest.mark.skipif(
+    sys.platform not in ("linux", "win32"), reason="Memory budgets need Linux RLIMIT_AS or Windows Job Objects",
+)
+worker_budgets = pytest.mark.skipif(
+    sys.platform not in ("linux", "darwin", "win32"), reason="Unsupported worker-budget platform",
 )
 
 # Test-only program: runs the real worker file as a script (as a budgeted launch
@@ -43,26 +46,27 @@ import json, runpy, sys
 mode, probe, script = sys.argv[1:4]
 sys.argv = [script, *sys.argv[4:]]
 index = json.loads(open(sys.argv[1], encoding="utf-8").read())["record"]["index"]
-import atexit, resource
-real_setrlimit = resource.setrlimit
 FORBIDDEN = ("dead_letter", "mailparser", "nh3", "selectolax", "html_to_markdown")
 def note(entry):
     with open(probe, "a", encoding="utf-8") as out:
         out.write(json.dumps(entry) + "\n")
-def recording_setrlimit(kind, limits):
-    if kind != resource.RLIMIT_CORE:
-        note({"loaded": sorted(n for n in sys.modules if n.split(".")[0] in FORBIDDEN),
-              "no_bytecode": sys.dont_write_bytecode})
-        if mode == "setrlimit-fails":
-            raise OSError("denied")
-    return real_setrlimit(kind, limits)
-resource.setrlimit = recording_setrlimit
-if mode == "inherit":
-    real_setrlimit(resource.RLIMIT_CPU, (20, resource.getrlimit(resource.RLIMIT_CPU)[1]))
-    real_setrlimit(resource.RLIMIT_FSIZE, (2 * 1024 * 1024, resource.getrlimit(resource.RLIMIT_FSIZE)[1]))
-atexit.register(lambda: note({"final": {"cpu": resource.getrlimit(resource.RLIMIT_CPU),
-                                        "fsize": resource.getrlimit(resource.RLIMIT_FSIZE)}}))
-if index == 2 and mode in ("spin", "allocate", "exit3", "exit4", "decode-memory"):
+if sys.platform != "win32":
+    import atexit, resource
+    real_setrlimit = resource.setrlimit
+    def recording_setrlimit(kind, limits):
+        if kind != resource.RLIMIT_CORE:
+            note({"loaded": sorted(n for n in sys.modules if n.split(".")[0] in FORBIDDEN),
+                  "no_bytecode": sys.dont_write_bytecode})
+            if mode == "setrlimit-fails":
+                raise OSError("denied")
+        return real_setrlimit(kind, limits)
+    resource.setrlimit = recording_setrlimit
+    if mode == "inherit":
+        real_setrlimit(resource.RLIMIT_CPU, (20, resource.getrlimit(resource.RLIMIT_CPU)[1]))
+        real_setrlimit(resource.RLIMIT_FSIZE, (2 * 1024 * 1024, resource.getrlimit(resource.RLIMIT_FSIZE)[1]))
+    atexit.register(lambda: note({"final": {"cpu": resource.getrlimit(resource.RLIMIT_CPU),
+                                            "fsize": resource.getrlimit(resource.RLIMIT_FSIZE)}}))
+if index == 2 and mode in ("spin", "allocate", "exit3", "exit4", "decode-memory", "quota-exit", "allocate-bounded"):
     import dead_letter.core.mbox_import as mbox_import
     def hook(*args, **kwargs):
         if mode == "spin":
@@ -70,6 +74,11 @@ if index == 2 and mode in ("spin", "allocate", "exit3", "exit4", "decode-memory"
                 pass
         if mode == "allocate":
             return bytearray(64 * 1024 ** 3)
+        if mode == "allocate-bounded":
+            return bytearray(768 * 1024 ** 2)
+        if mode == "quota-exit":
+            import os
+            os._exit(1816)
         raise SystemExit(int(mode[-1]))
     if mode == "decode-memory":
         import dead_letter.core.attachments as attachments
@@ -77,6 +86,18 @@ if index == 2 and mode in ("spin", "allocate", "exit3", "exit4", "decode-memory"
         attachments.base64 = types.SimpleNamespace(b64decode=lambda payload, *a, **k: bytearray(2 ** 62))
     else:
         mbox_import._build_rendered_markdown = hook
+if sys.platform == "win32":
+    main = runpy.run_path(script)["main"]
+    scope = main.__globals__
+    real_apply = scope["_apply_budgets"]
+    def recording_apply(budgets, **kwargs):
+        note({"loaded": sorted(n for n in sys.modules if n.split(".")[0] in FORBIDDEN),
+              "no_bytecode": sys.dont_write_bytecode})
+        if mode == "setrlimit-fails":
+            raise OSError("denied")
+        return real_apply(budgets, **kwargs)
+    scope["_apply_budgets"] = recording_apply
+    raise SystemExit(main())
 runpy.run_path(script, run_name="__main__")
 """
 
@@ -112,7 +133,7 @@ def outputs(root):
 @pytest.mark.parametrize("platform, supported", [
     ("linux", {"memory", "cpu", "output"}),
     ("darwin", {"cpu", "output"}),
-    ("win32", set()),
+    ("win32", {"memory", "cpu"}),
     ("freebsd14", set()),
 ])
 @pytest.mark.parametrize("control, kwargs", [
@@ -140,7 +161,7 @@ def test_unsupported_budget_fails_before_any_conversion_or_output(tmp_path, monk
     monkeypatch.setattr(isolation.subprocess, "Popen", unexpected)
     source = archive(tmp_path, MESSAGE)
     with pytest.raises(isolation.MboxBudgetError, match="mbox_budget_unsupported"):
-        list(convert_mbox(source, output=tmp_path / "out", timeout_seconds=15, cpu_seconds=5))
+        list(convert_mbox(source, output=tmp_path / "out", timeout_seconds=15, max_output_mib=8))
     assert not (tmp_path / "out").exists()
 
 
@@ -336,15 +357,17 @@ def test_convert_record_reraises_only_requested_exceptions(tmp_path, monkeypatch
 
 # -- actual worker processes --------------------------------------------------
 
-@posix_budgets
+@worker_budgets
 @pytest.mark.parametrize("bundles", [False, True])
 def test_satisfied_budgets_match_unbudgeted_worker_output(tmp_path, bundles):
     source = tmp_path / "archive.mbox"
     source.write_bytes((Path(__file__).parent / "fixtures" / "takeout-synthetic.mbox").read_bytes())
-    extra = {"memory_limit_mib": 4096} if sys.platform == "linux" else {}
+    extra = {"memory_limit_mib": 4096} if sys.platform in ("linux", "win32") else {}
     plain = list(convert_mbox(source, output=tmp_path / "plain", bundles=bundles, timeout_seconds=30))
+    if sys.platform != "win32":
+        extra["max_output_mib"] = 64
     budgeted = list(convert_mbox(source, output=tmp_path / "budget", bundles=bundles, timeout_seconds=30,
-                                 cpu_seconds=30, max_output_mib=64, **extra))
+                                 cpu_seconds=30, **extra))
     assert [r.success for r in budgeted] == [r.success for r in plain] and all(r.success for r in plain)
     assert [r.diagnostics for r in budgeted] == [r.diagnostics for r in plain]
     def contents(root):
@@ -370,7 +393,7 @@ def test_output_budget_withholds_record_and_later_records_continue(tmp_path, bun
     assert source.read_bytes() == original
 
 
-@posix_budgets
+@worker_budgets
 def test_cpu_budget_is_reaped_withheld_and_later_records_continue(tmp_path, monkeypatch):
     hooked_worker(monkeypatch, "spin")
     processes = []
@@ -386,12 +409,12 @@ def test_cpu_budget_is_reaped_withheld_and_later_records_continue(tmp_path, monk
     assert [r.success for r in rows] == [True, False, True]
     assert rows[1].error["code"] == "mbox_message_resource_limit"
     assert rows[1].error["message"] == isolation._RESOURCE_MESSAGES["cpu"]
-    assert processes[1].returncode == -signal.SIGXCPU
+    assert processes[1].returncode == (1816 if sys.platform == "win32" else -signal.SIGXCPU)
     assert all(p.returncode is not None for p in processes)
     assert not [name for name in outputs(root) if name.startswith("00000002-")]
 
 
-@linux_only
+@memory_budgets
 def test_memory_budget_is_withheld_and_later_records_continue(tmp_path, monkeypatch):
     hooked_worker(monkeypatch, "allocate")
     source = archive(tmp_path, MESSAGE, MESSAGE, MESSAGE)
@@ -403,7 +426,7 @@ def test_memory_budget_is_withheld_and_later_records_continue(tmp_path, monkeypa
     assert not [name for name in outputs(root) if name.startswith("00000002-")]
 
 
-@posix_budgets
+@worker_budgets
 def test_budget_apply_failure_aborts_import_before_conversion(tmp_path, monkeypatch):
     calls = hooked_worker(monkeypatch, "setrlimit-fails")
     source = archive(tmp_path, MESSAGE, MESSAGE, MESSAGE)
@@ -416,17 +439,19 @@ def test_budget_apply_failure_aborts_import_before_conversion(tmp_path, monkeypa
     assert outputs(root) == []
 
 
-@posix_budgets
+@worker_budgets
 def test_limits_apply_before_package_imports_without_bytecode(tmp_path, monkeypatch):
     probe = tmp_path / "probe.jsonl"
     hooked_worker(monkeypatch, "probe", probe)
     source = archive(tmp_path, MESSAGE)
-    extra = {"memory_limit_mib": 4096} if sys.platform == "linux" else {}
+    extra = {"memory_limit_mib": 4096} if sys.platform in ("linux", "win32") else {}
+    if sys.platform != "win32":
+        extra["max_output_mib"] = 16
     [row] = list(convert_mbox(source, output=tmp_path / "out", timeout_seconds=30,
-                              cpu_seconds=30, max_output_mib=16, **extra))
+                              cpu_seconds=30, **extra))
     assert row.success
     applied = [entry for entry in probe_entries(probe) if "loaded" in entry]
-    assert len(applied) == 2 + len(extra)
+    assert len(applied) == (1 if sys.platform == "win32" else 1 + len(extra))
     assert all(entry["loaded"] == [] for entry in applied)
     # -B disables bytecode writes from launch, before any limit is applied.
     assert all(entry["no_bytecode"] is True for entry in applied)
@@ -445,18 +470,18 @@ def test_stricter_inherited_soft_limits_are_preserved(tmp_path, monkeypatch):
     assert final["fsize"] == [2 * 1024 * 1024, 64 * 1024 * 1024]
 
 
-@posix_budgets
+@worker_budgets
 @pytest.mark.parametrize("mode", ["exit3", "exit4"])
 def test_ordinary_exit_codes_cannot_impersonate_budget_outcomes(tmp_path, monkeypatch, mode):
     hooked_worker(monkeypatch, mode)
     source = archive(tmp_path, MESSAGE, MESSAGE, MESSAGE)
-    extra = {"memory_limit_mib": 4096} if sys.platform == "linux" else {}
+    extra = {"memory_limit_mib": 4096} if sys.platform in ("linux", "win32") else {}
     rows = list(convert_mbox(source, output=tmp_path / "out", timeout_seconds=30, cpu_seconds=30, **extra))
     assert [r.success for r in rows] == [True, False, True]
     assert rows[1].error["code"] == "mbox_worker_crashed"
 
 
-@linux_only
+@memory_budgets
 def test_swallowed_decode_memoryerror_withholds_record_in_real_worker(tmp_path, monkeypatch):
     hooked_worker(monkeypatch, "decode-memory")
     source = archive(tmp_path, ATTACHED, ATTACHED, ATTACHED)
@@ -477,3 +502,30 @@ def test_memory_watch_without_free_tool_id_fails_instead_of_running_unwatched():
     finally:
         for tool in claimed:
             sys.monitoring.free_tool_id(tool)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows native exit status")
+def test_windows_quota_exit_is_not_mistaken_for_cpu_limit(tmp_path, monkeypatch):
+    hooked_worker(monkeypatch, "quota-exit")
+    source = archive(tmp_path, MESSAGE, MESSAGE, MESSAGE)
+    root = tmp_path / "out"
+    rows = list(convert_mbox(source, output=root, timeout_seconds=30, cpu_seconds=30))
+    assert [row.success for row in rows] == [True, False, True]
+    assert rows[1].error["code"] == "mbox_worker_crashed"
+    assert not [name for name in outputs(root) if name.startswith("00000002-")]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows committed-memory enforcement")
+def test_windows_commit_limit_rejects_a_host_sized_allocation(tmp_path, monkeypatch):
+    # Unlike the 64-GiB amplification probe, this request fits a normal CI host:
+    # it must fail because of the 512-MiB job limit, not ordinary host exhaustion.
+    hooked_worker(monkeypatch, "allocate-bounded")
+    source = archive(tmp_path, MESSAGE, MESSAGE, MESSAGE)
+    original = source.read_bytes()
+    root = tmp_path / "out"
+    rows = list(convert_mbox(source, output=root, bundles=True, timeout_seconds=60, memory_limit_mib=512))
+    assert [row.success for row in rows] == [True, False, True]
+    assert rows[1].error["code"] == "mbox_message_resource_limit"
+    assert rows[1].error["message"] == isolation._RESOURCE_MESSAGES["memory"]
+    assert not [name for name in outputs(root) if name.startswith("00000002-")]
+    assert source.read_bytes() == original
