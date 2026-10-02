@@ -246,7 +246,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - MBOX import no longer mistakes folded header continuations for a top-level
-  `Content-Length` field. Source-change checks bind to the opened file to its path,
+  `Content-Length` field. Source-change checks bind the opened file to its path,
   respect Windows metadata semantics, and stop following appended data. Malformed
   postmark tails no longer trigger quadratic regex backtracking. Interrupted
   report appends publish only complete entries, and Ctrl-C during report
