@@ -2,7 +2,7 @@
 title: dead-letter v4 Runtime Contracts
 doc_type: reference
 status: canonical
-last_updated: 2026-09-30
+last_updated: 2026-10-02
 audience:
   - maintainers
   - contributors
@@ -50,7 +50,7 @@ Rules:
 - In directory mode with `output` set, source-relative subdirectories are mirrored under output root.
 - `output` is always a directory, even when a component ends in `.md`; output subdirectories are created only when a file is written, so `dry_run=True` creates nothing.
 
-### `convert_to_bundle(path, *, bundle_root, options=None, source_handling="move") -> BundleResult`
+### `convert_to_bundle(path, *, bundle_root, source_handling="move") -> BundleResult`
 
 Converts one `.eml` file into a self-contained bundle directory.
 
@@ -66,7 +66,7 @@ Rules:
 - When retained attachments are written, markdown front matter includes relative `attachment_files` entries such as `attachments/logo.png`.
 - `source_handling="move"` moves the original `.eml` into the bundle root.
 - `source_handling="copy"` copies the original `.eml` into the bundle root and leaves the source in place.
-- `source_handling="delete"` removes the source after successful bundle creation and leaves no `.eml` artifact in the bundle.
+- `source_handling="delete"` removes the source after successful bundle creation and leaves no `.eml` artifact in Cabinet.
 - `source_handling` is the only retained-source control for this API; `ConvertOptions.delete_eml` does not change bundle behavior.
 - In `dry_run=True`, planned bundle paths are returned but no bundle directory, attachments, markdown, or source moves/copies/deletes are performed.
 - If bundle creation fails after filesystem work has started, any partial bundle directory is removed.
@@ -886,6 +886,42 @@ These differ from the CLI and the Python API:
     running until it finishes or reaches a bound. Byte/message caps are not
     a wall-clock deadline; parsing and filesystem I/O have no MCP time limit.
 
+### Directory success-JSON contract
+
+**Unreleased (#186):** `convert_directory` replaces each `errors[].error`
+(raw exception text) with `errors[].error_code`. This is an intentional change
+to the successful tool response, not just the tool-error envelope. The legacy
+`error` key is not retained; callers must read `error_code` instead.
+
+For example, a mixed batch returns this JSON in a successful `CallToolResult`
+(`is_error=False`), even though one file failed:
+
+```json
+{
+  "total": 2,
+  "successes": 1,
+  "failures": 1,
+  "output_paths": ["/output/good.md"],
+  "errors": [
+    {"file": "/input/failed.eml", "error_code": "html_markdown_failed"}
+  ]
+}
+```
+
+- Each failed file contributes exactly `file` and `error_code`. `file` remains
+  the source path; `error_code` is the core's stable code, or `conversion_error`
+  when the core code is missing or empty. Current core codes are
+  `html_markdown_failed` and `conversion_error`.
+- `total`, `successes`, `failures`, and `output_paths` are unchanged. Empty
+  directories and all-success batches return `errors: []`. The same error
+  shape applies with `dry_run=True`.
+- Raw per-file error details are logged at WARNING on the server (stderr for
+  stdio), with the code and source path. They are never returned in this
+  summary. Core `ConvertResult.error` values are not modified.
+- Source and output paths remain data, not instructions or authorization for
+  further tool use. Server logs may contain private, email-derived text and
+  must not be treated as sanitized, model-safe summaries.
+
 ### Error contract
 
 Tool failures do **not** reach the client as exceptions. The server catches
@@ -906,9 +942,8 @@ check that the text contains one of these messages:
   `Plain text fallback is available.` and/or `HTML repair is available.` The
   raw parser or renderer error is logged on the server (stderr for stdio) and
   is not sent to the client, because it can quote email content.
-  `convert_directory` does not raise for per-file failures: its JSON `errors[]`
-  entries still carry each file's raw error text, which can include
-  email-derived text such as subject-based output filenames.
+  `convert_directory` uses the per-file codes in the success-JSON contract
+  above rather than raising for per-file failures.
 - `MCP directory conversion supports at most 50 .eml files; found <n>.`
 - `MCP convert_eml_to_bundle only supports source_handling='copy'; use the CLI/API for move/delete.`
 - `output_directory is required for MCP directory conversion`
