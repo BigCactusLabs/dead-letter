@@ -50,7 +50,7 @@ Rules:
 - In directory mode with `output` set, source-relative subdirectories are mirrored under output root.
 - `output` is always a directory, even when a component ends in `.md`; output subdirectories are created only when a file is written, so `dry_run=True` creates nothing.
 
-### `convert_to_bundle(path, *, bundle_root, source_handling="move") -> BundleResult`
+### `convert_to_bundle(path, *, bundle_root, options=None, source_handling="move") -> BundleResult`
 
 Converts one `.eml` file into a self-contained bundle directory.
 
@@ -66,7 +66,7 @@ Rules:
 - When retained attachments are written, markdown front matter includes relative `attachment_files` entries such as `attachments/logo.png`.
 - `source_handling="move"` moves the original `.eml` into the bundle root.
 - `source_handling="copy"` copies the original `.eml` into the bundle root and leaves the source in place.
-- `source_handling="delete"` removes the source after successful bundle creation and leaves no `.eml` artifact in Cabinet.
+- `source_handling="delete"` removes the source after successful bundle creation and leaves no `.eml` artifact in the bundle.
 - `source_handling` is the only retained-source control for this API; `ConvertOptions.delete_eml` does not change bundle behavior.
 - In `dry_run=True`, planned bundle paths are returned but no bundle directory, attachments, markdown, or source moves/copies/deletes are performed.
 - If bundle creation fails after filesystem work has started, any partial bundle directory is removed.
