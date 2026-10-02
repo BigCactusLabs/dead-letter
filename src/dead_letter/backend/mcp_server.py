@@ -282,7 +282,8 @@ def convert_directory(
     are rejected before any conversion). output_directory is required:
     Markdown is written there, mirroring subfolders, and source .eml files
     are left in place. Returns a JSON summary with total, successes,
-    failures, output_paths, and errors.
+    failures, output_paths, and errors. Each errors entry contains file and
+    error_code (defaulting to conversion_error), never raw exception text.
 
     Use convert_eml to retrieve individual converted file content.
     """
@@ -305,13 +306,24 @@ def convert_directory(
 
     successes = [r for r in results if r.success]
     failures = [r for r in results if not r.success]
+    # Core errors can quote untrusted email content; keep those details local.
+    for result in failures:
+        logger.warning(
+            "Conversion failed (%s) for %s: %s",
+            result.error_code or "conversion_error",
+            result.source,
+            result.error,
+        )
 
     summary = {
         "total": len(results),
         "successes": len(successes),
         "failures": len(failures),
         "output_paths": [str(r.output) for r in successes if r.output],
-        "errors": [{"file": str(r.source), "error": r.error} for r in failures],
+        "errors": [
+            {"file": str(r.source), "error_code": r.error_code or "conversion_error"}
+            for r in failures
+        ],
     }
     return json.dumps(summary, indent=2)
 
