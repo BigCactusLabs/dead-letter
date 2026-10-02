@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Windows CPU-time and committed-memory budgets for timed MBOX workers, including
+  ZIP/TGZ input, using a verified parent-owned Job Object and a stdlib-only
+  pre-parser join. Setup failures abort rather than running unenforced; exhausted
+  records withhold partial output and later records continue. CPU attribution
+  uses the job signal, not an ambiguous native exit code. Windows output-size
+  and macOS memory controls remain explicitly unsupported. No new dependency or
+  default-conversion change; these are resource controls, not a security sandbox.
+  See [MBOX worker budgets](docs/reference/mbox-workers.md#optional-resource-budgets)
+  and the macOS memory decision (#188).
 - Opt-in `--mbox-resume` / Python `convert_mbox(..., resume=True)` for flat
   Markdown and Cabinet-style bundle imports, including timed workers: durable
   source/options/converter-bound receipts, hash-verified reuse, reconciliation
@@ -522,7 +531,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Setup modal traps keyboard focus and marks background content as `inert`,
   preventing tab navigation to elements behind the overlay.
 - Batch confirmation overlay now marks the idle drop zone as `inert`,
-  preventing keyboard interaction with the file input behind the dialog.
+  preventing tab navigation to elements behind the dialog.
 - History row expansion no longer collapses when clicking on expanded
   detail content (output paths, error messages, diagnostics).
 - `relativeTime` helper now tolerates up to 30 seconds of server-ahead
