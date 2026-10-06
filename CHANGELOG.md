@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   appropriate publication support. Compressed input, dry-run, MCP and web/UI resume
   remain unsupported; this is not a universal power-loss guarantee. See
   [MBOX resume](docs/reference/mbox-resume.md) (#139).
+- MCP tools now declare `readOnlyHint`, `destructiveHint`, `idempotentHint`
+  and `openWorldHint` annotations: `get_diagnostics` is read-only, the four
+  conversion tools create new files without modifying sources, and no tool
+  makes network requests.
 
 ### Fixed
 

@@ -16,7 +16,7 @@ from typing import Literal
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import Icon
+from mcp.types import Icon, ToolAnnotations
 
 from dead_letter import __version__
 from dead_letter.core import convert, convert_dir
@@ -49,6 +49,13 @@ mcp = MCPServer(
     ],
     version=__version__,
 )
+# Write tools only create new, collision-safe paths and never modify or remove
+# sources, so they are not destructive; repeat calls add numbered copies.
+_WRITES_NEW_FILES = ToolAnnotations(
+    read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False
+)
+_READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=False)
+
 MCP_MAX_DIRECTORY_FILES = 50
 MCP_MAX_MBOX_BYTES = 256 * 1024 * 1024
 MCP_MAX_MBOX_MESSAGES = 1000
@@ -140,7 +147,7 @@ def _raise_on_failure(result: object) -> None:
     raise ToolError(" ".join(parts))
 
 
-@mcp.tool(title="Convert email")
+@mcp.tool(title="Convert email", annotations=_WRITES_NEW_FILES)
 def convert_eml(
     eml_path: str,
     output_path: str | None = None,
@@ -193,7 +200,7 @@ def convert_eml(
         return result.output.read_text(encoding="utf-8")
 
 
-@mcp.tool(title="Convert email to bundle")
+@mcp.tool(title="Convert email to bundle", annotations=_WRITES_NEW_FILES)
 def convert_eml_to_bundle(
     eml_path: str,
     bundle_root: str,
@@ -258,7 +265,7 @@ def convert_eml_to_bundle(
     return json.dumps(response, indent=2)
 
 
-@mcp.tool(title="Convert email folder")
+@mcp.tool(title="Convert email folder", annotations=_WRITES_NEW_FILES)
 def convert_directory(
     directory: str,
     output_directory: str,
@@ -316,7 +323,7 @@ def convert_directory(
     return json.dumps(summary, indent=2)
 
 
-@mcp.tool(title="Convert MBOX archive")
+@mcp.tool(title="Convert MBOX archive", annotations=_WRITES_NEW_FILES)
 def convert_mbox(
     path: str,
     output_directory: str,
@@ -562,7 +569,7 @@ def _run_mcp_mbox(
     return json.dumps(response, indent=2)
 
 
-@mcp.tool(title="Get conversion diagnostics")
+@mcp.tool(title="Get conversion diagnostics", annotations=_READ_ONLY)
 def get_diagnostics(
     eml_path: str,
     preset: Literal["default", "clean", "verbose", "raw"] = "default",
