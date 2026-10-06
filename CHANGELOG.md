@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Support sections to the plugin README: connection checks, first-launch
   downloads, the selectolax 1.0 failure in older plugin pins, Cowork path
   access, and where to report bugs and vulnerabilities.
+- Claude plugin 0.4.8 (still pinned to package 0.4.6) adds a listing icon at
+  `plugin/.claude-plugin/icon.png` and replaces the README's piped uv install
+  command with a link to uv's installation guide.
 
 ## [0.4.6] - 2026-10-06
 
