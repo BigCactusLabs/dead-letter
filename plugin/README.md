@@ -36,10 +36,16 @@ Email content is treated as untrusted data, not instructions. The plugin should 
 
 ## Example prompts
 
-- "Convert `~/Downloads/invoice.eml` to Markdown." Runs `/dead-letter:convert` and returns the Markdown with YAML front matter in the chat.
-- "Summarize the emails in `~/exports/vendor-thread/` and tell me which need a reply." Runs `/dead-letter:triage` on up to 50 `.eml` files and groups them by sender and subject.
-- "Archive `~/Downloads/contract.eml` with its attachments into `~/Archive/`." Runs `/dead-letter:cabinet` and writes a bundle directory with the Markdown, the decoded attachments, and a copy of the original `.eml`.
-- "Convert my Gmail Takeout file `~/Takeout/Mail/Inbox.mbox` to Markdown files in `~/mail-md/`." Runs `/dead-letter:mbox` on the first 1000 messages of an archive up to 256 MiB.
+Read-only requests work as plain prompts:
+
+- "Convert `~/Downloads/invoice.eml` to Markdown." Claude calls the conversion tool and shows the Markdown with YAML front matter in the chat.
+- "Summarize `~/Downloads/invoice.eml` and list the action items." Claude converts the message and summarizes it.
+
+Anything that writes files needs the slash command typed explicitly. If you ask in plain language, Claude tells you which command to type and waits:
+
+- `/dead-letter:cabinet ~/Downloads/contract.eml ~/Archive` writes a bundle directory with the Markdown, the decoded attachments, and a copy of the original `.eml`.
+- `/dead-letter:triage ~/exports/vendor-thread` converts up to 50 `.eml` files and groups them by sender and subject with priority hints.
+- `/dead-letter:mbox ~/Takeout/Mail/Inbox.mbox ~/mail-md` converts the first 1000 messages of a flat `.mbox` archive up to 256 MiB.
 
 ## Requirements
 
@@ -66,12 +72,15 @@ Without the MCP tools, the commands can explain the workflow but cannot convert 
 
 - On first launch, `uvx` downloads the pinned `dead-letter[mcp]` package and its dependencies from PyPI and caches them. Later launches reuse the cache.
 - The `dead-letter-mcp` server then runs locally over stdio. It makes no network requests.
+- Text a tool returns to Claude enters the conversation and is sent to the model provider with it; see [Privacy](#privacy).
 - The tools read only the `.eml`, `.mbox`, or folder paths you give them. They write only to the output paths you give them, under new collision-safe names, and never modify, move, or delete your source files.
 - Each tool declares MCP annotations: `get_diagnostics` is read-only, and the four conversion tools create new files without being destructive. None declares network access.
 
 ## Privacy
 
-The plugin does not collect, store, or transmit email content or usage data. Conversion happens on your machine, and converted output exists only where you choose to write it, plus whatever Claude reads back into the conversation. The only network traffic is the PyPI package download described above.
+The dead-letter server converts email on your machine and sends nothing itself. It collects no usage data, and conversions without an output path use temporary files that are deleted after each call. Error details go to the server's stderr log, which your Claude app may keep with its other MCP logs, and uv keeps a local package cache.
+
+This does not make the whole workflow offline. Tool results, such as the Markdown `/dead-letter:convert` returns or the summary `/dead-letter:summarize` writes, become part of the conversation, and Claude sends the conversation to Anthropic's model service as with any other chat content. Files you only write to disk, without asking Claude to read them, stay local. Choose which messages to convert accordingly, especially for sensitive mail.
 
 ## Source
 
