@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-10-06
+
 ### Changed
+
+- The MCP SDK (`mcp>=2.1,<3`) is now a core dependency, so a plain
+  `uvx --from dead-letter==X dead-letter-mcp` or `pip install dead-letter`
+  starts the MCP server without an extra. This lets the Claude plugin launch
+  from a locked `uv.lock` (#212). A bare install now pulls the SDK and its
+  dependencies (about 40 packages instead of 11). `dead-letter[mcp]` remains
+  a valid, empty compatibility extra; existing commands keep working.
 
 - Claude plugin 0.4.7 (still pinned to package 0.4.6) adds Troubleshooting and
   Support sections to the plugin README: connection checks, first-launch
