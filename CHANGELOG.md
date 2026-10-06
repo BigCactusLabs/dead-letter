@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fresh installs no longer fail on import with selectolax 1.0, which removed
+  the `selectolax.parser` (Modest) backend that dead-letter uses. The
+  dependency is now capped at `selectolax<1`. Fresh installs of 0.4.5 resolve
+  selectolax 1.0 and fail until a release carries this fix.
 - MBOX MCP failures now use stable codes and errno-derived OS reasons instead
   of raw exception text or filenames. Failure-summary codes and messages are
   restricted to reviewed fixed strings; detailed errors remain in local logs
