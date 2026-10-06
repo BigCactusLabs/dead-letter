@@ -804,6 +804,14 @@ From 0.4.5, `serverInfo` also carries a `title`, `description`,
 `data:` URI (no network fetch), and each tool has a human-readable `title`.
 Clients decide whether and where to display these fields.
 
+Unreleased on `main`: each tool also declares MCP annotations.
+`get_diagnostics` is `readOnlyHint: true`. The four conversion tools are
+`readOnlyHint: false`, `destructiveHint: false` and `idempotentHint: false`:
+they only create new, collision-safe output paths and never modify or remove
+sources, and a repeat call adds numbered copies. Every tool is
+`openWorldHint: false`; none makes network requests. Hints describe behavior
+for clients; they are not a security boundary.
+
 Packages from 0.4.5 expose the five tools below. `convert_mbox` (#145) was
 added in 0.4.5; 0.4.0 and earlier expose the other four.
 
