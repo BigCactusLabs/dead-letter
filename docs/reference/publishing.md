@@ -57,7 +57,8 @@ uv lock --check
 `prepare` prints a patch and changes **no files**. `git apply` applies it only
 after review. It updates the project and import versions, the editable root
 lock record, PyPI/MCPB registry metadata, bundle metadata and exact dependency,
-ARD entries, and (by default) the plugin asset version and exact runtime pin.
+and ARD entries. It never changes the plugin: the plugin's `uv.lock` can only
+resolve a package that is already on PyPI (see [Plugin Release](#plugin-release)).
 Dependency versions and checksums in `uv.lock` are not refreshed by this
 operation. Dependency changes require their own reviewed lock update.
 
@@ -69,12 +70,10 @@ is recorded. The release that first ships a new tool must add it to
 `SHIPPED_TOOLS` entry, and add it to `PUBLISHED_TOOLS` in
 `scripts/smoke_mcpb.py`. 0.4.5 did this for `convert_mbox` (#145).
 
-Use `prepare "$VERSION" --keep-plugin` to defer plugin adoption explicitly,
-or `--plugin-version A.B.C` when the plugin's independent sequence is ahead.
-The helper rejects version reuse/rollback. A deliberately different exact
-plugin pin is a warning, not a package-release failure; record the deferral.
-For a plugin-only release, change its manifest version and, only when needed,
-its exact `.mcp.json` package pin; do not bump every package artifact.
+The helper rejects version reuse/rollback. Until a later plugin release adopts
+the new package, the different exact plugin pin is a warning, not a
+package-release failure; record the deferral. (`--keep-plugin` is still
+accepted and changes nothing.)
 
 Finalize a dated `## [X.Y.Z] - YYYY-MM-DD` entry in `CHANGELOG.md`. Do not
 fabricate release notes from a version bump. Keep the PyPI ownership marker
@@ -328,8 +327,23 @@ release checklist. A successful Python release does not update the tap.
 The normal plugin release adopts an already-published exact package version.
 A plugin-only instruction/command update can keep the prior exact package
 pin. Both cases require a new plugin asset version and reviewed main commit.
-For a lockstep release, use the recorded package release commit, not a later
-unreviewed `main` tip.
+
+Adopt a package in a PR after it is on PyPI. `prepare-plugin` prints a patch
+for the plugin version, the `.mcp.json` pin (`dead-letter==X.Y.Z`, no extras:
+Claude's locked launch refuses them), and the `plugin/pyproject.toml`
+dependency. Then regenerate the lock, which needs network access:
+
+```bash
+python scripts/release.py wait-pypi "$PACKAGE_VERSION"
+python scripts/release.py prepare-plugin "$PLUGIN_VERSION" --pin "$PACKAGE_VERSION" > /tmp/plugin.patch
+git apply /tmp/plugin.patch
+uv lock --directory plugin
+python scripts/release.py check
+```
+
+`check` fails until `plugin/uv.lock` locks the same PyPI version as the
+launcher and project. For a plugin-only release, run
+`prepare-plugin` with the current pin; the lock is unchanged.
 
 ```bash
 PLUGIN_VERSION=A.B.C
@@ -373,6 +387,7 @@ matching client caches or successful runtime resolution.
 | `pyproject.toml` / `vX.Y.Z` | Python package release | All package, MCPB, and ARD sync points match |
 | `plugin/.claude-plugin/plugin.json` / `plugin-vA.B.C` | Plugin assets and instructions | Independent, increasing sequence |
 | `plugin/.mcp.json` | Exact package the plugin launches | Must be published; may deliberately lag |
+| `plugin/pyproject.toml`, `plugin/uv.lock` | Locked runtime for that pin | Same exact pin; lock regenerated with `uv lock --directory plugin` |
 | Marketplace `version`, `source.ref`, `source.sha` | What plugin clients resolve | Same plugin release and peeled commit |
 | Community catalog source SHA | Third-party accepted snapshot | Separate review and update policy |
 

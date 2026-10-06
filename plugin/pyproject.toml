@@ -1,0 +1,11 @@
+# Locked runtime for the plugin's MCP server launcher (plugin/.mcp.json).
+# Not published; the plugin version lives in .claude-plugin/plugin.json.
+# After changing the pin, run: uv lock --directory plugin
+[project]
+name = "dead-letter-plugin"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = ["dead-letter==0.4.7"]
+
+[tool.uv]
+package = false

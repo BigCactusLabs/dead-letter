@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Claude plugin 0.4.9 pins package 0.4.7 as `dead-letter==0.4.7` (no `[mcp]`
+  extra) and ships `plugin/pyproject.toml` and `plugin/uv.lock`, so hosts that
+  launch from a lock get hashed dependency versions (#212). `plugin.json` now
+  declares the listing icon and repository, documentation, privacy-policy, and
+  support links.
+- `release.py prepare` no longer adopts the plugin pin. The new
+  `release.py prepare-plugin` does so after the package is on PyPI, and
+  `release.py check` requires the plugin project and lock to match the
+  launcher pin.
+
 ## [0.4.7] - 2026-10-08
 
 ### Changed

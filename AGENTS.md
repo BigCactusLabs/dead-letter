@@ -23,6 +23,7 @@ capability in user-facing docs.
 - `src/dead_letter/backend/` — CLI (`mbox_cli.py` for MBOX, `analysis_cli.py` for `analyze`), FastAPI API, job runner, watch, MCP, doctor
 - `src/dead_letter/frontend/` — static Alpine.js ES modules; no build step
 - `plugin/` — Claude manifest, commands, context skill, exact MCP launcher pin
+  and its locked runtime (`pyproject.toml`, `uv.lock`)
 - `skills/dead-letter/` — portable Agent Skill; keep Claude slash commands and
   Cowork-specific paths in `plugin/skills/`, not here. This root distribution
   directory is not a development auto-load directory.

@@ -54,7 +54,7 @@ Anything that writes files needs the slash command typed explicitly. If you ask 
 
 ## How it works
 
-The plugin launches the `dead-letter-mcp` MCP server (Python, distributed on PyPI as `dead-letter[mcp]`). The slash commands call into this server, which handles `.eml` parsing, sanitization, and Markdown rendering.
+The plugin launches the `dead-letter-mcp` MCP server (Python, distributed on PyPI as `dead-letter`). The slash commands call into this server, which handles `.eml` parsing, sanitization, and Markdown rendering.
 
 The plugin is pinned to a specific dead-letter PyPI release (see `.mcp.json`) so a future package release cannot silently break installs.
 
@@ -70,7 +70,7 @@ Without the MCP tools, the commands can explain the workflow but cannot convert 
 
 ## What it runs and sends
 
-- On first launch, `uvx` downloads the pinned `dead-letter[mcp]` package and its dependencies from PyPI and caches them. Later launches reuse the cache.
+- On first launch, `uvx` downloads the pinned `dead-letter` package and its dependencies from PyPI and caches them. Later launches reuse the cache. The plugin also ships a `uv.lock` with hashed dependency versions for hosts that launch from a lock; plain `uvx` resolves compatible dependency versions itself.
 - The `dead-letter-mcp` server then runs locally over stdio. It makes no network requests.
 - Text a tool returns to Claude enters the conversation and is sent to the model provider with it; see [Privacy](#privacy).
 - The tools read only the `.eml`, `.mbox`, or folder paths you give them. They write only to the output paths you give them, under new collision-safe names, and never modify, move, or delete your source files.
