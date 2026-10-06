@@ -50,7 +50,7 @@ Anything that writes files needs the slash command typed explicitly. If you ask 
 ## Requirements
 
 - **In Cowork:** none. `uv` is already in the sandbox image.
-- **In Claude Code (local):** `uv` on `PATH`. Install with `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS/Linux) or the PowerShell equivalent on Windows. See [astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/).
+- **In Claude Code (local):** `uv` on `PATH`. Follow uv's [installation guide](https://docs.astral.sh/uv/getting-started/installation/) (Homebrew, WinGet, pipx, or the standalone installer).
 
 ## How it works
 
