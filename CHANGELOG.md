@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Claude plugin 0.4.7 (still pinned to package 0.4.6) adds Troubleshooting and
+  Support sections to the plugin README: connection checks, first-launch
+  downloads, the selectolax 1.0 failure in older plugin pins, Cowork path
+  access, and where to report bugs and vulnerabilities.
+
 ## [0.4.6] - 2026-10-06
 
 ### Added

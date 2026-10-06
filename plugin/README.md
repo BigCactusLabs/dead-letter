@@ -82,6 +82,20 @@ The dead-letter server converts email on your machine and sends nothing itself. 
 
 This does not make the whole workflow offline. Tool results, such as the Markdown `/dead-letter:convert` returns or the summary `/dead-letter:summarize` writes, become part of the conversation, and Claude sends the conversation to Anthropic's model service as with any other chat content. Files you only write to disk, without asking Claude to read them, stay local. Choose which messages to convert accordingly, especially for sensitive mail.
 
+## Troubleshooting
+
+- **The commands load but no tools run (Claude Code).** Run `/mcp` and check that the `dead-letter` server is connected. If it isn't, check that `uv` is on `PATH` (see [Requirements](#requirements)), then update the plugin as described in [Update](#update) and start a new session.
+- **The first command is slow.** The first launch downloads the pinned package and its dependencies from PyPI. Later launches reuse uv's cache.
+- **The server fails to start with `ImportError: Modest backend is deprecated since selectolax 1.0`.** Plugin versions pinned to dead-letter 0.4.5 or earlier pick up an incompatible selectolax release. Update the plugin; 0.4.6 and later pin a fixed package.
+- **`File not found: <path>` in Cowork.** A Cowork session cannot read arbitrary paths on your Mac. Drag the file into the chat, or grant the session access to its folder, then retry.
+- **No tools in claude.ai chat.** Expected: chat does not start local MCP servers. Use Claude Code or Cowork (see [Where it works](#where-it-works)).
+- **The output looks wrong.** Ask Claude to run `get_diagnostics` on the message. It reports which body was selected, the conversion confidence, and any warnings, and writes nothing.
+
+## Support
+
+- Bugs and questions: [GitHub issues](https://github.com/BigCactusLabs/dead-letter/issues). Please use synthetic or redacted mail in reports, never real messages.
+- Security vulnerabilities: report privately as described in [SECURITY.md](https://github.com/BigCactusLabs/dead-letter/blob/main/SECURITY.md).
+
 ## Source
 
 - Plugin source: https://github.com/BigCactusLabs/dead-letter/tree/main/plugin
