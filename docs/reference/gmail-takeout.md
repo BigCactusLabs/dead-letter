@@ -43,7 +43,7 @@ conversations, interpret historical messages as current tasks, or upload data.
 
 ## Resume an interrupted flat export
 
-**Unreleased (#139), not available in 0.4.5.** Start with a fresh output directory
+**Available from 0.4.6 (#139).** Start with a fresh output directory
 and enable the journal on the first run, then rerun the same command:
 
 ```bash
@@ -292,7 +292,7 @@ File output and report receipts are **not one atomic transaction**. The newest
 completed file can be absent from the report if interruption occurs before its
 receipt commits. Counts describe committed receipts, not a post-interruption
 rescan of the destination. Default conversion is not resumability or exactly-once
-ingestion. The unreleased [opt-in resume mode](mbox-resume.md) reconciles this gap
+ingestion. The [opt-in resume mode](mbox-resume.md) reconciles this gap
 for flat Markdown and bundle output
 ([#139](https://github.com/BigCactusLabs/dead-letter/issues/139)). A real
 multi-GB Takeout corpus has not been validated end-to-end, tracked in
@@ -329,7 +329,7 @@ recorded in `mbox_options.timeout_seconds`, including `null` when disabled.
 
 This is **not a memory cap or an OS security sandbox**. It adds process startup
 and temporary-copy overhead and does not time-limit framing or final publication.
-Default worker conversion does not journal progress. The unreleased
+Default worker conversion does not journal progress. The
 [flat-or-bundle resume mode](mbox-resume.md) supports workers too; it does not add
 process-tree cleanup after a hard-killed parent. See the
 [worker contract and practitioner sources](mbox-workers.md) for error codes,

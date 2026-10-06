@@ -256,8 +256,9 @@ partial success summary is emitted. Ctrl-C returns 130. The direct mode has no
 parser deadline and can hang on hostile input; use worker mode for that case.
 Workers are not a memory cap or OS sandbox. Hard kills, native crashes in direct
 mode, or repeated interruption may leave temporary files; this helper is not a
-recovery journal or durable resume implementation. Opt-in resume is a separate,
-unreleased mode (see [resumable MBOX imports](mbox-resume.md)); this helper does
+recovery journal or durable resume implementation. Opt-in resume is a separate
+mode, available from 0.4.6 (see
+[resumable MBOX imports](mbox-resume.md)); this helper does
 not use it. See [worker limits](mbox-workers.md).
 
 ## Practitioner sources applied
@@ -282,7 +283,7 @@ Complete an authorized real-corpus run and inspect sample quality before claimin
 broad Takeout compatibility. The bounded synthetic worker-cost matrix supports
 retaining fresh-worker isolation; see the
 [reuse decision](../project/2026-09-24-mbox-worker-benchmark.md) before reopening it.
-Opt-in durable resume (unreleased, on `main`; see
+Opt-in durable resume (available from 0.4.6; see
 [resumable MBOX imports](mbox-resume.md)) reconciles completed-but-unreceipted
 output and preserves user-edited files; matching hashes in this audit does not
 implement that protocol. These experiments do not block the released importer.
