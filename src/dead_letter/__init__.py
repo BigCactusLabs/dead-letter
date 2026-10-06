@@ -22,4 +22,4 @@ __all__ = [
     "convert_dir",
     "convert_to_bundle",
 ]
-__version__ = "0.4.5"
+__version__ = "0.4.6"

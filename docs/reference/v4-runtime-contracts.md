@@ -804,7 +804,7 @@ From 0.4.5, `serverInfo` also carries a `title`, `description`,
 `data:` URI (no network fetch), and each tool has a human-readable `title`.
 Clients decide whether and where to display these fields.
 
-Unreleased on `main`: each tool also declares MCP annotations.
+From 0.4.6, each tool also declares MCP annotations.
 `get_diagnostics` is `readOnlyHint: true`. The four conversion tools are
 `readOnlyHint: false`, `destructiveHint: false` and `idempotentHint: false`:
 they only create new, collision-safe output paths and never modify or remove
@@ -945,7 +945,7 @@ tool convert_mbox: `:
   completed but report publication failed. Existing message outputs remain;
   a failed report reservation is removed where filesystem cleanup succeeds.
 
-**Unreleased hardening (#187):** MBOX conversion/report failure reasons use
+**Hardening from 0.4.6 (#187):** MBOX conversion/report failure reasons use
 `mbox_io_error` (optionally followed by a known errno name and the OS-generated
 reason), `mbox_invalid_input`, or `mbox_conversion_error`. The fixed core output
 validation message and MCP-owned archive-limit/change messages above remain
@@ -955,7 +955,7 @@ paths in validation errors and the requested output/report paths remain part
 of the response. Exception details are logged locally, not erased.
 
 Per-message failures are not tool errors; they appear in `failures` and the
-report. In the unreleased hardening, summary codes are allowlisted:
+report. In this hardening, summary codes are allowlisted:
 `mbox_empty_message`, `mbox_message_too_large`, `mbox_line_too_long`,
 `mbox_invalid_message`, `mbox_archive_error`, `html_markdown_failed` and
 `conversion_error`. Each has a fixed message; an unknown code becomes
@@ -964,7 +964,7 @@ of the importer's error text. The report retains the original error details
 and provenance. Local reports and logs can contain private metadata and must
 not be treated as sanitized, model-safe summaries.
 
-**Unreleased cleanup ordering (#145):** the importer is closed before final
+**Cleanup ordering from 0.4.6 (#145):** the importer is closed before final
 source verification and report publication. A failure during early-stop
 iterator cleanup is inside the same failure boundary as iteration: the
 partial report is marked failed, never successful. This is not durable resume,

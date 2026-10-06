@@ -1,6 +1,6 @@
 # Resumable MBOX imports
 
-**Availability: unreleased (#139).** Not available in 0.4.5. Opt-in CLI/Python
+**Availability: 0.4.6 and later (#139).** Opt-in CLI/Python
 resume supports one immutable, flat `.mbox` export with either Markdown files
 or Cabinet-style bundles. Compressed input, dry runs, MCP and web/UI resume are
 not supported. Ordinary conversion keeps its existing behavior.
