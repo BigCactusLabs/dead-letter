@@ -114,7 +114,8 @@ Advisory only: `uv run ruff check .`, `uv run ruff format --check .`,
 - **Source preservation is explicit.** MCP bundle conversion is copy-only.
   Python `convert_to_bundle()` defaults to move; preservation examples must
   specify `source_handling="copy"`. CLI/UI/Python options are not automatically
-  valid MCP options. Consult the runtime contract before widening a surface.
+  valid MCP options. Widening a surface updates the runtime contract in the
+  same PR.
 - **Version relationships, not universal equality.** `release.py check` is
   the source-of-truth cross-file check. Package, import, editable lock, MCPB,
   registry source pins, and ARD versions agree. Plugin asset version and its
@@ -132,7 +133,9 @@ Advisory only: `uv run ruff check .`, `uv run ruff format --check .`,
   after the pinned package is available. Never move published tags, replace
   release bytes, or advertise a candidate image as an endorsed release.
 - **CHANGELOG.md** follows Keep a Changelog. User-facing behavior changes need
-  an entry; do not fabricate release dates or released status.
+  an entry; do not fabricate release dates or released status. A
+  `prepare X.Y.Z` PR dates the entry with the planned release day; correct the
+  date if the tag lands later.
 
 ## Documentation and conventions
 
