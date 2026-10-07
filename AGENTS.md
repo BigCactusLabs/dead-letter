@@ -121,8 +121,12 @@ Advisory only: `uv run ruff check .`, `uv run ruff format --check .`,
   exact package pin are independent; a reviewed deferral is allowed, a
   floating pin is not. Use `prepare` to preview a synchronization patch, not
   hand-edited version lists duplicated across guides.
-- **Release authority remains explicit.** Development work does not authorize
-  version bumps, tags, publication, or pointer changes. A `vX.Y.Z` tag alone
+- **Release preparation is PR work; publication is not.** A maintainer-opened
+  or maintainer-approved PR whose title names the release (`prepare X.Y.Z`)
+  may bump versions, date the changelog, and update pins; do not flag the bump
+  itself. Other PRs leave versions alone. Pushing tags, publishing a release,
+  and moving the `release` branch or other pointers each need an explicit
+  maintainer go-ahead. A `vX.Y.Z` tag alone
   does not publish PyPI; publishing its stable GitHub release does. A separate
   `plugin-vA.B.C` tag triggers the marketplace and compatibility branch only
   after the pinned package is available. Never move published tags, replace
