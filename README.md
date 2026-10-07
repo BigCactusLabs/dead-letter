@@ -286,7 +286,8 @@ Launch it directly with `uvx`:
 uvx --python 3.12 --from 'dead-letter[mcp]' dead-letter-mcp
 ```
 
-Or install the MCP extra first:
+Or install it first (from 0.4.7 the MCP SDK is a core dependency; `[mcp]` is
+kept as a compatibility extra):
 
 ```bash
 pip install 'dead-letter[mcp]'
@@ -296,7 +297,7 @@ dead-letter-mcp
 From a source checkout:
 
 ```bash
-uv run --extra mcp dead-letter-mcp
+uv run dead-letter-mcp
 ```
 
 **Claude Desktop (extension bundle):**

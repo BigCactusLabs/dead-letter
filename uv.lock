@@ -440,13 +440,14 @@ wheels = [
 
 [[package]]
 name = "dead-letter"
-version = "0.4.6"
+version = "0.4.7"
 source = { editable = "." }
 dependencies = [
     { name = "html-to-markdown" },
     { name = "icalendar" },
     { name = "mail-parser" },
     { name = "mail-parser-reply" },
+    { name = "mcp" },
     { name = "nh3" },
     { name = "pyyaml" },
     { name = "selectolax" },
@@ -464,7 +465,6 @@ dev = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "hypothesis" },
-    { name = "mcp" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -473,9 +473,6 @@ dev = [
     { name = "tiktoken" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "watchfiles" },
-]
-mcp = [
-    { name = "mcp" },
 ]
 typesafe = [
     { name = "typesafe-sdk" },
@@ -500,7 +497,7 @@ requires-dist = [
     { name = "icalendar", specifier = ">=6.1.1" },
     { name = "mail-parser", specifier = ">=4.2.0" },
     { name = "mail-parser-reply", specifier = ">=1.35" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2.1,<3" },
+    { name = "mcp", specifier = ">=2.1,<3" },
     { name = "nh3", specifier = ">=0.2.20" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.390" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.3" },

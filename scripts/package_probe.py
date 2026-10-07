@@ -215,16 +215,17 @@ def main() -> int:
 
     if args.extra in {"core", "typesafe"}:
         offline_preview_probe(fixture)
+    if args.extra in {"core", "mcp"}:
+        # The MCP SDK is a core dependency; the `mcp` extra is an empty alias.
+        asyncio.run(mcp_probe(fixture))
 
     if args.extra == "core":
-        for module in ("watchfiles", "mcp", "fastapi", "tiktoken", "typesafe_sdk", "httpx2"):
+        for module in ("watchfiles", "fastapi", "tiktoken", "typesafe_sdk"):
             require(importlib.util.find_spec(module) is None, f"core unexpectedly includes {module}")
         missing_typesafe_probe(fixture)
     elif args.extra == "cli":
         import watchfiles
         require(callable(watchfiles.watch), "watchfiles surface missing")
-    elif args.extra == "mcp":
-        asyncio.run(mcp_probe(fixture))
     elif args.extra == "ui":
         import dead_letter.backend.ui_server
         assets = importlib.resources.files("dead_letter").joinpath("frontend")
