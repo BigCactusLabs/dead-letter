@@ -7,6 +7,7 @@
   },
   "homepage": "https://github.com/BigCactusLabs/dead-letter",
   "license": "PolyForm-Noncommercial-1.0.0",
+  "keywords": ["email", "eml", "mbox", "markdown", "mcp"],
   "icon": "./.claude-plugin/icon.png",
   "repository": "https://github.com/BigCactusLabs/dead-letter",
   "documentationUrl": "https://github.com/BigCactusLabs/dead-letter/blob/main/plugin/README.md",

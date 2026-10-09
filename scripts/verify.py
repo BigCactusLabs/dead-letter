@@ -46,7 +46,7 @@ def source_commands(mode: str, suites: list[str] | None = None) -> list[tuple[st
         "backend": [("backend", pytest + ["tests/backend"])],
         "plugin": [
             ("plugin-tests", pytest + ["tests/plugin"]),
-            ("plugin-schema", ["npx", "--yes", "@anthropic-ai/claude-code@2.1.145", "plugin", "validate", "plugin/"]),
+            ("plugin-schema", ["npx", "--yes", "@anthropic-ai/claude-code@2.1.295", "plugin", "validate", "plugin/"]),
             ("agent-skills", ["gh", "skill", "publish", "--dry-run"]),
         ],
         "frontend": [

@@ -79,7 +79,7 @@ uv run pytest -q tests/backend
 uv run pytest -q tests/plugin
 node --test tests/frontend/*.test.js
 node --check src/dead_letter/frontend/static/app.js
-npx --yes @anthropic-ai/claude-code@2.1.145 plugin validate plugin/
+npx --yes @anthropic-ai/claude-code@2.1.295 plugin validate plugin/
 gh skill publish --dry-run
 ```
 

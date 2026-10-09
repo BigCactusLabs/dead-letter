@@ -52,7 +52,7 @@ Individual commands remain useful for focused debugging:
 | Frontend | `node --test tests/frontend/*.test.js` |
 | Analysis SDK contracts, locked optional extra, fake HTTP | `uv run --locked --extra typesafe pytest -q tests/backend/test_typesafe_provider.py tests/backend/test_analysis_contracts.py tests/backend/test_analysis_eml.py` |
 | Frontend syntax | `node --check src/dead_letter/frontend/static/app.js` |
-| Plugin schema | `npx --yes @anthropic-ai/claude-code@2.1.145 plugin validate plugin/` |
+| Plugin schema | `npx --yes @anthropic-ai/claude-code@2.1.295 plugin validate plugin/` |
 | Agent Skill validation | `gh skill publish --dry-run` |
 | Distribution metadata, offline | `python scripts/release.py check` |
 | Release-helper regressions, no app dependencies | `for t in test_release.py test_release_status.py test_homebrew_prepare.py; do python -m unittest discover -s tests/plugin -p "$t" -v || exit 1; done` |

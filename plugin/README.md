@@ -9,6 +9,12 @@ Convert `.eml` email files to Markdown with YAML front matter, triage small fold
 /plugin install dead-letter
 ```
 
+On Claude Code 2.1.275 or later, one command does both:
+
+```
+/plugin install dead-letter --marketplace BigCactusLabs/bigcactuslabs-plugins
+```
+
 ## Update
 
 In Claude Code, refresh the marketplace and update the installed plugin:
@@ -57,6 +63,8 @@ Anything that writes files needs the slash command typed explicitly. If you ask 
 The plugin launches the `dead-letter-mcp` MCP server (Python, distributed on PyPI as `dead-letter`). The slash commands call into this server, which handles `.eml` parsing, sanitization, and Markdown rendering.
 
 The plugin is pinned to a specific dead-letter PyPI release (see `.mcp.json`) so a future package release cannot silently break installs.
+
+The server is launched as a pinned PyPI package rather than shipped inside the plugin because it depends on compiled Python packages (HTML sanitizing and parsing) built per platform. `plugin/uv.lock` records hashed versions of every dependency, and each plugin release moves the pin only after that package version is published and tested.
 
 ## Where it works
 
