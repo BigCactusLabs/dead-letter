@@ -540,15 +540,15 @@ wheels = [
 
 [[package]]
 name = "html-to-markdown"
-version = "3.15.1"
+version = "3.17.2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e1/f3/519abec67c42a12ff1f63c2ed5350780ece7c6e3493325586946dd92fa22/html_to_markdown-3.15.1.tar.gz", hash = "sha256:f5e3a4816273601a51f69a97e16a8cdb9b1b0a92e5c38403ed2334c255c57be4", size = 5546494, upload-time = "2026-09-27T12:09:04.389Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ca/8e/5699cb2077675003e7704cafede72dda2ed81af6c96834f326791b2f4466/html_to_markdown-3.17.2.tar.gz", hash = "sha256:fbe859ee45c5ea8b444ce3dea0bc3bcf7641561e64a30ad485244f3e8d99c76f", size = 5709190, upload-time = "2026-10-06T17:25:35.947Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ea/e8/8d7fae03e1f9c076a57216d0fadfb8ed106374969d17f53723a544301b6e/html_to_markdown-3.15.1-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:d885b01fe8d940e52391517c33ed8604c9a2945d020be791c96ecedff891cf48", size = 7499330, upload-time = "2026-09-27T12:08:54.597Z" },
-    { url = "https://files.pythonhosted.org/packages/f9/91/abc3147cb40f52e5ca20b60b181a60bf8d156771660d79c9e4a74369c6f7/html_to_markdown-3.15.1-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:c4f0d58825b17fd4c225180b94ef62ce59c8ca79cbd21ddb14a13f23b34243be", size = 7053151, upload-time = "2026-09-27T12:08:56.741Z" },
-    { url = "https://files.pythonhosted.org/packages/fe/79/8edd4200d9d6dbce264995ad2796c886fbd46f72912120845f898060cf36/html_to_markdown-3.15.1-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:8bd03133183b3d330aa7668bea13c150e082d4734126993df74b54f8c4469d6c", size = 7283249, upload-time = "2026-09-27T12:08:58.489Z" },
-    { url = "https://files.pythonhosted.org/packages/06/54/463753d712e8e78fcb96415b9efdfaabdc3dc57de9b6189db1427eb37829/html_to_markdown-3.15.1-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:d3e8503bdbaff75d6984e2a6379587f214cf8a44aaa9f8785c3c32c1b217bb9d", size = 7742479, upload-time = "2026-09-27T12:09:00.434Z" },
-    { url = "https://files.pythonhosted.org/packages/14/04/3ec3a984386f90d754809f77841be9d1428eeeb225f855f599e98acc194c/html_to_markdown-3.15.1-cp310-abi3-win_amd64.whl", hash = "sha256:7d9a84e022bd51703388c356b8a6c89089fefce1d3de955ff7a78684d38fc97f", size = 7732025, upload-time = "2026-09-27T12:09:02.139Z" },
+    { url = "https://files.pythonhosted.org/packages/be/99/656d87f0cd01b5da733202d99b1c74435f3bdceb86a633dee7050dfea56f/html_to_markdown-3.17.2-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:56f926847daa5ac64b09d68a5ebf9c3f9430eeeca8b58d21e144ca355bed502a", size = 7816129, upload-time = "2026-10-06T17:25:24.719Z" },
+    { url = "https://files.pythonhosted.org/packages/83/90/573d3b2c03cba78056d0c6be726ef31b62ff89f28f38537d57ce329f9640/html_to_markdown-3.17.2-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:f8c89bb60e80bf198f28ebc87272144dc53a1b9d8ad921b3c8346b8cb6c47c4f", size = 7345766, upload-time = "2026-10-06T17:25:27.1Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/f4/4dd1ce9ca85307a271e7e91ed504d383b1974ef235f4915b503455a045d5/html_to_markdown-3.17.2-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:950825d77566d22419c439d478a6ad2c313df869cf65c3fe5c9a2b5e80b1c682", size = 7589927, upload-time = "2026-10-06T17:25:29.15Z" },
+    { url = "https://files.pythonhosted.org/packages/4e/03/ba3e98afb35510493c1087a4d586e3e09eb3a950ca1b58e1be95e84ab414/html_to_markdown-3.17.2-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:b7cd3878f8cad0061df479baad1a65ea1277db5b9921de7ba23e4acd2abe419c", size = 8064786, upload-time = "2026-10-06T17:25:31.379Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/e6/10b13abb6c231baa9cc0383d73ad243cc497838866a11a2be3f3c624b025/html_to_markdown-3.17.2-cp310-abi3-win_amd64.whl", hash = "sha256:e1cf82a4aa0b853bebbfe33df1c1c66d1e95da8d6adf674b354269d66d235543", size = 8050750, upload-time = "2026-10-06T17:25:33.91Z" },
 ]
 
 [[package]]

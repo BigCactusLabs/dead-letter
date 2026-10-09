@@ -40,6 +40,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `strip_signatures` removes signatures from HTML emails again when
+  html-to-markdown 3.17 or later is installed. Those releases write the `-- `
+  delimiter as `\--`, which the delimiter pattern did not match, so fresh
+  installs of 0.4.7 and plugin 0.4.9 kept HTML signatures. The pattern also
+  accepts a delimiter followed by a `<br>` line break. The lock moves to
+  html-to-markdown 3.17.2. A comparison of 2,353 conversion cases against
+  3.15.1 found two other upstream output changes, both corrections: a blank
+  line now separates a table from the text after it, and a `<br>` inside a
+  table cell becomes a space instead of joining the words.
 - A signature image whose filename matches more than one pattern (such as
   `facebook-icon.png`) now always reports the same `filename_pattern:` reason,
   the first match in the documented pattern order. It previously varied
