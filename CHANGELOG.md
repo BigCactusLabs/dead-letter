@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **MCP success-JSON contract change:** `convert_directory` replaces
+  `errors[].error` with `errors[].error_code`; callers must use the new key.
+  Each failed file retains its `file` path and returns a stable code, with
+  `conversion_error` for missing or empty codes. Raw exception details can
+  contain email-derived text and are now logged on the server rather than
+  returned to agents. Batch counters, output paths, and successful MCP-call
+  status for per-file failures are unchanged, including dry runs (#186).
 - HTML parsing now uses selectolax's Lexbor backend, and the minimum
   dependency is `selectolax>=1.0.0,<2` (replacing the `<1` cap from 0.4.6).
   selectolax 1.0 removed the Modest backend. Conversion output is unchanged
@@ -122,13 +129,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **MCP success-JSON contract change:** `convert_directory` replaces
-  `errors[].error` with `errors[].error_code`; callers must use the new key.
-  Each failed file retains its `file` path and returns a stable code, with
-  `conversion_error` for missing or empty codes. Raw exception details can
-  contain email-derived text and are now logged on the server rather than
-  returned to agents. Batch counters, output paths, and successful MCP-call
-  status for per-file failures are unchanged, including dry runs (#186).
 - The `convert_eml` MCP tool description now says attachments are listed in
   front matter but not written to disk (`convert_eml_to_bundle` saves them),
   and how `structured` mode and forwarded content interact.
