@@ -41,10 +41,17 @@ class _BasicLimits(ctypes.Structure):
 
 
 class _IOCounters(ctypes.Structure):
-    _fields_ = [(name, ctypes.c_uint64) for name in (
-        "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
-        "ReadTransferCount", "WriteTransferCount", "OtherTransferCount",
-    )]
+    _fields_ = [
+        (name, ctypes.c_uint64)
+        for name in (
+            "ReadOperationCount",
+            "WriteOperationCount",
+            "OtherOperationCount",
+            "ReadTransferCount",
+            "WriteTransferCount",
+            "OtherTransferCount",
+        )
+    ]
 
 
 class _ExtendedLimits(ctypes.Structure):
@@ -62,9 +69,16 @@ def _kernel32():
     api = ctypes.WinDLL("kernel32", use_last_error=True)
     for name, args, result in (
         ("CreateJobObjectW", [ctypes.c_void_p, ctypes.c_wchar_p], _HANDLE),
-        ("SetInformationJobObject", [_HANDLE, ctypes.c_int, ctypes.c_void_p, _DWORD], _BOOL),
-        ("QueryInformationJobObject", [_HANDLE, ctypes.c_int, ctypes.c_void_p, _DWORD,
-                                       ctypes.POINTER(_DWORD)], _BOOL),
+        (
+            "SetInformationJobObject",
+            [_HANDLE, ctypes.c_int, ctypes.c_void_p, _DWORD],
+            _BOOL,
+        ),
+        (
+            "QueryInformationJobObject",
+            [_HANDLE, ctypes.c_int, ctypes.c_void_p, _DWORD, ctypes.POINTER(_DWORD)],
+            _BOOL,
+        ),
         ("WaitForSingleObject", [_HANDLE, _DWORD], _DWORD),
         ("CloseHandle", [_HANDLE], _BOOL),
     ):
@@ -89,7 +103,11 @@ def _limits(budgets: dict[str, int]) -> _ExtendedLimits:
     basic.ActiveProcessLimit = 1
     for name, value in budgets.items():
         unit = _TICKS_PER_SECOND if name == "cpu_seconds" else 1024 * 1024
-        maximum = 2**63 - 1 if name == "cpu_seconds" else 2 ** (8 * ctypes.sizeof(_SIZE_T)) - 1
+        maximum = (
+            2**63 - 1
+            if name == "cpu_seconds"
+            else 2 ** (8 * ctypes.sizeof(_SIZE_T)) - 1
+        )
         if type(value) is not int or value <= 0 or value * unit > maximum:
             raise ValueError("Invalid Windows worker budget")
         if name == "cpu_seconds":
@@ -120,18 +138,26 @@ class WindowsJob:
             if error == _ERROR_ALREADY_EXISTS:
                 raise OSError("Worker job already exists")
             if not self._api.SetInformationJobObject(
-                self._handle, _EXTENDED_LIMIT_INFORMATION,
-                ctypes.byref(requested), ctypes.sizeof(requested),
+                self._handle,
+                _EXTENDED_LIMIT_INFORMATION,
+                ctypes.byref(requested),
+                ctypes.sizeof(requested),
             ):
                 raise OSError("Could not configure worker job")
             actual = _ExtendedLimits()
             returned = _DWORD()
             if not self._api.QueryInformationJobObject(
-                self._handle, _EXTENDED_LIMIT_INFORMATION, ctypes.byref(actual),
-                ctypes.sizeof(actual), ctypes.byref(returned),
+                self._handle,
+                _EXTENDED_LIMIT_INFORMATION,
+                ctypes.byref(actual),
+                ctypes.sizeof(actual),
+                ctypes.byref(returned),
             ):
                 raise OSError("Could not verify worker job")
-            wanted, applied = requested.BasicLimitInformation, actual.BasicLimitInformation
+            wanted, applied = (
+                requested.BasicLimitInformation,
+                actual.BasicLimitInformation,
+            )
             if (
                 returned.value != ctypes.sizeof(actual)
                 or applied.LimitFlags != wanted.LimitFlags

@@ -3,13 +3,13 @@
 The fake API tests run on every host. They are not evidence that Windows has
 actually enforced a limit; the windows-latest real-worker cases establish that.
 """
+
 from __future__ import annotations
 
 import ctypes
 import json
 import subprocess
 import sys
-from types import SimpleNamespace
 
 import pytest
 
@@ -52,7 +52,11 @@ class FakeKernel:
         return 0 if self.failure == "create" else HANDLE
 
     def set_limits(self, handle, kind, pointer, size):
-        assert handle == HANDLE and kind == 9 and size == ctypes.sizeof(windows._ExtendedLimits)
+        assert (
+            handle == HANDLE
+            and kind == 9
+            and size == ctypes.sizeof(windows._ExtendedLimits)
+        )
         self.limits = ctypes.string_at(pointer, size)
         return self.failure != "set"
 
@@ -96,7 +100,12 @@ def kernel(monkeypatch):
     fake = FakeKernel()
     monkeypatch.setattr(ctypes, "WinDLL", lambda name, **kw: fake, raising=False)
     monkeypatch.setattr(ctypes, "set_last_error", lambda code: None, raising=False)
-    monkeypatch.setattr(ctypes, "get_last_error", lambda: 183 if fake.failure == "existing" else 0, raising=False)
+    monkeypatch.setattr(
+        ctypes,
+        "get_last_error",
+        lambda: 183 if fake.failure == "existing" else 0,
+        raising=False,
+    )
     return fake
 
 
@@ -112,7 +121,10 @@ def test_windows_abi_widths_and_layout():
         assert windows._ExtendedLimits.ProcessMemoryLimit.offset == 112
 
 
-@pytest.mark.parametrize("budgets", [{"cpu_seconds": 3}, {"memory_mib": 32}, {"cpu_seconds": 3, "memory_mib": 32}])
+@pytest.mark.parametrize(
+    "budgets",
+    [{"cpu_seconds": 3}, {"memory_mib": 32}, {"cpu_seconds": 3, "memory_mib": 32}],
+)
 def test_verified_limits_use_ticks_commit_bytes_and_one_process(kernel, budgets):
     job = windows.WindowsJob(budgets, NONCE)
     applied = windows._ExtendedLimits.from_buffer_copy(kernel.limits)
@@ -129,7 +141,20 @@ def test_verified_limits_use_ticks_commit_bytes_and_one_process(kernel, budgets)
     assert kernel.closed == [HANDLE]
 
 
-@pytest.mark.parametrize("failure", ["create", "existing", "set", "query", "flags", "cpu", "memory", "processes", "length"])
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "create",
+        "existing",
+        "set",
+        "query",
+        "flags",
+        "cpu",
+        "memory",
+        "processes",
+        "length",
+    ],
+)
 def test_failed_job_setup_closes_owned_handle(kernel, failure):
     kernel.failure = failure
     with pytest.raises(OSError):
@@ -137,17 +162,29 @@ def test_failed_job_setup_closes_owned_handle(kernel, failure):
     assert kernel.closed == ([] if failure == "create" else [HANDLE])
 
 
-@pytest.mark.parametrize("budgets", [{}, {"max_output_mib": 1}, {"unknown": 1}, {"cpu_seconds": 0},
-                                      {"cpu_seconds": True}, {"memory_mib": -1}, {"cpu_seconds": 1.5},
-                                      {"cpu_seconds": (2**63 - 1) // 10_000_000 + 1},
-                                      {"memory_mib": 2 ** (ctypes.sizeof(ctypes.c_size_t) * 8)}])
+@pytest.mark.parametrize(
+    "budgets",
+    [
+        {},
+        {"max_output_mib": 1},
+        {"unknown": 1},
+        {"cpu_seconds": 0},
+        {"cpu_seconds": True},
+        {"memory_mib": -1},
+        {"cpu_seconds": 1.5},
+        {"cpu_seconds": (2**63 - 1) // 10_000_000 + 1},
+        {"memory_mib": 2 ** (ctypes.sizeof(ctypes.c_size_t) * 8)},
+    ],
+)
 def test_invalid_budgets_never_create_a_job(kernel, budgets):
     with pytest.raises(ValueError):
         windows.WindowsJob(budgets, NONCE)
     assert not hasattr(kernel, "name")
 
 
-@pytest.mark.parametrize("nonce", ["", "a" * 31, "g" * 32, "A" * 32, "é" * 32, "../" * 11])
+@pytest.mark.parametrize(
+    "nonce", ["", "a" * 31, "g" * 32, "A" * 32, "é" * 32, "../" * 11]
+)
 def test_invalid_names_are_rejected_before_opening_or_creating(kernel, nonce):
     with pytest.raises(ValueError):
         windows.WindowsJob({"cpu_seconds": 1}, nonce)
@@ -197,28 +234,45 @@ def test_unsupported_windows_output_does_not_join_job(kernel, monkeypatch):
 
 
 @pytest.mark.parametrize("failure", ["open", "assign", "close"])
-def test_bootstrap_failure_is_nonce_authenticated_and_never_converts(kernel, monkeypatch, tmp_path, failure):
+def test_bootstrap_failure_is_nonce_authenticated_and_never_converts(
+    kernel, monkeypatch, tmp_path, failure
+):
     kernel.failure = failure
     monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setattr(worker, "run", lambda *a: pytest.fail("failed job must not parse"))
-    assert worker._run_budgeted(tmp_path / "request.json", {"cpu_seconds": 5}, NONCE) == 3
+    monkeypatch.setattr(
+        worker, "run", lambda *a: pytest.fail("failed job must not parse")
+    )
+    assert (
+        worker._run_budgeted(tmp_path / "request.json", {"cpu_seconds": 5}, NONCE) == 3
+    )
     assert json.loads((tmp_path / worker.BUDGET_STATUS_FILE).read_text()) == {
-        "nonce": NONCE, "outcome": "apply_failed",
+        "nonce": NONCE,
+        "outcome": "apply_failed",
     }
 
 
-@pytest.mark.parametrize("field, value", [
-    ("cpu_seconds", (2**63 - 1) // 10_000_000 + 1),
-    ("memory_limit_mib", (2 * sys.maxsize + 1) // 1024**2 + 1),
-])
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("cpu_seconds", (2**63 - 1) // 10_000_000 + 1),
+        ("memory_limit_mib", (2 * sys.maxsize + 1) // 1024**2 + 1),
+    ],
+)
 def test_windows_parent_rejects_unit_overflow_before_launch(monkeypatch, field, value):
     monkeypatch.setattr(sys, "platform", "win32")
     with pytest.raises(ValueError, match="positive integer"):
-        isolation.validate_budgets(isolation.WorkerBudgets(**{field: value}), worker_mode=True)
+        isolation.validate_budgets(
+            isolation.WorkerBudgets(**{field: value}), worker_mode=True
+        )
 
 
-@pytest.mark.parametrize("mode", ["ok", "cpu", "exit1816", "launch", "wait", "timeout", "cancel", "query", "close"])
-def test_parent_keeps_job_through_reaping_and_closes_on_all_exit_paths(monkeypatch, tmp_path, mode):
+@pytest.mark.parametrize(
+    "mode",
+    ["ok", "cpu", "exit1816", "launch", "wait", "timeout", "cancel", "query", "close"],
+)
+def test_parent_keeps_job_through_reaping_and_closes_on_all_exit_paths(
+    monkeypatch, tmp_path, mode
+):
     events = []
 
     class Job:
@@ -270,11 +324,20 @@ def test_parent_keeps_job_through_reaping_and_closes_on_all_exit_paths(monkeypat
     monkeypatch.setattr(isolation.subprocess, "Popen", Process)
     times = iter([0, 1, 10])
     monkeypatch.setattr(isolation, "monotonic", lambda: next(times))
-    call = lambda: isolation._run_worker(tmp_path / "request.json", 5, ("cpu_seconds=5", "nonce=" + NONCE))
+
+    def call():
+        return isolation._run_worker(
+            tmp_path / "request.json", 5, ("cpu_seconds=5", "nonce=" + NONCE)
+        )
+
     error = {
-        "cpu": isolation._WorkerResourceLimit, "launch": OSError, "wait": OSError,
-        "timeout": subprocess.TimeoutExpired, "cancel": KeyboardInterrupt,
-        "query": isolation.MboxBudgetError, "close": isolation.MboxBudgetError,
+        "cpu": isolation._WorkerResourceLimit,
+        "launch": OSError,
+        "wait": OSError,
+        "timeout": subprocess.TimeoutExpired,
+        "cancel": KeyboardInterrupt,
+        "query": isolation.MboxBudgetError,
+        "close": isolation.MboxBudgetError,
     }.get(mode)
     if error:
         with pytest.raises(error) as caught:
@@ -294,8 +357,13 @@ def test_parent_keeps_job_through_reaping_and_closes_on_all_exit_paths(monkeypat
 def test_parent_job_setup_failure_never_launches(monkeypatch, tmp_path):
     def denied(*a):
         raise OSError("host job policy")
+
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(windows, "WindowsJob", denied)
-    monkeypatch.setattr(isolation.subprocess, "Popen", lambda *a, **kw: pytest.fail("must not launch"))
+    monkeypatch.setattr(
+        isolation.subprocess, "Popen", lambda *a, **kw: pytest.fail("must not launch")
+    )
     with pytest.raises(isolation.MboxBudgetError, match="mbox_budget_apply_failed"):
-        isolation._run_worker(tmp_path / "request.json", 5, ("cpu_seconds=5", "nonce=" + NONCE))
+        isolation._run_worker(
+            tmp_path / "request.json", 5, ("cpu_seconds=5", "nonce=" + NONCE)
+        )
