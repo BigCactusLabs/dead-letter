@@ -7,6 +7,8 @@ from html import escape
 
 from selectolax.lexbor import LexborHTMLParser
 
+from dead_letter.core._html_parser import parse_html
+
 from dead_letter.core.conversation import ConversationResult
 from dead_letter.core.forwarding import is_forward_marker_line
 from dead_letter.core.sanitize import sanitize_html
@@ -288,7 +290,7 @@ def _extract_quote_html(quote_node, *, include_following_siblings: bool = False)
 def segment_html_conversation(html: str, *, client_hint: str | None = None) -> ConversationResult:
     """Split HTML into body and quoted zones before markdown conversion."""
     cleaned = sanitize_html(html)
-    tree = LexborHTMLParser(cleaned)
+    tree = parse_html(cleaned)
     zones: list[ConversationZone] = []
     rules_triggered: list[str] = []
 

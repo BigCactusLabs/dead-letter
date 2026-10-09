@@ -8,9 +8,12 @@ separate queries) so a parser change shows up as a test failure.
 
 from __future__ import annotations
 
-from selectolax.lexbor import LexborHTMLParser
+from email.message import EmailMessage
+from pathlib import Path
 
-from dead_letter.core.html import html_has_italic_nodes, html_to_markdown, unwrap_italic_tags
+from dead_letter.core import ConvertOptions, convert
+from dead_letter.core._html_parser import parse_html
+from dead_letter.core.html import html_has_italic_nodes, unwrap_italic_tags
 from dead_letter.core.html_conversation import (
     _iter_nodes_in_document_order,
     _split_node_html,
@@ -27,7 +30,7 @@ def _zones(result) -> list[tuple[ZoneKind, str]]:
 
 
 def test_wrap_node_html_keeps_namespaced_and_drops_empty_attributes() -> None:
-    tree = LexborHTMLParser('<div xml:lang="en" data-empty="" title="a&quot;b<" hidden>x</div>')
+    tree = parse_html('<div xml:lang="en" data-empty="" title="a&quot;b<" hidden>x</div>')
     node = tree.css_first("div")
 
     # Lexbor reports valueless attributes as None and empty ones as "".
@@ -146,12 +149,88 @@ def test_gmail_attr_first_line_joins_split_text_nodes() -> None:
     assert result.rules_triggered == ["gmail_quote"]
 
 
-def test_malformed_table_foster_parents_stray_text() -> None:
-    result = html_to_markdown("<table>stray text<tr><td>cell one<td>cell two</table><p>after</p>")
+def _write_html_eml(path: Path, html: str) -> Path:
+    message = EmailMessage()
+    message["From"] = "Sender <sender@example.test>"
+    message["Subject"] = "Synthetic"
+    message["Date"] = "Mon, 01 Jan 2024 10:00:00 +0000"
+    message.set_content("plain alternative")
+    message.add_alternative(html, subtype="html")
+    path.write_bytes(bytes(message))
+    return path
 
-    assert result.markdown == (
-        "stray text\n\n| cell one | cell two |\n| -------- | -------- |\n\nafter"
+
+def _converted_body(tmp_path: Path, html: str, *, strip_images: bool) -> str:
+    source = _write_html_eml(tmp_path / "message.eml", html)
+    output = tmp_path / f"out-{strip_images}.md"
+    result = convert(
+        source,
+        output=output,
+        options=ConvertOptions(strip_signature_images=strip_images, strip_tracking_pixels=strip_images),
     )
+    assert result.success
+    return output.read_text(encoding="utf-8").split("---\n", 2)[2]
+
+
+_MALFORMED_TABLE = (
+    "<div>Reply</div><table>stray reply text<tr><td>cell one<td>"
+    '<img src="https://t.example.test/p.gif" width="1" height="1">'
+    '<div id="divRplyFwdMsg">From: A</div>quoted cell</table><p>older</p>'
+)
+
+
+def test_malformed_table_is_repaired_before_outlook_split() -> None:
+    filtered, stripped = filter_images(_MALFORMED_TABLE, strip_signature_images=True, strip_tracking_pixels=True)
+
+    # Lexbor foster-parents the stray text ahead of the table and closes the
+    # open cell; the split then runs on that repaired tree.
+    assert [s.reference for s in stripped] == ["https://t.example.test/p.gif"]
+    assert filtered == (
+        "<body><div>Reply</div>stray reply text<table><tbody><tr><td>cell one</td><td>"
+        '<div id="divRplyFwdMsg">From: A</div>quoted cell</td></tr></tbody></table><p>older</p></body>'
+    )
+    assert _zones(segment_html_conversation(filtered, client_hint="outlook")) == [
+        (
+            ZoneKind.BODY,
+            "<body><div>Reply</div>stray reply text<table><tbody><tr><td>cell one</td></tr></tbody></table></body>",
+        ),
+        (
+            ZoneKind.QUOTED,
+            '<body><table><tbody><tr><td><div id="divRplyFwdMsg">From: A</div>quoted cell</td></tr>'
+            "</tbody></table><p>older</p></body>",
+        ),
+    ]
+
+
+def test_malformed_table_conversion(tmp_path: Path) -> None:
+    assert _converted_body(tmp_path, _MALFORMED_TABLE, strip_images=False) == (
+        "\nReply\n\nstray reply text\n\n| cell one | ![](https://t.example.test/p.gif) |\n"
+        "| -------- | --------------------------------- |\n"
+    )
+    assert _converted_body(tmp_path, _MALFORMED_TABLE, strip_images=True) == (
+        "\nReply\n\nstray reply text\n\n| cell one |\n| -------- |\n"
+    )
+
+
+_SELECTEDCONTENT = (
+    "<html><body><p>Hi</p><select><selectedcontent></selectedcontent><option>Hello</option></select>"
+    '<img src="https://x.example.test/pixel.gif" width="1" height="1"></body></html>'
+)
+
+
+def test_selectedcontent_is_not_filled_by_parser_events() -> None:
+    filtered, _stripped = filter_images(_SELECTEDCONTENT, strip_signature_images=True, strip_tracking_pixels=True)
+
+    # Lexbor's default DOM events would clone the option into <selectedcontent>.
+    assert "<selectedcontent></selectedcontent>" in filtered
+    assert _zones(segment_html_conversation(filtered)) == [(ZoneKind.BODY, "<body><p>Hi</p>Hello</body>")]
+
+
+def test_selectedcontent_option_text_converts_once(tmp_path: Path) -> None:
+    for strip_images in (False, True):
+        body = _converted_body(tmp_path, _SELECTEDCONTENT, strip_images=strip_images)
+        assert body.count("Hello") == 1
+    assert _converted_body(tmp_path, _SELECTEDCONTENT, strip_images=True) == "\nHi\n\nHello\n"
 
 
 def test_malformed_table_images_are_filtered_after_foster_parenting() -> None:
@@ -182,7 +261,7 @@ def test_nested_and_misnested_italics_are_unwrapped() -> None:
 
 
 def test_node_identity_holds_across_separate_queries() -> None:
-    tree = LexborHTMLParser('<div><p>a</p><div id="divRplyFwdMsg">q</div></div><img src="x">')
+    tree = parse_html('<div><p>a</p><div id="divRplyFwdMsg">q</div></div><img src="x">')
     queried = tree.css_first("#divRplyFwdMsg")
     walked = next(
         node for node in _iter_nodes_in_document_order(tree.body) if node.attributes.get("id") == "divRplyFwdMsg"

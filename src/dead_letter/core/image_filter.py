@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import re
 
-from selectolax.lexbor import LexborHTMLParser, LexborNode
+from selectolax.lexbor import LexborNode
+
+from dead_letter.core._html_parser import parse_html
 
 from dead_letter.core.types import StrippedImage, StrippedImageCategory
 
@@ -62,7 +64,7 @@ def filter_images(
     if not strip_signature_images and not strip_tracking_pixels:
         return html, []
 
-    tree = LexborHTMLParser(html)
+    tree = parse_html(html)
     stripped: list[StrippedImage] = []
     to_remove: list = []
 

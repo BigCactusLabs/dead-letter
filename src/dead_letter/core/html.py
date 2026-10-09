@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from selectolax.lexbor import LexborHTMLParser
-
+from dead_letter.core._html_parser import parse_html
 from dead_letter.core.html_to_markdown_adapter import convert_html_to_markdown
 from dead_letter.core.quotes import detect_quote_patterns
 from dead_letter.core.sanitize import sanitize_html
@@ -38,7 +37,7 @@ def html_has_italic_nodes(html: str) -> bool:
     cleaned = sanitize_html(html)
     if not cleaned:
         return False
-    return LexborHTMLParser(cleaned).css_first("i") is not None
+    return parse_html(cleaned).css_first("i") is not None
 
 
 def unwrap_italic_tags(html: str) -> str:
@@ -46,7 +45,7 @@ def unwrap_italic_tags(html: str) -> str:
     if not cleaned:
         return ""
 
-    parser = LexborHTMLParser(cleaned)
+    parser = parse_html(cleaned)
     for node in list(parser.css("i")):
         node.unwrap()
     return parser.html or ""
