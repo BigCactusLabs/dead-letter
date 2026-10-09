@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import re
 
-from selectolax.parser import HTMLParser, Node
+from selectolax.lexbor import LexborNode
+
+from dead_letter.core._html_parser import parse_html
 
 from dead_letter.core.types import StrippedImage, StrippedImageCategory
 
@@ -42,11 +44,13 @@ _BLOCK_TAGS = frozenset({
     "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "blockquote",
 })
 
-_SIGNATURE_FILENAME_PATTERNS: set[str] = {
+# Checked in this order; the first match names the reason. A tuple keeps the
+# reason stable across runs (set order varies with the hash seed).
+_SIGNATURE_FILENAME_PATTERNS: tuple[str, ...] = (
     "logo", "banner", "signature", "spacer", "pixel", "separator",
     "facebook", "linkedin", "twitter", "instagram", "youtube", "tiktok", "github",
     "icon", "badge",
-}
+)
 
 
 def filter_images(
@@ -62,7 +66,7 @@ def filter_images(
     if not strip_signature_images and not strip_tracking_pixels:
         return html, []
 
-    tree = HTMLParser(html)
+    tree = parse_html(html)
     stripped: list[StrippedImage] = []
     to_remove: list = []
 
@@ -142,7 +146,7 @@ def filter_images(
     return (body.html if body else tree.html) or "", stripped
 
 
-def _detect_signature_image(img: Node, src: str, alt: str) -> str | None:
+def _detect_signature_image(img: LexborNode, src: str, alt: str) -> str | None:
     """Return detection reason if img is a signature image (Layers 2-3), else None."""
     # Layer 2: Gmail proxy URL.
     if _GMAIL_MAIL_SIG_PATTERN in src:
@@ -161,7 +165,7 @@ def _detect_signature_image(img: Node, src: str, alt: str) -> str | None:
     return None
 
 
-def _has_plausible_signature_size(img: Node) -> bool:
+def _has_plausible_signature_size(img: LexborNode) -> bool:
     dimensions = [
         img.attributes.get("width", "") or "",
         img.attributes.get("height", "") or "",
@@ -176,7 +180,7 @@ def _has_plausible_signature_size(img: Node) -> bool:
     )
 
 
-def _detect_tracking_pixel(img: Node, src: str) -> str | None:
+def _detect_tracking_pixel(img: LexborNode, src: str) -> str | None:
     """Return detection reason if img is a tracking pixel, else None."""
     # Safeguard: never strip CID references via tracking pixel detection.
     if src.startswith("cid:"):

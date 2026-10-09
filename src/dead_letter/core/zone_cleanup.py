@@ -6,7 +6,9 @@ import re
 
 from dead_letter.core.types import ConversationZone, ConvertOptions, ZoneKind
 
-_SIGNATURE_RE = re.compile(r"\n-- ?\n.*$", re.DOTALL)
+# html-to-markdown 3.17+ escapes a leading "--" as "\--", and a <br> after the
+# delimiter renders as a Markdown hard break (two trailing spaces).
+_SIGNATURE_RE = re.compile(r"\n\\?--[ \t]*\n.*$", re.DOTALL)
 _DISCLAIMER_RE = re.compile(r"\n(?:confidentiality notice|disclaimer):?.*$", re.DOTALL | re.IGNORECASE)
 
 

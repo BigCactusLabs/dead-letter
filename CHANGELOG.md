@@ -18,6 +18,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default-conversion change; these are resource controls, not a security sandbox.
   See [MBOX worker budgets](docs/reference/mbox-workers.md#optional-resource-budgets)
   and the macOS memory decision (#188).
+
+### Changed
+
+- **MCP success-JSON contract change:** `convert_directory` replaces
+  `errors[].error` with `errors[].error_code`; callers must use the new key.
+  Each failed file retains its `file` path and returns a stable code, with
+  `conversion_error` for missing or empty codes. Raw exception details can
+  contain email-derived text and are now logged on the server rather than
+  returned to agents. Batch counters, output paths, and successful MCP-call
+  status for per-file failures are unchanged, including dry runs (#186).
+- HTML parsing now uses selectolax's Lexbor backend, and the minimum
+  dependency is `selectolax>=1.0.0,<2` (replacing the `<1` cap from 0.4.6).
+  selectolax 1.0 removed the Modest backend. Conversion output is unchanged
+  on the test fixtures, benchmark corpus, and MBOX fixture. MBOX resume
+  journals record the selectolax version, so a `--mbox-resume` run started
+  on an earlier dead-letter release is rejected with `mbox_resume_mismatch`
+  after upgrading; rerun into a new output directory. The experimental
+  analysis snapshot `normalization_version` changes for the same reason.
+- Claude plugin 0.4.9 pins package 0.4.7 as `dead-letter==0.4.7` (no `[mcp]`
+  extra) and ships `plugin/pyproject.toml` and `plugin/uv.lock`, so hosts that
+  launch from a lock get hashed dependency versions (#212). `plugin.json` now
+  declares the listing icon, keywords, and repository, documentation,
+  privacy-policy, and support links. The plugin README adds a one-step
+  `--marketplace` install command and explains why the server runs as a
+  pinned PyPI package.
+- The plugin schema check now runs `claude-code@2.1.295`, which accepts the
+  listing fields above.
+- `release.py prepare` no longer adopts the plugin pin. The new
+  `release.py prepare-plugin` does so after the package is on PyPI, and
+  `release.py check` requires the plugin project and lock to match the
+  launcher pin.
+
+### Fixed
+
+- `strip_signatures` removes signatures from HTML emails again when
+  html-to-markdown 3.17 or later is installed. Those releases write the `-- `
+  delimiter as `\--`, which the delimiter pattern did not match, so fresh
+  installs of 0.4.7 and plugin 0.4.9 kept HTML signatures. The pattern also
+  accepts a delimiter followed by a `<br>` line break. The lock moves to
+  html-to-markdown 3.17.2. A comparison of 2,353 conversion cases against
+  3.15.1 found two other upstream output changes, both corrections: a blank
+  line now separates a table from the text after it, and a `<br>` inside a
+  table cell becomes a space instead of joining the words.
+- A signature image whose filename matches more than one pattern (such as
+  `facebook-icon.png`) now always reports the same `filename_pattern:` reason,
+  the first match in the documented pattern order. It previously varied
+  between runs.
+
+## [0.4.7] - 2026-10-08
+
+### Changed
+
+- The MCP SDK (`mcp>=2.1,<3`) is now a core dependency, so a plain
+  `uvx --from dead-letter==X dead-letter-mcp` or `pip install dead-letter`
+  starts the MCP server without an extra. This lets the Claude plugin launch
+  from a locked `uv.lock` (#212). A bare install now pulls the SDK and its
+  dependencies (about 40 packages instead of 11). `dead-letter[mcp]` remains
+  a valid, empty compatibility extra; existing commands keep working.
+
+- Claude plugin 0.4.7 (still pinned to package 0.4.6) adds Troubleshooting and
+  Support sections to the plugin README: connection checks, first-launch
+  downloads, the selectolax 1.0 failure in older plugin pins, Cowork path
+  access, and where to report bugs and vulnerabilities.
+- Claude plugin 0.4.8 (still pinned to package 0.4.6) adds a listing icon at
+  `plugin/.claude-plugin/icon.png` and replaces the README's piped uv install
+  command with a link to uv's installation guide.
+
+## [0.4.6] - 2026-10-06
+
+### Added
+
 - Opt-in `--mbox-resume` / Python `convert_mbox(..., resume=True)` for flat
   Markdown and Cabinet-style bundle imports, including timed workers: durable
   source/options/converter-bound receipts, hash-verified reuse, reconciliation
@@ -37,9 +108,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   appropriate publication support. Compressed input, dry-run, MCP and web/UI resume
   remain unsupported; this is not a universal power-loss guarantee. See
   [MBOX resume](docs/reference/mbox-resume.md) (#139).
+- MCP tools now declare `readOnlyHint`, `destructiveHint`, `idempotentHint`
+  and `openWorldHint` annotations: `get_diagnostics` is read-only, the four
+  conversion tools create new files without modifying sources, and no tool
+  makes network requests.
 
 ### Fixed
 
+- Fresh installs no longer fail on import with selectolax 1.0, which removed
+  the `selectolax.parser` (Modest) backend that dead-letter uses. The
+  dependency is now capped at `selectolax<1`. Fresh installs of 0.4.5 resolve
+  selectolax 1.0 and fail until a release carries this fix.
 - MBOX MCP failures now use stable codes and errno-derived OS reasons instead
   of raw exception text or filenames. Failure-summary codes and messages are
   restricted to reviewed fixed strings; detailed errors remain in local logs
@@ -531,7 +610,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Setup modal traps keyboard focus and marks background content as `inert`,
   preventing tab navigation to elements behind the overlay.
 - Batch confirmation overlay now marks the idle drop zone as `inert`,
-  preventing tab navigation to elements behind the dialog.
+  preventing keyboard interaction with the file input behind the dialog.
 - History row expansion no longer collapses when clicking on expanded
   detail content (output paths, error messages, diagnostics).
 - `relativeTime` helper now tolerates up to 30 seconds of server-ahead

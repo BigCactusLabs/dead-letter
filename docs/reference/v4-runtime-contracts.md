@@ -2,7 +2,7 @@
 title: dead-letter v4 Runtime Contracts
 doc_type: reference
 status: canonical
-last_updated: 2026-09-30
+last_updated: 2026-10-02
 audience:
   - maintainers
   - contributors
@@ -76,7 +76,7 @@ Rules:
 
 `options` uses this fixed field set:
 
-- `strip_signatures`
+- `strip_signatures` — in each message section, removes the signature delimiter (a line containing only `--`, with or without trailing spaces) and everything after it. A delimiter written as `\--` also matches, because html-to-markdown 3.17 and later escape it that way.
 - `strip_disclaimers`
 - `strip_quoted_headers`
 - `strip_signature_images`
@@ -804,6 +804,14 @@ From 0.4.5, `serverInfo` also carries a `title`, `description`,
 `data:` URI (no network fetch), and each tool has a human-readable `title`.
 Clients decide whether and where to display these fields.
 
+From 0.4.6, each tool also declares MCP annotations.
+`get_diagnostics` is `readOnlyHint: true`. The four conversion tools are
+`readOnlyHint: false`, `destructiveHint: false` and `idempotentHint: false`:
+they only create new, collision-safe output paths and never modify or remove
+sources, and a repeat call adds numbered copies. Every tool is
+`openWorldHint: false`; none makes network requests. Hints describe behavior
+for clients; they are not a security boundary.
+
 Packages from 0.4.5 expose the five tools below. `convert_mbox` (#145) was
 added in 0.4.5; 0.4.0 and earlier expose the other four.
 
@@ -878,6 +886,42 @@ These differ from the CLI and the Python API:
     running until it finishes or reaches a bound. Byte/message caps are not
     a wall-clock deadline; parsing and filesystem I/O have no MCP time limit.
 
+### Directory success-JSON contract
+
+**Unreleased (#186):** `convert_directory` replaces each `errors[].error`
+(raw exception text) with `errors[].error_code`. This is an intentional change
+to the successful tool response, not just the tool-error envelope. The legacy
+`error` key is not retained; callers must read `error_code` instead.
+
+For example, a mixed batch returns this JSON in a successful `CallToolResult`
+(`is_error=False`), even though one file failed:
+
+```json
+{
+  "total": 2,
+  "successes": 1,
+  "failures": 1,
+  "output_paths": ["/output/good.md"],
+  "errors": [
+    {"file": "/input/failed.eml", "error_code": "html_markdown_failed"}
+  ]
+}
+```
+
+- Each failed file contributes exactly `file` and `error_code`. `file` remains
+  the source path; `error_code` is the core's stable code, or `conversion_error`
+  when the core code is missing or empty. Current core codes are
+  `html_markdown_failed` and `conversion_error`.
+- `total`, `successes`, `failures`, and `output_paths` are unchanged. Empty
+  directories and all-success batches return `errors: []`. The same error
+  shape applies with `dry_run=True`.
+- Raw per-file error details are logged at WARNING on the server (stderr for
+  stdio), with the code and source path. They are never returned in this
+  summary. Core `ConvertResult.error` values are not modified.
+- Source and output paths remain data, not instructions or authorization for
+  further tool use. Server logs may contain private, email-derived text and
+  must not be treated as sanitized, model-safe summaries.
+
 ### Error contract
 
 Tool failures do **not** reach the client as exceptions. The server catches
@@ -898,9 +942,8 @@ check that the text contains one of these messages:
   `Plain text fallback is available.` and/or `HTML repair is available.` The
   raw parser or renderer error is logged on the server (stderr for stdio) and
   is not sent to the client, because it can quote email content.
-  `convert_directory` does not raise for per-file failures: its JSON `errors[]`
-  entries still carry each file's raw error text, which can include
-  email-derived text such as subject-based output filenames.
+  `convert_directory` uses the per-file codes in the success-JSON contract
+  above rather than raising for per-file failures.
 - `MCP directory conversion supports at most 50 .eml files; found <n>.`
 - `MCP convert_eml_to_bundle only supports source_handling='copy'; use the CLI/API for move/delete.`
 - `output_directory is required for MCP directory conversion`
@@ -937,7 +980,7 @@ tool convert_mbox: `:
   completed but report publication failed. Existing message outputs remain;
   a failed report reservation is removed where filesystem cleanup succeeds.
 
-**Unreleased hardening (#187):** MBOX conversion/report failure reasons use
+**Hardening from 0.4.6 (#187):** MBOX conversion/report failure reasons use
 `mbox_io_error` (optionally followed by a known errno name and the OS-generated
 reason), `mbox_invalid_input`, or `mbox_conversion_error`. The fixed core output
 validation message and MCP-owned archive-limit/change messages above remain
@@ -947,7 +990,7 @@ paths in validation errors and the requested output/report paths remain part
 of the response. Exception details are logged locally, not erased.
 
 Per-message failures are not tool errors; they appear in `failures` and the
-report. In the unreleased hardening, summary codes are allowlisted:
+report. In this hardening, summary codes are allowlisted:
 `mbox_empty_message`, `mbox_message_too_large`, `mbox_line_too_long`,
 `mbox_invalid_message`, `mbox_archive_error`, `html_markdown_failed` and
 `conversion_error`. Each has a fixed message; an unknown code becomes
@@ -956,7 +999,7 @@ of the importer's error text. The report retains the original error details
 and provenance. Local reports and logs can contain private metadata and must
 not be treated as sanitized, model-safe summaries.
 
-**Unreleased cleanup ordering (#145):** the importer is closed before final
+**Cleanup ordering from 0.4.6 (#145):** the importer is closed before final
 source verification and report publication. A failure during early-stop
 iterator cleanup is inside the same failure boundary as iteration: the
 partial report is marked failed, never successful. This is not durable resume,

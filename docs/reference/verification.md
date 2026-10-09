@@ -186,10 +186,11 @@ identifies the exact artifact, rejecting editable or index-substituted
 installs. Set `TMPDIR` outside the checkout when overriding the system default.
 
 All profiles exercise CLI help and synthetic conversion, entrypoint metadata,
-and source preservation. Core verifies optional stacks did not leak in;
-extras exercise watchfiles, a bounded four-tool MCP stdio session plus
-conversion, UI imports/packaged static resources, and a tokenizer without
-remote vocabulary downloads. A stdio handshake is not a GUI install test.
+and source preservation. Core verifies optional stacks did not leak in and,
+like the empty `mcp` compatibility extra, runs a bounded MCP stdio session plus
+conversion (the MCP SDK is a core dependency); extras exercise watchfiles,
+UI imports/packaged static resources, and a tokenizer without remote
+vocabulary downloads. A stdio handshake is not a GUI install test.
 
 Core and TypeSafe profiles check offline analysis previews and lazy SDK imports.
 The TypeSafe wheel/sdist profiles require the exact SDK before running the

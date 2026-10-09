@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dead-letter"
-version = "0.4.5"
+version = "0.4.7"
 description = "Convert .eml email exports to clean, LLM-ready Markdown with YAML front matter"
 readme = "README.md"
 license = "PolyForm-Noncommercial-1.0.0"
@@ -51,13 +51,15 @@ dependencies = [
   "mail-parser-reply>=1.35",
   "nh3>=0.2.20",
   "html-to-markdown>=3.1.0,<4.0",
-  "selectolax>=0.3.28",
+  "selectolax>=1.0.0,<2",
   "pyyaml>=6.0.2",
+  "mcp>=2.1,<3",
 ]
 
 [project.optional-dependencies]
 cli = ["watchfiles>=1.0.0"]
-mcp = ["mcp>=2.1,<3"]
+# Compatibility alias: the MCP SDK is a core dependency since 0.4.7.
+mcp = []
 ui = [
   "dead-letter[cli]",
   "fastapi>=0.136.0",

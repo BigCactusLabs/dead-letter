@@ -93,8 +93,8 @@ No new report schema version or inference/remote-analysis behavior is introduced
 
 **Availability:** POSIX budgets shipped in 0.4.5 (#140); 0.4.0 and earlier do
 not accept these flags. **Windows CPU and committed-memory budgets are
-unreleased (#188), not available in 0.4.5.** Budgets are opt-in and apply only
-in worker mode. Without them, worker conversion is unchanged.
+unreleased (#188); no published version includes them.** Budgets are opt-in
+and apply only in worker mode. Without them, worker conversion is unchanged.
 
 ```bash
 # Linux and macOS: CPU time and per-file output size.
@@ -271,7 +271,7 @@ being copied, and ordinary exceptions trigger cleanup. Output plus report receip
 are **not one transaction**. Parent SIGKILL/power loss, repeated interruption
 during cleanup, and a machine-wide resource failure remain outside recovery
 guarantees. Reruns remain collision-safe, not deduplicated or resumable, unless
-you opt into the unreleased `--mbox-resume` journal (on `main`, not in 0.4.5;
+you opt into the `--mbox-resume` journal (available from 0.4.6;
 see [resumable MBOX imports](mbox-resume.md)). See the
 [base Takeout contract](gmail-takeout.md) for immutable-source and dialect limits.
 
@@ -350,5 +350,5 @@ archive has not been tested; that remains
 [synthetic worker benchmark](../project/2026-09-24-mbox-worker-benchmark.md)
 measures startup/copy overhead and defers reuse. Remaining budget work is the
 macOS memory decision and native validation in #188. Durable resume (#139) is
-implemented separately and is unreleased; see
+implemented separately and is available from 0.4.6; see
 [resumable MBOX imports](mbox-resume.md). Neither is implied by the timeout option.

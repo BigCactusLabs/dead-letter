@@ -286,7 +286,8 @@ Launch it directly with `uvx`:
 uvx --python 3.12 --from 'dead-letter[mcp]' dead-letter-mcp
 ```
 
-Or install the MCP extra first:
+Or install it first (from 0.4.7 the MCP SDK is a core dependency; `[mcp]` is
+kept as a compatibility extra):
 
 ```bash
 pip install 'dead-letter[mcp]'
@@ -296,7 +297,7 @@ dead-letter-mcp
 From a source checkout:
 
 ```bash
-uv run --extra mcp dead-letter-mcp
+uv run dead-letter-mcp
 ```
 
 **Claude Desktop (extension bundle):**
@@ -337,9 +338,11 @@ Merge the entry rather than replacing existing client settings. VS Code and othe
 /plugin install dead-letter
 ```
 
+On Claude Code 2.1.275 or later, `/plugin install dead-letter --marketplace BigCactusLabs/bigcactuslabs-plugins` does both in one step.
+
 The plugin launches the MCP server via `uvx` and adds five slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`, `/dead-letter:mbox`. Local Claude Code needs `uv` on `PATH`; see [`plugin/`](https://github.com/BigCactusLabs/dead-letter/tree/main/plugin/) for runtime-specific setup and updates. Email content is treated as untrusted data, not instructions: embedded requests for tool use, credentials, or exfiltration are not followed.
 
-The marketplace pins the plugin tag and commit, and its launcher pins an exact published Python package. Claude Code and Cowork keep separate installed copies; update and verify each client. Those pins do not freeze every transitive dependency.
+The marketplace pins the plugin tag and commit, and its launcher pins an exact published Python package. Claude Code and Cowork keep separate installed copies; update and verify each client. The plugin also ships a `uv.lock` with hashed dependency versions for hosts that launch from a lock; plain `uvx` resolves compatible transitive versions itself.
 
 **Claude Code (manual MCP add — alternative):**
 
@@ -422,8 +425,8 @@ CI also validates plugin/skill schemas, frontend syntax, maintained Markdown lin
   Takeout downloads; see the [Takeout guide](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/gmail-takeout.md). The web UI
   is EML-only. From 0.4.5 the MCP server adds a bounded `convert_mbox` tool for
   one flat `.mbox`. PST, MSG and live-mailbox connections are unsupported.
-  An opt-in resumable MBOX import (`--mbox-resume`, CLI/Python only) is on
-  `main` but unreleased; see the [resume contract](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/mbox-resume.md).
+  An opt-in resumable MBOX import (`--mbox-resume`, CLI/Python only) is
+  available from 0.4.6; see the [resume contract](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/mbox-resume.md).
 - Local-only, single-user, single-machine; no remote server or authentication service. An MCP host may send results to its model provider.
 - In-memory job registry: state resets on restart. Retained binary attachments need a separate parser for text indexing.
 
