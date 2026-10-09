@@ -76,7 +76,7 @@ Rules:
 
 `options` uses this fixed field set:
 
-- `strip_signatures`
+- `strip_signatures` — in each message section, removes the signature delimiter (a line containing only `--`, with or without trailing spaces) and everything after it. A delimiter written as `\--` also matches, because html-to-markdown 3.17 and later escape it that way.
 - `strip_disclaimers`
 - `strip_quoted_headers`
 - `strip_signature_images`
