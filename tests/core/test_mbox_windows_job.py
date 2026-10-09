@@ -119,6 +119,10 @@ def test_windows_abi_widths_and_layout():
         assert windows._BasicLimits.LimitFlags.offset == 16
         assert windows._BasicLimits.ActiveProcessLimit.offset == 40
         assert windows._ExtendedLimits.ProcessMemoryLimit.offset == 112
+    else:
+        assert ctypes.sizeof(windows._BasicLimits) == 48
+        assert ctypes.sizeof(windows._IOCounters) == 48
+        assert ctypes.sizeof(windows._ExtendedLimits) == 112
 
 
 @pytest.mark.parametrize(
@@ -130,7 +134,11 @@ def test_verified_limits_use_ticks_commit_bytes_and_one_process(kernel, budgets)
     applied = windows._ExtendedLimits.from_buffer_copy(kernel.limits)
     basic = applied.BasicLimitInformation
     assert basic.ActiveProcessLimit == 1
-    assert basic.LimitFlags & windows._KILL_ON_JOB_CLOSE
+    # Literal winnt.h values: KILL_ON_JOB_CLOSE | ACTIVE_PROCESS, JOB_TIME, PROCESS_MEMORY.
+    expected = 0x2008
+    expected |= 0x4 if "cpu_seconds" in budgets else 0
+    expected |= 0x100 if "memory_mib" in budgets else 0
+    assert basic.LimitFlags == expected
     assert basic.PerJobUserTimeLimit == budgets.get("cpu_seconds", 0) * 10_000_000
     assert applied.ProcessMemoryLimit == budgets.get("memory_mib", 0) * 1024**2
     assert kernel.name == windows.job_name(NONCE) == "Local\\dead-letter-" + NONCE
