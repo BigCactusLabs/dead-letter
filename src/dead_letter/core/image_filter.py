@@ -44,11 +44,13 @@ _BLOCK_TAGS = frozenset({
     "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "blockquote",
 })
 
-_SIGNATURE_FILENAME_PATTERNS: set[str] = {
+# Checked in this order; the first match names the reason. A tuple keeps the
+# reason stable across runs (set order varies with the hash seed).
+_SIGNATURE_FILENAME_PATTERNS: tuple[str, ...] = (
     "logo", "banner", "signature", "spacer", "pixel", "separator",
     "facebook", "linkedin", "twitter", "instagram", "youtube", "tiktok", "github",
     "icon", "badge",
-}
+)
 
 
 def filter_images(

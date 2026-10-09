@@ -31,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `release.py check` requires the plugin project and lock to match the
   launcher pin.
 
+### Fixed
+
+- A signature image whose filename matches more than one pattern (such as
+  `facebook-icon.png`) now always reports the same `filename_pattern:` reason,
+  the first match in the documented pattern order. It previously varied
+  between runs.
+
 ## [0.4.7] - 2026-10-08
 
 ### Changed
