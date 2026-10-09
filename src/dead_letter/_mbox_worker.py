@@ -52,7 +52,41 @@ def _limit_pair(requested: tuple[int, int], inherited: tuple[int, int], infinity
     )
 
 
-def _apply_budgets(budgets: dict[str, int]) -> None:
+def _join_windows_job(nonce: str | None) -> None:
+    """Join the parent's already-configured job before importing any package.
+
+    Do not import dead_letter._mbox_windows here: importing dead_letter would
+    load parsers before the limits. This small bootstrap needs only four APIs,
+    and opens the job with assignment rights, not permission to change limits.
+    """
+    if nonce is None or len(nonce) != NONCE_LENGTH or any(c not in "0123456789abcdef" for c in nonce):
+        raise ValueError("Invalid worker nonce")
+    import ctypes
+
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle, boolean, dword = ctypes.c_void_p, ctypes.c_int32, ctypes.c_uint32
+    for name, args, result in (
+        ("OpenJobObjectW", [dword, boolean, ctypes.c_wchar_p], handle),
+        ("AssignProcessToJobObject", [handle, handle], boolean),
+        ("GetCurrentProcess", [], handle),
+        ("CloseHandle", [handle], boolean),
+    ):
+        function = getattr(api, name)
+        function.argtypes = args
+        function.restype = result
+    job = api.OpenJobObjectW(0x0001, False, "Local\\dead-letter-" + nonce)
+    if not job:
+        raise OSError("Could not open worker job")
+    try:
+        if not api.AssignProcessToJobObject(job, api.GetCurrentProcess()):
+            raise OSError("Could not join worker job")
+    finally:
+        # Keep no child-owned job handle: the parent owns kill-on-close.
+        if not api.CloseHandle(job):
+            raise OSError("Could not close worker job handle")
+
+
+def _apply_budgets(budgets: dict[str, int], *, nonce: str | None = None) -> None:
     """Limit this process before it imports parsers or reads the staged EML.
 
     Applied by the worker itself rather than a ``preexec_fn``, which CPython
@@ -60,6 +94,11 @@ def _apply_budgets(budgets: dict[str, int]) -> None:
     can abort instead of converting without the requested guarantee.
     """
     if not budgets:
+        return
+    if sys.platform == "win32":
+        if budgets.keys() - {"memory_mib", "cpu_seconds"}:
+            raise ValueError("Unsupported Windows worker budget")
+        _join_windows_job(nonce)
         return
     import resource
     import signal
@@ -209,7 +248,7 @@ def _run_budgeted(request_path: Path, budgets: dict[str, int], nonce: str) -> in
     watch = _MemoryErrorWatch() if "memory_mib" in budgets else None
     try:
         try:
-            _apply_budgets(budgets)
+            _apply_budgets(budgets, nonce=nonce)
             if watch is not None:
                 # Detection is part of the memory guarantee: no free monitoring
                 # tool id means the budget cannot be honored.

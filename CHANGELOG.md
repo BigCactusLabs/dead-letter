@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Windows CPU-time and committed-memory budgets for timed MBOX workers, including
+  ZIP/TGZ input, using a verified parent-owned Job Object and a stdlib-only
+  pre-parser join. Setup failures abort rather than running unenforced; exhausted
+  records withhold partial output and later records continue. CPU attribution
+  uses the job signal, not an ambiguous native exit code. Windows output-size
+  limits remain unsupported. No new dependency or
+  default-conversion change; these are resource controls, not a security sandbox.
+  See [MBOX worker budgets](docs/reference/mbox-workers.md#optional-resource-budgets)
+  (#188). macOS memory stays unsupported because it cannot be enforced; an
+  optional soft watchdog is tracked in #220.
+
 ### Changed
 
 - **MCP success-JSON contract change:** `convert_directory` replaces

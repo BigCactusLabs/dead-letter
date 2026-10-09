@@ -12,6 +12,9 @@ MESSAGE = b"From: alice@example.test\nSubject: Same\n\nHello\n\n"
 BUDGET_FLAGS = [
     ["--mbox-memory-mib", "512"], ["--mbox-cpu-seconds", "5"], ["--mbox-max-output-mib", "8"],
 ]
+UNSUPPORTED = [("freebsd14", flag) for flag in BUDGET_FLAGS] + [
+    ("win32", BUDGET_FLAGS[2]), ("darwin", BUDGET_FLAGS[0]),
+]
 
 
 @pytest.mark.parametrize("flag", BUDGET_FLAGS)
@@ -31,15 +34,16 @@ def test_budget_without_timeout_is_rejected_before_outputs(tmp_path, capsys, fla
     assert not root.exists()
 
 
-@pytest.mark.parametrize("flag", BUDGET_FLAGS)
-def test_unsupported_platform_budget_is_rejected_before_outputs(tmp_path, monkeypatch, capsys, flag):
-    monkeypatch.setattr(sys, "platform", "win32")
+@pytest.mark.parametrize("platform, flag", UNSUPPORTED)
+def test_unsupported_platform_budget_is_rejected_before_outputs(tmp_path, monkeypatch, capsys, platform, flag):
+    monkeypatch.setattr(sys, "platform", platform)
     source = tmp_path / "mail.mbox"
     source.write_bytes(POSTMARK + MESSAGE)
     root = tmp_path / "out"
     assert cli.main([str(source), "--output", str(root), "--report", "--mbox-timeout", "30", *flag]) == 1
     err = capsys.readouterr().err
-    assert "mbox_budget_unsupported" in err and "Windows" in err and flag[0] in err
+    assert "mbox_budget_unsupported" in err and flag[0] in err
+    assert {"win32": "Windows", "darwin": "macOS"}.get(platform, platform) in err
     assert not root.exists()
 
 
@@ -64,26 +68,31 @@ def test_default_report_records_unset_budgets(tmp_path):
     assert options["max_output_mib"] is None
 
 
-@pytest.mark.skipif(sys.platform not in ("linux", "darwin"),
-                    reason="CPU/output worker budgets are implemented only on Linux and macOS in this slice")
+def supported_flags():
+    return (["--mbox-memory-mib", "4096"] if sys.platform in ("linux", "win32") else []) + [
+        "--mbox-cpu-seconds", "30",
+    ] + (["--mbox-max-output-mib", "16"] if sys.platform != "win32" else [])
+
+
+def assert_budget_report(report):
+    assert report["summary"]["written"] == 1
+    assert report["mbox_options"]["cpu_seconds"] == 30
+    assert report["mbox_options"]["max_output_mib"] == (None if sys.platform == "win32" else 16)
+    assert report["mbox_options"]["memory_limit_mib"] == (4096 if sys.platform in ("linux", "win32") else None)
+
+
+@pytest.mark.skipif(sys.platform not in ("linux", "darwin", "win32"), reason="Unsupported worker-budget platform")
 def test_cli_budgets_reach_real_worker_and_report(tmp_path):
     source = tmp_path / "mail.mbox"
     source.write_bytes(POSTMARK + MESSAGE)
     root = tmp_path / "out"
-    argv = [str(source), "--output", str(root), "--report", "--mbox-timeout", "30",
-            "--mbox-cpu-seconds", "30", "--mbox-max-output-mib", "16"]
-    if sys.platform == "linux":
-        argv += ["--mbox-memory-mib", "4096"]
+    argv = [str(source), "--output", str(root), "--report", "--mbox-timeout", "30", *supported_flags()]
     assert cli.main(argv) == 0
     report = json.loads((root / ".dead-letter-report.json").read_text(encoding="utf-8"))
-    assert report["summary"]["written"] == 1
-    assert report["mbox_options"]["cpu_seconds"] == 30
-    assert report["mbox_options"]["max_output_mib"] == 16
-    assert report["mbox_options"]["memory_limit_mib"] == (4096 if sys.platform == "linux" else None)
+    assert_budget_report(report)
 
 
-@pytest.mark.skipif(sys.platform not in ("linux", "darwin"),
-                    reason="CPU/output worker budgets are implemented only on Linux and macOS in this slice")
+@pytest.mark.skipif(sys.platform not in ("linux", "darwin", "win32"), reason="Unsupported worker-budget platform")
 def test_cli_budgets_reach_real_worker_for_archive_input(tmp_path, monkeypatch):
     import zipfile
 
@@ -98,20 +107,21 @@ def test_cli_budgets_reach_real_worker_for_archive_input(tmp_path, monkeypatch):
         out.writestr("Takeout/Mail/All mail.mbox", POSTMARK + MESSAGE)
     root = tmp_path / "out"
     assert cli.main([str(source), "--output", str(root), "--report", "--mbox-timeout", "30",
-                     "--mbox-cpu-seconds", "30", "--mbox-max-output-mib", "16"]) == 0
+                     *supported_flags()]) == 0
     report = json.loads((root / ".dead-letter-report.json").read_text(encoding="utf-8"))
-    assert report["summary"]["written"] == 1
-    assert report["mbox_options"]["cpu_seconds"] == 30
-    assert report["mbox_options"]["max_output_mib"] == 16
+    assert_budget_report(report)
     assert report["archive"]["container_basename"] == "takeout.zip"
-    assert len(calls) == 1 and calls[0][:2] == ("cpu_seconds=30", "max_output_mib=16")
+    expected = (["memory_mib=4096"] if sys.platform in ("linux", "win32") else []) + ["cpu_seconds=30"]
+    if sys.platform != "win32":
+        expected += ["max_output_mib=16"]
+    assert len(calls) == 1 and calls[0][:-1] == tuple(expected) and calls[0][-1].startswith("nonce=")
 
 
-@pytest.mark.parametrize("flag", BUDGET_FLAGS)
-def test_archive_unsupported_platform_budget_is_rejected_before_outputs(tmp_path, monkeypatch, capsys, flag):
+@pytest.mark.parametrize("platform, flag", UNSUPPORTED)
+def test_archive_unsupported_platform_budget_is_rejected_before_outputs(tmp_path, monkeypatch, capsys, platform, flag):
     import zipfile
 
-    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(sys, "platform", platform)
     source = tmp_path / "takeout.zip"
     with zipfile.ZipFile(source, "w") as out:
         out.writestr("Takeout/Mail/All mail.mbox", POSTMARK + MESSAGE)
