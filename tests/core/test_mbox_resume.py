@@ -122,6 +122,28 @@ def test_mismatched_import_rejected_before_message_conversion(tmp_path, monkeypa
     assert [row.output.read_bytes() for row in first] == originals
 
 
+def test_journal_from_other_selectolax_version_is_rejected(tmp_path, monkeypatch):
+    from dead_letter.core import mbox_resume
+
+    installed = mbox_resume.version
+    assert int(installed("selectolax").split(".")[0]) >= 1
+    source = archive(tmp_path)
+    root = tmp_path / "out"
+    # A journal started on a Modest-era release records its selectolax version.
+    monkeypatch.setattr(
+        mbox_resume, "version", lambda name: "0.4.12" if name == "selectolax" else installed(name),
+    )
+    first = list(convert_mbox(source, output=root, resume=True))
+    originals = [row.output.read_bytes() for row in first]
+    monkeypatch.setattr(mbox_resume, "version", installed)
+
+    rows = list(convert_mbox(source, output=root, resume=True))
+
+    assert len(rows) == 1 and rows[0].error["code"] == "mbox_resume_mismatch"
+    assert "use a new output directory" in rows[0].error["message"]
+    assert [row.output.read_bytes() for row in first] == originals
+
+
 @pytest.mark.parametrize("kwargs", [
     {"bundles": "yes"}, {"options": ConvertOptions(dry_run=True)},
     {"options": ConvertOptions(delete_eml=True)}, {"resume": "yes"},

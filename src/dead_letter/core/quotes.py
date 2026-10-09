@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from selectolax.parser import HTMLParser
+from dead_letter.core._html_parser import parse_html
 
 _ON_WROTE_RE = re.compile(r"\bon\s+.+\bwrote:\s*$", re.IGNORECASE)
 
@@ -44,7 +44,7 @@ def detect_quote_patterns(html: str) -> set[str]:
         return set()
 
     patterns: set[str] = set()
-    parser = HTMLParser(html)
+    parser = parse_html(html)
     root = parser.root
     if root is None:
         return patterns
