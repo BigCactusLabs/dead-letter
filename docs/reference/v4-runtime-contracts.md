@@ -888,7 +888,7 @@ These differ from the CLI and the Python API:
 
 ### Directory success-JSON contract
 
-**Unreleased (#186):** `convert_directory` replaces each `errors[].error`
+**From 0.4.8 (#186):** `convert_directory` replaces each `errors[].error`
 (raw exception text) with `errors[].error_code`. This is an intentional change
 to the successful tool response, not just the tool-error envelope. The legacy
 `error` key is not retained; callers must read `error_code` instead.
