@@ -172,7 +172,8 @@ without that job signal. The committed-memory limit uses the same Python
 
 ### macOS memory decision
 
-Memory remains explicitly unsupported in this slice. The existing XNU
+Memory is unsupported on macOS because it cannot be enforced; requesting it
+fails with `mbox_budget_unsupported` before conversion. XNU's
 `RLIMIT_AS` accounting includes a very large virtual-address-space baseline,
 so substituting a typical RSS-sized number is not a usable memory ceiling.
 Apple's archived `setrlimit(2)` description treats `RLIMIT_RSS` as a reclaim
@@ -184,9 +185,11 @@ termination completes. It cannot promise prevention of host memory exhaustion.
 A future watchdog would need a separately named control/report contract,
 process-identity-safe sampling, a defined sampling interval, fail-closed handling
 when counters are unavailable, and tests for spikes, blocked workers and
-cancellation on supported macOS versions. None of that monitoring is enabled
-here. #188 stays open for this decision and native validation; no macOS hard-cap
-or polling performance result is claimed.
+cancellation on supported macOS versions. None of that monitoring exists, and
+no macOS hard-cap or polling performance result is claimed. An optional soft
+watchdog is deferred to
+[#220](https://github.com/BigCactusLabs/dead-letter/issues/220) until
+real-corpus evidence (#138) shows it is needed.
 
 ### Budget failures
 
@@ -348,7 +351,7 @@ No private email was used or uploaded, and a real authorized multi-GB Takeout
 archive has not been tested; that remains
 [#138](https://github.com/BigCactusLabs/dead-letter/issues/138). The
 [synthetic worker benchmark](../project/2026-09-24-mbox-worker-benchmark.md)
-measures startup/copy overhead and defers reuse. Remaining budget work is the
-macOS memory decision and native validation in #188. Durable resume (#139) is
+measures startup/copy overhead and defers reuse. An optional macOS memory
+watchdog is deferred to #220. Durable resume (#139) is
 implemented separately and is available from 0.4.6; see
 [resumable MBOX imports](mbox-resume.md). Neither is implied by the timeout option.
