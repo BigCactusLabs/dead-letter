@@ -9,6 +9,12 @@ Convert `.eml` email files to Markdown with YAML front matter, triage small fold
 /plugin install dead-letter
 ```
 
+On Claude Code 2.1.275 or later, one command does both:
+
+```
+/plugin install dead-letter --marketplace BigCactusLabs/bigcactuslabs-plugins
+```
+
 ## Update
 
 In Claude Code, refresh the marketplace and update the installed plugin:
@@ -54,9 +60,11 @@ Anything that writes files needs the slash command typed explicitly. If you ask 
 
 ## How it works
 
-The plugin launches the `dead-letter-mcp` MCP server (Python, distributed on PyPI as `dead-letter[mcp]`). The slash commands call into this server, which handles `.eml` parsing, sanitization, and Markdown rendering.
+The plugin launches the `dead-letter-mcp` MCP server (Python, distributed on PyPI as `dead-letter`). The slash commands call into this server, which handles `.eml` parsing, sanitization, and Markdown rendering.
 
 The plugin is pinned to a specific dead-letter PyPI release (see `.mcp.json`) so a future package release cannot silently break installs.
+
+The server is launched as a pinned PyPI package rather than shipped inside the plugin because it depends on compiled Python packages (HTML sanitizing and parsing) built per platform. `plugin/uv.lock` records hashed versions of every dependency, and each plugin release moves the pin only after that package version is published and tested.
 
 ## Where it works
 
@@ -70,7 +78,7 @@ Without the MCP tools, the commands can explain the workflow but cannot convert 
 
 ## What it runs and sends
 
-- On first launch, `uvx` downloads the pinned `dead-letter[mcp]` package and its dependencies from PyPI and caches them. Later launches reuse the cache.
+- On first launch, `uvx` downloads the pinned `dead-letter` package and its dependencies from PyPI and caches them. Later launches reuse the cache. The plugin also ships a `uv.lock` with hashed dependency versions for hosts that launch from a lock; plain `uvx` resolves compatible dependency versions itself.
 - The `dead-letter-mcp` server then runs locally over stdio. It makes no network requests.
 - Text a tool returns to Claude enters the conversation and is sent to the model provider with it; see [Privacy](#privacy).
 - The tools read only the `.eml`, `.mbox`, or folder paths you give them. They write only to the output paths you give them, under new collision-safe names, and never modify, move, or delete your source files.
