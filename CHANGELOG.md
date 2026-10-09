@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Claude plugin 0.4.10 pins package 0.4.8 (`dead-letter==0.4.8`) and
+  relocks `plugin/uv.lock`, which moves selectolax to 1.0.0. Plugin users get
+  the 0.4.8 fixes, including `strip_signatures` on HTML emails with
+  html-to-markdown 3.17, and the `convert_directory` `error_code` field that
+  `/dead-letter:triage` reports.
+
 ## [0.4.8] - 2026-10-09
 
 ### Changed
