@@ -252,6 +252,13 @@ bytes first: identical assets are reused; different bytes fail closed.
 Missing or invalid sidecars need explicit recovery of the original bytes.
 Never repair a published registry hash with `--clobber`.
 
+`build_mcpb.py` runs `uv lock` against PyPI, so `build-mcpb` can hit the same
+propagation lag as the container's `--compare-pypi` check (below): "no version
+of dead-letter[mcp]==X.Y.Z" right after a successful `pypi-ready` job. On
+0.4.8 it failed twice, a few minutes apart, before passing on the third
+attempt. Nothing is uploaded when it fails here, and `publish-mcp` is skipped
+until it passes. Rerun **failed jobs** after a few minutes.
+
 A CLI smoke test is distinct from opening the extension in a named Claude
 Desktop version on macOS/Windows. Record fresh install, restart/update,
 four-tool discovery, conversion, and source preservation separately. First
@@ -280,7 +287,7 @@ existing version digest to make a retry pass.
 The `publish` job's own `--compare-pypi` check resolves
 `dead-letter[mcp]==X.Y.Z` from PyPI before promoting the tested index digest.
 It has failed with "no version of dead-letter[mcp]==X.Y.Z" immediately after a
-successful `pypi-ready` job, on both 0.4.0 and 0.4.5 — index/CDN propagation
+successful `pypi-ready` job, on 0.4.0, 0.4.5 and 0.4.8 — index/CDN propagation
 lag rather than a real publication failure. The image is not promoted to the
 version tag when this happens. Recovery is the same as any other job: rerun
 **failed jobs**; no rebuild is needed once the index catches up.
