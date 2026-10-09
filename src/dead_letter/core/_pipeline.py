@@ -10,7 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
 
-from selectolax.parser import HTMLParser
+from selectolax.lexbor import LexborHTMLParser
 
 from dead_letter.core.attribution import annotate_quoted_zones
 from dead_letter.core.calendar import summarize_calendar_parts
@@ -618,7 +618,7 @@ def _build_pipeline_snapshot(
     if stripped_cids and filtered_html_body:
         # Filtering removes image occurrences, not necessarily the whole asset.
         # A body image may share a CID with a removed signature image.
-        remaining_tree = HTMLParser(filtered_html_body)
+        remaining_tree = LexborHTMLParser(filtered_html_body)
         for image in remaining_tree.css("img"):
             reference = image.attributes.get("src") or ""
             if reference.startswith("cid:"):

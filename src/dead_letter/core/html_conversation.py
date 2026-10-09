@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from html import escape
 
-from selectolax.parser import HTMLParser
+from selectolax.lexbor import LexborHTMLParser
 
 from dead_letter.core.conversation import ConversationResult
 from dead_letter.core.forwarding import is_forward_marker_line
@@ -13,13 +13,13 @@ from dead_letter.core.sanitize import sanitize_html
 from dead_letter.core.types import ConversationZone, ZoneKind
 
 
-def _body_text(tree: HTMLParser) -> str:
+def _body_text(tree: LexborHTMLParser) -> str:
     if tree.body is not None:
         return tree.body.text(separator="\n", strip=True)
     return tree.text(separator="\n", strip=True)
 
 
-def _body_html(tree: HTMLParser) -> str:
+def _body_html(tree: LexborHTMLParser) -> str:
     if tree.body is not None and tree.body.html:
         return tree.body.html
     return tree.html or ""
@@ -35,10 +35,12 @@ def _wrap_node_html(node, inner_html: str) -> str:
     if node.tag == "-text":
         return inner_html
 
+    # Lexbor reports valueless attributes as None and empty ones as "";
+    # both are dropped, as the Modest backend reported both as None.
     attrs = "".join(
         f' {name}="{escape(value, quote=True)}"'
         for name, value in node.attributes.items()
-        if value is not None
+        if value
     )
     return f"<{node.tag}{attrs}>{inner_html}</{node.tag}>"
 
@@ -174,7 +176,7 @@ def _collect_forward_blocks(root) -> tuple[list, bool]:
     return forwards, False
 
 
-def _extract_forward_blocks(tree: HTMLParser) -> tuple[list[str], bool]:
+def _extract_forward_blocks(tree: LexborHTMLParser) -> tuple[list[str], bool]:
     root = tree.body or tree.css_first("html")
     if root is None:
         return [], False
@@ -195,7 +197,7 @@ def _extract_forward_blocks(tree: HTMLParser) -> tuple[list[str], bool]:
     return [fragment for fragment in fragments if fragment], capped
 
 
-def _find_first_quote_boundary(tree: HTMLParser):
+def _find_first_quote_boundary(tree: LexborHTMLParser):
     root = tree.body or tree.css_first("html")
     if root is None:
         return None, None, None
@@ -256,7 +258,7 @@ def _split_node_html(node, quote_mem_id: int) -> tuple[str, str, bool]:
     return _node_html(node), "", False
 
 
-def _split_outlook_body_and_quote(tree: HTMLParser, quote_node) -> tuple[str | None, str | None]:
+def _split_outlook_body_and_quote(tree: LexborHTMLParser, quote_node) -> tuple[str | None, str | None]:
     root = tree.body or tree.css_first("html")
     if root is None:
         return None, None
@@ -286,7 +288,7 @@ def _extract_quote_html(quote_node, *, include_following_siblings: bool = False)
 def segment_html_conversation(html: str, *, client_hint: str | None = None) -> ConversationResult:
     """Split HTML into body and quoted zones before markdown conversion."""
     cleaned = sanitize_html(html)
-    tree = HTMLParser(cleaned)
+    tree = LexborHTMLParser(cleaned)
     zones: list[ConversationZone] = []
     rules_triggered: list[str] = []
 

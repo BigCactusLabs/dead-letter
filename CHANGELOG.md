@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- HTML parsing now uses selectolax's Lexbor backend, and the minimum
+  dependency is `selectolax>=1.0.0,<2` (replacing the `<1` cap from 0.4.6).
+  selectolax 1.0 removed the Modest backend. Conversion output is unchanged
+  on the test fixtures, benchmark corpus, and MBOX fixture. MBOX resume
+  journals record the selectolax version, so a `--mbox-resume` run started
+  on an earlier dead-letter release is rejected with `mbox_resume_mismatch`
+  after upgrading; rerun into a new output directory. The experimental
+  analysis snapshot `normalization_version` changes for the same reason.
 - Claude plugin 0.4.9 pins package 0.4.7 as `dead-letter==0.4.7` (no `[mcp]`
   extra) and ships `plugin/pyproject.toml` and `plugin/uv.lock`, so hosts that
   launch from a lock get hashed dependency versions (#212). `plugin.json` now

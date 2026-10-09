@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from selectolax.parser import HTMLParser, Node
+from selectolax.lexbor import LexborHTMLParser, LexborNode
 
 from dead_letter.core.types import StrippedImage, StrippedImageCategory
 
@@ -62,7 +62,7 @@ def filter_images(
     if not strip_signature_images and not strip_tracking_pixels:
         return html, []
 
-    tree = HTMLParser(html)
+    tree = LexborHTMLParser(html)
     stripped: list[StrippedImage] = []
     to_remove: list = []
 
@@ -142,7 +142,7 @@ def filter_images(
     return (body.html if body else tree.html) or "", stripped
 
 
-def _detect_signature_image(img: Node, src: str, alt: str) -> str | None:
+def _detect_signature_image(img: LexborNode, src: str, alt: str) -> str | None:
     """Return detection reason if img is a signature image (Layers 2-3), else None."""
     # Layer 2: Gmail proxy URL.
     if _GMAIL_MAIL_SIG_PATTERN in src:
@@ -161,7 +161,7 @@ def _detect_signature_image(img: Node, src: str, alt: str) -> str | None:
     return None
 
 
-def _has_plausible_signature_size(img: Node) -> bool:
+def _has_plausible_signature_size(img: LexborNode) -> bool:
     dimensions = [
         img.attributes.get("width", "") or "",
         img.attributes.get("height", "") or "",
@@ -176,7 +176,7 @@ def _has_plausible_signature_size(img: Node) -> bool:
     )
 
 
-def _detect_tracking_pixel(img: Node, src: str) -> str | None:
+def _detect_tracking_pixel(img: LexborNode, src: str) -> str | None:
     """Return detection reason if img is a tracking pixel, else None."""
     # Safeguard: never strip CID references via tracking pixel detection.
     if src.startswith("cid:"):
