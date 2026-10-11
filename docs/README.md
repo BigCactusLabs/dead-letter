@@ -57,6 +57,9 @@ lives in [Gmail Takeout / MBOX](reference/gmail-takeout.md) and
 [MBOX Workers](reference/mbox-workers.md). The
 [analysis foundation checkpoint](project/2026-09-18-issue-110-analysis-foundation.md)
 records what #117 landed for issue #110 and what remains. The
+[DocETL research spike](project/2026-10-11-docetl-spike.md) evaluates a separate
+archive-analysis worker and records an offline compatibility probe; it is not
+a shipped integration. The
 [issue #109 discovery evidence](project/2026-09-24-issue-109-discovery-evidence.md)
 records portable-skill runtime, install, ARD, and Agent Finder checks. The
 [docs and release audit](project/docs-release-audit.md) records this refresh,
