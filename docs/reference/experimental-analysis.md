@@ -254,8 +254,12 @@ example, `x.eml` conflicts with `x.analysis.json/y.eml` and
 A target whose parent resolves outside the resolved `--output-dir`, for example
 through an existing symlinked subdirectory that points elsewhere, fails with
 `analysis_output_outside_root`: no request, directory creation, read or write
-happens for it. Symlinked directories that stay inside the output root, and an
-output root that is itself a symlink, remain allowed. Each item repeats the
+happens for it. Containment is decided by filesystem identity with the existing
+output root, so case or Unicode spelling differences do not matter. A target
+whose containment cannot be established, such as one behind a dangling or
+looping symlink or a path the filesystem cannot resolve, is refused the same
+way. Symlinked directories that stay inside the output root, and an output root
+that is itself a symlink, remain allowed. Each item repeats the
 check just before its first filesystem access; a hostile local writer that
 swaps a symlink into the output tree after that re-check is out of scope.
 Existing targets use the same strict reuse/refusal rules as single-message

@@ -45,30 +45,39 @@ def _validate_output_root(source: Path, output: Path) -> None:
         raise AnalysisError("analysis_output_invalid") from None
 
 
-def _outside_root(resolved_parent: Path, root: Path) -> bool:
-    """Whether an already resolved destination parent escapes the resolved root."""
+def _resolve_strictly(path: Path) -> Path:
+    """Strictly resolve the deepest existing ancestor and append the missing tail."""
+    missing = []
+    while True:
+        try:
+            os.lstat(path)
+            break
+        except FileNotFoundError:
+            if path.parent == path:
+                raise
+            missing.append(path.name)
+            path = path.parent
+    # Missing components cannot be links; dangling or looping links raise here.
+    return path.resolve(strict=True).joinpath(*reversed(missing))
+
+
+def _contained_parent(target: Path, root: Path) -> Path | None:
+    """Return the resolved target parent only when it is provably inside root."""
     try:
-        if not Path(_path_key(resolved_parent)).is_relative_to(Path(_path_key(root))):
-            return True
-        if not root.exists():
-            return False
-        # Case folding can alias distinct directories; existing ancestors decide.
-        return not any(
-            ancestor.exists() and os.path.samefile(ancestor, root)
-            for ancestor in (resolved_parent, *resolved_parent.parents)
-        )
+        parent = _resolve_strictly(target.parent)
+        if root.exists():
+            # Identity, not spelling, so case and Unicode normalization cannot mislead.
+            inside = any(
+                ancestor.exists() and os.path.samefile(ancestor, root)
+                for ancestor in (parent, *parent.parents)
+            )
+        else:
+            # Nothing under a missing root can be a link, so spelling decides.
+            inside = Path(_path_key(parent)).is_relative_to(Path(_path_key(root)))
     except (OSError, RuntimeError, ValueError):
-        # Invalid destinations are refused per item by the sidecar path.
-        return False
-
-
-def _parent_outside_root(target: Path, root: Path) -> bool:
-    try:
-        # Non-strict resolve follows existing links and appends the missing tail.
-        resolved_parent = target.parent.resolve()
-    except (OSError, RuntimeError):
-        return False
-    return _outside_root(resolved_parent, root)
+        # Containment that cannot be established is refused.
+        return None
+    return parent if inside else None
 
 
 async def analyze_directory(
@@ -99,7 +108,10 @@ async def analyze_directory(
         if not source.is_dir():
             raise AnalysisError("invalid_analysis_directory")
         _validate_output_root(source, output)
-        root = output.resolve()
+        try:
+            root = _resolve_strictly(output)
+        except (OSError, RuntimeError, ValueError):
+            raise AnalysisError("analysis_output_invalid") from None
         files = _iter_source_eml_files(source)
     except (OSError, RuntimeError, ValueError) as exc:
         if isinstance(exc, AnalysisError):
@@ -122,17 +134,12 @@ async def analyze_directory(
     for index, target in enumerate(targets):
         # Resolve parent aliases as well as case aliases before starting any work.
         names = {str(target)}
-        try:
-            resolved_parent = target.parent.resolve()
-        except (OSError, RuntimeError):
-            # Invalid destinations are refused per item by the sidecar path.
-            pass
-        else:
-            # A symlinked directory in the output tree must not carry writes out of it.
-            if _outside_root(resolved_parent, root):
-                outside.add(index)
-                continue
-            names.add(str(resolved_parent / target.name))
+        # A symlinked directory in the output tree must not carry writes out of it.
+        resolved_parent = _contained_parent(target, root)
+        if resolved_parent is None:
+            outside.add(index)
+            continue
+        names.add(str(resolved_parent / target.name))
         for name in names:
             key = _path_key(Path(name))
             aliases.setdefault(key, set()).add(index)
@@ -238,7 +245,7 @@ async def analyze_directory(
                 return
             try:
                 # Re-check just before the first filesystem touch for this item.
-                if _parent_outside_root(targets[index], root):
+                if _contained_parent(targets[index], root) is None:
                     raise AnalysisError("analysis_output_outside_root")
                 targets[index].parent.mkdir(parents=True, exist_ok=True)
                 result = await analyze_to_sidecar(

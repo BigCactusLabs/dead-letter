@@ -1,9 +1,11 @@
 """Directory contracts with the pinned SDK and fake HTTP; no live inference."""
 
 import asyncio
+import errno
 import json
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -943,3 +945,104 @@ def test_symlink_swapped_in_after_scheduling_is_refused(tmp_path, wire):
     assert result["status"] == "completed" and result["stop_reason"] is None
     assert len(wire["calls"]) == 1
     assert list(outside.iterdir()) == []
+
+
+def test_outside_root_refused_at_scheduling_despite_early_stop(tmp_path, wire):
+    source, output = tree(tmp_path, ["0.eml", "z/x.eml"])
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    output.mkdir()
+    (output / "z").symlink_to(outside, target_is_directory=True)
+    sequence(wire, [401])
+    result = run(source, output, jobs=1)
+    assert result["status"] == "stopped" and result["stop_reason"] == "authentication_failed"
+    assert [item["error_code"] for item in result["items"]] == [
+        "provider_authentication_failed", "analysis_output_outside_root"]
+    assert result["counts"]["failed"] == 2 and result["counts"]["not_started"] == 0
+    assert len(wire["calls"]) == 1 and list(outside.iterdir()) == []
+
+
+def test_outside_existing_sidecar_is_never_read(tmp_path, monkeypatch, wire):
+    source, output = tree(tmp_path, ["z/x.eml", "y.eml"])
+    run(source, tmp_path / "seed")
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    planted = outside / "x.analysis.json"
+    planted.write_bytes((tmp_path / "seed" / "z" / "x.analysis.json").read_bytes())
+    before = planted.read_bytes(), planted.stat().st_mtime_ns
+    output.mkdir()
+    (output / "z").symlink_to(outside, target_is_directory=True)
+    touched = []
+    for name in ("_reuse", "_target_exists", "_probe_directory", "_validate_destination"):
+        original = getattr(sidecar, name)
+
+        def spy(path, *args, _original=original, **kwargs):
+            touched.append(Path(path))
+            return _original(path, *args, **kwargs)
+
+        monkeypatch.setattr(sidecar, name, spy)
+    wire["calls"].clear()
+    result = run(source, output)
+    assert [item["error_code"] for item in result["items"]] == [None, "analysis_output_outside_root"]
+    assert (planted.read_bytes(), planted.stat().st_mtime_ns) == before
+    assert sorted(path.name for path in outside.iterdir()) == ["x.analysis.json"]
+    assert touched and not any("z" in path.relative_to(output).parts for path in touched)
+    assert len(wire["calls"]) == 1
+
+
+def test_in_root_symlinked_subdirectory_is_allowed(tmp_path, wire):
+    source, output = tree(tmp_path, ["link/x.eml"])
+    (output / "real").mkdir(parents=True)
+    (output / "link").symlink_to(output / "real", target_is_directory=True)
+    result = run(source, output)
+    assert result["items"][0]["outcome"] == "succeeded"
+    assert (output / "real" / "x.analysis.json").is_file()
+
+
+def test_symlinked_output_root_is_allowed(tmp_path, wire):
+    source, _ = tree(tmp_path, ["a/x.eml"])
+    real = tmp_path / "real-results"
+    real.mkdir()
+    output = tmp_path / "linked-results"
+    output.symlink_to(real, target_is_directory=True)
+    result = run(source, output)
+    assert result["items"][0]["outcome"] == "succeeded"
+    assert (real / "a" / "x.analysis.json").is_file()
+
+
+def test_unresolvable_parent_fails_closed(tmp_path, monkeypatch, wire):
+    source, output = tree(tmp_path, ["bad/x.eml", "good/y.eml"])
+    original = directory._resolve_strictly
+
+    def resolve(path):
+        if path.name == "bad":
+            raise OSError(errno.ENAMETOOLONG, "synthetic")
+        return original(path)
+
+    monkeypatch.setattr(directory, "_resolve_strictly", resolve)
+    result = run(source, output)
+    assert [item["error_code"] for item in result["items"]] == ["analysis_output_outside_root", None]
+    assert len(wire["calls"]) == 1 and not (output / "bad").exists()
+
+
+def test_dangling_symlink_parent_component_is_refused(tmp_path, wire):
+    source, output = tree(tmp_path, ["d/e/x.eml"])
+    missing = tmp_path / "missing"
+    output.mkdir()
+    (output / "d").symlink_to(missing, target_is_directory=True)
+    result = run(source, output)
+    assert result["items"][0]["error_code"] == "analysis_output_outside_root"
+    assert not wire["calls"] and not missing.exists()
+
+
+def test_differently_normalized_in_root_link_is_allowed(tmp_path, wire):
+    source, _ = tree(tmp_path, ["link/x.eml"])
+    output = tmp_path / unicodedata.normalize("NFC", "r\u00e9sults")
+    (output / "real").mkdir(parents=True)
+    spelled = tmp_path / unicodedata.normalize("NFD", output.name) / "real"
+    if str(spelled) == str(output / "real") or not spelled.exists():
+        pytest.skip("filesystem is normalization-sensitive")
+    (output / "link").symlink_to(spelled, target_is_directory=True)
+    result = run(source, output)
+    assert result["items"][0]["outcome"] == "succeeded"
+    assert (output / "real" / "x.analysis.json").is_file()
