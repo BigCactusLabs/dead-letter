@@ -18,7 +18,8 @@ from dead_letter.core.forwarding import (
 )
 from dead_letter.core.html_conversation import segment_html_conversation
 from dead_letter.core.text_conversation import segment_text_conversation
-from dead_letter.core.types import ConvertOptions, ThreadMode, ThreadOrder, ZoneKind
+from dead_letter.core.types import ConversationZone, ConvertOptions, ThreadMode, ThreadOrder, ZoneKind
+from dead_letter.core.zone_cleanup import cleanup_zones
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKER_LINE = "---------- Forwarded message ---------"
@@ -1018,6 +1019,113 @@ def test_cleanup_ignores_markers_without_header_lines(text: str, option: str, tm
     _, body = _inline(text, tmp_path, **{option: True})
 
     assert body.strip() == "Hello."
+
+
+# --- Review repairs (issue #193 round 2) ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("wrapper", "answer"),
+    [
+        ("protonmail_quote", ["My answer:", "APPROVE THE ORDER."]),
+        ("yahoo_quoted", ["My answer:", "APPROVE THE ORDER."]),
+        ("x_gmail_quote", ["MY CURRENT ANSWER."]),
+    ],
+)
+def test_later_sibling_wrapper_without_attribution_stays_current_body(
+    wrapper: str, answer: list[str], tmp_path: Path
+) -> None:
+    html = (
+        "<div>Please see my answer below.</div>\n"
+        f'<div class="{wrapper}">\nOn Mon, Mar 2, 2026 at 9:00 AM Bob wrote:<br>\n'
+        "<blockquote>OLD HISTORY</blockquote>\n</div>\n"
+        f'<div class="{wrapper}">\n' + "".join(f"<div>{line}</div>" for line in answer) + "\n</div>"
+    )
+    _, latest = _inline(html, tmp_path, html=True)
+    front, structured = _inline(html, tmp_path, html=True, thread_mode="structured")
+
+    _positions(latest, ["Please see my answer below.", *answer])
+    assert "OLD HISTORY" not in latest
+    assert "thread_messages: 1" in front
+    _positions(structured, ["Please see my answer below.", *answer, "## From Bob", "OLD HISTORY"])
+    assert answer[-1] not in structured.split("## From Bob", 1)[1]
+
+
+def test_cleanup_keeps_nested_forward_after_colon_signature_line(tmp_path: Path) -> None:
+    html = (
+        "<div>FYI.</div>\n"
+        '<div class="gmail_quote">\n<div class="gmail_attr">\n'
+        f"{MARKER_LINE}<br>From: Bob<br>\n</div>\n"
+        "<div>OUTER BODY<br>-- <br>Contact:</div>\n"
+        "<blockquote>\nBegin forwarded message:<br>\nFrom: Carol<br><br>\nKEEP INNER FORWARD.\n</blockquote>\n"
+        "</div>"
+    )
+    for mode in ("latest", "structured"):
+        _, body = _inline(html, tmp_path, html=True, thread_mode=mode, strip_signatures=True)
+
+        _positions(body, ["FYI.", "OUTER BODY", "From: Carol", "KEEP INNER FORWARD."])
+        assert "Contact:" not in body
+
+
+@pytest.mark.parametrize("wrapper", ["protonmail_quote", "yahoo_quoted"])
+def test_wrapper_with_unreadable_first_line_stays_whole_in_body(wrapper: str, tmp_path: Path) -> None:
+    def html(spans: int) -> str:
+        return (
+            f'<div>FYI.</div><div class="{wrapper}">'
+            + "<span></span>" * spans
+            + "----- Forwarded Message -----<br>From: Bob<br><br>"
+            '<blockquote class="gmail_quote">KEEP FORWARDED PAYLOAD.</blockquote></div>'
+        )
+
+    # 64 elements is the last readable first line: still a forward.
+    assert _kinds(html(64)) == [ZoneKind.BODY, ZoneKind.FORWARDED_BODY]
+    # Past it the wrapper is opaque body content; nothing inside is extracted.
+    assert _kinds(html(65)) == [ZoneKind.BODY]
+
+    _, latest = _inline(html(65), tmp_path, html=True)
+    _, structured = _inline(html(65), tmp_path, html=True, thread_mode="structured")
+
+    _positions(latest, ["FYI.", "----- Forwarded Message -----", "From: Bob", "KEEP FORWARDED PAYLOAD."])
+    # No HTML rule fired, so the plain-text fallback reads the body and may
+    # section its text-level forward; the payload stays with its header.
+    _positions(structured, ["FYI.", "Bob", "KEEP FORWARDED PAYLOAD."])
+    assert "## Earlier message" not in structured
+
+
+@pytest.mark.parametrize(
+    "options",
+    [{}, {"strip_signatures": True, "strip_disclaimers": True}],
+    ids=["no-cleanup", "cleanup"],
+)
+def test_many_forward_markers_convert_in_linear_time(options: dict[str, bool], tmp_path: Path) -> None:
+    html = (
+        '<div>FYI.</div><div class="gmail_quote">'
+        '<div class="gmail_attr">'
+        f"{MARKER_LINE}<br>From: Outer<br>"
+        "</div><div>"
+        + f"{MARKER_LINE}<br>From: Bob<br><br>PAYLOAD<br>" * 8000
+        + "</div></div>"
+    )
+
+    started = time.perf_counter()
+    _, body = _inline(html, tmp_path, html=True, **options)
+    elapsed = time.perf_counter() - started
+
+    assert body.count("PAYLOAD") == 8000
+    assert elapsed < 2
+
+
+def test_cleanup_boundaries_scale_linearly() -> None:
+    content = "FYI.\n\n" + f"{MARKER_LINE}\n\nFrom: Bob\n\nPAYLOAD\n-- \nSig\n\n" * 16000
+    zone = ConversationZone(kind=ZoneKind.FORWARDED_BODY, content=content, source_kind="plain")
+
+    started = time.perf_counter()
+    cleaned = cleanup_zones([zone], ConvertOptions(strip_signatures=True))
+    elapsed = time.perf_counter() - started
+
+    assert cleaned[0].content.count("PAYLOAD") == 16000
+    assert "Sig" not in cleaned[0].content
+    assert elapsed < 2
 
 
 # --- Byte identity for output that must not change ---------------------------

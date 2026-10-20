@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import re
 
-from dead_letter.core.text_conversation import forward_matches
+from dead_letter.core.forwarding import (
+    FORWARD_MARKER_RE,
+    followed_by_header_line,
+    normalize_marker_text,
+)
 from dead_letter.core.types import ConversationZone, ConvertOptions, ZoneKind
 
 # html-to-markdown 3.17+ escapes a leading "--" as "\--", and a <br> after the
@@ -14,9 +18,20 @@ _DISCLAIMER_RE = re.compile(r"\n(?:confidentiality notice|disclaimer):?.*$", re.
 
 
 def _forward_segments(content: str) -> list[str]:
-    """Split ``content`` before each forward separator that segmentation
-    would accept: one followed by a header line (``forward_matches``)."""
-    starts = [match.start() for match in forward_matches(content, quoted_forwards=True)]
+    """Split ``content`` before each forward separator, ``>``-quoted or not,
+    whose next non-blank line is a header line.
+
+    Only the header check applies. The reply-boundary rules of segmentation
+    (``text_conversation``) decide whether a forward starts a new zone; here
+    the content is already one zone, and a separator after a line ending in
+    ``:`` (such as a signature's ``Contact:``) still opens a forward.
+    """
+    normalized = normalize_marker_text(content)
+    starts = [
+        match.start()
+        for match in FORWARD_MARKER_RE.finditer(normalized)
+        if followed_by_header_line(normalized, match.end(), quoted=bool(match.group("quote")))
+    ]
     bounds = [0, *[start for start in starts if start > 0], len(content)]
     return [content[begin:end] for begin, end in zip(bounds, bounds[1:])]
 
@@ -28,6 +43,8 @@ def _strip_content(content: str, options: ConvertOptions) -> str:
     forward separators is stripped on its own; a ``-- `` line in one forward
     never removes a later forward.
     """
+    if not (options.strip_signatures or options.strip_disclaimers):
+        return content.strip()
     segments = _forward_segments(content)
     for index, segment in enumerate(segments):
         value = segment

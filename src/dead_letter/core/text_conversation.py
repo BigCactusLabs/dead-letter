@@ -151,7 +151,7 @@ def _opens_quoted_forward(source: str, start: int) -> bool:
     return True
 
 
-def forward_matches(source: str, *, quoted_forwards: bool) -> list[re.Match[str]]:
+def _forward_matches(source: str, *, quoted_forwards: bool) -> list[re.Match[str]]:
     """Forward separator lines in ``source`` that are followed by a header line.
 
     A ``>``-quoted (Apple Mail) marker counts only with ``quoted_forwards``
@@ -203,7 +203,7 @@ def _split_nested_quoted_forwards(
         if quoted and remaining > 0:
             # Admit only as many nested forwards as the budget allows; the
             # rest stay in the last admitted section's body, in order.
-            nested = forward_matches(body, quoted_forwards=True)[:remaining]
+            nested = _forward_matches(body, quoted_forwards=True)[:remaining]
             if nested and not _separator_in_reply_history(body[: nested[0].start()]):
                 result.append((marker, body[: nested[0].start()].strip(), quoted))
                 pending.extend(reversed(_forward_sections(body, nested)))
@@ -217,7 +217,7 @@ def _segment_forwarded_message(
 ) -> ConversationResult | None:
     # Quoted (Apple Mail) markers are always split out for structured output;
     # latest mode takes them only when the caller asks (text/plain sources).
-    matches = forward_matches(source, quoted_forwards=quoted_forwards or split_forwards)
+    matches = _forward_matches(source, quoted_forwards=quoted_forwards or split_forwards)
     if not matches or _separator_in_reply_history(source[: matches[0].start()]):
         return None
     if not split_forwards:

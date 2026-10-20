@@ -9,6 +9,7 @@ from selectolax.lexbor import LexborHTMLParser
 
 from dead_letter.core._html_parser import parse_html
 
+from dead_letter.core.attribution import parse_attribution_line
 from dead_letter.core.conversation import ConversationResult
 from dead_letter.core.forwarding import is_forward_marker_line
 from dead_letter.core.sanitize import sanitize_html
@@ -61,8 +62,8 @@ def _iter_nodes_in_document_order(node):
     Iterative (explicit stack) rather than recursive so that deeply
     nested, possibly adversarial HTML cannot exceed Python's recursion
     limit. Sibling and child pointers are pushed lazily, so a caller that
-    stops early (e.g. the quote-boundary search) never walks past the
-    matching node into a wide container's remaining siblings. See issue #51.
+    stops early (e.g. the first-line read) never walks past the matching
+    node into a wide container's remaining siblings. See issue #51.
     """
     yield node
     child = node.child
@@ -83,15 +84,17 @@ _GMAIL_WRAPPER_STUB_MAX_CHARS = 40
 _GMAIL_WRAPPER_STUB_RATIO = 20
 
 
-def _gmail_body_wrappers(root) -> frozenset[int]:
-    """``mem_id`` of each ``gmail_quote`` element under ``root`` that wraps the
-    message body rather than quoted history.
+def _gmail_body_wrappers(root) -> dict[int, bool]:
+    """Map the ``mem_id`` of each ``gmail_quote`` element under ``root`` that
+    wraps the message body rather than quoted history to whether it is opaque.
 
     A wrapper qualifies when it has no quote signal (a blockquote or
     ``gmail_attr`` outside nested ``div.gmail_quote`` blocks, or a first text
     line that is an attribution ending in ``:``/``：`` or a forward
     separator) and the text outside it is empty, or short (a greeting) and a
-    small fraction of the text inside it. One post-order pass computes text
+    small fraction of the text inside it. A qualifying wrapper whose first
+    line cannot be read (``_first_text_line`` returns None) is opaque: no
+    quote or forward inside it is extracted. One post-order pass computes text
     counts and signals for every node. Callers classify once on the unchanged
     tree, so extracting forwards cannot reclassify a wrapper.
     """
@@ -129,7 +132,7 @@ def _gmail_body_wrappers(root) -> frozenset[int]:
         if node.tag != "blockquote" and "gmail_quote" in _class_tokens(node):
             candidates.append(node)
 
-    wrappers: set[int] = set()
+    wrappers: dict[int, bool] = {}
     for node in candidates:
         if signals[node.mem_id]:
             continue
@@ -139,10 +142,12 @@ def _gmail_body_wrappers(root) -> frozenset[int]:
             continue
         if outside and inside <= outside * _GMAIL_WRAPPER_STUB_RATIO:
             continue
-        if _first_line_is_forward_or_reply(node):
-            continue
-        wrappers.add(node.mem_id)
-    return frozenset(wrappers)
+        line = _first_text_line(node)
+        if line is None:
+            wrappers[node.mem_id] = True
+        elif not _is_forward_or_reply_line(line):
+            wrappers[node.mem_id] = False
+    return wrappers
 
 
 _BLOCK_TAGS = frozenset(
@@ -150,15 +155,15 @@ _BLOCK_TAGS = frozenset(
 )
 # Elements other than ``<br>`` examined while reading a wrapper's first line.
 # Attributions and separators sit within the first few elements; past the
-# budget the line is unknown, so the wrapper is not treated as a forward or
-# reply boundary and its content stays where it is.
+# budget the line is unknown, so the wrapper is opaque body content (see
+# ``_OPAQUE``).
 _FIRST_LINE_ELEMENT_BUDGET = 64
 
 
-def _first_text_line(node) -> str:
+def _first_text_line(node) -> str | None:
     """Text of ``node`` up to its first ``<br>`` or block boundary, whitespace-collapsed.
 
-    Returns "" when no line ends within ``_FIRST_LINE_ELEMENT_BUDGET`` elements.
+    Returns None when no line ends within ``_FIRST_LINE_ELEMENT_BUDGET`` elements.
     """
     parts: list[str] = []
     has_text = False
@@ -177,7 +182,7 @@ def _first_text_line(node) -> str:
         if tag != "br":
             elements += 1
             if elements > _FIRST_LINE_ELEMENT_BUDGET:
-                return ""
+                return None
     return _WHITESPACE_RE.sub(" ", "".join(parts).replace("\u00a0", " ")).strip()
 
 
@@ -186,31 +191,42 @@ def _first_text_line(node) -> str:
 _YAHOO_QUOTED_RE = re.compile(r"(?:ydp[0-9a-f]+)?yahoo_quoted")
 
 
-def _first_line_is_forward_or_reply(node) -> bool:
-    """True when ``node``'s first text line is a forward separator or a reply
-    attribution ending in ``:``/``：``."""
-    line = _first_text_line(node)
+# ``_quote_match`` result for a wrapper whose first line cannot be read: it is
+# body content as a whole. Traversals skip its subtree, so no quote or forward
+# inside it is extracted and nothing in it is split from its context.
+_OPAQUE = ("opaque", "")
+
+
+def _is_forward_or_reply_line(line: str) -> bool:
+    """True when ``line`` is a forward separator or a reply attribution
+    ending in ``:``/``：``."""
     return is_forward_marker_line(line) or line.endswith((":", "\uff1a"))
 
 
-def _quote_match(node, body_wrappers: frozenset[int]) -> tuple[str, str] | None:
-    """Classify ``node`` as a quote wrapper. ``body_wrappers`` comes from
-    ``_gmail_body_wrappers`` on the unchanged tree."""
+def _first_line_match(node, match: tuple[str, str]) -> tuple[str, str] | None:
+    """``match`` when ``node``'s first text line is a forward separator or a
+    reply attribution, ``_OPAQUE`` when that line cannot be read, else None."""
+    line = _first_text_line(node)
+    if line is None:
+        return _OPAQUE
+    return match if _is_forward_or_reply_line(line) else None
+
+
+def _quote_match(node, body_wrappers: dict[int, bool]) -> tuple[str, str] | None:
+    """Classify ``node`` as a quote wrapper, or as ``_OPAQUE``. ``body_wrappers``
+    comes from ``_gmail_body_wrappers`` on the unchanged tree."""
     classes = _class_tokens(node)
     if "gmail_quote" in classes:
-        if node.mem_id in body_wrappers:
-            return None
-        return "gmail", "gmail_quote"
+        opaque = body_wrappers.get(node.mem_id)
+        if opaque is None:
+            return "gmail", "gmail_quote"
+        return _OPAQUE if opaque else None
     # Yahoo and Proton use one wrapper for replies and forwards; only a
     # wrapper that opens with a separator or an attribution is a boundary.
     if node.tag == "div" and any(_YAHOO_QUOTED_RE.fullmatch(token) for token in classes):
-        if _first_line_is_forward_or_reply(node):
-            return "yahoo", "yahoo_quoted"
-        return None
+        return _first_line_match(node, ("yahoo", "yahoo_quoted"))
     if node.tag == "div" and "protonmail_quote" in classes:
-        if _first_line_is_forward_or_reply(node):
-            return "proton", "protonmail_quote"
-        return None
+        return _first_line_match(node, ("proton", "protonmail_quote"))
     if node.attributes.get("id") == "divRplyFwdMsg":
         return "outlook", "outlook_divRplyFwdMsg"
     if node.tag == "blockquote" and "front-blockquote" in classes:
@@ -296,19 +312,21 @@ def _is_forward_quote(node, hint: str) -> bool:
     if hint == "gmail":
         return _is_forward_block(node)
     if hint in ("yahoo", "proton"):
-        return is_forward_marker_line(_first_text_line(node))
+        line = _first_text_line(node)
+        return line is not None and is_forward_marker_line(line)
     return False
 
 
-def _collect_forward_blocks(root, body_wrappers: frozenset[int]) -> tuple[list, bool]:
+def _collect_forward_blocks(root, body_wrappers: dict[int, bool]) -> tuple[list, bool]:
     """Return Gmail, Yahoo and Proton forward blocks in document order,
     outermost first.
 
     Collection stops at the first quote boundary outside a forward that is not
     itself a forward, so reply history keeps today's single-boundary handling.
     Forwards nested in a forward are collected; any other quote block inside a
-    forward stays part of that forward's content. The flag reports whether
-    collection stopped at ``_MAX_FORWARD_BLOCKS``.
+    forward stays part of that forward's content. ``_OPAQUE`` wrappers are
+    skipped whole. The flag reports whether collection stopped at
+    ``_MAX_FORWARD_BLOCKS``.
     """
     forwards: list = []
     stack = [(root, False)]
@@ -317,6 +335,8 @@ def _collect_forward_blocks(root, body_wrappers: frozenset[int]) -> tuple[list, 
         if node is not root and node.next is not None:
             stack.append((node.next, in_forward))
         match = _quote_match(node, body_wrappers)
+        if match is _OPAQUE:
+            continue
         if match is not None:
             if _is_forward_quote(node, match[0]):
                 forwards.append(node)
@@ -334,7 +354,7 @@ def _collect_forward_blocks(root, body_wrappers: frozenset[int]) -> tuple[list, 
 
 
 def _extract_forward_blocks(
-    tree: LexborHTMLParser, body_wrappers: frozenset[int]
+    tree: LexborHTMLParser, body_wrappers: dict[int, bool]
 ) -> tuple[list[str], bool, list[str]]:
     """Return forward fragments, the cap flag, and the client hint of each
     collected forward in document order."""
@@ -363,16 +383,26 @@ def _extract_forward_blocks(
     return [fragment for fragment in fragments if fragment], capped, hints
 
 
-def _find_first_quote_boundary(tree: LexborHTMLParser, body_wrappers: frozenset[int]):
+def _find_first_quote_boundary(tree: LexborHTMLParser, body_wrappers: dict[int, bool]):
     root = tree.body or tree.css_first("html")
     if root is None:
         return None, None, None
 
-    for node in _iter_nodes_in_document_order(root):
+    # Document order, as in ``_iter_nodes_in_document_order``, but an
+    # ``_OPAQUE`` wrapper's subtree is skipped.
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        if node is not root and node.next is not None:
+            stack.append(node.next)
         match = _quote_match(node, body_wrappers)
+        if match is _OPAQUE:
+            continue
         if match is not None:
             hint, rule = match
             return node, hint, rule
+        if node.child is not None:
+            stack.append(node.child)
     return None, None, None
 
 
@@ -435,12 +465,16 @@ def _split_outlook_body_and_quote(tree: LexborHTMLParser, quote_node) -> tuple[s
     return body_html or None, quoted_html or None
 
 
-def _sibling_reply_wrappers(quote_node, hint: str | None, body_wrappers: frozenset[int]) -> list:
+def _sibling_reply_wrappers(quote_node, hint: str | None, body_wrappers: dict[int, bool]) -> list:
     """Reply wrappers that directly follow ``quote_node`` with the same hint.
 
     Yahoo, Proton, and OWA (``x_``-prefixed) Gmail replies can carry each
     earlier message in its own sibling wrapper. These belong to the quoted
-    history, not the current body. Whitespace and ``<br>`` between wrappers
+    history, not the current body. A sibling is taken only when its first
+    text line is a reply attribution that ``parse_attribution_line``
+    recognizes ("On … wrote:", "Am … schrieb …:", …): the class can be
+    reused around current text, and a line that merely ends in ``:`` (such
+    as "My answer:") is not enough. Whitespace and ``<br>`` between wrappers
     are taken along; collection stops at any other node, which stays in the
     body.
     """
@@ -458,7 +492,12 @@ def _sibling_reply_wrappers(quote_node, hint: str | None, body_wrappers: frozens
             pending.append(sibling)
         else:
             match = _quote_match(sibling, body_wrappers)
-            if match is None or match[0] != hint or _is_forward_quote(sibling, hint):
+            if (
+                match is None
+                or match[0] != hint
+                or _is_forward_quote(sibling, hint)
+                or parse_attribution_line(_first_text_line(sibling) or "") is None
+            ):
                 break
             following.extend(pending)
             following.append(sibling)
@@ -493,7 +532,7 @@ def segment_html_conversation(html: str, *, client_hint: str | None = None) -> C
     rules_triggered: list[str] = []
 
     root = tree.body or tree.css_first("html")
-    body_wrappers = _gmail_body_wrappers(root) if root is not None else frozenset()
+    body_wrappers = _gmail_body_wrappers(root) if root is not None else {}
     forwarded_blocks, capped, forward_hints = _extract_forward_blocks(tree, body_wrappers)
     if forwarded_blocks:
         rules_triggered.extend(dict.fromkeys(f"{hint}_forward" for hint in forward_hints))

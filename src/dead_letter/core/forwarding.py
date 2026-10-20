@@ -176,13 +176,23 @@ def split_forward_marker(text: str) -> tuple[str | None, str]:
 
 
 def followed_by_header_line(text: str, end: int, *, quoted: bool) -> bool:
-    """True when the first non-blank line after ``end`` looks like a header."""
-    for line in text[end:].split("\n"):
+    """True when the first non-blank line after ``end`` looks like a header.
+
+    Reads line by line from ``end`` and stops at that line, so a check costs
+    only the text up to it, not the rest of ``text``.
+    """
+    start = end
+    while start <= len(text):
+        stop = text.find("\n", start)
+        if stop == -1:
+            stop = len(text)
+        line = text[start:stop]
         if quoted:
             line = _QUOTE_PREFIX_RE.sub("", line.lstrip())
         candidate = line.strip()
         if candidate:
             return _HEADER_LIKE_LINE_RE.match(candidate) is not None
+        start = stop + 1
     return False
 
 
