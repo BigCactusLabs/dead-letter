@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Homebrew preparation includes the core MCP dependency graph and retains
+  `dead-letter-mcp`. Formula evidence checks still exclude optional UI/watch
+  dependencies and require removal of `dead-letter-ui`. Adoption in the tap
+  remains a separate maintainer update (#213).
+
 ### Changed
 
 - Claude plugin 0.4.10 pins package 0.4.8 (`dead-letter==0.4.8`) and

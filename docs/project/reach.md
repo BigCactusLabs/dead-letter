@@ -36,7 +36,7 @@ catalog acceptance.
 | Surface | Established repository state | Remaining evidence |
 | --- | --- | --- |
 | CLI, Python API, local UI, stdio MCP | Implemented runtime and tests | Release-specific installed behavior |
-| PyPI / Homebrew | Package workflow and separate core-only tap route | Per-release package and formula validation |
+| PyPI / Homebrew | Package workflow and separate CLI/MCP tap preparation route | Per-release package and formula validation |
 | Official MCP Registry | Publication workflow with package/artifact metadata | Exact registry version after each publication |
 | Claude plugin | BCL marketplace release workflow, exact source and package pins | Code/Cowork update and fixture tests separately |
 | MCPB (#107) | Bundle source, release assets, cross-platform stdio smoke pipeline | Named desktop-client GUI installation/update results |

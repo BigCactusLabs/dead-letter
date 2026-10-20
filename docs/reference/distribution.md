@@ -10,7 +10,7 @@ second email converter.
 | You need | Route | What it includes | Instructions |
 | --- | --- | --- | --- |
 | Convert a file or folder | `uvx`, pip, or pipx | Core converter and CLI | [README](../../README.md#-install) |
-| A Homebrew-managed CLI | `BigCactusLabs/tap` | Core CLI only; no UI or MCP extras | [README](../../README.md#-install) |
+| A Homebrew-managed CLI and MCP server | `BigCactusLabs/tap` | CLI and MCP under the current preparation policy; no UI/watch extras | [README](../../README.md#-install) |
 | Drag-and-drop and Inbox/Cabinet | `dead-letter[ui]` | Local UI, API, and watch dependencies | [Quick Start](../../README.md#-quick-start) |
 | Tools in an MCP client | `dead-letter[mcp]` via `uvx` or pipx | Local stdio server and its MCP tools | [Agent install guide](../../llms-install.md) |
 | Claude Desktop extension | Release `.mcpb` plus its checksum | Managed uv launcher with an exact package pin | [MCP setup](../../README.md#-mcp-server) |
@@ -18,8 +18,11 @@ second email converter.
 | Container-isolated MCP | GHCR version or digest | Non-root stdio server; explicit input/output mounts | [Containers](containers.md) |
 | A portable task skill | `skills/dead-letter/` | Instructions for an existing MCP server or CLI | [Agent Discovery](agent-discovery.md) |
 
-Normal installs do not require Docker. Homebrew's formula intentionally does
-not install the optional Python dependency stacks. Installing a skill does
+Normal installs do not require Docker. Homebrew preparation includes core MCP
+dependencies and retains
+`dead-letter-mcp`; optional UI/watch dependencies remain excluded. Adoption
+requires a separate maintainer tap update; source tooling is not proof that
+the published formula includes MCP. Installing a skill does
 not install the Claude plugin; installing the plugin does not install the
 portable skill.
 
@@ -39,7 +42,7 @@ import: [#146](https://github.com/BigCactusLabs/dead-letter/issues/146)).
 | PyPI | Python distributions, including optional extras | Stable `vX.Y.Z` GitHub release |
 | GitHub release assets | MCPB, checksum, and (for releases using the refreshed workflow) resolved registry manifest | Same package release |
 | GHCR | Tested multi-platform OCI image | Same package release; version and digest, no `latest` alias |
-| Homebrew tap | Separate core-only formula | Maintainer update after PyPI |
+| Homebrew tap | Separate CLI/MCP formula | Maintainer update after PyPI |
 | BCL plugin marketplace | Versioned plugin source pointer | Separate `plugin-vX.Y.Z` tag and marketplace PR |
 | Official MCP Registry | Discovery metadata for existing packages and artifacts | After PyPI, MCPB, and OCI verification |
 | Portable skill / ARD | Repository-hosted task instructions and discovery metadata | Reviewed source tag/commit; package version in ARD |

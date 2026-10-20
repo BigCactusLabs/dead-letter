@@ -49,7 +49,7 @@ archived manifest is a conflict.
 | GHCR | Anonymous pull-token/index GET; manifest bytes versus digest header; recorded index digest; amd64 and arm64 platform entries |
 | MCP Registry | Exact version endpoint, active record, complete package records versus the checksummed archived manifest; never `latest` |
 | Plugin marketplace | Snapshot of marketplace `main`, plugin manifest, exact runtime pin, peeled plugin tag, and compatibility `release` branch; runtime package exists on PyPI |
-| Homebrew | Snapshot of tap `main`, literal core-only formula metadata, sdist URL/hash versus PyPI and original build evidence |
+| Homebrew | Snapshot of tap `main`, literal CLI/MCP formula metadata, sdist URL/hash versus PyPI and original build evidence |
 
 Status is a metadata and checksum reconciliation, **not** a fresh installation,
 GUI test, image-layer pull, or replay of release CI. Sidecars establish internal
@@ -109,7 +109,7 @@ timeout, DNS failure, or invalid JSON is never inferred to mean missing.
 
 ## Prepare a Homebrew update
 
-The tap remains **manual, core-only, and Apple-silicon-specific**. Preparation is
+The tap remains **manual and Apple-silicon-specific**. Preparation is
 not publication. Existing Python, architecture, installer, and test logic must
 survive resource regeneration. A valid new release and original build checksums
 are prerequisites; this helper does not backfill evidence for historical builds.
@@ -166,6 +166,12 @@ python scripts/release.py homebrew-prepare \
 same-version rewrites, rollbacks, symlinked formulas, and reused review directories.
 It asks Homebrew to regenerate resources. When the bump leaves the resource
 blocks unchanged, it invokes the dedicated resource updater explicitly.
+The core graph includes MCP and its dependencies since 0.4.7. Preparation
+removes the old `rm bin/"dead-letter-mcp"` line, while preserving removal of
+`dead-letter-ui`. Evidence checks reject MCP removal and optional-only resources
+such as FastAPI and watchfiles. `uvicorn` is core through MCP; its `standard`
+extra remains optional. The locked MCP graph uses `httpx2`, while `httpx` is
+still a UI extra.
 
 Homebrew commonly emits source archives. The existing tap deliberately uses
 wheels, including native binaries: blindly replacing them with sdists would
@@ -208,7 +214,8 @@ release/tag command, or tap-main update is used. If commit/push/PR creation fail
 partway, inspect which write succeeded; do not blindly rerun or reset history.
 
 The PR checklist leaves native source installation, `brew test`, synthetic email
-conversion/source preservation, and absence of optional entrypoints unchecked.
+conversion/source preservation, MCP `initialize`/`tools/list`, and
+absence of the optional UI entrypoint unchecked.
 Merge remains a maintainer action. Status reports a different valid tap version
 as deferred until its main-branch formula adopts the requested package.
 

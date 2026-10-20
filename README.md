@@ -88,9 +88,10 @@ brew tap BigCactusLabs/tap
 brew install dead-letter
 ```
 
-The Homebrew formula installs the core CLI only: `dead-letter convert` and
-`dead-letter doctor`. It intentionally does not bundle the optional web UI or
-MCP server dependency stacks.
+Homebrew preparation now includes the CLI and `dead-letter-mcp`, with the
+MCP dependencies that became core in 0.4.7. The optional web UI and watch
+dependencies remain excluded. This tooling change still requires a separate
+maintainer update to the tap; check the installed formula before using MCP.
 
 With pip:
 

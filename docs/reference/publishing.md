@@ -17,7 +17,7 @@ must not infer permission to perform them.
 | Publish a stable GitHub release for `vX.Y.Z` | Read-only source preflight → build once → packaged-install/README gate → upload those exact bytes to PyPI → install readiness → MCPB and OCI → resolved MCP Registry metadata |
 | Push `plugin-vX.Y.Z` | Plugin checks → exact PyPI pin available → marketplace PR/merge → compatibility `release` branch |
 | Publish a plugin GitHub release or a prerelease | Package publication jobs are skipped |
-| Edit the Homebrew tap | Separate maintainer-owned core-only formula update |
+| Edit the Homebrew tap | Separate maintainer-owned CLI/MCP formula update |
 
 Only stable `X.Y.Z` package releases are supported by the publication gate.
 Do not sneak a prerelease, build suffix, or plugin tag into that channel. Add
@@ -294,11 +294,13 @@ version tag when this happens. Recovery is the same as any other job: rerun
 
 ## Update The Homebrew Tap
 
-Homebrew remains a manual, core-CLI-only channel after PyPI succeeds. In a
-checkout of `BigCactusLabs/homebrew-tap` (installed as `BigCactusLabs/tap`),
+Homebrew remains a manual channel after PyPI succeeds; the preparation policy
+includes the CLI and core MCP server. In a checkout of `BigCactusLabs/homebrew-tap` (installed as `BigCactusLabs/tap`),
 update `Formula/dead-letter.rb` to the exact released sdist URL and SHA-256
 from PyPI. Review its dependency resources; do not accidentally add the
-UI/MCP extras or unrelated development packages.
+optional UI/watch extras or unrelated development packages. MCP and its core
+dependency subtree must remain included, and `dead-letter-mcp` must be retained.
+The optional `dead-letter-ui` entrypoint must still be removed.
 
 `scripts/release.py homebrew-prepare` can generate the formula change and open
 the draft tap PR, and it requires the original build's checksums. It never
@@ -325,7 +327,9 @@ dead-letter doctor
 ```
 
 Use `brew reinstall --build-from-source` instead of `install` on a test machine
-where the formula is already installed. Convert a synthetic fixture, then
+where the formula is already installed. Verify `dead-letter-mcp` responds to MCP
+`initialize` and `tools/list`, and `dead-letter-ui` is absent. Convert a
+synthetic fixture, then
 commit/push the reviewed formula. Record the tap commit and version in the
 release checklist. A successful Python release does not update the tap.
 
@@ -432,7 +436,7 @@ release, not automatic deletion.
 
 Do not extend package publication to modify the tap in this pass. Cross-repo
 credentials, tests, approval, and rollback need their own design. Keep the
-manual core-only update visible in the completion ledger.
+manual CLI/MCP formula update visible in the completion ledger.
 
 ## Primary references
 

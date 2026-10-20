@@ -1,4 +1,4 @@
-"""Reviewed core-only tap preparation; no package publication or automatic merge.
+"""Reviewed CLI/MCP tap preparation; no package publication or automatic merge.
 
 Default: print a plan. --write invokes Homebrew's write-only resource generator
 in an explicitly selected clean tap branch. --open-pr is a separate, explicit
@@ -167,9 +167,14 @@ def require_libyaml(text: str) -> str:
     return re.sub(r'^(  depends_on "python@)', '  depends_on "libyaml"\n\\1', text, count=1, flags=re.M)
 
 
+def retain_mcp(text: str) -> str:
+    """Migrate the tap's old literal removal line now that MCP is core."""
+    return re.sub(r'^    rm bin/"dead-letter-mcp"\n', "", text, flags=re.M)
+
+
 def same_contract(before: str, after: str) -> bool:
-    """Release fields and resources may change; otherwise only require_libyaml's line."""
-    return skeleton(require_libyaml(before)) == skeleton(after)
+    """Allow resource/release updates, libyaml, and retaining the MCP entrypoint."""
+    return skeleton(retain_mcp(require_libyaml(before))) == skeleton(after)
 
 
 def wheel_resources(client: Client, items: list[dict], wheels: Path) -> dict[str, dict]:
@@ -211,7 +216,7 @@ def prepare_tap(tap: Path, output: Path, recipe: dict, *, client: Client) -> dic
         raise ValueError("--tap must match the installed BigCactusLabs/tap checkout")
     path = tap / FORMULA
     before = path.read_text(encoding="utf-8")
-    old = formula(before)
+    old = formula(before, allow_legacy_mcp_removal=True)
     if tuple(map(int, version.split("."))) <= tuple(map(int, old["version"].split("."))):
         raise ValueError("target must be newer than the tap; no same-version rewrite or rollback")
     if not all(i["url"].endswith(".whl") for i in old["resources"]):
@@ -241,9 +246,10 @@ def prepare_tap(tap: Path, output: Path, recipe: dict, *, client: Client) -> dic
             finally:
                 owned = path.read_text(encoding="utf-8")
             generated = owned
+        generated = retain_mcp(generated)
         data = formula(generated)
         if (data["version"] != version or data["url"] != recipe["sdist_url"]
-                or data["sha256"] != recipe["sdist_sha256"] or skeleton(generated) != skeleton(before)):
+                or data["sha256"] != recipe["sdist_sha256"] or skeleton(generated) != skeleton(retain_mcp(before))):
             raise Conflict("Homebrew changed fields outside the approved version/resources layout")
         # Homebrew resolves the dependency graph, not us. pip selects compatible
         # wheels for those exact versions under the tap's native interpreter;
@@ -295,8 +301,9 @@ SHA-256: `{packet["sdist_sha256"]}` (cross-checked against original Python build
 Reviewed diff SHA-256: `{packet["diff_sha256"]}`.
 
 Homebrew regenerated the core resource graph. Compatible wheels were selected
-with the tap's native Python and checked against PyPI. No UI/MCP/benchmark extras
-were requested. Existing architecture, Python, install, and test logic remain.
+with the tap's native Python and checked against PyPI. MCP is included in the
+core dependencies; no UI or benchmark extras were requested. The MCP entrypoint
+is retained. Existing architecture, Python, and test logic remain.
 
 ## Maintainer acceptance (not performed by preparation)
 
@@ -304,7 +311,8 @@ were requested. Existing architecture, Python, install, and test logic remain.
 - [ ] `brew install --build-from-source BigCactusLabs/tap/dead-letter` (or reinstall).
 - [ ] `brew test BigCactusLabs/tap/dead-letter`.
 - [ ] Convert a synthetic `.eml` on native Apple silicon; check Markdown and source preservation.
-- [ ] Verify `dead-letter-mcp` and `dead-letter-ui` were not installed by this formula.
+- [ ] Verify `dead-letter-mcp` is installed and responds to MCP `initialize` and `tools/list`.
+- [ ] Verify `dead-letter-ui` was not installed by this formula.
 - [ ] Rerun `release.py status` with original build evidence after a manual merge.
 
 Preparation is not install validation. Merge remains manual; no release, tag,
@@ -335,7 +343,7 @@ def open_pr(tap: Path, output: Path, recipe: dict, reviewed: str) -> dict:
     parsed = formula(current.decode("utf-8"))
     if (parsed["version"] != recipe["version"] or parsed["url"] != recipe["sdist_url"]
             or parsed["sha256"] != recipe["sdist_sha256"] or not all(r["url"].endswith(".whl") for r in parsed["resources"])):
-        raise Conflict("reviewed formula does not match the approved core-only release")
+        raise Conflict("reviewed formula does not match the approved CLI/MCP release")
     if hashlib.sha256(current).hexdigest() != packet["formula_sha256"]:
         raise Conflict("formula changed after review")
     # Reconstruct the diff against the recorded base, not merely a caller-

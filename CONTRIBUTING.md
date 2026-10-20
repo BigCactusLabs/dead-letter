@@ -123,7 +123,7 @@ metadata, independent plugin tags, and recovery. `prepare` emits a patch;
 it does not edit files, tag, or publish. Review and apply it explicitly.
 
 Package publication, plugin adoption, Homebrew, and curated listings are not
-one atomic event. The Homebrew tap remains a manual core-only update. Do not
+one atomic event. The Homebrew tap remains a manual CLI/MCP formula update. Do not
 advance pointers or publish merely because a docs/development PR is ready.
 
 ## Scope Guidance

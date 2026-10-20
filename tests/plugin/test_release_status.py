@@ -51,7 +51,6 @@ def formula_text(version=VERSION):
     sha256 "{'d' * 64}"
   end
   def install
-    rm bin/"dead-letter-mcp"
     rm bin/"dead-letter-ui"
   end
 end
@@ -253,8 +252,26 @@ class StatusTests(unittest.TestCase):
             e.formula(text)
 
     def test_formula_optional_resource_and_wrong_explicit_version_rejected(self):
-        for text in (formula_text().replace('resource "six"', 'resource "mcp"'), formula_text().replace("  depends_on arch", '  version "9.0.0"\n  depends_on arch')):
+        for text in (formula_text().replace('resource "six"', 'resource "fastapi"'), formula_text().replace("  depends_on arch", '  version "9.0.0"\n  depends_on arch')):
             with self.assertRaises(e.Conflict):
+                e.formula(text)
+
+    def test_formula_accepts_core_mcp_resources(self):
+        # Resolved core names, including httpx2 (httpx remains a UI extra).
+        for name in ("mcp", "mcp-types", "httpx2", "httpcore2", "starlette",
+                     "sse-starlette", "uvicorn", "python-multipart"):
+            with self.subTest(name=name):
+                text = formula_text().replace('resource "six"', f'resource "{name}"')
+                self.assertEqual(e.formula(text)["resources"][0]["name"], name)
+
+    def test_formula_rejects_optional_resources_and_entrypoint_drift(self):
+        for name in ("fastapi", "watchfiles", "httpx", "tiktoken", "typesafe-sdk", "pytest"):
+            with self.subTest(name=name), self.assertRaises(e.Conflict):
+                e.formula(formula_text().replace('resource "six"', f'resource "{name}"'))
+        for text in (formula_text().replace('    rm bin/"dead-letter-ui"',
+                                             '    rm bin/"dead-letter-mcp"\n    rm bin/"dead-letter-ui"'),
+                     formula_text().replace('    rm bin/"dead-letter-ui"\n', '')):
+            with self.subTest(text=text), self.assertRaises(e.Conflict):
                 e.formula(text)
 
     def test_status_cli_uses_no_checkout_metadata_or_write_commands(self):

@@ -331,5 +331,5 @@ jobs:
             echo 'These are build evidence, not proof of publication. Preserve them in the release completion ledger before the build artifact expires.'
             echo 'A failed PyPI upload job may already have uploaded files. Inspect its steps before retrying.'
             echo 'If only install readiness failed, rerun failed jobs; do not re-upload the successful package.'
-            echo 'Still explicit: plugin tag/marketplace, core-only Homebrew update, desktop client smoke tests, and curated catalog outcomes. See docs/reference/publishing.md.'
+            echo 'Still explicit: plugin tag/marketplace, CLI/MCP Homebrew update, desktop client smoke tests, and curated catalog outcomes. See docs/reference/publishing.md.'
           } >> "$GITHUB_STEP_SUMMARY"
