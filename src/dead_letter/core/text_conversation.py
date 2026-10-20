@@ -29,8 +29,10 @@ _QUOTE_LEVEL_RE = re.compile(r"(?m)^[ \t]*>[ \t]?")
 _MAX_FORWARD_SECTIONS = 64
 # Nested quoted forwards are found by searching each quoted body again; the
 # characters searched across those searches stay within this multiple of the
-# input length, so deep quoting costs linear time.
+# input length, or the floor when that is larger, so deep quoting costs linear
+# time while ordinary chains still split fully.
 _NESTED_SCAN_BUDGET_FACTOR = 4
+_NESTED_SCAN_BUDGET_FLOOR = 1_000_000
 _INDENT_SENTINEL_PREFIX = "\ue000dead-letter-indent-"
 _INDENT_SENTINEL_SUFFIX = "\ue001"
 
@@ -254,7 +256,8 @@ def _segment_forwarded_message(
     sections = _forward_sections(source, matches)
     if split_forwards:
         sections = _split_nested_quoted_forwards(
-            sections, scan_budget=_NESTED_SCAN_BUDGET_FACTOR * len(source)
+            sections,
+            scan_budget=max(_NESTED_SCAN_BUDGET_FACTOR * len(source), _NESTED_SCAN_BUDGET_FLOOR),
         )
     for marker, forwarded, _quoted in sections:
         zones.append(

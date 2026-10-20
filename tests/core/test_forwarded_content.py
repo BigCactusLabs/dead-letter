@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from dead_letter.core import convert
+from dead_letter.core import convert, text_conversation
 from dead_letter.core.forwarding import (
     FORWARD_MARKER_PATTERNS,
     FORWARD_MARKER_RE,
@@ -870,7 +870,28 @@ def test_deep_nested_plain_forwards_split_in_linear_time() -> None:
     assert elapsed < 2
 
 
-def test_nested_split_scan_budget_keeps_every_payload_once(tmp_path: Path) -> None:
+def test_ordinary_nested_plain_forward_chain_splits_fully(tmp_path: Path) -> None:
+    depth = 10
+    text = _deep_apple_chain(depth, 30)  # about 2 KB per level, under the budget floor
+    front, structured = _inline(text, tmp_path, thread_mode="structured")
+
+    assert f"thread_messages: {depth}" in front
+    assert "Begin forwarded message" not in structured
+    _positions(
+        structured,
+        [needle
+         for level in range(1, depth + 1)
+         for needle in (f"## Forwarded from Level {level}", f"PAYLOAD {level} END")],
+    )
+    assert all(structured.count(f"PAYLOAD {level} END") == 1 for level in range(1, depth + 1))
+
+
+def test_nested_split_scan_budget_keeps_every_payload_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Drop the floor so this small chain reaches the 4x-length budget, as a
+    # multi-megabyte chain would.
+    monkeypatch.setattr(text_conversation, "_NESTED_SCAN_BUDGET_FLOOR", 0)
     depth = 20
     front, structured = _inline(_deep_apple_chain(depth, 20), tmp_path, thread_mode="structured")
 
