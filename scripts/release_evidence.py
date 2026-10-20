@@ -23,7 +23,9 @@ MAX_BYTES = 64 * 1024 * 1024
 HEX = re.compile(r"[0-9a-f]{64}")
 SEMVER = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)")
 RESOURCE = re.compile(r'^  resource "([A-Za-z0-9_.-]+)" do\n(.*?)^  end\n', re.M | re.S)
-OPTIONAL = frozenset({"mcp", "mcp-types", "fastapi", "uvicorn", "watchfiles", "httpx", "tiktoken",
+# MCP and its transitive dependencies are core since 0.4.7. In uv.lock,
+# MCP uses httpx2; httpx is still optional, as are uvicorn's standard extras.
+OPTIONAL = frozenset({"fastapi", "watchfiles", "httpx", "tiktoken", "typesafe-sdk",
                       "pytest", "pytest-cov", "ruff", "pyright"})
 
 
@@ -237,6 +239,9 @@ def formula(text: str) -> dict:
     names = [r["name"] for r in resources]
     if len(set(names)) != len(names) or set(names) & (OPTIONAL | {"dead-letter"}):
         raise Conflict("duplicate resources or non-core packages in formula")
-    if 'rm bin/"dead-letter-mcp"' not in text or 'rm bin/"dead-letter-ui"' not in text:
-        raise Conflict("formula must remove optional MCP/UI entrypoints")
+    # MCP became a core dependency in 0.4.7; older tap releases may remove it.
+    if tuple(map(int, version.split("."))) >= (0, 4, 7) and 'rm bin/"dead-letter-mcp"' in text:
+        raise Conflict("formula must retain the core MCP entrypoint")
+    if 'rm bin/"dead-letter-ui"' not in text:
+        raise Conflict("formula must remove the optional UI entrypoint")
     return {"version": version, "url": url, "sha256": digest(field(text, "sha256", "  ")), "resources": resources}

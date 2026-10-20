@@ -88,9 +88,9 @@ brew tap BigCactusLabs/tap
 brew install dead-letter
 ```
 
-The Homebrew formula installs the core CLI only: `dead-letter convert` and
-`dead-letter doctor`. It intentionally does not bundle the optional web UI or
-MCP server dependency stacks.
+The Homebrew formula installs the CLI (`dead-letter convert`, `dead-letter doctor`).
+Formulas for 0.4.7 and later also install the `dead-letter-mcp` server; the
+optional web UI is not included.
 
 With pip:
 

@@ -78,6 +78,47 @@ Use existing patterns, type-annotate public APIs, and keep changes scoped.
 Ruff and Pyright are advisory; do not turn an unrelated change into a sweeping
 formatting migration. Behavior changes ship with regression tests.
 
+### Optional staged-file hooks
+
+After `uv sync --extra dev --locked`, you can opt in to lightweight checks.
+Use either prek (ephemeral, no global install) or an existing pre-commit:
+
+```bash
+uvx prek@0.5.6 run
+# Alternative: pre-commit run
+```
+
+The shared `.pre-commit-config.yaml` checks staged Python with the locked
+`.venv/bin/ruff` and checks config syntax and conflict markers. Only Python
+code under `src/`, `scripts/`, and `tests/` gets whitespace/EOF fixes; fixtures,
+mail files, docs, plugin manifests, and build outputs are not rewritten.
+Ruff lint does not auto-fix. Formatting is a separate opt-in check:
+
+```bash
+uvx prek@0.5.6 run ruff-format --hook-stage manual
+```
+
+For automatic checks in a **standalone checkout**, install and roll back with:
+
+```bash
+uvx prek@0.5.6 install
+# Rollback: remove the installed hook, keeping the config and dev environment.
+uvx prek@0.5.6 uninstall
+```
+
+With pre-commit, use `pre-commit install` / `pre-commit uninstall` instead.
+Check `git rev-parse --git-common-dir` and `git config --get core.hooksPath`
+first. Linked worktrees normally share hooks: use the manual `run` commands
+there instead of installing or uninstalling a shared hook. If another tool
+owns the hook, use manual runs rather than replacing it.
+
+Runners check staged contents and preserve unstaged changes. A whitespace fix
+stops the commit; review and stage the fix before retrying. Missing Ruff stops
+Python checks; run the locked dev sync above to restore it. Initial hook setup
+needs network access; warm runs use cached tools. These checks do not run tests,
+Pyright, release checks, or package/plugin validation. CI remains authoritative,
+including for commits made through the GitHub API; no CI checks are removed.
+
 ### Commit Messages
 
 Use conventional commits, `<type>: <short summary>`, with `feat`, `fix`,
@@ -123,7 +164,7 @@ metadata, independent plugin tags, and recovery. `prepare` emits a patch;
 it does not edit files, tag, or publish. Review and apply it explicitly.
 
 Package publication, plugin adoption, Homebrew, and curated listings are not
-one atomic event. The Homebrew tap remains a manual core-only update. Do not
+one atomic event. The Homebrew tap remains a manual CLI/MCP formula update. Do not
 advance pointers or publish merely because a docs/development PR is ready.
 
 ## Scope Guidance
