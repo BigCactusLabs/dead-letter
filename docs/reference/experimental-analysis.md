@@ -251,6 +251,13 @@ collisions: if one result path or its `.attempts` directory is an ancestor of
 another result path, all involved items are refused before execution. For
 example, `x.eml` conflicts with `x.analysis.json/y.eml` and
 `x.analysis.json.attempts/y.eml`, regardless of scheduling order.
+A target whose parent resolves outside the resolved `--output-dir`, for example
+through an existing symlinked subdirectory that points elsewhere, fails with
+`analysis_output_outside_root`: no request, directory creation, read or write
+happens for it. Symlinked directories that stay inside the output root, and an
+output root that is itself a symlink, remain allowed. Each item repeats the
+check just before its first filesystem access; a hostile local writer that
+swaps a symlink into the output tree after that re-check is out of scope.
 Existing targets use the same strict reuse/refusal rules as single-message
 sidecars. Corrupt, mismatched or
 stale-alias results are never overwritten. Other items can continue.

@@ -45,6 +45,32 @@ def _validate_output_root(source: Path, output: Path) -> None:
         raise AnalysisError("analysis_output_invalid") from None
 
 
+def _outside_root(resolved_parent: Path, root: Path) -> bool:
+    """Whether an already resolved destination parent escapes the resolved root."""
+    try:
+        if not Path(_path_key(resolved_parent)).is_relative_to(Path(_path_key(root))):
+            return True
+        if not root.exists():
+            return False
+        # Case folding can alias distinct directories; existing ancestors decide.
+        return not any(
+            ancestor.exists() and os.path.samefile(ancestor, root)
+            for ancestor in (resolved_parent, *resolved_parent.parents)
+        )
+    except (OSError, RuntimeError, ValueError):
+        # Invalid destinations are refused per item by the sidecar path.
+        return False
+
+
+def _parent_outside_root(target: Path, root: Path) -> bool:
+    try:
+        # Non-strict resolve follows existing links and appends the missing tail.
+        resolved_parent = target.parent.resolve()
+    except (OSError, RuntimeError):
+        return False
+    return _outside_root(resolved_parent, root)
+
+
 async def analyze_directory(
     source_dir: str | Path, output_dir: str | Path, *, provider: str,
     allow_remote: bool = False, jobs: int = 4,
@@ -73,6 +99,7 @@ async def analyze_directory(
         if not source.is_dir():
             raise AnalysisError("invalid_analysis_directory")
         _validate_output_root(source, output)
+        root = output.resolve()
         files = _iter_source_eml_files(source)
     except (OSError, RuntimeError, ValueError) as exc:
         if isinstance(exc, AnalysisError):
@@ -91,14 +118,21 @@ async def analyze_directory(
         "items_with_unknown_usage": 0, "billing_status": "not_attempted", "items": items,
     }
     aliases: dict[str, set[int]] = {}
+    outside = set()
     for index, target in enumerate(targets):
         # Resolve parent aliases as well as case aliases before starting any work.
         names = {str(target)}
         try:
-            names.add(str(target.parent.resolve() / target.name))
+            resolved_parent = target.parent.resolve()
         except (OSError, RuntimeError):
             # Invalid destinations are refused per item by the sidecar path.
             pass
+        else:
+            # A symlinked directory in the output tree must not carry writes out of it.
+            if _outside_root(resolved_parent, root):
+                outside.add(index)
+                continue
+            names.add(str(resolved_parent / target.name))
         for name in names:
             key = _path_key(Path(name))
             aliases.setdefault(key, set()).add(index)
@@ -115,6 +149,9 @@ async def analyze_directory(
                 collisions.update(owners | indices)
     for index in collisions:
         items[index].update(outcome="failed", error_code="analysis_output_collision")
+    for index in outside:
+        items[index].update(outcome="failed", error_code="analysis_output_outside_root")
+    refused = collisions | outside
 
     stop = asyncio.Event()
     checked = False
@@ -138,7 +175,7 @@ async def analyze_directory(
             checked = True
 
     remote = TypeSafeProvider(effective, _preflight=check_preflight)
-    pending = iter(index for index in range(len(files)) if index not in collisions)
+    pending = iter(index for index in range(len(files)) if index not in refused)
     queue: asyncio.Queue[int] = asyncio.Queue(maxsize=jobs)
 
     def feed_one() -> None:
@@ -200,6 +237,9 @@ async def analyze_directory(
             except asyncio.QueueEmpty:
                 return
             try:
+                # Re-check just before the first filesystem touch for this item.
+                if _parent_outside_root(targets[index], root):
+                    raise AnalysisError("analysis_output_outside_root")
                 targets[index].parent.mkdir(parents=True, exist_ok=True)
                 result = await analyze_to_sidecar(
                     files[index], targets[index], provider=provider, allow_remote=True,

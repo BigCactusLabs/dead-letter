@@ -894,3 +894,52 @@ def test_non_throttle_failure_resets_throttle_streak(tmp_path, wire):
     assert result["counts"]["failed"] == 4 and result["counts"]["not_started"] == 0
     assert result["items"][2]["error_code"] == "provider_not_found"
     assert len(wire["calls"]) == 4
+
+
+def test_out_of_root_symlinked_subdirectory_is_refused(tmp_path, wire):
+    source, output = tree(tmp_path, ["0.eml", "nested/x.eml", "safe/y.eml"])
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    output.mkdir()
+    (output / "nested").symlink_to(outside, target_is_directory=True)
+    result = run(source, output, jobs=1)
+    assert result["status"] == "completed"
+    assert result["counts"] == dict(discovered=3, succeeded=2, reused=0, skipped=0, failed=1, not_started=0)
+    assert result["items"][1]["error_code"] == "analysis_output_outside_root"
+    assert result["items"][0]["outcome"] == result["items"][2]["outcome"] == "succeeded"
+    assert len(wire["calls"]) == 2
+    assert list(outside.iterdir()) == []
+
+
+def test_nested_out_of_root_symlink_is_refused(tmp_path, wire):
+    source, output = tree(tmp_path, ["a/b/c/x.eml", "a/y.eml"])
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (output / "a").mkdir(parents=True)
+    (output / "a" / "b").symlink_to(outside, target_is_directory=True)
+    result = run(source, output)
+    assert [item["error_code"] for item in result["items"]] == ["analysis_output_outside_root", None]
+    assert result["counts"]["failed"] == result["counts"]["succeeded"] == 1
+    assert len(wire["calls"]) == 1
+    assert list(outside.iterdir()) == []
+
+
+def test_symlink_swapped_in_after_scheduling_is_refused(tmp_path, wire):
+    source, output = tree(tmp_path, ["0.eml", "z/x.eml"])
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+
+    def handler(request):
+        # The first item's request runs after scheduling and before item two starts.
+        link = output / "z"
+        if not link.is_symlink():
+            link.symlink_to(outside, target_is_directory=True)
+        return success(request)
+
+    wire["handler"] = handler
+    result = run(source, output, jobs=1)
+    assert [item["error_code"] for item in result["items"]] == [None, "analysis_output_outside_root"]
+    assert result["counts"]["failed"] == result["counts"]["succeeded"] == 1
+    assert result["status"] == "completed" and result["stop_reason"] is None
+    assert len(wire["calls"]) == 1
+    assert list(outside.iterdir()) == []
