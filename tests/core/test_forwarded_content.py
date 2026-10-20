@@ -1068,7 +1068,7 @@ def test_cleanup_keeps_nested_forward_after_colon_signature_line(tmp_path: Path)
 
 
 @pytest.mark.parametrize("wrapper", ["protonmail_quote", "yahoo_quoted"])
-def test_wrapper_with_unreadable_first_line_stays_whole_in_body(wrapper: str, tmp_path: Path) -> None:
+def test_wrapper_first_line_after_many_empty_elements_is_read(wrapper: str, tmp_path: Path) -> None:
     def html(spans: int) -> str:
         return (
             f'<div>FYI.</div><div class="{wrapper}">'
@@ -1077,17 +1077,15 @@ def test_wrapper_with_unreadable_first_line_stays_whole_in_body(wrapper: str, tm
             '<blockquote class="gmail_quote">KEEP FORWARDED PAYLOAD.</blockquote></div>'
         )
 
-    # 64 elements is the last readable first line: still a forward.
+    # No element count limits the first-line read: the separator after 64 or
+    # 65 empty elements still makes the wrapper a forward.
     assert _kinds(html(64)) == [ZoneKind.BODY, ZoneKind.FORWARDED_BODY]
-    # Past it the wrapper is opaque body content; nothing inside is extracted.
-    assert _kinds(html(65)) == [ZoneKind.BODY]
+    assert _kinds(html(65)) == [ZoneKind.BODY, ZoneKind.FORWARDED_BODY]
 
     _, latest = _inline(html(65), tmp_path, html=True)
     _, structured = _inline(html(65), tmp_path, html=True, thread_mode="structured")
 
     _positions(latest, ["FYI.", "----- Forwarded Message -----", "From: Bob", "KEEP FORWARDED PAYLOAD."])
-    # No HTML rule fired, so the plain-text fallback reads the body and may
-    # section its text-level forward; the payload stays with its header.
     _positions(structured, ["FYI.", "Bob", "KEEP FORWARDED PAYLOAD."])
     assert "## Earlier message" not in structured
 
@@ -1126,6 +1124,61 @@ def test_cleanup_boundaries_scale_linearly() -> None:
     assert cleaned[0].content.count("PAYLOAD") == 16000
     assert "Sig" not in cleaned[0].content
     assert elapsed < 2
+
+
+# --- Review repairs (issue #193 round 3) ---------------------------------------
+
+
+# The gmail_quote case opens with its own line, so it qualifies as a body
+# wrapper; one whose first text is the nested separator is a Gmail quote.
+@pytest.mark.parametrize(
+    ("wrapper", "own_line"),
+    [("yahoo_quoted", ""), ("protonmail_quote", ""), ("gmail_quote", "Hi Ann,<br>")],
+    ids=["yahoo_quoted", "protonmail_quote", "gmail_quote"],
+)
+def test_nested_forward_with_bold_separator_keeps_headers_and_payload(
+    wrapper: str, own_line: str, tmp_path: Path
+) -> None:
+    html = (
+        f'<div>FYI.</div><div class="{wrapper}">'
+        + "<span></span>" * 65
+        + own_line
+        + '<div class="gmail_quote"><div class="gmail_attr">'
+        "<b>----- Forwarded Message -----</b><br>"
+        "From: Bob<br>"
+        "Date: Wed, Mar 4, 2026 at 9:00 AM<br>"
+        "Subject: Report<br>"
+        "</div><div>KEEP PAYLOAD.</div></div></div>"
+    )
+    kinds = _kinds(html)
+    assert ZoneKind.FORWARDED_BODY in kinds
+    assert ZoneKind.QUOTED not in kinds
+
+    _, latest = _inline(html, tmp_path, html=True)
+    _, structured = _inline(html, tmp_path, html=True, thread_mode="structured")
+
+    _positions(latest, ["FYI.", "Forwarded Message", "From: Bob", "Subject: Report", "KEEP PAYLOAD."])
+    _positions(structured, ["FYI.", "## Forwarded", "From: Bob", "Subject: Report", "KEEP PAYLOAD."])
+    assert "## Earlier message" not in structured
+
+
+@pytest.mark.parametrize("wrapper", ["yahoo_quoted", "protonmail_quote"])
+def test_nested_wrappers_share_one_first_line_read(wrapper: str) -> None:
+    html = (
+        "<div>Note.</div>"
+        + f'<div class="{wrapper}">' * 60
+        + " <br>" * 32000
+        + "----- Forwarded Message -----<br>From: Bob<br><br>PAYLOAD"
+        + "</div>" * 60
+    )
+
+    started = time.perf_counter()
+    result = segment_html_conversation(html)
+    elapsed = time.perf_counter() - started
+
+    assert [zone.kind for zone in result.zones][:2] == [ZoneKind.BODY, ZoneKind.FORWARDED_BODY]
+    assert sum(zone.content.count("PAYLOAD") for zone in result.zones) == 1
+    assert elapsed < 1
 
 
 # --- Byte identity for output that must not change ---------------------------
