@@ -845,6 +845,50 @@ def test_sibling_nested_plain_forwards_respect_section_cap(tmp_path: Path) -> No
     _positions(structured, ["OUTER", *(f"PAYLOAD {index}\n" for index in range(70))])
 
 
+def _deep_apple_chain(depth: int, filler_lines: int) -> str:
+    """Apple Mail plain-text forwards nested ``depth`` levels, one ``>`` per level."""
+    text = "FYI\n"
+    for level in range(1, depth + 1):
+        quote = ">" * level
+        text += (
+            f"{quote} Begin forwarded message:\n{quote} From: Level {level}\n{quote}\n"
+            f"{quote} PAYLOAD {level} END\n"
+            + f"{quote} {'x' * 60}\n" * filler_lines
+        )
+    return text
+
+
+def test_deep_nested_plain_forwards_split_in_linear_time() -> None:
+    text = _deep_apple_chain(200, 100)  # about 3.3 MB
+
+    started = time.perf_counter()
+    zones = segment_text_conversation(text, split_forwards=True).zones
+    elapsed = time.perf_counter() - started
+
+    content = "\n".join(zone.content for zone in zones)
+    assert all(content.count(f"PAYLOAD {level} END") == 1 for level in range(1, 201))
+    assert elapsed < 2
+
+
+def test_nested_split_scan_budget_keeps_every_payload_once(tmp_path: Path) -> None:
+    depth = 20
+    front, structured = _inline(_deep_apple_chain(depth, 20), tmp_path, thread_mode="structured")
+
+    sections = structured.count("## Forwarded from Level")
+    # The scan budget stops the split before the depth or the section cap.
+    assert 1 < sections < depth
+    assert f"thread_messages: {sections}" in front
+    _positions(
+        structured,
+        [*(f"## Forwarded from Level {level}" for level in range(1, sections + 1)),
+         *(f"PAYLOAD {level} END" for level in range(sections, depth + 1))],
+    )
+    assert all(structured.count(f"PAYLOAD {level} END") == 1 for level in range(1, depth + 1))
+    # Forwards past the budget stay in the last section's text, in order.
+    _positions(structured, [f"From: Level {level}" for level in range(sections + 1, depth + 1)])
+    assert structured.count("Begin forwarded message:") == depth - sections
+
+
 @pytest.mark.parametrize(
     ("text", "option"),
     [

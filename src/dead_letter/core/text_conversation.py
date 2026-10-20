@@ -27,6 +27,10 @@ _OUTLOOK_HEADER_RE = re.compile(
 _QUOTE_LEVEL_RE = re.compile(r"(?m)^[ \t]*>[ \t]?")
 # Upper bound on plain-text forward sections, matching the HTML segmenter.
 _MAX_FORWARD_SECTIONS = 64
+# Nested quoted forwards are found by searching each quoted body again; the
+# characters searched across those searches stay within this multiple of the
+# input length, so deep quoting costs linear time.
+_NESTED_SCAN_BUDGET_FACTOR = 4
 _INDENT_SENTINEL_PREFIX = "\ue000dead-letter-indent-"
 _INDENT_SENTINEL_SUFFIX = "\ue001"
 
@@ -185,29 +189,38 @@ def _forward_sections(source: str, matches: list[re.Match[str]]) -> list[tuple[s
 
 
 def _split_nested_quoted_forwards(
-    sections: list[tuple[str, str, bool]],
+    sections: list[tuple[str, str, bool]], *, scan_budget: int
 ) -> list[tuple[str, str, bool]]:
     """Split forwards nested inside ``>``-quoted forwards into their own sections.
 
     Apple Mail quotes each nested plain-text forward one level deeper, so a
     nested marker only opens a quote block once the outer level is removed.
-    Each quoted body is searched again until no nested forward remains or
-    ``_MAX_FORWARD_SECTIONS`` is reached; anything not split stays in the
+    Each quoted body is searched again until no nested forward remains,
+    ``_MAX_FORWARD_SECTIONS`` is reached, or the next search would take the
+    characters searched past ``scan_budget``. Once the budget would be
+    exceeded no further body is searched; anything not split stays in the
     enclosing section's body.
     """
     result: list[tuple[str, str, bool]] = []
     pending = list(reversed(sections))
+    scanned = 0
+    exhausted = False
     while pending:
         marker, body, quoted = pending.pop()
         remaining = _MAX_FORWARD_SECTIONS - (len(result) + len(pending) + 1)
-        if quoted and remaining > 0:
-            # Admit only as many nested forwards as the budget allows; the
-            # rest stay in the last admitted section's body, in order.
-            nested = _forward_matches(body, quoted_forwards=True)[:remaining]
-            if nested and not _separator_in_reply_history(body[: nested[0].start()]):
-                result.append((marker, body[: nested[0].start()].strip(), quoted))
-                pending.extend(reversed(_forward_sections(body, nested)))
-                continue
+        if quoted and remaining > 0 and not exhausted:
+            if scanned + len(body) > scan_budget:
+                # Budget spent: this and every later section keep their text.
+                exhausted = True
+            else:
+                scanned += len(body)
+                # Admit only as many nested forwards as the section cap allows;
+                # the rest stay in the last admitted section's body, in order.
+                nested = _forward_matches(body, quoted_forwards=True)[:remaining]
+                if nested and not _separator_in_reply_history(body[: nested[0].start()]):
+                    result.append((marker, body[: nested[0].start()].strip(), quoted))
+                    pending.extend(reversed(_forward_sections(body, nested)))
+                    continue
         result.append((marker, body, quoted))
     return result
 
@@ -240,7 +253,9 @@ def _segment_forwarded_message(
 
     sections = _forward_sections(source, matches)
     if split_forwards:
-        sections = _split_nested_quoted_forwards(sections)
+        sections = _split_nested_quoted_forwards(
+            sections, scan_budget=_NESTED_SCAN_BUDGET_FACTOR * len(source)
+        )
     for marker, forwarded, _quoted in sections:
         zones.append(
             ConversationZone(

@@ -85,9 +85,11 @@ _MARKER_ALTERNATION = "|".join(f"(?:{pattern})" for pattern in FORWARD_MARKER_PA
 
 # A marker on its own unindented line, optionally behind ``>`` quote markers
 # (Apple Mail quotes its plain-text forwards). Match against text passed
-# through ``normalize_marker_text``.
+# through ``normalize_marker_text``. The quote group is possessive: no marker
+# starts with ``>``, a space or a tab, so backtracking into it cannot produce a
+# match; making it possessive skips that backtracking on long ``>`` prefixes.
 FORWARD_MARKER_RE = re.compile(
-    rf"(?im)^(?P<quote>(?:>[ \t]?)+)?(?:{_MARKER_ALTERNATION})[ \t\r]*$"
+    rf"(?im)^(?P<quote>(?:>[ \t]?)++)?(?:{_MARKER_ALTERNATION})[ \t\r]*$"
 )
 
 # A header-like line ("From:", "Von:", "De :", "发件人：", "| Subject: |", "**From:**")
