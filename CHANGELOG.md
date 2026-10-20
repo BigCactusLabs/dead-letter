@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Forwarded-content edge cases from #193:
+  - Latest mode keeps a text/plain Apple Mail forward quoted with `>` when it
+    opens its own quote block. A quoted forward under an `On … wrote:`
+    attribution is still reply history.
+  - Structured mode gives a forward nested one `>` level deeper its own
+    section instead of leaving its separator inside the outer section.
+  - `strip_signatures` and `strip_disclaimers` no longer remove a later
+    forwarded message that follows a `-- ` or disclaimer line.
+  - Legacy Gmail forwards whose `gmail_quote` block opens with `<br>` before
+    the separator are detected.
+  - A Gmail `gmail_quote` wrapper with no attribution or blockquote that holds
+    the message body (only a short greeting outside it) is kept as body text
+    instead of being dropped as quoted history.
+  - Structured output no longer ends `-----Original Message-----` replies
+    with a section that holds only the separator line.
+
 ### Changed
 
 - Claude plugin 0.4.10 pins package 0.4.8 (`dead-letter==0.4.8`) and
