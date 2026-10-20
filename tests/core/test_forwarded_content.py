@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -895,6 +896,128 @@ def test_owa_prefixed_gmail_reply_is_reply() -> None:
         '<blockquote class="x_gmail_quote">Old.</blockquote></div>'
     )
     assert _kinds(html) == [ZoneKind.BODY, ZoneKind.QUOTED]
+
+
+# --- Review repairs (issue #193 round 1) ---------------------------------------
+
+
+def _inline(content: str, tmp_path: Path, *, html: bool = False, **options: object) -> tuple[str, str]:
+    message = EmailMessage()
+    message["From"] = "Alice <alice@example.com>"
+    message["To"] = "Bob <bob@example.com>"
+    message["Subject"] = "Fwd: Inline"
+    message["Date"] = "Mon, 28 Sep 2026 10:00:00 +0000"
+    message.set_content(content, subtype="html" if html else "plain")
+    name = "-".join(f"{key}-{value}" for key, value in sorted(options.items())) or "default"
+    source = tmp_path / f"{name}.eml"
+    source.write_bytes(bytes(message))
+    output = tmp_path / f"{name}.md"
+    result = convert(source, output=output, options=ConvertOptions(**options))
+    assert result.success, result.error
+    _, front_matter, body = output.read_text(encoding="utf-8").split("---\n", 2)
+    return front_matter, body
+
+
+def test_nested_forward_extraction_keeps_body_wrapper_note(tmp_path: Path) -> None:
+    html = (
+        '<div>Hi</div><div class="gmail_quote">'
+        "<div>KEEP THIS NOTE.</div>"
+        '<div class="gmail_quote"><div class="gmail_attr">'
+        f"{MARKER_LINE}<br>From: Bob<br>"
+        "</div><div>" + "FORWARD PAYLOAD. " * 30 + "</div></div></div>"
+    )
+    _, latest = _inline(html, tmp_path, html=True)
+    front, structured = _inline(html, tmp_path, html=True, thread_mode="structured")
+
+    _positions(latest, ["Hi", "KEEP THIS NOTE.", "FORWARD PAYLOAD."])
+    assert "thread_messages: 1" in front
+    assert "## Earlier message" not in structured
+    _positions(structured, ["Hi", "KEEP THIS NOTE.", "## Forwarded from Bob", "FORWARD PAYLOAD."])
+
+
+@pytest.mark.parametrize("wrapper", ["protonmail_quote", "yahoo_quoted", "x_gmail_quote"])
+def test_sibling_reply_wrappers_stay_reply_history(wrapper: str, tmp_path: Path) -> None:
+    html = (
+        "<div>Thanks.</div>\n"
+        f'<div class="{wrapper}">\nOn Mon, Mar 2, 2026 at 9:00 AM Bob wrote:<br>\n'
+        "<blockquote>BOB HISTORY</blockquote>\n</div>\n"
+        f'<div class="{wrapper}">\nOn Sun, Mar 1, 2026 at 9:00 AM Carol wrote:<br>\n'
+        "<blockquote>CAROL HISTORY</blockquote>\n</div>"
+    )
+    _, latest = _inline(html, tmp_path, html=True)
+    front, structured = _inline(html, tmp_path, html=True, thread_mode="structured")
+
+    assert latest.strip() == "Thanks."
+    assert "thread_messages: 2" in front
+    _positions(
+        structured,
+        ["Thanks.", "## From Carol", "CAROL HISTORY", "## From Bob", "BOB HISTORY"],
+    )
+
+
+def test_deeply_nested_gmail_wrappers_segment_in_linear_time() -> None:
+    depth = 4000
+    html = '<div class="gmail_quote">' * depth + "PAYLOAD" + "</div>" * depth
+
+    started = time.perf_counter()
+    result = segment_html_conversation(html)
+    elapsed = time.perf_counter() - started
+
+    assert [zone.kind for zone in result.zones] == [ZoneKind.BODY]
+    assert "PAYLOAD" in result.zones[0].content
+    assert elapsed < 2
+
+
+def test_leading_whitespace_breaks_in_wrapper_scan_in_linear_time() -> None:
+    repeats = 32000
+    html = (
+        '<div>Note.</div><div class="yahoo_quoted">'
+        + " <br>" * repeats
+        + "----- Forwarded Message -----<br>From: Bob<br><br>PAYLOAD</div>"
+    )
+
+    started = time.perf_counter()
+    result = segment_html_conversation(html)
+    elapsed = time.perf_counter() - started
+
+    assert [zone.kind for zone in result.zones] == [ZoneKind.BODY, ZoneKind.FORWARDED_BODY]
+    assert "PAYLOAD" in result.zones[1].content
+    assert elapsed < 2
+
+
+def test_sibling_nested_plain_forwards_respect_section_cap(tmp_path: Path) -> None:
+    text = "FYI\n> Begin forwarded message:\n> From: Outer\n>\n> OUTER\n"
+    for index in range(70):
+        text += (
+            f"> Note {index}.\n"
+            ">> Begin forwarded message:\n"
+            f">> From: Inner {index}\n"
+            f">>\n>> PAYLOAD {index}\n"
+        )
+    front, structured = _inline(text, tmp_path, thread_mode="structured")
+
+    assert "thread_messages: 64" in front
+    assert structured.count("## Forwarded") == 64
+    _positions(structured, ["OUTER", *(f"PAYLOAD {index}\n" for index in range(70))])
+
+
+@pytest.mark.parametrize(
+    ("text", "option"),
+    [
+        (
+            "Hello.\n-- \nSignature\nBegin forwarded message:\nThis is prose, not a header.\n",
+            "strip_signatures",
+        ),
+        (
+            f"Hello.\nDisclaimer: Legal terms.\n{MARKER_LINE}\nThis is not a header.\n",
+            "strip_disclaimers",
+        ),
+    ],
+)
+def test_cleanup_ignores_markers_without_header_lines(text: str, option: str, tmp_path: Path) -> None:
+    _, body = _inline(text, tmp_path, **{option: True})
+
+    assert body.strip() == "Hello."
 
 
 # --- Byte identity for output that must not change ---------------------------

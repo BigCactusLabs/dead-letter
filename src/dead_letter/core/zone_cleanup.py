@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from dead_letter.core.forwarding import FORWARD_MARKER_RE, normalize_marker_text
+from dead_letter.core.text_conversation import forward_matches
 from dead_letter.core.types import ConversationZone, ConvertOptions, ZoneKind
 
 # html-to-markdown 3.17+ escapes a leading "--" as "\--", and a <br> after the
@@ -14,8 +14,9 @@ _DISCLAIMER_RE = re.compile(r"\n(?:confidentiality notice|disclaimer):?.*$", re.
 
 
 def _forward_segments(content: str) -> list[str]:
-    """Split ``content`` before each forward separator line."""
-    starts = [match.start() for match in FORWARD_MARKER_RE.finditer(normalize_marker_text(content))]
+    """Split ``content`` before each forward separator that segmentation
+    would accept: one followed by a header line (``forward_matches``)."""
+    starts = [match.start() for match in forward_matches(content, quoted_forwards=True)]
     bounds = [0, *[start for start in starts if start > 0], len(content)]
     return [content[begin:end] for begin, end in zip(bounds, bounds[1:])]
 
