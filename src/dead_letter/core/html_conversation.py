@@ -84,15 +84,16 @@ _GMAIL_WRAPPER_STUB_MAX_CHARS = 40
 _GMAIL_WRAPPER_STUB_RATIO = 20
 
 
-def _gmail_body_wrappers(root, first_lines: _FirstLines) -> frozenset[int]:
+def _gmail_body_wrappers(root) -> frozenset[int]:
     """``mem_id`` of each ``gmail_quote`` element under ``root`` that wraps the
     message body rather than quoted history.
 
     A wrapper qualifies when it has no quote signal (a blockquote or
-    ``gmail_attr`` outside nested ``div.gmail_quote`` blocks, or a first text
-    line that is an attribution ending in ``:``/``：`` or a forward
-    separator) and the text outside it is empty, or short (a greeting) and a
-    small fraction of the text inside it. One post-order pass computes text
+    ``gmail_attr`` outside nested ``div.gmail_quote`` blocks, or a first line
+    of its own text, nested ``gmail_quote`` text skipped, that is an
+    attribution ending in ``:``/``：`` or a forward separator) and the
+    text outside it is empty, or short (a greeting) and a small fraction of
+    the text inside it. One post-order pass computes text
     counts and signals for every node. Callers classify once on the unchanged
     tree, so extracting forwards cannot reclassify a wrapper.
     """
@@ -140,10 +141,43 @@ def _gmail_body_wrappers(root, first_lines: _FirstLines) -> frozenset[int]:
             continue
         if outside and inside <= outside * _GMAIL_WRAPPER_STUB_RATIO:
             continue
-        if _is_forward_or_reply_line(first_lines[node]):
+        if _is_forward_or_reply_line(_own_first_line(node)):
             continue
         wrappers.add(node.mem_id)
     return frozenset(wrappers)
+
+
+def _own_first_line(wrapper) -> str:
+    """First line of a ``gmail_quote`` wrapper's own text, read like
+    ``_FirstLines`` but skipping nested ``gmail_quote`` elements, which are
+    checked as blocks of their own. Each node is read only by the scan of its
+    nearest enclosing ``gmail_quote``, so the scans together stay linear."""
+    parts: list[str] = []
+    has_text = False
+    stack = [(wrapper.child, False)] if wrapper.child is not None else []
+    while stack:
+        node, leaving = stack.pop()
+        if leaving:
+            if has_text:
+                break
+            continue
+        if node.next is not None:
+            stack.append((node.next, False))
+        tag = node.tag
+        if tag == "-text":
+            text = node.text_content or ""
+            parts.append(text)
+            has_text = has_text or bool(text.strip())
+            continue
+        if has_text and (tag == "br" or tag in _BLOCK_TAGS):
+            break
+        if tag == "br" or "gmail_quote" in _class_tokens(node):
+            continue
+        if tag in _BLOCK_TAGS:
+            stack.append((node, True))
+        if node.child is not None:
+            stack.append((node.child, False))
+    return _WHITESPACE_RE.sub(" ", "".join(parts).replace("\u00a0", " ")).strip()
 
 
 _BLOCK_TAGS = frozenset(
@@ -156,13 +190,14 @@ class _FirstLines:
     (``gmail_quote`` elements, Yahoo and Proton ``div`` wrappers), indexed
     by node.
 
-    A wrapper's first line is its text up to the first ``<br>`` or block
-    element that follows non-blank text, or to its end, whitespace-collapsed.
-    One document-order pass over the unchanged tree records each line as a
-    span of text parts. Wrappers still waiting for text share one span start,
-    since whitespace before the first text collapses away, so nested wrappers
-    around the same text never rescan it. Lines are joined on first lookup,
-    once per distinct span.
+    A wrapper's first line is its text up to the first ``<br>``, block
+    element start, or block element end that follows non-blank text, or to
+    its end, whitespace-collapsed, as the line renders. One document-order
+    pass over the unchanged tree records each line as a span of text parts.
+    Wrappers still waiting for text share one span start, since whitespace
+    before the first text collapses away, so nested wrappers around the same
+    text never rescan it. Lines are joined on first lookup, once per distinct
+    span.
     """
 
     def __init__(self, root) -> None:
@@ -171,16 +206,30 @@ class _FirstLines:
         self._lines: dict[tuple[int, int], str] = {}
         parts = self._parts
         spans = self._spans
+        wrappers: set[int] = set()
         # Waiting wrappers, nested outermost first, as groups that started
         # at the same text part. Every group below the top has text.
         starts: list[int] = []
         members: list[list[int]] = []
         top_has_text = False
+
+        def end_lines() -> None:
+            # Ends the line of every waiting wrapper that has text.
+            nonlocal top_has_text
+            done = len(starts) if top_has_text else len(starts) - 1
+            end = len(parts)
+            for start, group in zip(starts[:done], members[:done]):
+                for mem_id in group:
+                    spans[mem_id] = (start, end)
+            del starts[:done]
+            del members[:done]
+            top_has_text = False
+
         stack = [(root, False)] if root is not None else []
         while stack:
             node, leaving = stack.pop()
             if leaving:
-                if node.mem_id not in spans:
+                if node.mem_id in wrappers and node.mem_id not in spans:
                     # Its subtree ended before its line did; it is the
                     # innermost waiting wrapper.
                     members[-1].pop()
@@ -189,6 +238,8 @@ class _FirstLines:
                         starts.pop()
                         members.pop()
                         top_has_text = True
+                if starts and node.tag in _BLOCK_TAGS:
+                    end_lines()
                 continue
             if node is not root and node.next is not None:
                 stack.append((node.next, False))
@@ -200,15 +251,7 @@ class _FirstLines:
                     top_has_text = top_has_text or bool(text.strip())
                 continue
             if starts and (tag == "br" or tag in _BLOCK_TAGS):
-                # Ends the line of every waiting wrapper that has text.
-                done = len(starts) if top_has_text else len(starts) - 1
-                end = len(parts)
-                for start, group in zip(starts[:done], members[:done]):
-                    for mem_id in group:
-                        spans[mem_id] = (start, end)
-                del starts[:done]
-                del members[:done]
-                top_has_text = False
+                end_lines()
             if tag == "br":
                 continue
             classes = _class_tokens(node)
@@ -219,12 +262,16 @@ class _FirstLines:
                     or any(_YAHOO_QUOTED_RE.fullmatch(token) for token in classes)
                 )
             ):
+                wrappers.add(node.mem_id)
                 if starts and not top_has_text:
                     members[-1].append(node.mem_id)
                 else:
                     starts.append(len(parts))
                     members.append([node.mem_id])
                     top_has_text = False
+                stack.append((node, True))
+            elif starts and tag in _BLOCK_TAGS:
+                # Its end ends a line whose text starts inside it.
                 stack.append((node, True))
             if node.child is not None:
                 stack.append((node.child, False))
@@ -568,7 +615,7 @@ def segment_html_conversation(html: str, *, client_hint: str | None = None) -> C
 
     root = tree.body or tree.css_first("html")
     first_lines = _FirstLines(root)
-    body_wrappers = _gmail_body_wrappers(root, first_lines) if root is not None else frozenset()
+    body_wrappers = _gmail_body_wrappers(root) if root is not None else frozenset()
     forwarded_blocks, capped, forward_hints = _extract_forward_blocks(
         tree, body_wrappers, first_lines
     )

@@ -1129,19 +1129,34 @@ def test_cleanup_boundaries_scale_linearly() -> None:
 # --- Review repairs (issue #193 round 3) ---------------------------------------
 
 
-# The gmail_quote case opens with its own line, so it qualifies as a body
-# wrapper; one whose first text is the nested separator is a Gmail quote.
+# A gmail_quote wrapper's own first line skips nested gmail_quote text, so it
+# qualifies as a body wrapper whether it opens with its own line or with the
+# nested forward's separator.
 @pytest.mark.parametrize(
-    ("wrapper", "own_line"),
-    [("yahoo_quoted", ""), ("protonmail_quote", ""), ("gmail_quote", "Hi Ann,<br>")],
-    ids=["yahoo_quoted", "protonmail_quote", "gmail_quote"],
+    ("wrapper", "own_line", "spans"),
+    [
+        ("yahoo_quoted", "", 65),
+        ("protonmail_quote", "", 65),
+        ("gmail_quote", "Hi Ann,<br>", 65),
+        ("gmail_quote", "", 0),
+        ("gmail_quote", "", 64),
+        ("gmail_quote", "", 65),
+    ],
+    ids=[
+        "yahoo_quoted",
+        "protonmail_quote",
+        "gmail_quote-own-line",
+        "gmail_quote-0",
+        "gmail_quote-64",
+        "gmail_quote-65",
+    ],
 )
 def test_nested_forward_with_bold_separator_keeps_headers_and_payload(
-    wrapper: str, own_line: str, tmp_path: Path
+    wrapper: str, own_line: str, spans: int, tmp_path: Path
 ) -> None:
     html = (
         f'<div>FYI.</div><div class="{wrapper}">'
-        + "<span></span>" * 65
+        + "<span></span>" * spans
         + own_line
         + '<div class="gmail_quote"><div class="gmail_attr">'
         "<b>----- Forwarded Message -----</b><br>"
@@ -1178,6 +1193,44 @@ def test_nested_wrappers_share_one_first_line_read(wrapper: str) -> None:
 
     assert [zone.kind for zone in result.zones][:2] == [ZoneKind.BODY, ZoneKind.FORWARDED_BODY]
     assert sum(zone.content.count("PAYLOAD") for zone in result.zones) == 1
+    assert elapsed < 1
+
+
+@pytest.mark.parametrize("wrapper", ["yahoo_quoted", "protonmail_quote"])
+def test_wrapper_first_line_ends_at_block_end(wrapper: str, tmp_path: Path) -> None:
+    # The nested div renders "On Mon, Bob" as a line of its own, so the
+    # wrapper's first line is not an attribution and its content stays body.
+    html = (
+        f'<div>Top.</div><div class="{wrapper}">'
+        "<div>On Mon, Bob</div> wrote:<br>KEEP THIS.</div>"
+    )
+    assert _kinds(html) == [ZoneKind.BODY]
+
+    for mode in ("latest", "structured"):
+        _, body = _inline(html, tmp_path, html=True, thread_mode=mode)
+
+        _positions(body, ["Top.", "On Mon, Bob", "wrote:", "KEEP THIS."])
+        assert "## Earlier message" not in body
+
+
+@pytest.mark.parametrize(
+    ("levels", "words"), [(60, 16000), (4000, 10)], ids=["60-levels", "4000-levels"]
+)
+def test_nested_wrappers_with_text_after_each_end_scale_linearly(levels: int, words: int) -> None:
+    # Each wrapper's text continues after the wrapper nested in it ends; the
+    # innermost wrapper's end ends every first line, so none is read twice.
+    html = (
+        "<div>Note.</div>"
+        + '<div class="yahoo_quoted">' * levels
+        + ("w " * words + "</div>") * levels
+    )
+
+    started = time.perf_counter()
+    result = segment_html_conversation(html)
+    elapsed = time.perf_counter() - started
+
+    assert [zone.kind for zone in result.zones] == [ZoneKind.BODY]
+    assert sum(zone.content.count("w ") for zone in result.zones) == levels * words
     assert elapsed < 1
 
 

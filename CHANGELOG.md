@@ -21,7 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     the separator are detected.
   - A Gmail `gmail_quote` wrapper with no attribution or blockquote that holds
     the message body (only a short greeting outside it) is kept as body text
-    instead of being dropped as quoted history.
+    instead of being dropped as quoted history. This includes a wrapper whose
+    first text is the separator of a Gmail forward nested inside it: that
+    forward is now kept as a forward, where earlier releases dropped it as
+    reply history.
   - Structured output no longer ends `-----Original Message-----` replies
     with a section that holds only the separator line.
   - Forwarded header blocks with localized labels (French, German, Spanish,
