@@ -13,6 +13,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `dead-letter-mcp`. Formula evidence checks still exclude optional UI/watch
   dependencies and require removal of `dead-letter-ui`. Adoption in the tap
   remains a separate maintainer update (#213).
+- Forwarded-content edge cases from #193:
+  - Latest mode keeps a text/plain Apple Mail forward quoted with `>` when it
+    opens its own quote block. A quoted forward under an `On … wrote:`
+    attribution is still reply history.
+  - Structured mode gives a forward nested one `>` level deeper its own
+    section instead of leaving its separator inside the outer section.
+  - `strip_signatures` and `strip_disclaimers` no longer remove a later
+    forwarded message that follows a `-- ` or disclaimer line.
+  - Legacy Gmail forwards whose `gmail_quote` block opens with `<br>` before
+    the separator are detected.
+  - Structured output no longer ends `-----Original Message-----` replies
+    with a section that holds only the separator line.
+  - Forwarded header blocks with localized labels (French, German, Spanish,
+    Italian, Portuguese, Dutch, Japanese and Chinese, for example `De :`,
+    `Von:`, `Betreff:`, `差出人:`, `发件人：`) now give `## Forwarded from …`
+    headings in structured mode instead of `## Forwarded message`, and
+    plain-text forwards whose first header uses a full-width colon (Chinese
+    Gmail) are detected. Apple Mail's Japanese `転送されたメッセージ:`
+    introduction is recognized.
 
 ### Changed
 
