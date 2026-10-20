@@ -113,3 +113,9 @@ uv run python benchmarks/run.py --markdown-only       # generated table
 Review regenerated fixtures/output before committing. Keep the table markers
 so the report remains reproducible, and preserve the rows where a simpler
 representation is cheaper.
+
+## Offline profile evaluation
+
+The separate [analysis evaluation corpus](analysis_eval/README.md) contains
+synthetic, unreviewed model pre-labels for the two experimental triage profiles.
+Live evaluation has not yet run; the harness is being built in #166.

@@ -1,0 +1,25 @@
+From: Oren Vale <oren@example.test>
+To: Alex <alex@example.test>, Sam <sam@example.test>
+Cc: Niko Reed <niko@example.test>
+Date: Tue, 02 Jan 2001 10:30:00 -0500
+Message-ID: <seed-attachment-only-context@example.test>
+Subject: Seed missing attachment
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+ boundary="analysis-eval-seed-attachment-only-context-0"
+
+--analysis-eval-seed-attachment-only-context-0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+See attached for the instructions.
+
+--analysis-eval-seed-attachment-only-context-0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="work-note.txt"
+MIME-Version: 1.0
+
+Synthetic attachment; contents unavailable to normalized evidence.
+
+--analysis-eval-seed-attachment-only-context-0--

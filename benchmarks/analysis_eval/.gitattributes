@@ -1,0 +1,2 @@
+# Preserve RFC 5322 CRLF bytes and accept their carriage returns in diff checks.
+*.eml -text whitespace=cr-at-eol

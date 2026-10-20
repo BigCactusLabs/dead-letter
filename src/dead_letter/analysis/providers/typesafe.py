@@ -227,15 +227,16 @@ def _failure_code(exc, sdk) -> str:
 class TypeSafeProvider:
     """One prepared message per call, SDK-owned retries, bounded wall-clock budget."""
 
-    def __init__(self, config: TypeSafeConfig | None = None, *, _transport=None):
+    def __init__(self, config: TypeSafeConfig | None = None, *, _transport=None, _preflight=None):
         self.config = config or TypeSafeConfig.from_environment()
+        self._preflight = _preflight
         self._transport = _transport  # Trusted Python test injection, never CLI/email data.
 
     async def evaluate(
         self, request: PreparedRequest, *, allow_remote: bool = False,
         on_disclosure: Callable[[dict], None] = emit_disclosure,
     ) -> dict:
-        preflight(allow_remote=allow_remote)
+        (self._preflight or preflight)(allow_remote=allow_remote)
         payload = _validate_request(request, self.config)
         # Fail closed if the caller's disclosure sink fails. Read no email-derived
         # URLs and never use a callback supplied by email/profile data.
@@ -287,6 +288,14 @@ class TypeSafeProvider:
                             if isinstance(raw.get("model"), str) and key in raw["model"]:
                                 raise AnalysisError("invalid_response_metadata")
                             checked = validate_response(request, raw)
+            except asyncio.CancelledError as exc:
+                if attempts:
+                    exc.dead_letter_outcome = {
+                        "execution_status": "interrupted", "error_code": "analysis_interrupted",
+                        "attempts": attempts, "retry_count": max(0, len(attempts) - 1),
+                        "billing_status": "unknown", "sdk_version": SDK_VERSION,
+                    }
+                raise
             except sdk.TypeSafeAPITimeoutError:
                 # The SDK timeout is also a built-in TimeoutError. Catch it
                 # first so one HTTP timeout is not mislabeled as budget expiry.

@@ -7,8 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Experimental BYOK directory analysis with required `--output-dir`, bounded
+  `--jobs` (default 4, range 1–16), mirrored no-clobber sidecars and keyless reuse.
+  Independent per-message execution preserves completed results and safe
+  interrupted attempts, stops on provider failure thresholds, and reports a JSON
+  summary of this run's fresh work. Destinations that resolve outside
+  `--output-dir` through a symlink are refused per item as
+  `analysis_output_outside_root`. Python consumers can use async
+  `analyze_directory` (#165). Single-message `--output` also preserves a safe
+  interrupted attempt record after HTTP starts, with billing status unknown;
+  cancellation and outer timeout behavior are preserved.
+
 ### Fixed
 
+- Experimental analysis no longer rejects valid TypeSafe answers as
+  `inconsistent_score_distribution` or `invalid_probability_sum` when the
+  provider's two-decimal precision makes a Score or probability sum differ
+  slightly from the exact value.
 - Homebrew preparation includes the core MCP dependency graph and retains
   `dead-letter-mcp`. Formula evidence checks still exclude optional UI/watch
   dependencies and require removal of `dead-letter-ui`. Adoption in the tap
