@@ -232,6 +232,17 @@ class StatusTests(unittest.TestCase):
         self.assertEqual(report["channels"]["homebrew"]["status"], "deferred")
         self.assertEqual(report["exit_code"], 0)
 
+    def test_legacy_tap_mcp_removal_is_deferred(self):
+        self.client, _, _ = fixture(tap_version="0.4.5")
+        text = formula_text("0.4.5").replace('    rm bin/"dead-letter-ui"',
+                                             '    rm bin/"dead-letter-mcp"\n    rm bin/"dead-letter-ui"')
+        self.client.add_file(e.TAP, "Formula/dead-letter.rb", text)
+        report = self.report()
+        row = report["channels"]["homebrew"]
+        self.assertEqual(row["status"], "deferred")
+        self.assertEqual(row["evidence"]["formula_version"], "0.4.5")
+        self.assertEqual(report["exit_code"], 0)
+
     def test_nonexistent_plugin_pin_is_not_deferred(self):
         self.client, _, _ = fixture(pin="1.2.2")
         self.client.responses["https://pypi.org/pypi/dead-letter/1.2.2/json"] = e.Missing("404")
@@ -255,6 +266,19 @@ class StatusTests(unittest.TestCase):
         for text in (formula_text().replace('resource "six"', 'resource "fastapi"'), formula_text().replace("  depends_on arch", '  version "9.0.0"\n  depends_on arch')):
             with self.assertRaises(e.Conflict):
                 e.formula(text)
+
+    def test_formula_mcp_removal_depends_on_package_version(self):
+        for version in ("0.4.5", "0.4.6", "0.4.7", "0.4.8", "0.10.0", "1.0.0"):
+            with self.subTest(version=version):
+                text = formula_text(version).replace('    rm bin/"dead-letter-ui"',
+                                                      '    rm bin/"dead-letter-mcp"\n    rm bin/"dead-letter-ui"')
+                if version in {"0.4.5", "0.4.6"}:
+                    self.assertEqual(e.formula(text)["version"], version)
+                    with self.assertRaisesRegex(e.Conflict, "UI entrypoint"):
+                        e.formula(text.replace('    rm bin/"dead-letter-ui"\n', ''))
+                else:
+                    with self.assertRaisesRegex(e.Conflict, "core MCP entrypoint"):
+                        e.formula(text)
 
     def test_formula_accepts_core_mcp_resources(self):
         # Resolved core names, including httpx2 (httpx remains a UI extra).

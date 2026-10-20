@@ -10,7 +10,7 @@ second email converter.
 | You need | Route | What it includes | Instructions |
 | --- | --- | --- | --- |
 | Convert a file or folder | `uvx`, pip, or pipx | Core converter and CLI | [README](../../README.md#-install) |
-| A Homebrew-managed CLI and MCP server | `BigCactusLabs/tap` | CLI and MCP under the current preparation policy; no UI/watch extras | [README](../../README.md#-install) |
+| A Homebrew-managed CLI and MCP server | `BigCactusLabs/tap` | CLI, plus the MCP server for 0.4.7+; no UI/watch extras | [README](../../README.md#-install) |
 | Drag-and-drop and Inbox/Cabinet | `dead-letter[ui]` | Local UI, API, and watch dependencies | [Quick Start](../../README.md#-quick-start) |
 | Tools in an MCP client | `dead-letter[mcp]` via `uvx` or pipx | Local stdio server and its MCP tools | [Agent install guide](../../llms-install.md) |
 | Claude Desktop extension | Release `.mcpb` plus its checksum | Managed uv launcher with an exact package pin | [MCP setup](../../README.md#-mcp-server) |
@@ -18,13 +18,10 @@ second email converter.
 | Container-isolated MCP | GHCR version or digest | Non-root stdio server; explicit input/output mounts | [Containers](containers.md) |
 | A portable task skill | `skills/dead-letter/` | Instructions for an existing MCP server or CLI | [Agent Discovery](agent-discovery.md) |
 
-Normal installs do not require Docker. Homebrew preparation includes core MCP
-dependencies and retains
-`dead-letter-mcp`; optional UI/watch dependencies remain excluded. Adoption
-requires a separate maintainer tap update; source tooling is not proof that
-the published formula includes MCP. Installing a skill does
-not install the Claude plugin; installing the plugin does not install the
-portable skill.
+Normal installs do not require Docker. Homebrew formulas for 0.4.7 and later
+include the MCP server; optional UI/watch dependencies are not included.
+Installing a skill does not install the Claude plugin; installing the plugin
+does not install the portable skill.
 
 The CLI and Python API routes above can also convert a Gmail Takeout `.mbox`
 export, not only `.eml` files or folders; see

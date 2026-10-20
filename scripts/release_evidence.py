@@ -213,7 +213,7 @@ def normalized(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def formula(text: str, *, allow_legacy_mcp_removal: bool = False) -> dict:
+def formula(text: str) -> dict:
     """Read this tap's simple literal Ruby layout without ever executing Ruby."""
     if not text.startswith("class DeadLetter < Formula\n"):
         raise Unavailable("unrecognized formula class/layout")
@@ -239,7 +239,8 @@ def formula(text: str, *, allow_legacy_mcp_removal: bool = False) -> dict:
     names = [r["name"] for r in resources]
     if len(set(names)) != len(names) or set(names) & (OPTIONAL | {"dead-letter"}):
         raise Conflict("duplicate resources or non-core packages in formula")
-    if not allow_legacy_mcp_removal and 'rm bin/"dead-letter-mcp"' in text:
+    # MCP became a core dependency in 0.4.7; older tap releases may remove it.
+    if tuple(map(int, version.split("."))) >= (0, 4, 7) and 'rm bin/"dead-letter-mcp"' in text:
         raise Conflict("formula must retain the core MCP entrypoint")
     if 'rm bin/"dead-letter-ui"' not in text:
         raise Conflict("formula must remove the optional UI entrypoint")

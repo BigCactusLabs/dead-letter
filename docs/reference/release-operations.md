@@ -168,8 +168,9 @@ It asks Homebrew to regenerate resources. When the bump leaves the resource
 blocks unchanged, it invokes the dedicated resource updater explicitly.
 The core graph includes MCP and its dependencies since 0.4.7. Preparation
 removes the old `rm bin/"dead-letter-mcp"` line, while preserving removal of
-`dead-letter-ui`. Evidence checks reject MCP removal and optional-only resources
-such as FastAPI and watchfiles. `uvicorn` is core through MCP; its `standard`
+`dead-letter-ui`. Evidence checks allow MCP removal for versions before 0.4.7,
+reject it for 0.4.7 and later, and reject optional-only resources such as FastAPI
+and watchfiles. `uvicorn` is core through MCP; its `standard`
 extra remains optional. The locked MCP graph uses `httpx2`, while `httpx` is
 still a UI extra.
 

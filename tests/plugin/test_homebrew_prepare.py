@@ -26,7 +26,7 @@ SDIST = {"url": BASE_URL + f"dead_letter-{VERSION}.tar.gz", "digests": {"sha256"
          "upload_time_iso_8601": (NOW - timedelta(days=2)).isoformat()}
 TEXT = f'''class DeadLetter < Formula
   include Language::Python::Virtualenv
-  url "{BASE_URL}dead_letter-1.2.2.tar.gz"
+  url "{BASE_URL}dead_letter-0.4.5.tar.gz"
   sha256 "{'a' * 64}"
   depends_on arch: :arm64
   depends_on "python@3.14"
@@ -94,7 +94,7 @@ class HomebrewTests(unittest.TestCase):
         if command[:2] == ["brew", "--prefix"]:
             return str(self.root / "python-prefix")
         if command[:2] == ["brew", "bump-formula-pr"]:
-            text = TEXT.replace("dead_letter-1.2.2.tar.gz", f"dead_letter-{VERSION}.tar.gz").replace('  sha256 "' + "a" * 64, '  sha256 "' + "b" * 64)
+            text = TEXT.replace("dead_letter-0.4.5.tar.gz", f"dead_letter-{VERSION}.tar.gz").replace('  sha256 "' + "a" * 64, '  sha256 "' + "b" * 64)
             if not self.fallback:
                 text = text.replace(WHEEL, "six-1.17.0.tar.gz")
             if self.change_install:
@@ -337,7 +337,7 @@ class HomebrewTests(unittest.TestCase):
         self.assertTrue((self.tap / "unexpected.txt").exists())
 
     def test_same_version_and_review_directory_reuse_refused(self):
-        self.path.write_text(TEXT.replace("dead_letter-1.2.2.tar.gz", f"dead_letter-{VERSION}.tar.gz"))
+        self.path.write_text(h.retain_mcp(TEXT.replace("dead_letter-0.4.5.tar.gz", f"dead_letter-{VERSION}.tar.gz")))
         subprocess.run(["git", "commit", "-am", "synthetic same version"], cwd=self.tap, check=True, capture_output=True)
         with self.assertRaisesRegex(ValueError, "newer"):
             self.prepare()

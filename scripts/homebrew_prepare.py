@@ -216,7 +216,7 @@ def prepare_tap(tap: Path, output: Path, recipe: dict, *, client: Client) -> dic
         raise ValueError("--tap must match the installed BigCactusLabs/tap checkout")
     path = tap / FORMULA
     before = path.read_text(encoding="utf-8")
-    old = formula(before, allow_legacy_mcp_removal=True)
+    old = formula(before)
     if tuple(map(int, version.split("."))) <= tuple(map(int, old["version"].split("."))):
         raise ValueError("target must be newer than the tap; no same-version rewrite or rollback")
     if not all(i["url"].endswith(".whl") for i in old["resources"]):
