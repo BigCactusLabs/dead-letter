@@ -24,6 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     instead of being dropped as quoted history.
   - Structured output no longer ends `-----Original Message-----` replies
     with a section that holds only the separator line.
+  - Forwarded header blocks with localized labels (French, German, Spanish,
+    Italian, Portuguese, Dutch, Japanese and Chinese, for example `De :`,
+    `Von:`, `Betreff:`, `差出人:`, `发件人：`) now give `## Forwarded from …`
+    headings in structured mode instead of `## Forwarded message`, and
+    plain-text forwards whose first header uses a full-width colon (Chinese
+    Gmail) are detected. Apple Mail's Japanese `転送されたメッセージ:`
+    introduction is recognized.
+  - Yahoo (`yahoo_quoted`, including the `ydp<hex>` prefix) and Proton
+    (`protonmail_quote`) wrappers are told apart as forward or reply by
+    their first line, and `x_`-prefixed Gmail classes from Outlook on the
+    web match like the unprefixed ones.
 
 ### Changed
 
