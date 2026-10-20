@@ -849,6 +849,165 @@ def main() -> int:
 
             OLD REPLY HISTORY LINE
         """,
+        "plain_thunderbird_forward_french.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Planning
+            Date: Thu, 05 Mar 2026 14:00:00 +0000
+            Message-ID: <plain-thunderbird-french-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Voir ci-dessous.
+
+            -------- Message transféré --------
+            Sujet : \tPlanning
+            Date : \tmer. 4 mars 2026 09:00:00 +0100
+            De : \tClaire <claire@example.fr>
+            Pour : \tAlice <alice@example.com>
+            Copie à : \tDenis <denis@example.fr>
+
+            THUNDERBIRD FRENCH BODY
+        """,
+        "plain_apple_forward_dutch.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Rooster
+            Date: Thu, 05 Mar 2026 14:05:00 +0000
+            Message-ID: <plain-apple-dutch-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Zie hieronder.
+
+            > Begin doorgestuurd bericht:
+            >
+            > Van: Daan <daan@example.nl>
+            > Onderwerp: Rooster
+            > Datum: 4 maart 2026 om 09:00:00 CET
+            > Aan: alice@example.com
+            >
+            > APPLE DUTCH BODY
+        """,
+        "plain_apple_forward_japanese.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Schedule
+            Date: Thu, 05 Mar 2026 14:10:00 +0000
+            Message-ID: <plain-apple-japanese-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            See below.
+
+            > 転送されたメッセージ:
+            >
+            > 差出人: Kenji <kenji@example.jp>
+            > 件名: Schedule
+            > 日時: 2026年3月4日 9:00:00 JST
+            > 宛先: alice@example.com
+            >
+            > APPLE JAPANESE BODY
+        """,
+        "plain_gmail_forward_chinese.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Report
+            Date: Thu, 05 Mar 2026 14:15:00 +0000
+            Message-ID: <plain-gmail-chinese-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            FYI
+
+            ---------- Forwarded message ---------
+            发件人： Wei <wei@example.cn>
+            Date: 2026年3月4日周三 09:00
+            Subject: Report
+            To: <alice@example.com>
+
+            GMAIL CHINESE BODY
+        """,
+        "yahoo_forward.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fw: Invoice
+            Date: Thu, 05 Mar 2026 14:20:00 +0000
+            Message-ID: <yahoo-forward-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <html><body><div class="yahoo-style-wrap"><div dir="ltr">Invoice below.</div></div>
+            <div id="ydp1a2b3c4dyahoo_quoted_1234567890" class="ydp1a2b3c4dyahoo_quoted">
+            <div style="font-family:Helvetica, Arial, sans-serif;font-size:13px;">
+            <div>----- Forwarded Message -----</div>
+            <div><b>From:</b> Vendor &lt;vendor@example.net&gt;</div><div><b>To:</b> Alice &lt;alice@example.com&gt;</div>
+            <div><b>Sent:</b> Wednesday, March 4, 2026 at 09:00:00 AM PST</div><div><b>Subject:</b> Invoice</div><div><br></div>
+            <div><div id="ydp1a2b3c4dyiv0000000001">YAHOO FORWARDED BODY</div></div></div></div></body></html>
+        """,
+        "yahoo_reply.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Re: Invoice
+            Date: Thu, 05 Mar 2026 14:25:00 +0000
+            Message-ID: <yahoo-reply-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <html><body><div class="yahoo-style-wrap"><div dir="ltr">Thanks, paid.</div></div>
+            <div id="ydp5e6f7a8byahoo_quoted_0987654321" class="ydp5e6f7a8byahoo_quoted">
+            <div style="font-family:Helvetica, Arial, sans-serif;font-size:13px;">
+            <div>On Wednesday, March 4, 2026 at 09:00:00 AM PST, Bob &lt;bob@example.com&gt; wrote:</div>
+            <div><br></div><div><br></div>
+            <div><div id="ydp5e6f7a8byiv0000000002">YAHOO QUOTED REPLY</div></div></div></div></body></html>
+        """,
+        "proton_forward.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Minutes
+            Date: Thu, 05 Mar 2026 14:30:00 +0000
+            Message-ID: <proton-forward-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div>Minutes below.</div><div class="protonmail_quote"><br>
+            ------- Forwarded Message -------<br>
+            De : Erin &lt;erin@example.fr&gt;<br>
+            Date : mercredi 4 mars 2026 à 09:00<br>
+            Objet : Minutes<br>
+            À : Alice &lt;alice@example.com&gt;<br>
+            <br>
+            <blockquote class="protonmail_quote" type="cite"><div>PROTON FORWARDED BODY</div></blockquote><br>
+            </div>
+        """,
+        "proton_reply.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Re: Minutes
+            Date: Thu, 05 Mar 2026 14:35:00 +0000
+            Message-ID: <proton-reply-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div>Sounds good.</div><div class="protonmail_quote"><br>
+            On Wednesday, March 4th, 2026 at 09:00, Erin &lt;erin@example.com&gt; wrote:<br>
+            <blockquote class="protonmail_quote" type="cite"><div>PROTON QUOTED REPLY</div></blockquote><br>
+            </div>
+        """,
+        "owa_gmail_forward.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: FW: Fwd: Budget
+            Date: Thu, 05 Mar 2026 14:40:00 +0000
+            Message-ID: <owa-gmail-forward-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div>See the Gmail forward below.</div><div class="x_gmail_quote x_gmail_quote_container"><div dir="ltr" class="x_gmail_attr">---------- Forwarded message ---------<br>
+            From: <strong class="x_gmail_sendername" dir="auto">Dave</strong> <span dir="auto">&lt;dave@example.com&gt;</span><br>
+            Date: Wed, Mar 4, 2026 at 10:00 AM<br>Subject: Budget<br>To: &lt;alice@example.com&gt;<br></div><br><br>
+            <div dir="ltr">OWA PREFIXED FORWARD BODY</div></div>
+        """,
     }
 
     for name, content in fixtures.items():

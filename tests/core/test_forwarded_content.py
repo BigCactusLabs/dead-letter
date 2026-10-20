@@ -514,10 +514,13 @@ def test_french_gmail_forward_detected_structurally(tmp_path: Path) -> None:
     _positions(latest, ["Pour info.", MARKER_LINE, "De : **Expéditeur**", "Le programme du stage est joint."])
     assert "thread_messages: 1" in front
     assert "Forwarded message ---" not in structured
-    # The localized From label is not parsed, so the header lines stay as text.
+    # The localized From label ("De :") is parsed into the heading.
+    assert "De :" not in structured
     _positions(
         structured,
-        ["Pour info.", "## Forwarded message", "De : **Expéditeur**", "Le programme du stage est joint."],
+        ["Pour info.",
+         "## Forwarded from Expéditeur &lt;sender@example.fr&gt; (jeu. 5 mars 2026 à 08:00) — Stage",
+         "To: Alice", "Le programme du stage est joint."],
     )
 
 
@@ -754,6 +757,144 @@ def test_original_message_reply_has_no_separator_only_section(tmp_path: Path) ->
         structured,
         ["Thanks, see you then.", "## From Bob &lt;bob@example.com&gt;", "OLD REPLY HISTORY LINE"],
     )
+
+
+# --- Localized labels and other clients (issue #193 phase 2) -----------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("De : **Expéditeur** <s@example.fr>\nDate: jeu.\nSubject: Stage\n\nBody",
+         {"from": "Expéditeur <s@example.fr>", "date": "jeu.", "subject": "Stage"}),
+        ("De : Claire\nObjet : Plan\n\nBody", {"from": "Claire", "subject": "Plan"}),
+        ("Von: Bob\nGesendet: Mittwoch\nAn: Alice\nBetreff: Plan\n\nText",
+         {"from": "Bob", "date": "Mittwoch", "subject": "Plan"}),
+        ("Mittente: Gino\nData: mer\nOggetto: Piano\nA: Alice\n\nTesto",
+         {"from": "Gino", "date": "mer", "subject": "Piano"}),
+        ("De: Ana\nFecha: miércoles\nAsunto: Plan\nPara: Alice\n\nTexto",
+         {"from": "Ana", "date": "miércoles", "subject": "Plan"}),
+        ("De: João\nEnviado: quarta\nAssunto: Plano\nPara: Alice\n\nTexto",
+         {"from": "João", "date": "quarta", "subject": "Plano"}),
+        ("发件人：Wei\n日期：2026年3月4日\n主题：报告\n收件人：Alice\n\n正文",
+         {"from": "Wei", "date": "2026年3月4日", "subject": "报告"}),
+        ("差出人: Kenji\n送信日時: 2026年3月4日\n宛先: Alice\n件名: 予定\n\n本文",
+         {"from": "Kenji", "date": "2026年3月4日", "subject": "予定"}),
+    ],
+)
+def test_localized_forward_header_labels_parse(text: str, expected: dict[str, str]) -> None:
+    parsed = parse_forward_headers(text)
+    assert parsed is not None
+    fields, rest = parsed
+    assert fields == expected
+    # To/Cc lines stay in the forwarded content.
+    for line in text.split("\n\n", 1)[0].splitlines():
+        if line.split(":")[0].split("：")[0].strip() in {"An", "A", "Para", "收件人", "宛先"}:
+            assert line in rest
+
+
+@pytest.mark.parametrize(
+    ("name", "heading", "kept", "body"),
+    [
+        ("plain_thunderbird_forward_french.eml",
+         "## Forwarded from Claire &lt;claire@example.fr&gt; (mer. 4 mars 2026 09:00:00 +0100) — Planning",
+         "Copie à :", "THUNDERBIRD FRENCH BODY"),
+        ("plain_apple_forward_dutch.eml",
+         "## Forwarded from Daan &lt;daan@example.nl&gt; (4 maart 2026 om 09:00:00 CET) — Rooster",
+         "Aan: alice@example.com", "APPLE DUTCH BODY"),
+        ("plain_apple_forward_japanese.eml",
+         "## Forwarded from Kenji &lt;kenji@example.jp&gt; (2026年3月4日 9:00:00 JST) — Schedule",
+         "宛先: alice@example.com", "APPLE JAPANESE BODY"),
+        ("plain_gmail_forward_chinese.eml",
+         "## Forwarded from Wei &lt;wei@example.cn&gt; (2026年3月4日周三 09:00) — Report",
+         "To: &lt;alice@example.com&gt;", "GMAIL CHINESE BODY"),
+    ],
+)
+def test_localized_plain_forwards_get_parsed_headings(
+    name: str, heading: str, kept: str, body: str, tmp_path: Path
+) -> None:
+    _, latest = _body(name, tmp_path)
+    front, structured = _body(name, tmp_path, thread_mode="structured")
+
+    assert body in latest
+    assert "thread_messages: 1" in front
+    assert "## Forwarded message" not in structured
+    _positions(structured, [heading, kept, body])
+
+
+def test_fullwidth_colon_header_line_follows_separator() -> None:
+    text = f"FYI\n\n{MARKER_LINE}\n发件人： Wei <wei@example.cn>\nSubject: Report\n\nBody"
+    zones = segment_text_conversation(text).zones
+    assert [zone.kind for zone in zones] == [
+        ZoneKind.BODY, ZoneKind.FORWARD_HEADER, ZoneKind.FORWARDED_BODY,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("name", "note", "heading", "body"),
+    [
+        ("yahoo_forward.eml", "Invoice below.",
+         "## Forwarded from Vendor &lt;vendor@example.net&gt; "
+         "(Wednesday, March 4, 2026 at 09:00:00 AM PST) — Invoice",
+         "YAHOO FORWARDED BODY"),
+        ("proton_forward.eml", "Minutes below.",
+         "## Forwarded from Erin &lt;erin@example.fr&gt; (mercredi 4 mars 2026 à 09:00) — Minutes",
+         "PROTON FORWARDED BODY"),
+        ("owa_gmail_forward.eml", "See the Gmail forward below.",
+         "## Forwarded from Dave &lt;dave@example.com&gt; (Wed, Mar 4, 2026 at 10:00 AM) — Budget",
+         "OWA PREFIXED FORWARD BODY"),
+    ],
+)
+def test_yahoo_proton_and_owa_prefixed_forwards(
+    name: str, note: str, heading: str, body: str, tmp_path: Path
+) -> None:
+    _, latest = _body(name, tmp_path)
+    front, structured = _body(name, tmp_path, thread_mode="structured")
+
+    _positions(latest, [note, "Forwarded Message" if "owa" not in name else MARKER_LINE, body])
+    assert "thread_messages: 1" in front
+    _positions(structured, [note, heading, body])
+
+
+@pytest.mark.parametrize(
+    ("name", "note", "quoted"),
+    [
+        ("yahoo_reply.eml", "Thanks, paid.", "YAHOO QUOTED REPLY"),
+        ("proton_reply.eml", "Sounds good.", "PROTON QUOTED REPLY"),
+    ],
+)
+def test_yahoo_and_proton_replies_stay_reply_history(
+    name: str, note: str, quoted: str, tmp_path: Path
+) -> None:
+    _, latest = _body(name, tmp_path)
+    front, structured = _body(name, tmp_path, thread_mode="structured")
+
+    assert note in latest
+    assert quoted not in latest
+    assert "## Forwarded" not in structured
+    assert "thread_messages: 1" in front
+    _positions(structured, [note, quoted])
+
+
+def test_yahoo_and_proton_wrappers_classified_by_first_line() -> None:
+    sep = "----- Forwarded Message -----"
+    yahoo = '<div>Note.</div><div class="ydp0abc12yahoo_quoted"><div><div>{}</div><div>Old.</div></div></div>'
+    proton = '<div>Note.</div><div class="protonmail_quote"><br>{}<br><blockquote class="protonmail_quote">Old.</blockquote></div>'
+    for template in (yahoo, proton):
+        assert _kinds(template.format(sep)) == [ZoneKind.BODY, ZoneKind.FORWARDED_BODY]
+        assert _kinds(template.format("Bob schrieb am Mittwoch:")) == [ZoneKind.BODY, ZoneKind.QUOTED]
+        # Neither a separator nor an attribution: not a quote boundary, content kept.
+        assert _kinds(template.format("Plain words")) == [ZoneKind.BODY]
+    # The prefixed Yahoo class is matched as a whole token only.
+    assert _kinds(yahoo.replace("yahoo_quoted", "yahoo_quoted_extra").format(sep)) == [ZoneKind.BODY]
+
+
+def test_owa_prefixed_gmail_reply_is_reply() -> None:
+    html = (
+        '<div>Note.</div><div class="x_gmail_quote"><div class="x_gmail_attr">On Mon, Bob wrote:<br></div>'
+        '<blockquote class="x_gmail_quote">Old.</blockquote></div>'
+    )
+    assert _kinds(html) == [ZoneKind.BODY, ZoneKind.QUOTED]
 
 
 # --- Byte identity for output that must not change ---------------------------

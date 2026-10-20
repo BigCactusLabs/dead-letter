@@ -48,8 +48,11 @@ def _wrap_node_html(node, inner_html: str) -> str:
 
 
 def _class_tokens(node) -> set[str]:
+    """Class tokens of ``node``, plus each ``x_``-prefixed token without the
+    prefix (Outlook on the web prefixes the classes of mail it quotes)."""
     class_attr = node.attributes.get("class", "") or ""
-    return set(class_attr.split())
+    tokens = set(class_attr.split())
+    return tokens | {token[2:] for token in tokens if token.startswith("x_")}
 
 
 def _iter_nodes_in_document_order(node):
@@ -166,12 +169,34 @@ def _first_text_line(node) -> str:
     return _WHITESPACE_RE.sub(" ", "".join(parts).replace(" ", " ")).strip()
 
 
+# Yahoo's quote wrapper class, bare or behind the ``ydp<hex>`` prefix that
+# current Yahoo Mail adds.
+_YAHOO_QUOTED_RE = re.compile(r"(?:ydp[0-9a-f]+)?yahoo_quoted")
+
+
+def _first_line_is_forward_or_reply(node) -> bool:
+    """True when ``node``'s first text line is a forward separator or a reply
+    attribution ending in ``:``/``：``."""
+    line = _first_text_line(node)
+    return is_forward_marker_line(line) or line.endswith((":", "\uff1a"))
+
+
 def _quote_match(node) -> tuple[str, str] | None:
     classes = _class_tokens(node)
     if "gmail_quote" in classes:
         if _is_gmail_body_wrapper(node):
             return None
         return "gmail", "gmail_quote"
+    # Yahoo and Proton use one wrapper for replies and forwards; only a
+    # wrapper that opens with a separator or an attribution is a boundary.
+    if node.tag == "div" and any(_YAHOO_QUOTED_RE.fullmatch(token) for token in classes):
+        if _first_line_is_forward_or_reply(node):
+            return "yahoo", "yahoo_quoted"
+        return None
+    if node.tag == "div" and "protonmail_quote" in classes:
+        if _first_line_is_forward_or_reply(node):
+            return "proton", "protonmail_quote"
+        return None
     if node.attributes.get("id") == "divRplyFwdMsg":
         return "outlook", "outlook_divRplyFwdMsg"
     if node.tag == "blockquote" and "front-blockquote" in classes:
@@ -244,8 +269,23 @@ def _is_forward_block(node) -> bool:
     return is_forward_marker_line(_leading_text_line(node))
 
 
+def _is_forward_quote(node, hint: str) -> bool:
+    """Classify a matched quote wrapper as a forwarded message.
+
+    Gmail uses ``_is_forward_block``. Yahoo and Proton wrappers are forwards
+    when their first text line is a forward separator; Proton forwards also
+    contain a blockquote, so the blockquote rule does not apply to them.
+    """
+    if hint == "gmail":
+        return _is_forward_block(node)
+    if hint in ("yahoo", "proton"):
+        return is_forward_marker_line(_first_text_line(node))
+    return False
+
+
 def _collect_forward_blocks(root) -> tuple[list, bool]:
-    """Return Gmail forward blocks in document order, outermost first.
+    """Return Gmail, Yahoo and Proton forward blocks in document order,
+    outermost first.
 
     Collection stops at the first quote boundary outside a forward that is not
     itself a forward, so reply history keeps today's single-boundary handling.
@@ -261,7 +301,7 @@ def _collect_forward_blocks(root) -> tuple[list, bool]:
             stack.append((node.next, in_forward))
         match = _quote_match(node)
         if match is not None:
-            if match[0] == "gmail" and _is_forward_block(node):
+            if _is_forward_quote(node, match[0]):
                 forwards.append(node)
                 if len(forwards) >= _MAX_FORWARD_BLOCKS:
                     return forwards, True
@@ -276,11 +316,14 @@ def _collect_forward_blocks(root) -> tuple[list, bool]:
     return forwards, False
 
 
-def _extract_forward_blocks(tree: LexborHTMLParser) -> tuple[list[str], bool]:
+def _extract_forward_blocks(tree: LexborHTMLParser) -> tuple[list[str], bool, list[str]]:
+    """Return forward fragments, the cap flag, and the client hint of each
+    collected forward in document order."""
     root = tree.body or tree.css_first("html")
     if root is None:
-        return [], False
+        return [], False, []
     forwards, capped = _collect_forward_blocks(root)
+    hints = [match[0] for match in map(_quote_match, forwards) if match is not None]
     fragments: list[str] = []
     # Innermost/last first, so each captured block excludes the nested
     # forwards already removed from it.
@@ -294,7 +337,7 @@ def _extract_forward_blocks(tree: LexborHTMLParser) -> tuple[list[str], bool]:
             node.decompose()
         fragments.append(fragment)
     fragments.reverse()
-    return [fragment for fragment in fragments if fragment], capped
+    return [fragment for fragment in fragments if fragment], capped, hints
 
 
 def _find_first_quote_boundary(tree: LexborHTMLParser):
@@ -392,15 +435,21 @@ def segment_html_conversation(html: str, *, client_hint: str | None = None) -> C
     zones: list[ConversationZone] = []
     rules_triggered: list[str] = []
 
-    forwarded_blocks, capped = _extract_forward_blocks(tree)
+    forwarded_blocks, capped, forward_hints = _extract_forward_blocks(tree)
     if forwarded_blocks:
-        rules_triggered.append("gmail_forward")
+        rules_triggered.extend(dict.fromkeys(f"{hint}_forward" for hint in forward_hints))
 
     quote_node, detected_hint, detected_rule = _find_first_quote_boundary(tree)
-    if capped and quote_node is not None and detected_hint == "gmail" and _is_forward_block(quote_node):
+    if (
+        capped
+        and quote_node is not None
+        and detected_hint is not None
+        and _is_forward_quote(quote_node, detected_hint)
+    ):
         # An uncollected forward past the cap is content, never reply history.
         quote_node, detected_hint, detected_rule = None, None, None
-    resolved_hint = detected_hint or ("gmail" if forwarded_blocks else None) or client_hint
+    forward_hint = forward_hints[0] if forward_hints else None
+    resolved_hint = detected_hint or (forward_hint if forwarded_blocks else None) or client_hint
     if detected_rule is not None:
         rules_triggered.append(detected_rule)
 
