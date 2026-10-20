@@ -49,7 +49,7 @@ archived manifest is a conflict.
 | GHCR | Anonymous pull-token/index GET; manifest bytes versus digest header; recorded index digest; amd64 and arm64 platform entries |
 | MCP Registry | Exact version endpoint, active record, complete package records versus the checksummed archived manifest; never `latest` |
 | Plugin marketplace | Snapshot of marketplace `main`, plugin manifest, exact runtime pin, peeled plugin tag, and compatibility `release` branch; runtime package exists on PyPI |
-| Homebrew | Snapshot of tap `main`, literal core-only formula metadata, sdist URL/hash versus PyPI and original build evidence |
+| Homebrew | Snapshot of tap `main`, literal CLI/MCP formula metadata, sdist URL/hash versus PyPI and original build evidence |
 
 Status is a metadata and checksum reconciliation, **not** a fresh installation,
 GUI test, image-layer pull, or replay of release CI. Sidecars establish internal
@@ -109,7 +109,7 @@ timeout, DNS failure, or invalid JSON is never inferred to mean missing.
 
 ## Prepare a Homebrew update
 
-The tap remains **manual, core-only, and Apple-silicon-specific**. Preparation is
+The tap remains **manual and Apple-silicon-specific**. Preparation is
 not publication. Existing Python, architecture, installer, and test logic must
 survive resource regeneration. A valid new release and original build checksums
 are prerequisites; this helper does not backfill evidence for historical builds.
@@ -125,9 +125,16 @@ python scripts/release.py homebrew-prepare \
 
 The plan uses PyPI's exact released sdist URL/hash only after cross-checking the
 complete published wheel/sdist pair against the original build. It prints argv
-arrays for `brew bump-formula-pr --write-only --python-package-name=dead-letter`
+arrays for `brew bump-formula-pr --write-only --no-audit --python-package-name=dead-letter`
 and the `brew update-python-resources --package-name=dead-letter` fallback.
 It never passes `--commit`, extras, or an ignore-errors option to Homebrew.
+`--no-audit` is needed because Homebrew 7 audits the intermediate formula, whose
+sdist resources and explicit `version` line fail audit before the helper swaps
+in wheels (observed with Homebrew 7.0.7 on September 30, 2026). The final
+formula still goes through `brew style` and the native install checklist.
+When the formula has a `pyyaml` resource, the helper adds `depends_on "libyaml"`
+because Homebrew's `ResourceRequiresDependencies` style cop requires it, even
+though the PyYAML wheel bundles libyaml.
 
 Homebrew's Python resource resolver excludes PyPI uploads from the last
 24 hours (`--uploaded-prior-to=P1D`). The plan remains available during this
@@ -159,6 +166,13 @@ python scripts/release.py homebrew-prepare \
 same-version rewrites, rollbacks, symlinked formulas, and reused review directories.
 It asks Homebrew to regenerate resources. When the bump leaves the resource
 blocks unchanged, it invokes the dedicated resource updater explicitly.
+The core graph includes MCP and its dependencies since 0.4.7. Preparation
+removes the old `rm bin/"dead-letter-mcp"` line, while preserving removal of
+`dead-letter-ui`. Evidence checks allow MCP removal for versions before 0.4.7,
+reject it for 0.4.7 and later, and reject optional-only resources such as FastAPI
+and watchfiles. `uvicorn` is core through MCP; its `standard`
+extra remains optional. The locked MCP graph uses `httpx2`, while `httpx` is
+still a UI extra.
 
 Homebrew commonly emits source archives. The existing tap deliberately uses
 wheels, including native binaries: blindly replacing them with sdists would
@@ -174,7 +188,7 @@ review files: `formula.patch`, `preparation.json`, and `pr-body.md`. The packet
 records the base commit and patch/formula SHA-256. `brew style` runs, but package
 installation, conversion, and `brew test` are **not** claimed. Failure restores
 only the known formula output when it still matches this invocation's recorded
-state; unrelated or concurrent edits are left for inspection. Inspect the tap
+state, including output a Homebrew command wrote before exiting nonzero; unrelated or concurrent edits are left for inspection. Inspect the tap
 and any partial review packet before rerunning.
 For a failed public `brew` command, the error includes the final nonempty stderr
 line, with known credential values and common token patterns redacted, control
@@ -201,7 +215,8 @@ release/tag command, or tap-main update is used. If commit/push/PR creation fail
 partway, inspect which write succeeded; do not blindly rerun or reset history.
 
 The PR checklist leaves native source installation, `brew test`, synthetic email
-conversion/source preservation, and absence of optional entrypoints unchecked.
+conversion/source preservation, MCP `initialize`/`tools/list`, and
+absence of the optional UI entrypoint unchecked.
 Merge remains a maintainer action. Status reports a different valid tap version
 as deferred until its main-branch formula adopts the requested package.
 

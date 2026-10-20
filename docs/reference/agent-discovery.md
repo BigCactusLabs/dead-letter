@@ -190,7 +190,10 @@ identifier and `application/ai-skill` media type, not ARD's `urn:air:` scheme:
 ```
 
 This shape matches the required fields in the catalog's `CONTRIBUTING.md` at
-[`666cf8a`](https://github.com/github/agentfinder-catalog/blob/666cf8a51e2329d577e73d6e3c00fa5eae55ce2c/CONTRIBUTING.md).
+[`666cf8a`](https://github.com/github/agentfinder-catalog/blob/666cf8a51e2329d577e73d6e3c00fa5eae55ce2c/CONTRIBUTING.md)
+and still passes the generator and `--check` at
+[`abb4a13`](https://github.com/github/agentfinder-catalog/tree/abb4a13e3c27e46e66ee6a103cc3ca2ae370cbd8)
+(September 30, 2026).
 The catalog's generator enforces fewer fields than that guide, so a generator
 pass is not proof of a complete entry. In a fork of that catalog, add
 `catalog/bigcactuslabs/dead-letter.json`, check it with `python -m json.tool`,

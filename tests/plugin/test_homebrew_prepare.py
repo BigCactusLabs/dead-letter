@@ -26,7 +26,7 @@ SDIST = {"url": BASE_URL + f"dead_letter-{VERSION}.tar.gz", "digests": {"sha256"
          "upload_time_iso_8601": (NOW - timedelta(days=2)).isoformat()}
 TEXT = f'''class DeadLetter < Formula
   include Language::Python::Virtualenv
-  url "{BASE_URL}dead_letter-1.2.2.tar.gz"
+  url "{BASE_URL}dead_letter-0.4.5.tar.gz"
   sha256 "{'a' * 64}"
   depends_on arch: :arm64
   depends_on "python@3.14"
@@ -85,6 +85,7 @@ class HomebrewTests(unittest.TestCase):
         self.fail_style = False
         self.extra_file = False
         self.change_install = False
+        self.fail_bump_after_write = False
 
     def fake_run(self, command, *, cwd, public=True):
         self.calls.append((command, public))
@@ -93,7 +94,7 @@ class HomebrewTests(unittest.TestCase):
         if command[:2] == ["brew", "--prefix"]:
             return str(self.root / "python-prefix")
         if command[:2] == ["brew", "bump-formula-pr"]:
-            text = TEXT.replace("dead_letter-1.2.2.tar.gz", f"dead_letter-{VERSION}.tar.gz").replace('  sha256 "' + "a" * 64, '  sha256 "' + "b" * 64)
+            text = TEXT.replace("dead_letter-0.4.5.tar.gz", f"dead_letter-{VERSION}.tar.gz").replace('  sha256 "' + "a" * 64, '  sha256 "' + "b" * 64)
             if not self.fallback:
                 text = text.replace(WHEEL, "six-1.17.0.tar.gz")
             if self.change_install:
@@ -101,6 +102,8 @@ class HomebrewTests(unittest.TestCase):
             self.path.write_text(text)
             if self.extra_file:
                 (self.tap / "unexpected.txt").write_text("do not delete")
+            if self.fail_bump_after_write:
+                raise Unavailable("release check: brew bump-formula-pr failed (exit 1): Error: `brew audit` failed for dead-letter!")
             return ""
         if command[:2] == ["brew", "update-python-resources"]:
             self.path.write_text(self.path.read_text().replace(WHEEL, "six-1.17.0.tar.gz"))
@@ -143,6 +146,9 @@ class HomebrewTests(unittest.TestCase):
         self.assertIn("--python-package-name=dead-letter", recipe["commands"]["bump"])
         self.assertIn("--package-name=dead-letter", recipe["commands"]["fallback"])
         self.assertNotIn("--commit", recipe["commands"]["bump"])
+        # Homebrew 7 audits the intermediate sdist formula; the wheel layout is
+        # checked afterward by brew style and the native install checklist.
+        self.assertIn("--no-audit", recipe["commands"]["bump"])
         self.assertNotIn("--python-extra-packages", json.dumps(recipe))
         self.assertEqual(recipe["sdist_upload_time_utc"], "2026-09-19T16:00:00Z")
         self.assertEqual(recipe["homebrew_earliest_prepare_utc"], "2026-09-20T16:00:00Z")
@@ -253,7 +259,9 @@ class HomebrewTests(unittest.TestCase):
         data = formula(self.path.read_text())
         self.assertEqual(data["version"], VERSION)
         self.assertTrue(data["resources"][0]["url"].endswith(".whl"))
-        self.assertEqual(h.skeleton(self.path.read_text()), h.skeleton(TEXT))
+        self.assertTrue(h.same_contract(TEXT, self.path.read_text()))
+        self.assertNotIn('rm bin/"dead-letter-mcp"', self.path.read_text())
+        self.assertIn('rm bin/"dead-letter-ui"', self.path.read_text())
         self.assertEqual(packet["status"], "prepared-not-tested")
         self.assertEqual(packet["diff_sha256"], hashlib.sha256((self.output / "formula.patch").read_bytes()).hexdigest())
         self.assertFalse(any("push" in c or "commit" in c or c[:2] == ["gh", "pr"] for c, _ in self.calls))
@@ -301,6 +309,26 @@ class HomebrewTests(unittest.TestCase):
             self.prepare()
         self.assertEqual(self.path.read_text(), TEXT)
 
+    def test_brew_failure_after_writing_restores_formula(self):
+        self.fail_bump_after_write = True
+        with self.assertRaisesRegex(Unavailable, "brew audit"):
+            self.prepare()
+        self.assertEqual(self.path.read_text(), TEXT)
+        self.assertFalse(self.output.exists())
+
+    def test_pyyaml_resource_gets_libyaml_dependency_once(self):
+        resource = '  resource "pyyaml" do\n    url "https://files.pythonhosted.org/p/pyyaml-6.0.3-cp314-cp314-macosx_11_0_arm64.whl"\n    sha256 "' + "c" * 64 + '"\n  end\n'
+        text = TEXT.replace('  depends_on "python@3.14"\n', '  depends_on "python@3.14"\n\n' + resource, 1)
+        updated = h.require_libyaml(text)
+        self.assertIn('  depends_on "libyaml"\n  depends_on "python@3.14"\n', updated)
+        self.assertEqual(h.require_libyaml(updated), updated)
+        self.assertEqual(h.require_libyaml(TEXT), TEXT)
+        # open-pr also accepts the required MCP entrypoint migration.
+        self.assertTrue(h.same_contract(text, h.retain_mcp(updated)))
+        self.assertTrue(h.same_contract(TEXT, TEXT.replace('    rm bin/"dead-letter-mcp"\n', '')))
+        self.assertFalse(h.same_contract(text, h.retain_mcp(updated.replace('"libyaml"', '"openssl@3"'))))
+        self.assertFalse(h.same_contract(TEXT, h.retain_mcp(TEXT.replace('  depends_on "python', '  depends_on "libyaml"\n  depends_on "python'))))
+
     def test_extra_file_is_not_deleted_or_silently_committed(self):
         self.extra_file = True
         with self.assertRaises(Conflict):
@@ -309,7 +337,7 @@ class HomebrewTests(unittest.TestCase):
         self.assertTrue((self.tap / "unexpected.txt").exists())
 
     def test_same_version_and_review_directory_reuse_refused(self):
-        self.path.write_text(TEXT.replace("dead_letter-1.2.2.tar.gz", f"dead_letter-{VERSION}.tar.gz"))
+        self.path.write_text(h.retain_mcp(TEXT.replace("dead_letter-0.4.5.tar.gz", f"dead_letter-{VERSION}.tar.gz")))
         subprocess.run(["git", "commit", "-am", "synthetic same version"], cwd=self.tap, check=True, capture_output=True)
         with self.assertRaisesRegex(ValueError, "newer"):
             self.prepare()

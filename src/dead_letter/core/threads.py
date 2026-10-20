@@ -19,8 +19,13 @@ def build_zones(
 ) -> ThreadedContent:
     """Split message text into body and quoted zones."""
     opts = options or ConvertOptions()
+    # Latest mode keeps a ``>``-quoted forward only from text/plain bodies:
+    # HTML-derived Apple Mail forwards already pass through the reply parser
+    # intact, and their latest-mode output is fixed.
     result = segment_text_conversation(
-        plain_text, split_forwards=opts.thread_mode is ThreadMode.STRUCTURED,
+        plain_text,
+        split_forwards=opts.thread_mode is ThreadMode.STRUCTURED,
+        quoted_forwards=source_kind == "plain",
     )
     # Label zones with the real source before annotation: forward headings
     # unwrap Markdown emphasis only in HTML-derived text.

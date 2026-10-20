@@ -23,6 +23,7 @@ capability in user-facing docs.
 - `src/dead_letter/backend/` — CLI (`mbox_cli.py` for MBOX, `analysis_cli.py` for `analyze`), FastAPI API, job runner, watch, MCP, doctor
 - `src/dead_letter/frontend/` — static Alpine.js ES modules; no build step
 - `plugin/` — Claude manifest, commands, context skill, exact MCP launcher pin
+  and its locked runtime (`pyproject.toml`, `uv.lock`)
 - `skills/dead-letter/` — portable Agent Skill; keep Claude slash commands and
   Cowork-specific paths in `plugin/skills/`, not here. This root distribution
   directory is not a development auto-load directory.
@@ -78,7 +79,7 @@ uv run pytest -q tests/backend
 uv run pytest -q tests/plugin
 node --test tests/frontend/*.test.js
 node --check src/dead_letter/frontend/static/app.js
-npx --yes @anthropic-ai/claude-code@2.1.145 plugin validate plugin/
+npx --yes @anthropic-ai/claude-code@2.1.295 plugin validate plugin/
 gh skill publish --dry-run
 ```
 
@@ -114,21 +115,28 @@ Advisory only: `uv run ruff check .`, `uv run ruff format --check .`,
 - **Source preservation is explicit.** MCP bundle conversion is copy-only.
   Python `convert_to_bundle()` defaults to move; preservation examples must
   specify `source_handling="copy"`. CLI/UI/Python options are not automatically
-  valid MCP options. Consult the runtime contract before widening a surface.
+  valid MCP options. Widening a surface updates the runtime contract in the
+  same PR.
 - **Version relationships, not universal equality.** `release.py check` is
   the source-of-truth cross-file check. Package, import, editable lock, MCPB,
   registry source pins, and ARD versions agree. Plugin asset version and its
   exact package pin are independent; a reviewed deferral is allowed, a
   floating pin is not. Use `prepare` to preview a synchronization patch, not
   hand-edited version lists duplicated across guides.
-- **Release authority remains explicit.** Development work does not authorize
-  version bumps, tags, publication, or pointer changes. A `vX.Y.Z` tag alone
+- **Release preparation is PR work; publication is not.** A maintainer-opened
+  or maintainer-approved PR whose title names the release (`prepare X.Y.Z`)
+  may bump versions, date the changelog, and update pins; do not flag the bump
+  itself. Other PRs leave versions alone. Pushing tags, publishing a release,
+  and moving the `release` branch or other pointers each need an explicit
+  maintainer go-ahead. A `vX.Y.Z` tag alone
   does not publish PyPI; publishing its stable GitHub release does. A separate
   `plugin-vA.B.C` tag triggers the marketplace and compatibility branch only
   after the pinned package is available. Never move published tags, replace
   release bytes, or advertise a candidate image as an endorsed release.
 - **CHANGELOG.md** follows Keep a Changelog. User-facing behavior changes need
-  an entry; do not fabricate release dates or released status.
+  an entry; do not fabricate release dates or released status. A
+  `prepare X.Y.Z` PR dates the entry with the planned release day; correct the
+  date if the tag lands later.
 
 ## Documentation and conventions
 

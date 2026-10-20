@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+
 from dead_letter.core.image_filter import filter_images
 from dead_letter.core.types import StrippedImageCategory
 
@@ -271,7 +275,24 @@ class TestSignatureLayer3FilenamePatterns:
         html = '<img src="cid:facebook-icon.png" alt="Facebook" />'
         result, stripped = filter_images(html, strip_signature_images=True, strip_tracking_pixels=False)
         assert "<img" not in result
-        assert "filename_pattern:" in stripped[0].reason
+        # Matches both "facebook" and "icon"; the earlier pattern names the reason.
+        assert stripped[0].reason == "filename_pattern:facebook"
+
+    def test_multi_pattern_reason_is_stable_across_hash_seeds(self) -> None:
+        code = (
+            "from dead_letter.core.image_filter import filter_images;"
+            "print(filter_images('<img src=\"cid:facebook-icon.png\" />',"
+            " strip_signature_images=True, strip_tracking_pixels=False)[1][0].reason)"
+        )
+        reasons = {
+            subprocess.run(
+                [sys.executable, "-c", code],
+                env={**os.environ, "PYTHONHASHSEED": seed},
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            for seed in ("0", "1", "2", "3", "4")
+        }
+        assert reasons == {"filename_pattern:facebook"}
 
     def test_linkedin_in_alt(self) -> None:
         html = '<img src="cid:img001" alt="linkedin" />'

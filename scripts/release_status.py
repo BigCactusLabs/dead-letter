@@ -210,10 +210,13 @@ def plugin(client: Client, version: str) -> dict:
     launcher = object_json(client.file(REPO, "plugin/.mcp.json", sha))
     args = launcher["mcpServers"]["dead-letter"]["args"]
     pins = [args[i + 1] for i, arg in enumerate(args[:-1]) if arg == "--from"]
-    if len(pins) != 1 or not isinstance(pins[0], str) or not pins[0].startswith("dead-letter[mcp]=="):
+    # Plugin releases before 0.4.9 pinned the `[mcp]` extra; later ones pin
+    # the bare package so Claude's locked launch accepts them.
+    prefixes = [p for p in ("dead-letter==", "dead-letter[mcp]==") if isinstance(pins[0], str) and pins[0].startswith(p)] if len(pins) == 1 else []
+    if not prefixes:
         raise Conflict("plugin runtime is not exactly pinned")
     try:
-        pin = stable(pins[0].removeprefix("dead-letter[mcp]=="))
+        pin = stable(pins[0].removeprefix(prefixes[0]))
     except ValueError:
         raise Conflict("plugin runtime is not a supported exact stable pin") from None
     try:

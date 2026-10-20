@@ -18,6 +18,14 @@ def test_plugin_manifest_exists_and_parses():
     assert data["homepage"].startswith("https://github.com/BigCactusLabs/dead-letter")
 
 
+def test_manifest_icon_points_at_a_png_inside_the_plugin():
+    data = json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    assert data["icon"].startswith("./"), "plugin paths are relative to the plugin root"
+    icon = (PLUGIN_ROOT / data["icon"]).resolve()
+    assert icon.is_relative_to(PLUGIN_ROOT.resolve()) and icon.is_file(), f"missing icon {icon}"
+    assert icon.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
 def test_mcp_json_exists_and_uses_uvx():
     mcp_path = PLUGIN_ROOT / ".mcp.json"
     assert mcp_path.is_file(), f"missing {mcp_path}"
@@ -63,9 +71,10 @@ def test_mcp_json_pins_exact_dead_letter_version():
     mcp = json.loads((PLUGIN_ROOT / ".mcp.json").read_text())
     args = mcp["mcpServers"]["dead-letter"]["args"]
     from_arg = args[args.index("--from") + 1]
-    match = re.fullmatch(r"dead-letter\[mcp\]==(\d+\.\d+\.\d+(?:[-+.][\w.]+)?)", from_arg)
+    # No extras: Claude's locked launch refuses them; the MCP SDK is core.
+    match = re.fullmatch(r"dead-letter==(\d+\.\d+\.\d+(?:[-+.][\w.]+)?)", from_arg)
     assert match, (
-        f"`--from` argument must be of the form `dead-letter[mcp]==X.Y.Z`, "
+        f"`--from` argument must be of the form `dead-letter==X.Y.Z`, "
         f"got {from_arg!r}. Other pin styles (>=, ~=, unpinned) are not allowed "
         "because they expose users to silent breakage on PyPI release."
     )

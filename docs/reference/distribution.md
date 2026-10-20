@@ -10,7 +10,7 @@ second email converter.
 | You need | Route | What it includes | Instructions |
 | --- | --- | --- | --- |
 | Convert a file or folder | `uvx`, pip, or pipx | Core converter and CLI | [README](../../README.md#-install) |
-| A Homebrew-managed CLI | `BigCactusLabs/tap` | Core CLI only; no UI or MCP extras | [README](../../README.md#-install) |
+| A Homebrew-managed CLI and MCP server | `BigCactusLabs/tap` | CLI, plus the MCP server for 0.4.7+; no UI/watch extras | [README](../../README.md#-install) |
 | Drag-and-drop and Inbox/Cabinet | `dead-letter[ui]` | Local UI, API, and watch dependencies | [Quick Start](../../README.md#-quick-start) |
 | Tools in an MCP client | `dead-letter[mcp]` via `uvx` or pipx | Local stdio server and its MCP tools | [Agent install guide](../../llms-install.md) |
 | Claude Desktop extension | Release `.mcpb` plus its checksum | Managed uv launcher with an exact package pin | [MCP setup](../../README.md#-mcp-server) |
@@ -18,18 +18,19 @@ second email converter.
 | Container-isolated MCP | GHCR version or digest | Non-root stdio server; explicit input/output mounts | [Containers](containers.md) |
 | A portable task skill | `skills/dead-letter/` | Instructions for an existing MCP server or CLI | [Agent Discovery](agent-discovery.md) |
 
-Normal installs do not require Docker. Homebrew's formula intentionally does
-not install the optional Python dependency stacks. Installing a skill does
-not install the Claude plugin; installing the plugin does not install the
-portable skill.
+Normal installs do not require Docker. Homebrew formulas for 0.4.7 and later
+include the MCP server; optional UI/watch dependencies are not included.
+Installing a skill does not install the Claude plugin; installing the plugin
+does not install the portable skill.
 
 The CLI and Python API routes above can also convert a Gmail Takeout `.mbox`
 export, not only `.eml` files or folders; see
 [Gmail Takeout / MBOX](gmail-takeout.md) and
-[MBOX Workers](mbox-workers.md). The MCP server and web UI accept `.eml` only —
-neither imports `.mbox` (tracked: MCP ingestion
-[#145](https://github.com/BigCactusLabs/dead-letter/issues/145), web/API import
-[#146](https://github.com/BigCactusLabs/dead-letter/issues/146)).
+[MBOX Workers](mbox-workers.md). Resumable MBOX imports (`--mbox-resume`) are
+available from 0.4.6; see [resume contract](mbox-resume.md). The web UI accepts
+`.eml` only. The MCP server accepts `.eml` and, from 0.4.5, one bounded flat
+`.mbox` through `convert_mbox`; neither it nor the web UI resumes imports (web/API
+import: [#146](https://github.com/BigCactusLabs/dead-letter/issues/146)).
 
 ## Artifacts are not listings
 
@@ -38,7 +39,7 @@ neither imports `.mbox` (tracked: MCP ingestion
 | PyPI | Python distributions, including optional extras | Stable `vX.Y.Z` GitHub release |
 | GitHub release assets | MCPB, checksum, and (for releases using the refreshed workflow) resolved registry manifest | Same package release |
 | GHCR | Tested multi-platform OCI image | Same package release; version and digest, no `latest` alias |
-| Homebrew tap | Separate core-only formula | Maintainer update after PyPI |
+| Homebrew tap | Separate CLI/MCP formula | Maintainer update after PyPI |
 | BCL plugin marketplace | Versioned plugin source pointer | Separate `plugin-vX.Y.Z` tag and marketplace PR |
 | Official MCP Registry | Discovery metadata for existing packages and artifacts | After PyPI, MCPB, and OCI verification |
 | Portable skill / ARD | Repository-hosted task instructions and discovery metadata | Reviewed source tag/commit; package version in ARD |

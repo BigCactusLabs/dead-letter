@@ -17,7 +17,7 @@ must not infer permission to perform them.
 | Publish a stable GitHub release for `vX.Y.Z` | Read-only source preflight → build once → packaged-install/README gate → upload those exact bytes to PyPI → install readiness → MCPB and OCI → resolved MCP Registry metadata |
 | Push `plugin-vX.Y.Z` | Plugin checks → exact PyPI pin available → marketplace PR/merge → compatibility `release` branch |
 | Publish a plugin GitHub release or a prerelease | Package publication jobs are skipped |
-| Edit the Homebrew tap | Separate maintainer-owned core-only formula update |
+| Edit the Homebrew tap | Separate maintainer-owned CLI/MCP formula update |
 
 Only stable `X.Y.Z` package releases are supported by the publication gate.
 Do not sneak a prerelease, build suffix, or plugin tag into that channel. Add
@@ -57,7 +57,8 @@ uv lock --check
 `prepare` prints a patch and changes **no files**. `git apply` applies it only
 after review. It updates the project and import versions, the editable root
 lock record, PyPI/MCPB registry metadata, bundle metadata and exact dependency,
-ARD entries, and (by default) the plugin asset version and exact runtime pin.
+and ARD entries. It never changes the plugin: the plugin's `uv.lock` can only
+resolve a package that is already on PyPI (see [Plugin Release](#plugin-release)).
 Dependency versions and checksums in `uv.lock` are not refreshed by this
 operation. Dependency changes require their own reviewed lock update.
 
@@ -69,12 +70,10 @@ is recorded. The release that first ships a new tool must add it to
 `SHIPPED_TOOLS` entry, and add it to `PUBLISHED_TOOLS` in
 `scripts/smoke_mcpb.py`. 0.4.5 did this for `convert_mbox` (#145).
 
-Use `prepare "$VERSION" --keep-plugin` to defer plugin adoption explicitly,
-or `--plugin-version A.B.C` when the plugin's independent sequence is ahead.
-The helper rejects version reuse/rollback. A deliberately different exact
-plugin pin is a warning, not a package-release failure; record the deferral.
-For a plugin-only release, change its manifest version and, only when needed,
-its exact `.mcp.json` package pin; do not bump every package artifact.
+The helper rejects version reuse/rollback. Until a later plugin release adopts
+the new package, the different exact plugin pin is a warning, not a
+package-release failure; record the deferral. (`--keep-plugin` is still
+accepted and changes nothing.)
 
 Finalize a dated `## [X.Y.Z] - YYYY-MM-DD` entry in `CHANGELOG.md`. Do not
 fabricate release notes from a version bump. Keep the PyPI ownership marker
@@ -253,6 +252,13 @@ bytes first: identical assets are reused; different bytes fail closed.
 Missing or invalid sidecars need explicit recovery of the original bytes.
 Never repair a published registry hash with `--clobber`.
 
+`build_mcpb.py` runs `uv lock` against PyPI, so `build-mcpb` can hit the same
+propagation lag as the container's `--compare-pypi` check (below): "no version
+of dead-letter[mcp]==X.Y.Z" right after a successful `pypi-ready` job. On
+0.4.8 it failed twice, a few minutes apart, before passing on the third
+attempt. Nothing is uploaded when it fails here, and `publish-mcp` is skipped
+until it passes. Rerun **failed jobs** after a few minutes.
+
 A CLI smoke test is distinct from opening the extension in a named Claude
 Desktop version on macOS/Windows. Record fresh install, restart/update,
 four-tool discovery, conversion, and source preservation separately. First
@@ -281,18 +287,20 @@ existing version digest to make a retry pass.
 The `publish` job's own `--compare-pypi` check resolves
 `dead-letter[mcp]==X.Y.Z` from PyPI before promoting the tested index digest.
 It has failed with "no version of dead-letter[mcp]==X.Y.Z" immediately after a
-successful `pypi-ready` job, on both 0.4.0 and 0.4.5 — index/CDN propagation
+successful `pypi-ready` job, on 0.4.0, 0.4.5 and 0.4.8 — index/CDN propagation
 lag rather than a real publication failure. The image is not promoted to the
 version tag when this happens. Recovery is the same as any other job: rerun
 **failed jobs**; no rebuild is needed once the index catches up.
 
 ## Update The Homebrew Tap
 
-Homebrew remains a manual, core-CLI-only channel after PyPI succeeds. In a
-checkout of `BigCactusLabs/homebrew-tap` (installed as `BigCactusLabs/tap`),
+Homebrew remains a manual channel after PyPI succeeds; the preparation policy
+includes the CLI and core MCP server. In a checkout of `BigCactusLabs/homebrew-tap` (installed as `BigCactusLabs/tap`),
 update `Formula/dead-letter.rb` to the exact released sdist URL and SHA-256
 from PyPI. Review its dependency resources; do not accidentally add the
-UI/MCP extras or unrelated development packages.
+optional UI/watch extras or unrelated development packages. MCP and its core
+dependency subtree must remain included, and `dead-letter-mcp` must be retained.
+The optional `dead-letter-ui` entrypoint must still be removed.
 
 `scripts/release.py homebrew-prepare` can generate the formula change and open
 the draft tap PR, and it requires the original build's checksums. It never
@@ -319,7 +327,9 @@ dead-letter doctor
 ```
 
 Use `brew reinstall --build-from-source` instead of `install` on a test machine
-where the formula is already installed. Convert a synthetic fixture, then
+where the formula is already installed. Verify `dead-letter-mcp` responds to MCP
+`initialize` and `tools/list`, and `dead-letter-ui` is absent. Convert a
+synthetic fixture, then
 commit/push the reviewed formula. Record the tap commit and version in the
 release checklist. A successful Python release does not update the tap.
 
@@ -328,8 +338,23 @@ release checklist. A successful Python release does not update the tap.
 The normal plugin release adopts an already-published exact package version.
 A plugin-only instruction/command update can keep the prior exact package
 pin. Both cases require a new plugin asset version and reviewed main commit.
-For a lockstep release, use the recorded package release commit, not a later
-unreviewed `main` tip.
+
+Adopt a package in a PR after it is on PyPI. `prepare-plugin` prints a patch
+for the plugin version, the `.mcp.json` pin (`dead-letter==X.Y.Z`, no extras:
+Claude's locked launch refuses them), and the `plugin/pyproject.toml`
+dependency. Then regenerate the lock, which needs network access:
+
+```bash
+python scripts/release.py wait-pypi "$PACKAGE_VERSION"
+python scripts/release.py prepare-plugin "$PLUGIN_VERSION" --pin "$PACKAGE_VERSION" > /tmp/plugin.patch
+git apply /tmp/plugin.patch
+uv lock --directory plugin
+python scripts/release.py check
+```
+
+`check` fails until `plugin/uv.lock` locks the same PyPI version as the
+launcher and project. For a plugin-only release, run
+`prepare-plugin` with the current pin; the lock is unchanged.
 
 ```bash
 PLUGIN_VERSION=A.B.C
@@ -373,6 +398,7 @@ matching client caches or successful runtime resolution.
 | `pyproject.toml` / `vX.Y.Z` | Python package release | All package, MCPB, and ARD sync points match |
 | `plugin/.claude-plugin/plugin.json` / `plugin-vA.B.C` | Plugin assets and instructions | Independent, increasing sequence |
 | `plugin/.mcp.json` | Exact package the plugin launches | Must be published; may deliberately lag |
+| `plugin/pyproject.toml`, `plugin/uv.lock` | Locked runtime for that pin | Same exact pin; lock regenerated with `uv lock --directory plugin` |
 | Marketplace `version`, `source.ref`, `source.sha` | What plugin clients resolve | Same plugin release and peeled commit |
 | Community catalog source SHA | Third-party accepted snapshot | Separate review and update policy |
 
@@ -410,7 +436,7 @@ release, not automatic deletion.
 
 Do not extend package publication to modify the tap in this pass. Cross-repo
 credentials, tests, approval, and rollback need their own design. Keep the
-manual core-only update visible in the completion ledger.
+manual CLI/MCP formula update visible in the completion ledger.
 
 ## Primary references
 

@@ -24,6 +24,148 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `inconsistent_score_distribution` or `invalid_probability_sum` when the
   provider's two-decimal precision makes a Score or probability sum differ
   slightly from the exact value.
+- Homebrew preparation includes the core MCP dependency graph and retains
+  `dead-letter-mcp`. Formula evidence checks still exclude optional UI/watch
+  dependencies and require removal of `dead-letter-ui`. Adoption in the tap
+  remains a separate maintainer update (#213).
+- Forwarded-content edge cases from #193:
+  - Latest mode keeps a text/plain Apple Mail forward quoted with `>` when it
+    opens its own quote block. A quoted forward under an `On … wrote:`
+    attribution is still reply history.
+  - Structured mode gives a forward nested one `>` level deeper its own
+    section instead of leaving its separator inside the outer section.
+  - `strip_signatures` and `strip_disclaimers` no longer remove a later
+    forwarded message that follows a `-- ` or disclaimer line.
+  - Legacy Gmail forwards whose `gmail_quote` block opens with `<br>` before
+    the separator are detected.
+  - Structured output no longer ends `-----Original Message-----` replies
+    with a section that holds only the separator line.
+  - Forwarded header blocks with localized labels (French, German, Spanish,
+    Italian, Portuguese, Dutch, Japanese and Chinese, for example `De :`,
+    `Von:`, `Betreff:`, `差出人:`, `发件人：`) now give `## Forwarded from …`
+    headings in structured mode instead of `## Forwarded message`, and
+    plain-text forwards whose first header uses a full-width colon (Chinese
+    Gmail) are detected. Apple Mail's Japanese `転送されたメッセージ:`
+    introduction is recognized.
+
+### Changed
+
+- Claude plugin 0.4.10 pins package 0.4.8 (`dead-letter==0.4.8`) and
+  relocks `plugin/uv.lock`, which moves selectolax to 1.0.0. Plugin users get
+  the 0.4.8 fixes, including `strip_signatures` on HTML emails with
+  html-to-markdown 3.17, and the `convert_directory` `error_code` field that
+  `/dead-letter:triage` reports.
+
+## [0.4.8] - 2026-10-09
+
+### Changed
+
+- **MCP success-JSON contract change:** `convert_directory` replaces
+  `errors[].error` with `errors[].error_code`; callers must use the new key.
+  Each failed file retains its `file` path and returns a stable code, with
+  `conversion_error` for missing or empty codes. Raw exception details can
+  contain email-derived text and are now logged on the server rather than
+  returned to agents. Batch counters, output paths, and successful MCP-call
+  status for per-file failures are unchanged, including dry runs (#186).
+- HTML parsing now uses selectolax's Lexbor backend, and the minimum
+  dependency is `selectolax>=1.0.0,<2` (replacing the `<1` cap from 0.4.6).
+  selectolax 1.0 removed the Modest backend. Conversion output is unchanged
+  on the test fixtures, benchmark corpus, and MBOX fixture. MBOX resume
+  journals record the selectolax version, so a `--mbox-resume` run started
+  on an earlier dead-letter release is rejected with `mbox_resume_mismatch`
+  after upgrading; rerun into a new output directory. The experimental
+  analysis snapshot `normalization_version` changes for the same reason.
+- Claude plugin 0.4.9 pins package 0.4.7 as `dead-letter==0.4.7` (no `[mcp]`
+  extra) and ships `plugin/pyproject.toml` and `plugin/uv.lock`, so hosts that
+  launch from a lock get hashed dependency versions (#212). `plugin.json` now
+  declares the listing icon, keywords, and repository, documentation,
+  privacy-policy, and support links. The plugin README adds a one-step
+  `--marketplace` install command and explains why the server runs as a
+  pinned PyPI package.
+- The plugin schema check now runs `claude-code@2.1.295`, which accepts the
+  listing fields above.
+- `release.py prepare` no longer adopts the plugin pin. The new
+  `release.py prepare-plugin` does so after the package is on PyPI, and
+  `release.py check` requires the plugin project and lock to match the
+  launcher pin.
+
+### Fixed
+
+- `strip_signatures` removes signatures from HTML emails again when
+  html-to-markdown 3.17 or later is installed. Those releases write the `-- `
+  delimiter as `\--`, which the delimiter pattern did not match, so fresh
+  installs of 0.4.7 and plugin 0.4.9 kept HTML signatures. The pattern also
+  accepts a delimiter followed by a `<br>` line break. The lock moves to
+  html-to-markdown 3.17.2. A comparison of 2,353 conversion cases against
+  3.15.1 found two other upstream output changes, both corrections: a blank
+  line now separates a table from the text after it, and a `<br>` inside a
+  table cell becomes a space instead of joining the words.
+- A signature image whose filename matches more than one pattern (such as
+  `facebook-icon.png`) now always reports the same `filename_pattern:` reason,
+  the first match in the documented pattern order. It previously varied
+  between runs.
+
+## [0.4.7] - 2026-10-08
+
+### Changed
+
+- The MCP SDK (`mcp>=2.1,<3`) is now a core dependency, so a plain
+  `uvx --from dead-letter==X dead-letter-mcp` or `pip install dead-letter`
+  starts the MCP server without an extra. This lets the Claude plugin launch
+  from a locked `uv.lock` (#212). A bare install now pulls the SDK and its
+  dependencies (about 40 packages instead of 11). `dead-letter[mcp]` remains
+  a valid, empty compatibility extra; existing commands keep working.
+
+- Claude plugin 0.4.7 (still pinned to package 0.4.6) adds Troubleshooting and
+  Support sections to the plugin README: connection checks, first-launch
+  downloads, the selectolax 1.0 failure in older plugin pins, Cowork path
+  access, and where to report bugs and vulnerabilities.
+- Claude plugin 0.4.8 (still pinned to package 0.4.6) adds a listing icon at
+  `plugin/.claude-plugin/icon.png` and replaces the README's piped uv install
+  command with a link to uv's installation guide.
+
+## [0.4.6] - 2026-10-06
+
+### Added
+
+- Opt-in `--mbox-resume` / Python `convert_mbox(..., resume=True)` for flat
+  Markdown and Cabinet-style bundle imports, including timed workers: durable
+  source/options/converter-bound receipts, hash-verified reuse, reconciliation
+  after output/report interruptions, missing/failed-record retries, and no-clobber
+  publication. Bundle receipts verify Markdown, source bytes, every retained
+  attachment and directory identity before reuse. Complete bundles publish through
+  a probed no-replace directory rename on Linux, macOS and Windows; flat files use
+  hard links. Edited, partially missing or conflicting output stops the import
+  rather than being overwritten or silently repaired; a message whose receipt
+  exceeds 1 MiB, or whose bundle exceeds 4096 files, fails only that record.
+  Unprepared partial bundles and one copy of an over-limit bundle are retained
+  privately as abandoned attempts, not recursively deleted; reruns fail an
+  over-limit record again without reconverting it. Bundle identity survives a
+  remount or reboot.
+  Resume reports retain source order, add recovery status/attempt counts, and
+  never overwrite earlier reports. Requires a trusted local filesystem with the
+  appropriate publication support. Compressed input, dry-run, MCP and web/UI resume
+  remain unsupported; this is not a universal power-loss guarantee. See
+  [MBOX resume](docs/reference/mbox-resume.md) (#139).
+- MCP tools now declare `readOnlyHint`, `destructiveHint`, `idempotentHint`
+  and `openWorldHint` annotations: `get_diagnostics` is read-only, the four
+  conversion tools create new files without modifying sources, and no tool
+  makes network requests.
+
+### Fixed
+
+- Fresh installs no longer fail on import with selectolax 1.0, which removed
+  the `selectolax.parser` (Modest) backend that dead-letter uses. The
+  dependency is now capped at `selectolax<1`. Fresh installs of 0.4.5 resolve
+  selectolax 1.0 and fail until a release carries this fix.
+- MBOX MCP failures now use stable codes and errno-derived OS reasons instead
+  of raw exception text or filenames. Failure-summary codes and messages are
+  restricted to reviewed fixed strings; detailed errors remain in local logs
+  and reports rather than entering the MCP response (#187).
+- MBOX MCP imports now close their iterator before publishing the report, so
+  an early-stop cleanup failure produces a failed partial report rather than
+  leaving a report marked successful. Byte/message caps are not a wall-clock
+  deadline; MCP cancellation remains unsupported (#145).
 - Gmail forwarded messages are no longer dropped as quoted reply history.
   In the default `latest` thread mode, Gmail HTML forwards are kept inline,
   including sequential and nested forwards and any reply quoted inside a
@@ -39,6 +181,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A plain-text Outlook reply (`____` or `-----Original Message-----` plus a
   From/Sent block) whose history contains a forward separator no longer
   leaks that reply history into `latest` output.
+- `release.py homebrew-prepare` works with Homebrew 7. It skips Homebrew's
+  audit of the intermediate sdist formula (`brew style` still checks the final
+  formula), adds `depends_on "libyaml"` beside a `pyyaml` resource as
+  Homebrew's style rules now require, and restores the tap formula when a
+  Homebrew command writes it and then fails.
 
 ### Changed
 

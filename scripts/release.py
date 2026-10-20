@@ -29,6 +29,7 @@ FILES = (
     "pyproject.toml", "uv.lock", "src/dead_letter/__init__.py", "server.json",
     "mcpb/manifest.json", "mcpb/pyproject.toml", ".well-known/ard.json",
     "plugin/.claude-plugin/plugin.json", "plugin/.mcp.json",
+    "plugin/pyproject.toml", "plugin/uv.lock",
 )
 SERVER = "io.github.BigCactusLabs/dead-letter"
 ASSET_ROOT = "https://github.com/BigCactusLabs/dead-letter/releases/download"
@@ -61,13 +62,33 @@ def launcher_pin(data: dict) -> str:
     if position + 1 >= len(args):
         raise ValueError("plugin launcher has no --from value")
     pin = args[position + 1]
-    prefix = "dead-letter[mcp]=="
+    # Claude's locked launch refuses extras on the uvx command line; the MCP
+    # SDK is a core dependency from 0.4.7.
+    prefix = "dead-letter=="
     if not isinstance(pin, str) or not pin.startswith(prefix):
-        raise ValueError("plugin launcher must use an exact dead-letter[mcp]==X.Y.Z pin")
+        raise ValueError("plugin launcher must use an exact dead-letter==X.Y.Z pin without extras")
     return stable(pin[len(prefix):])
 
 
-def check(sources: dict[str, str]) -> dict[str, str]:
+def plugin_lock(sources: dict[str, str], pin: str, *, locked: bool = True) -> None:
+    """The plugin's uv project must declare, and its lock resolve, the launcher pin."""
+    project = tomllib.loads(sources["plugin/pyproject.toml"])
+    if project["project"]["name"] != "dead-letter-plugin" or project.get("tool", {}).get("uv", {}).get("package") is not False:
+        raise ValueError("plugin/pyproject.toml must be the unpackaged dead-letter-plugin project")
+    if project["project"]["dependencies"] != [f"dead-letter=={pin}"]:
+        raise ValueError(f"plugin/pyproject.toml dependency must be exactly dead-letter=={pin}")
+    if not locked:
+        return
+    packages = tomllib.loads(sources["plugin/uv.lock"])["package"]
+    root = one([p for p in packages if p["name"] == "dead-letter-plugin"], "plugin lock root")
+    if root.get("source") != {"virtual": "."}:
+        raise ValueError("plugin/uv.lock must contain the virtual dead-letter-plugin root")
+    locked_package = one([p for p in packages if p["name"] == "dead-letter"], "plugin lock dead-letter entry")
+    if locked_package.get("source") != {"registry": "https://pypi.org/simple"} or locked_package["version"] != pin:
+        raise ValueError(f"plugin/uv.lock must lock PyPI dead-letter {pin}; run uv lock --directory plugin")
+
+
+def check(sources: dict[str, str], *, locked: bool = True) -> dict[str, str]:
     """Fail closed on drift; a deliberately older exact plugin pin is allowed."""
     project = tomllib.loads(sources["pyproject.toml"])["project"]
     version = stable(project["version"])
@@ -117,6 +138,7 @@ def check(sources: dict[str, str]) -> dict[str, str]:
         raise ValueError("release metadata drift:\n" + "\n".join(errors))
     plugin = stable(json.loads(sources["plugin/.claude-plugin/plugin.json"])["version"])
     pin = launcher_pin(json.loads(sources["plugin/.mcp.json"]))
+    plugin_lock(sources, pin, locked=locked)
     return {"package": version, "plugin": plugin, "plugin_pin": pin}
 
 
@@ -145,13 +167,14 @@ def encode(data: dict) -> str:
     return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
 
 
-def prepare(sources: dict[str, str], version: str, *, plugin_version: str | None = None,
-            keep_plugin: bool = False) -> dict[str, str]:
-    """Return a complete proposed change, without I/O or changelog fabrication."""
+def prepare(sources: dict[str, str], version: str) -> dict[str, str]:
+    """Return a complete proposed change, without I/O or changelog fabrication.
+
+    The plugin is never adopted here: its uv.lock can only resolve a package
+    already on PyPI. Use prepare_plugin after publication.
+    """
     current = check(sources)
     newer(version, current["package"])
-    if keep_plugin and plugin_version is not None:
-        raise ValueError("--keep-plugin and --plugin-version are mutually exclusive")
     result = dict(sources)
     result["pyproject.toml"] = project_version(sources["pyproject.toml"], version)
     result["mcpb/pyproject.toml"] = project_version(sources["mcpb/pyproject.toml"], version).replace(
@@ -182,17 +205,26 @@ def prepare(sources: dict[str, str], version: str, *, plugin_version: str | None
     for entry in ard["entries"]:
         entry["version"] = version
     result[".well-known/ard.json"] = encode(ard)
-    if not keep_plugin:
-        asset_version = plugin_version or version
-        newer(asset_version, current["plugin"])
-        plugin = json.loads(sources["plugin/.claude-plugin/plugin.json"])
-        plugin["version"] = asset_version
-        result["plugin/.claude-plugin/plugin.json"] = encode(plugin)
-        launcher = json.loads(sources["plugin/.mcp.json"])
-        args = launcher["mcpServers"]["dead-letter"]["args"]
-        args[args.index("--from") + 1] = f"dead-letter[mcp]=={version}"
-        result["plugin/.mcp.json"] = encode(launcher)
     check(result)
+    return result
+
+
+def prepare_plugin(sources: dict[str, str], plugin_version: str, pin: str | None = None) -> dict[str, str]:
+    """Propose a plugin asset version and exact package pin; the lock is regenerated separately."""
+    current = check(sources)
+    newer(plugin_version, current["plugin"])
+    pin = stable(pin or current["package"])
+    result = dict(sources)
+    plugin = json.loads(sources["plugin/.claude-plugin/plugin.json"])
+    plugin["version"] = plugin_version
+    result["plugin/.claude-plugin/plugin.json"] = encode(plugin)
+    launcher = json.loads(sources["plugin/.mcp.json"])
+    args = launcher["mcpServers"]["dead-letter"]["args"]
+    args[args.index("--from") + 1] = f"dead-letter=={pin}"
+    result["plugin/.mcp.json"] = encode(launcher)
+    result["plugin/pyproject.toml"] = replace_once(
+        sources["plugin/pyproject.toml"], r'^dependencies = \["dead-letter==[^"\n]+"\]$', f'dependencies = ["dead-letter=={pin}"]')
+    check(result, locked=False)
     return result
 
 
@@ -275,9 +307,11 @@ def main(argv: list[str] | None = None) -> int:
     tag.add_argument("--plugin-tag")
     prep = commands.add_parser("prepare", help="print a proposed version-sync patch; write nothing")
     prep.add_argument("version")
-    mode = prep.add_mutually_exclusive_group()
-    mode.add_argument("--plugin-version")
-    mode.add_argument("--keep-plugin", action="store_true")
+    # Plugin adoption is always a later, separate step; kept for old runbooks.
+    prep.add_argument("--keep-plugin", action="store_true", help=argparse.SUPPRESS)
+    prep_plugin = commands.add_parser("prepare-plugin", help="print a proposed plugin version/pin patch; write nothing")
+    prep_plugin.add_argument("version")
+    prep_plugin.add_argument("--pin", help="exact published package version (default: current package)")
     wait = commands.add_parser("wait-pypi", help="bounded, read-only live availability check")
     wait.add_argument("version")
     assets = commands.add_parser("upload-assets", help="publish missing assets; reject replacement with different bytes")
@@ -320,9 +354,15 @@ def main(argv: list[str] | None = None) -> int:
         sources = read_sources(args.root)
         versions = check(sources)
         if args.command == "prepare":
-            proposed = prepare(sources, args.version, plugin_version=args.plugin_version, keep_plugin=args.keep_plugin)
+            proposed = prepare(sources, args.version)
             print(patch(sources, proposed), end="")
             print("Review/apply this patch, finalize CHANGELOG.md, then run uv lock --check and release.py check --tag.", file=sys.stderr)
+            return 0
+        if args.command == "prepare-plugin":
+            proposed = prepare_plugin(sources, args.version, args.pin)
+            print(patch(sources, proposed), end="")
+            print("Review/apply this patch, run uv lock --directory plugin (the pin must be on PyPI), "
+                  "then release.py check --plugin-tag.", file=sys.stderr)
             return 0
         if args.tag or args.plugin_tag:
             check_tag(versions, args.tag or args.plugin_tag, plugin=bool(args.plugin_tag))

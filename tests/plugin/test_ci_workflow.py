@@ -30,7 +30,7 @@ def test_ci_includes_agent_skill_validation_step():
 
 def test_ci_pins_claude_code_plugin_validator():
     commands = plugin_commands()
-    assert commands["plugin-schema"] == ["npx", "--yes", "@anthropic-ai/claude-code@2.1.145", "plugin", "validate", "plugin/"]
+    assert commands["plugin-schema"] == ["npx", "--yes", "@anthropic-ai/claude-code@2.1.295", "plugin", "validate", "plugin/"]
     text = CI_PATH.read_text(encoding="utf-8") + "\n" + "\n".join(" ".join(command) for command in commands.values())
     unpinned_global_install = re.compile(r"npm\s+(?:install|i)\s+-g\s+@anthropic-ai/claude-code(?:\s|$)")
     assert not unpinned_global_install.search(text)

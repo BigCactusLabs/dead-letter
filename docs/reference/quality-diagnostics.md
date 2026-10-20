@@ -35,7 +35,7 @@ This summary is intended for operator review. It is not the raw internal convers
 - `warnings`: list of `code`, `message`, `severity`
 - `stripped_images`: list of `{category, reason, reference}` objects (present when `strip_signature_images` or `strip_tracking_pixels` is enabled and images were removed)
   - `category`: `signature_image | tracking_pixel`
-  - `reason`: detection layer that matched (e.g., `gmail_signature_wrapper`, `front_signature_wrapper`, `thunderbird_signature_wrapper`, `apple_mail_signature_wrapper`, `gmail_mail_sig_url`, `filename_pattern:logo`, `structural_boundary_extension`, `dimension_heuristic`, `hidden_image`)
+  - `reason`: detection layer that matched (e.g., `gmail_signature_wrapper`, `front_signature_wrapper`, `thunderbird_signature_wrapper`, `apple_mail_signature_wrapper`, `gmail_mail_sig_url`, `filename_pattern:logo`, `structural_boundary_extension`, `dimension_heuristic`, `hidden_image`). Filename patterns are checked in a fixed order (`logo`, `banner`, `signature`, `spacer`, `pixel`, `separator`, then social-network names, then `icon`, `badge`); when several match, the first one names the reason
   - `reference`: the image `src` or CID that was stripped
 - `attachments`: `{referenced, retained}` counts, populated when the message has attachments eligible for retention. The job-status API returns `null` when there are none (same convention as `client_hint`); the raw MCP diagnostics dict and per-job report omit the key entirely.
   - `referenced`: attachment count before any filtering pass — this includes both `filter_images` exclusions (signature-image/tracking-pixel layers) and the unreferenced-inline-asset pass, so an image removed by either path is still counted
@@ -234,4 +234,4 @@ images may be absent from rendered Markdown and bundle attachment artifacts.
 
 ## Thread Mode
 
-- `thread_mode="structured"` adds per-message section headers for prior replies and forwarded messages. Gmail HTML forwards and unquoted plain-text forward separators are kept in latest mode as well; `>`-quoted plain-text forwards are not. See [Runtime Contracts](v4-runtime-contracts.md) for the exact rules. No new diagnostic codes; attribution-parse failures emit `logging.DEBUG` on logger `dead_letter.core.attribution`.
+- `thread_mode="structured"` adds per-message section headers for prior replies and forwarded messages. Gmail HTML forwards and plain-text forward separators are kept in latest mode as well, including a `>`-quoted text/plain forward that opens a quote block outside reply history. See [Runtime Contracts](v4-runtime-contracts.md) for the exact rules. No new diagnostic codes; attribution-parse failures emit `logging.DEBUG` on logger `dead_letter.core.attribution`.

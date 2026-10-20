@@ -1,4 +1,4 @@
-"""Reviewed core-only tap preparation; no package publication or automatic merge.
+"""Reviewed CLI/MCP tap preparation; no package publication or automatic merge.
 
 Default: print a plan. --write invokes Homebrew's write-only resource generator
 in an explicitly selected clean tap branch. --open-pr is a separate, explicit
@@ -111,7 +111,7 @@ def plan(version: str, sdist: dict) -> dict:
             "homebrew_earliest_prepare_utc": _utc_text(earliest),
             "commands": {
                 "branch": ["git", "switch", "-c", branch],
-                "bump": ["brew", "bump-formula-pr", "--write-only", "--no-browse", "--python-package-name=dead-letter",
+                "bump": ["brew", "bump-formula-pr", "--write-only", "--no-browse", "--no-audit", "--python-package-name=dead-letter",
                          f"--version={version}", f"--url={sdist['url']}", f"--sha256={sdist['digests']['sha256']}", BREW_NAME],
                 "fallback": ["brew", "update-python-resources", "--package-name=dead-letter", f"--version={version}", BREW_NAME],
             }, "note": "Plan only. --write regenerates resources, selects matching Apple-silicon wheels, and produces a review packet. No merge or publication."}
@@ -153,6 +153,28 @@ def skeleton(text: str) -> str:
     text = RESOURCE.sub("", text)
     text = re.sub(r'^  (?:url|sha256|version) "[^"\n]+"\n|^  revision \d+\n', "", text, flags=re.M)
     return "\n".join(line.rstrip() for line in text.splitlines() if line.strip())
+
+
+def require_libyaml(text: str) -> str:
+    """Add the libyaml dependency Homebrew's style cop demands beside pyyaml.
+
+    ResourceRequiresDependencies flags any `pyyaml` resource without
+    `depends_on "libyaml"`, although the tap installs PyYAML's wheel, which
+    bundles libyaml. Keeping the line also covers an sdist build.
+    """
+    if '  depends_on "libyaml"\n' in text or not any(normalized(name) == "pyyaml" for name, _ in RESOURCE.findall(text)):
+        return text
+    return re.sub(r'^(  depends_on "python@)', '  depends_on "libyaml"\n\\1', text, count=1, flags=re.M)
+
+
+def retain_mcp(text: str) -> str:
+    """Migrate the tap's old literal removal line now that MCP is core."""
+    return re.sub(r'^    rm bin/"dead-letter-mcp"\n', "", text, flags=re.M)
+
+
+def same_contract(before: str, after: str) -> bool:
+    """Allow resource/release updates, libyaml, and retaining the MCP entrypoint."""
+    return skeleton(retain_mcp(require_libyaml(before))) == skeleton(after)
 
 
 def wheel_resources(client: Client, items: list[dict], wheels: Path) -> dict[str, dict]:
@@ -211,16 +233,23 @@ def prepare_tap(tap: Path, output: Path, recipe: dict, *, client: Client) -> dic
     base = run(["git", "rev-parse", "HEAD"], cwd=tap).strip()
     owned = before
     try:
-        run(recipe["commands"]["bump"], cwd=tap)
-        generated = path.read_text(encoding="utf-8")
-        owned = generated
+        # Homebrew may write the formula and then exit nonzero, so its output is
+        # this invocation's to restore whether or not the command succeeds.
+        try:
+            run(recipe["commands"]["bump"], cwd=tap)
+        finally:
+            owned = path.read_text(encoding="utf-8")
+        generated = owned
         if RESOURCE.findall(generated) == RESOURCE.findall(before):
-            run(recipe["commands"]["fallback"], cwd=tap)
-            generated = path.read_text(encoding="utf-8")
-            owned = generated
+            try:
+                run(recipe["commands"]["fallback"], cwd=tap)
+            finally:
+                owned = path.read_text(encoding="utf-8")
+            generated = owned
+        generated = retain_mcp(generated)
         data = formula(generated)
         if (data["version"] != version or data["url"] != recipe["sdist_url"]
-                or data["sha256"] != recipe["sdist_sha256"] or skeleton(generated) != skeleton(before)):
+                or data["sha256"] != recipe["sdist_sha256"] or skeleton(generated) != skeleton(retain_mcp(before))):
             raise Conflict("Homebrew changed fields outside the approved version/resources layout")
         # Homebrew resolves the dependency graph, not us. pip selects compatible
         # wheels for those exact versions under the tap's native interpreter;
@@ -234,7 +263,7 @@ def prepare_tap(tap: Path, output: Path, recipe: dict, *, client: Client) -> dic
         def block(match):
             item = selected[normalized(match[1])]
             return f'  resource "{match[1]}" do\n    url "{item["url"]}"\n    sha256 "{item["sha256"]}"\n  end\n'
-        final = RESOURCE.sub(block, generated)
+        final = require_libyaml(RESOURCE.sub(block, generated))
         formula(final)
         if path.is_symlink() or path.read_text(encoding="utf-8") != owned:
             raise Conflict("formula changed concurrently; leave it for explicit reconciliation")
@@ -272,8 +301,9 @@ SHA-256: `{packet["sdist_sha256"]}` (cross-checked against original Python build
 Reviewed diff SHA-256: `{packet["diff_sha256"]}`.
 
 Homebrew regenerated the core resource graph. Compatible wheels were selected
-with the tap's native Python and checked against PyPI. No UI/MCP/benchmark extras
-were requested. Existing architecture, Python, install, and test logic remain.
+with the tap's native Python and checked against PyPI. MCP is included in the
+core dependencies; no UI or benchmark extras were requested. The MCP entrypoint
+is retained. Existing architecture, Python, and test logic remain.
 
 ## Maintainer acceptance (not performed by preparation)
 
@@ -281,7 +311,8 @@ were requested. Existing architecture, Python, install, and test logic remain.
 - [ ] `brew install --build-from-source BigCactusLabs/tap/dead-letter` (or reinstall).
 - [ ] `brew test BigCactusLabs/tap/dead-letter`.
 - [ ] Convert a synthetic `.eml` on native Apple silicon; check Markdown and source preservation.
-- [ ] Verify `dead-letter-mcp` and `dead-letter-ui` were not installed by this formula.
+- [ ] Verify `dead-letter-mcp` is installed and responds to MCP `initialize` and `tools/list`.
+- [ ] Verify `dead-letter-ui` was not installed by this formula.
 - [ ] Rerun `release.py status` with original build evidence after a manual merge.
 
 Preparation is not install validation. Merge remains manual; no release, tag,
@@ -312,13 +343,13 @@ def open_pr(tap: Path, output: Path, recipe: dict, reviewed: str) -> dict:
     parsed = formula(current.decode("utf-8"))
     if (parsed["version"] != recipe["version"] or parsed["url"] != recipe["sdist_url"]
             or parsed["sha256"] != recipe["sdist_sha256"] or not all(r["url"].endswith(".whl") for r in parsed["resources"])):
-        raise Conflict("reviewed formula does not match the approved core-only release")
+        raise Conflict("reviewed formula does not match the approved CLI/MCP release")
     if hashlib.sha256(current).hexdigest() != packet["formula_sha256"]:
         raise Conflict("formula changed after review")
     # Reconstruct the diff against the recorded base, not merely a caller-
     # editable hash field, before staging any bytes.
     before = run(["git", "show", "HEAD:" + FORMULA], cwd=tap)
-    if skeleton(before) != skeleton(current.decode("utf-8")):
+    if not same_contract(before, current.decode("utf-8")):
         raise Conflict("reviewed formula changes the tap installation contract")
     expected = "".join(difflib.unified_diff(before.splitlines(keepends=True), current.decode().splitlines(keepends=True),
                                           fromfile="a/" + FORMULA, tofile="b/" + FORMULA)).encode()

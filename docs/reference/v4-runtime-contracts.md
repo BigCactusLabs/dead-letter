@@ -2,7 +2,7 @@
 title: dead-letter v4 Runtime Contracts
 doc_type: reference
 status: canonical
-last_updated: 2026-06-27
+last_updated: 2026-10-02
 audience:
   - maintainers
   - contributors
@@ -76,7 +76,7 @@ Rules:
 
 `options` uses this fixed field set:
 
-- `strip_signatures`
+- `strip_signatures` — in each message section, removes the signature delimiter (a line containing only `--`, with or without trailing spaces) and everything after it. A delimiter written as `\--` also matches, because html-to-markdown 3.17 and later escape it that way.
 - `strip_disclaimers`
 - `strip_quoted_headers`
 - `strip_signature_images`
@@ -95,14 +95,15 @@ Rules:
 
 ### Thread history
 
-When `thread_mode="structured"`, the renderer appends per-message sections after the latest message. Each section uses a header ladder rooted in the parsed sender (`## From {sender}` plus optional date / subject). Sections whose attribution line could not be parsed render as `## Earlier message`; threads that the parser could not split at all render as a single `## Earlier in thread` section. Front matter gains a `thread_messages: N` key when N > 0, counting forward and reply sections.
+When `thread_mode="structured"`, the renderer appends per-message sections after the latest message. Each section uses a header ladder rooted in the parsed sender (`## From {sender}` plus optional date / subject). Sections whose attribution line could not be parsed render as `## Earlier message`; threads that the parser could not split at all render as a single `## Earlier in thread` section. Front matter gains a `thread_messages: N` key when N > 0, counting forward and reply sections. A reply section that would hold only an Outlook `-----Original Message-----` separator line (which mail-parser-reply splits off ahead of the From/Sent block it introduces) is omitted and not counted.
 
 Forwarded messages are content, not reply history:
 
-- **Gmail HTML.** A forward block is a Gmail `div.gmail_quote` that has no direct-child `blockquote.gmail_quote` and whose first element child is `div.gmail_attr`, where the attribution's first line (text before the first `<br>`) is a forward separator or does not end in `:`. An attribution ending in `:` or a fullwidth `：` ("On … wrote:", "Le … a écrit :", "… 写道：") marks a reply. A legacy `div.gmail_quote` with no `gmail_attr` whose own leading text is a forward separator is also a forward. Forward blocks nested inside a forward are split out; any other quote block inside a forward stays in that forward's content. Collection stops at the first reply boundary outside a forward, and after 64 forward blocks. At that limit the 64th block also takes the siblings that follow it in the same parent element, so sibling forwards (and anything else there, including a later reply quote) stay in that block in document order. Forwards left uncollected elsewhere stay in the body, which is emitted before the forward blocks; when each forward sits in its own wrapper element, forwards past the limit therefore appear ahead of the first 64. No content is lost.
-- **Plain text.** A forward starts at an unindented separator line: Gmail's `---------- Forwarded message ---------` (any run of 2+ dashes), Thunderbird/Yahoo `-------- Forwarded Message --------` and its localized labels, or Apple Mail `Begin forwarded message:` and its localized forms. The next non-blank line must look like a header (`From:`, `Von:`, `De :`, …), and the first separator must not sit inside reply history; otherwise the text keeps its reply handling. A separator is inside reply history when an Outlook separator line (`____` or `-----Original Message-----`) followed by a From + Sent/Date header block appears anywhere before it (Outlook history is unquoted, so everything after that block is history), or when the last line before it that is neither blank nor `>`-quoted is a reply attribution that mail-parser-reply recognizes (`On … wrote:`, including one wrapped across lines; only checked when that line ends in `:` or `：`). A `>` line, a `… wrote:`-like line, or a bare `From:`/`Sent:` pair in the forwarder's own note, followed by ordinary text, does not make the separator reply history. The separators live in one list in `dead_letter/core/forwarding.py`, drawn from Gmail samples, Thunderbird l10n sources, and the MIT-licensed crisp-oss/email-forward-parser fixtures.
-- **`thread_mode="latest"`** keeps Gmail HTML forwards and unquoted plain-text forwards (Gmail, Thunderbird, Yahoo, Apple Mail separators) inline: separator line, forwarded header lines, then the forwarded body. Body text that sits after or between top-level Gmail forwards is emitted before the forwards; no content is lost. Reply quotes are still dropped, including a reply quote that contains a forward. A text/plain forward inside `>` quoting (Apple Mail's plain-text layout) is still treated as quoted history and dropped. Signature stripping (`strip_signatures`) can still remove text after a `-- ` line inside a forward. Output for mail without a forward is unchanged, and so is latest-mode output for Thunderbird and Apple Mail HTML forwards and for plain-text forwards that meet the rule above, which were already kept. An English separator that appears after reply history or without a following header line is now left to reply handling.
-- **`thread_mode="structured"`** renders one section per forward, before any reply sections, in document order (outermost first for nested forwards). The separator line is dropped. When a `From:` header parses, the section heading is `## Forwarded from {sender}` with the same optional date / subject ladder, for HTML-derived text, Markdown emphasis pairs that wrap a value (`**Dave**`, `__Budget__`) unwrapped in the sender and subject and doubled angle brackets removed from the sender; plain-text values keep literal `**` and `__`; the first `From`, `Date` (or `Sent`) and `Subject` lines of the top header block (up to the first blank line; in Apple Mail's bold-label layout, up to the first line that is not a bold-label header) move into the heading, while `To`, `Cc`, other header lines and the body stay in the section. Otherwise the heading is `## Forwarded message`. `thread_order` reorders reply sections only. A `>`-quoted separator (Apple Mail plain text) counts as a forward only in structured mode, and only when no attribution line (a line ending in `:`) or quoted line directly precedes it. Zone content, and so the analysis snapshot, keeps the full forwarded header block.
+- **Gmail HTML.** A forward block is a Gmail `div.gmail_quote` that has no direct-child `blockquote.gmail_quote` and whose first element child is `div.gmail_attr`, where the attribution's first line (text before the first `<br>`) is a forward separator or does not end in `:`. An attribution ending in `:` or a fullwidth `：` ("On … wrote:", "Le … a écrit :", "… 写道：") marks a reply. A legacy `div.gmail_quote` with no `gmail_attr` whose own leading text, after any leading `<br>`, is a forward separator is also a forward. Forward blocks nested inside a forward are split out; any other quote block inside a forward stays in that forward's content. Collection stops at the first reply boundary outside a forward, and after 64 forward blocks. At that limit the 64th block also takes the siblings that follow it in the same parent element, so sibling forwards (and anything else there, including a later reply quote) stay in that block in document order. Forwards left uncollected elsewhere stay in the body, which is emitted before the forward blocks; when each forward sits in its own wrapper element, forwards past the limit therefore appear ahead of the first 64. No content is lost.
+- **Plain text.** A forward starts at an unindented separator line: Gmail's `---------- Forwarded message ---------` (any run of 2+ dashes), Thunderbird/Yahoo `-------- Forwarded Message --------` and its localized labels, or Apple Mail `Begin forwarded message:` and its localized forms (including Japanese `転送されたメッセージ:`). The next non-blank line must look like a header (`From:`, `Von:`, `De :`, `发件人：`, …: a label, an optional space or no-break space, then an ASCII or full-width colon), and the first separator must not sit inside reply history; otherwise the text keeps its reply handling. A separator is inside reply history when an Outlook separator line (`____` or `-----Original Message-----`) followed by a From + Sent/Date header block appears anywhere before it (Outlook history is unquoted, so everything after that block is history), or when the last line before it that is neither blank nor `>`-quoted is a reply attribution that mail-parser-reply recognizes (`On … wrote:`, including one wrapped across lines; only checked when that line ends in `:` or `：`). A `>` line, a `… wrote:`-like line, or a bare `From:`/`Sent:` pair in the forwarder's own note, followed by ordinary text, does not make the separator reply history. The separators live in one list in `dead_letter/core/forwarding.py`, drawn from Gmail samples, Thunderbird l10n sources, and the MIT-licensed crisp-oss/email-forward-parser fixtures.
+- **`thread_mode="latest"`** keeps Gmail HTML forwards and unquoted plain-text forwards (Gmail, Thunderbird, Yahoo, Apple Mail separators) inline: separator line, forwarded header lines, then the forwarded body. Body text that sits after or between top-level Gmail forwards is emitted before the forwards; no content is lost. Reply quotes are still dropped, including a reply quote that contains a forward. A text/plain forward inside `>` quoting (Apple Mail's plain-text layout) is kept when its separator opens a quote block that no attribution line (a line ending in `:`) or quoted line directly precedes, with one `>` level removed from the separator and the forwarded text; a quoted separator under `On … wrote:` stays reply history and is dropped. HTML-derived `>`-quoted forwards (Apple Mail HTML) keep their previous latest-mode output. Signature and disclaimer stripping run separately on the text between forward separators, `>`-quoted or not, whose next non-blank line is a header line, so a `-- ` line in one forward removes only the rest of that forward, never a later one. Only that header check applies there, not the reply-history rules: a separator right after a signature line ending in `:` (`Contact:`) still starts a new part. Output for mail without a forward is unchanged, and so is latest-mode output for Thunderbird and Apple Mail HTML forwards and for plain-text forwards that meet the rule above, which were already kept. An English separator that appears after reply history or without a following header line is now left to reply handling.
+- **`thread_mode="structured"`** renders one section per forward, before any reply sections, in document order (outermost first for nested forwards). The separator line is dropped. When a `From:` header parses, the section heading is `## Forwarded from {sender}` with the same optional date / subject ladder, for HTML-derived text, Markdown emphasis pairs that wrap a value (`**Dave**`, `__Budget__`) unwrapped in the sender and subject and doubled angle brackets removed from the sender; plain-text values keep literal `**` and `__`; the first From, Date and Subject lines of the top header block (labels in English and the localized forms listed below, with an ASCII or full-width colon and an optional space or no-break space before it) (up to the first blank line; in Apple Mail's bold-label layout, up to the first line that is not a bold-label header) move into the heading, while `To`, `Cc`, other header lines and the body stay in the section. Otherwise the heading is `## Forwarded message`. `thread_order` reorders reply sections only. A `>`-quoted separator (Apple Mail plain text) counts as a forward only when no attribution line (a line ending in `:`) or quoted line directly precedes it, and in latest mode only for text/plain bodies. A forward nested one `>` level deeper inside a quoted forward gets its own section once the outer level is removed, up to 64 plain-text forward sections. Each nested search reads the whole body of the enclosing forward, so the characters searched across those searches are capped at four times the length of the body text or 1,000,000 characters, whichever is larger (ordinary chains split fully; only very large deeply nested bodies reach the budget); the search stops at the first forward that would pass that budget. Past either limit, the remaining nested forwards stay in the enclosing section, unchanged and in order, and no content is lost. Zone content, and so the analysis snapshot, keeps the full forwarded header block.
+- **Forwarded-header labels.** One label table in `dead_letter/core/forwarding.py` maps labels to fields. From: `From`, `De`, `Von`, `Da`, `Mittente`, `Van`, `差出人`, `送信者`, `送信元`, `发件人`, `寄件者`, `從`. Date: `Date`, `Sent`, `Envoyé`, `Datum`, `Gesendet`, `Fecha`, `Enviado`, `Data`, `Inviato`, `Verzonden`, `送信日時`, `日時`, `日付`, `发送时间`, `日期`. Subject: `Subject`, `Objet`, `Sujet`, `Betreff`, `Asunto`, `Oggetto`, `Assunto`, `Onderwerp`, `件名`, `主题`, `主旨`. To, Cc, Bcc and Reply-To labels (`À`, `Pour`, `An`, `Para`, `A`, `Aan`, `宛先`, `送信先`, `收件人`, `到`, `Copie à`, `Kopie`, `Kopie (CC)`, `抄送`, `副本`) continue the block and stay in the section. Short labels such as `A`, `An`, `Da` and `De` are only read in the header block right after a forward separator. Sources: crisp-oss/email-forward-parser per-locale fixtures (Gmail, Apple Mail, Thunderbird, Yahoo, New Outlook), Thunderbird l10n `mime.properties`, Proton WebClients locale files, mail-parser-reply Outlook label sets, a 2024 Gmail zh-CN forward (`发件人：`) and a 2019 Apple Mail ja forward (`転送されたメッセージ:`). Gmail ja labels and Apple Mail zh labels have no sample yet.
 - Outlook `divRplyFwdMsg` blocks and `message/rfc822` attachments are handled as before.
 
 ### `ConvertResult`
@@ -804,6 +805,14 @@ From 0.4.5, `serverInfo` also carries a `title`, `description`,
 `data:` URI (no network fetch), and each tool has a human-readable `title`.
 Clients decide whether and where to display these fields.
 
+From 0.4.6, each tool also declares MCP annotations.
+`get_diagnostics` is `readOnlyHint: true`. The four conversion tools are
+`readOnlyHint: false`, `destructiveHint: false` and `idempotentHint: false`:
+they only create new, collision-safe output paths and never modify or remove
+sources, and a repeat call adds numbered copies. Every tool is
+`openWorldHint: false`; none makes network requests. Hints describe behavior
+for clients; they are not a security boundary.
+
 Packages from 0.4.5 expose the five tools below. `convert_mbox` (#145) was
 added in 0.4.5; 0.4.0 and earlier expose the other four.
 
@@ -875,8 +884,44 @@ These differ from the CLI and the Python API:
   - The source archive is opened read-only and never modified, moved or
     deleted.
   - MCP request cancellation is **not supported**: a cancelled call keeps
-    running until it finishes or reaches a bound. The size and message caps
-    limit its duration.
+    running until it finishes or reaches a bound. Byte/message caps are not
+    a wall-clock deadline; parsing and filesystem I/O have no MCP time limit.
+
+### Directory success-JSON contract
+
+**From 0.4.8 (#186):** `convert_directory` replaces each `errors[].error`
+(raw exception text) with `errors[].error_code`. This is an intentional change
+to the successful tool response, not just the tool-error envelope. The legacy
+`error` key is not retained; callers must read `error_code` instead.
+
+For example, a mixed batch returns this JSON in a successful `CallToolResult`
+(`is_error=False`), even though one file failed:
+
+```json
+{
+  "total": 2,
+  "successes": 1,
+  "failures": 1,
+  "output_paths": ["/output/good.md"],
+  "errors": [
+    {"file": "/input/failed.eml", "error_code": "html_markdown_failed"}
+  ]
+}
+```
+
+- Each failed file contributes exactly `file` and `error_code`. `file` remains
+  the source path; `error_code` is the core's stable code, or `conversion_error`
+  when the core code is missing or empty. Current core codes are
+  `html_markdown_failed` and `conversion_error`.
+- `total`, `successes`, `failures`, and `output_paths` are unchanged. Empty
+  directories and all-success batches return `errors: []`. The same error
+  shape applies with `dry_run=True`.
+- Raw per-file error details are logged at WARNING on the server (stderr for
+  stdio), with the code and source path. They are never returned in this
+  summary. Core `ConvertResult.error` values are not modified.
+- Source and output paths remain data, not instructions or authorization for
+  further tool use. Server logs may contain private, email-derived text and
+  must not be treated as sanitized, model-safe summaries.
 
 ### Error contract
 
@@ -898,19 +943,18 @@ check that the text contains one of these messages:
   `Plain text fallback is available.` and/or `HTML repair is available.` The
   raw parser or renderer error is logged on the server (stderr for stdio) and
   is not sent to the client, because it can quote email content.
-  `convert_directory` does not raise for per-file failures: its JSON `errors[]`
-  entries still carry each file's raw error text, which can include
-  email-derived text such as subject-based output filenames.
+  `convert_directory` uses the per-file codes in the success-JSON contract
+  above rather than raising for per-file failures.
 - `MCP directory conversion supports at most 50 .eml files; found <n>.`
 - `MCP convert_eml_to_bundle only supports source_handling='copy'; use the CLI/API for move/delete.`
 - `output_directory is required for MCP directory conversion`
 
-Any other exception (one that escapes the core pipeline, such as a failure
-reading back the converted Markdown, a broken internal invariant or an
-unexpected crash) reaches the client only as `Error executing tool <name>`,
-with no further text. MCP SDK 2.1 and
-later mask these by design, and dead-letter relies on that so internal and
-email-derived text stays on the server.
+For tools other than `convert_mbox`, any other exception (one that escapes the
+core pipeline, such as a failure reading back the converted Markdown, a broken
+internal invariant or an unexpected crash) reaches the client only as
+`Error executing tool <name>`, with no further text. MCP SDK 2.1 and later mask
+these by design, and dead-letter relies on that so internal and email-derived
+text stays on the server.
 
 `convert_mbox` raises `ToolError`, so the MCP Python SDK 2.2 locked in
 `uv.lock` delivers its message to the client, prefixed by `Error executing
@@ -923,8 +967,8 @@ tool convert_mbox: `:
 - `File not readable: <path>`
 - `MCP MBOX conversion supports archives up to 256 MiB; found <n> bytes. Use the dead-letter CLI for larger archives.`
 - `MBOX conversion failed: <reason>` — core output validation (for example,
-  `MBOX output must be a directory distinct from the source`) or a filesystem
-  error before any message was processed
+  `MBOX output must be a directory distinct from the source`) or a failure
+  before any message was processed
 - `MBOX conversion failed after <n> messages: <reason>; partial report: <path>`
   — an error after conversion started (for example, a full disk while
   spooling the report, `MBOX archive exceeds the MCP limit of 256 MiB; use the
@@ -933,9 +977,34 @@ tool convert_mbox: `:
   is still published with `job.status` `"failed"`; it lists the entries
   committed before the error. If the report itself cannot be written, the
   message ends with `the report could not be written: <reason>` instead.
+- `MBOX report could not be written after <n> messages: <reason>` — conversion
+  completed but report publication failed. Existing message outputs remain;
+  a failed report reservation is removed where filesystem cleanup succeeds.
+
+**Hardening from 0.4.6 (#187):** MBOX conversion/report failure reasons use
+`mbox_io_error` (optionally followed by a known errno name and the OS-generated
+reason), `mbox_invalid_input`, or `mbox_conversion_error`. The fixed core output
+validation message and MCP-owned archive-limit/change messages above remain
+readable. Raw exception text, custom `strerror`, filenames and arbitrary
+exception class names are never used as these reasons. Caller-provided input
+paths in validation errors and the requested output/report paths remain part
+of the response. Exception details are logged locally, not erased.
 
 Per-message failures are not tool errors; they appear in `failures` and the
-report with the importer's error codes (for example `mbox_empty_message`).
+report. In this hardening, summary codes are allowlisted:
+`mbox_empty_message`, `mbox_message_too_large`, `mbox_line_too_long`,
+`mbox_invalid_message`, `mbox_archive_error`, `html_markdown_failed` and
+`conversion_error`. Each has a fixed message; an unknown code becomes
+`conversion_error`. Both string fields are therefore bounded independently
+of the importer's error text. The report retains the original error details
+and provenance. Local reports and logs can contain private metadata and must
+not be treated as sanitized, model-safe summaries.
+
+**Cleanup ordering from 0.4.6 (#145):** the importer is closed before final
+source verification and report publication. A failure during early-stop
+iterator cleanup is inside the same failure boundary as iteration: the
+partial report is marked failed, never successful. This is not durable resume,
+transactional output/report publication or a power-loss recovery guarantee.
 
 ### Distribution
 

@@ -28,8 +28,18 @@ def sources() -> dict[str, str]:
         "mcpb/pyproject.toml": '[project]\nname = "dead-letter-mcpb"\nversion = "0.3.1"\ndependencies = ["dead-letter[mcp]==0.3.1"]\n\n[tool.uv]\npackage = false\n',
         ".well-known/ard.json": release.encode({"entries": [{"version": version, "type": "mcp"}, {"version": version, "type": "skill"}]}),
         "plugin/.claude-plugin/plugin.json": release.encode({"name": "dead-letter", "version": version}),
-        "plugin/.mcp.json": release.encode({"mcpServers": {"dead-letter": {"command": "uvx", "args": ["--python", "3.12", "--from", f"dead-letter[mcp]=={version}", "dead-letter-mcp"]}}}),
+        "plugin/.mcp.json": release.encode({"mcpServers": {"dead-letter": {"command": "uvx", "args": ["--python", "3.12", "--from", f"dead-letter=={version}", "dead-letter-mcp"]}}}),
+        "plugin/pyproject.toml": '[project]\nname = "dead-letter-plugin"\nversion = "0.0.0"\ndependencies = ["dead-letter==0.3.1"]\n\n[tool.uv]\npackage = false\n',
+        "plugin/uv.lock": 'version = 1\n\n[[package]]\nname = "dead-letter"\nversion = "0.3.1"\nsource = { registry = "https://pypi.org/simple" }\n\n[[package]]\nname = "dead-letter-plugin"\nversion = "0.0.0"\nsource = { virtual = "." }\n',
     }
+
+
+def with_pin(data: dict[str, str], pin: str) -> dict[str, str]:
+    """Move the launcher, plugin project, and plugin lock to one pin together."""
+    data = dict(data)
+    for name in ("plugin/.mcp.json", "plugin/pyproject.toml", "plugin/uv.lock"):
+        data[name] = data[name].replace("0.3.1", pin)
+    return data
 
 
 class ReleaseMetadataTests(unittest.TestCase):
@@ -48,15 +58,31 @@ class ReleaseMetadataTests(unittest.TestCase):
     def test_plugin_versions_are_independent(self):
         data = sources()
         data["plugin/.claude-plugin/plugin.json"] = data["plugin/.claude-plugin/plugin.json"].replace("0.3.1", "0.4.0")
-        data["plugin/.mcp.json"] = data["plugin/.mcp.json"].replace("0.3.1", "0.3.0")
+        data = with_pin(data, "0.3.0")
         self.assertEqual(release.check(data)["plugin_pin"], "0.3.0")
         release.check_tag(release.check(data), "plugin-v0.4.0", plugin=True)
 
     def test_plugin_pin_cannot_be_floating_or_a_range(self):
-        for pin in ("dead-letter[mcp]", "dead-letter[mcp]>=0.3.1", "dead-letter[mcp]==0.3.*", "dead-letter[mcp]==0.3.1;evil"):
+        for pin in ("dead-letter", "dead-letter>=0.3.1", "dead-letter==0.3.*", "dead-letter==0.3.1;evil",
+                    "dead-letter[mcp]==0.3.1"):
             with self.subTest(pin=pin):
                 data = sources()
-                data["plugin/.mcp.json"] = data["plugin/.mcp.json"].replace("dead-letter[mcp]==0.3.1", pin)
+                data["plugin/.mcp.json"] = data["plugin/.mcp.json"].replace("dead-letter==0.3.1", pin)
+                with self.assertRaises(ValueError):
+                    release.check(data)
+
+    def test_plugin_project_and_lock_must_match_launcher(self):
+        for name, old, new in (
+            ("plugin/pyproject.toml", "dead-letter==0.3.1", "dead-letter==0.3.0"),
+            ("plugin/pyproject.toml", '"dead-letter==0.3.1"', '"dead-letter[mcp]==0.3.1"'),
+            ("plugin/pyproject.toml", "package = false", "package = true"),
+            ("plugin/uv.lock", 'version = "0.3.1"', 'version = "0.3.0"'),
+            ("plugin/uv.lock", 'registry = "https://pypi.org/simple"', 'path = "../dist/dead_letter.whl"'),
+            ("plugin/uv.lock", 'virtual = "."', 'editable = "."'),
+        ):
+            with self.subTest(name=name, new=new):
+                data = sources()
+                data[name] = data[name].replace(old, new)
                 with self.assertRaises(ValueError):
                     release.check(data)
 
@@ -88,7 +114,9 @@ class ReleaseMetadataTests(unittest.TestCase):
         unchanged = dict(before)
         after = release.prepare(before, "0.4.0")
         self.assertEqual(before, unchanged)
-        self.assertEqual(release.check(after), {"package": "0.4.0", "plugin": "0.4.0", "plugin_pin": "0.4.0"})
+        self.assertEqual(release.check(after), {"package": "0.4.0", "plugin": "0.3.1", "plugin_pin": "0.3.1"})
+        for name in ("plugin/.claude-plugin/plugin.json", "plugin/.mcp.json", "plugin/pyproject.toml", "plugin/uv.lock"):
+            self.assertEqual(after[name], before[name])
         self.assertIn('name = "dependency"\nversion = "0.3.1"', after["uv.lock"])
         self.assertIn('[tool.example]\nvalue = "untouched"', after["pyproject.toml"])
         self.assertEqual(json.loads(after["mcpb/manifest.json"])["tools"], [{"name": "convert_eml"}])
@@ -96,20 +124,23 @@ class ReleaseMetadataTests(unittest.TestCase):
         hunk = [line for line in release.patch(before, manifest_only).splitlines() if line.startswith(("+ ", "- "))]
         self.assertEqual(hunk, ['-  "version": "0.3.1",', '+  "version": "0.4.0",'])
 
-    def test_prepare_can_defer_plugin_adoption(self):
-        before = sources()
-        after = release.prepare(before, "0.4.0", keep_plugin=True)
-        self.assertEqual(after["plugin/.mcp.json"], before["plugin/.mcp.json"])
-        self.assertEqual(release.check(after)["plugin"], "0.3.1")
-
-    def test_prepare_respects_plugin_ahead_of_package(self):
-        before = sources()
-        before["plugin/.claude-plugin/plugin.json"] = before["plugin/.claude-plugin/plugin.json"].replace("0.3.1", "1.0.0")
+    def test_prepare_plugin_updates_pin_but_leaves_the_lock_to_uv(self):
+        before = release.prepare(sources(), "0.4.0")
+        after = release.prepare_plugin(before, "0.3.2")
+        self.assertEqual(release.check(after, locked=False), {"package": "0.4.0", "plugin": "0.3.2", "plugin_pin": "0.4.0"})
+        self.assertIn('dependencies = ["dead-letter==0.4.0"]', after["plugin/pyproject.toml"])
+        self.assertEqual(after["plugin/uv.lock"], before["plugin/uv.lock"])
         with self.assertRaises(ValueError):
-            release.prepare(before, "0.3.2")
-        after = release.prepare(before, "0.3.2", plugin_version="1.0.1")
-        self.assertEqual(release.check(after)["plugin"], "1.0.1")
-        self.assertEqual(release.check(after)["plugin_pin"], "0.3.2")
+            release.check(after)
+        relocked = dict(after, **{"plugin/uv.lock": after["plugin/uv.lock"].replace('version = "0.3.1"', 'version = "0.4.0"')})
+        self.assertEqual(release.check(relocked)["plugin_pin"], "0.4.0")
+
+    def test_prepare_plugin_can_keep_an_older_pin_and_never_rolls_back(self):
+        data = release.prepare(sources(), "0.4.0")
+        self.assertEqual(release.check(release.prepare_plugin(data, "1.0.0", "0.3.1"))["plugin_pin"], "0.3.1")
+        for version, pin in (("0.3.1", None), ("0.3.0", None), ("0.3.2", "0.4"), ("0.3.2", "0.4.0rc1")):
+            with self.subTest(version=version, pin=pin), self.assertRaises(ValueError):
+                release.prepare_plugin(data, version, pin)
 
     def test_no_version_reuse_or_rollback(self):
         for version in ("0.3.1", "0.3.0", "0.2.9"):

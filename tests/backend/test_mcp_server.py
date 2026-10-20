@@ -908,3 +908,26 @@ async def test_tools_have_titles():
         "convert_mbox": "Convert MBOX archive",
         "get_diagnostics": "Get conversion diagnostics",
     }
+
+
+@pytest.mark.anyio
+async def test_tools_declare_safety_annotations():
+    from dead_letter.backend.mcp_server import mcp
+
+    tools = {tool.name: tool.annotations for tool in await mcp.list_tools()}
+    assert set(tools) == {
+        "convert_eml",
+        "convert_eml_to_bundle",
+        "convert_directory",
+        "convert_mbox",
+        "get_diagnostics",
+    }
+    for name, annotations in tools.items():
+        assert annotations is not None, name
+        assert annotations.open_world_hint is False, name
+        if name == "get_diagnostics":
+            assert annotations.read_only_hint is True
+        else:
+            assert annotations.read_only_hint is False, name
+            assert annotations.destructive_hint is False, name
+            assert annotations.idempotent_hint is False, name

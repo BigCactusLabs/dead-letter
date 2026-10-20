@@ -3,11 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 import time
 
+import pytest
+
 import dead_letter.core.html as html_mod
 from dead_letter.core._pipeline import _build_rendered_markdown
 from dead_letter.core import convert, convert_to_bundle
 from dead_letter.core.render import serialize_markdown
-from dead_letter.core.types import ConvertOptions, ParsedEmail
+from dead_letter.core.types import ConversationZone, ConvertOptions, ParsedEmail, ZoneKind
+from dead_letter.core.zone_cleanup import cleanup_zones
 
 FIXTURES = Path("tests/core/fixtures")
 
@@ -739,3 +742,34 @@ def test_empty_quoted_attribution_skips_empty_section(tmp_path) -> None:
     text = output.read_text(encoding="utf-8")
     assert "Carol latest reply" in text
     assert "thread_messages: 0" in text or "thread_messages:" not in text
+
+
+@pytest.mark.parametrize(
+    "delimiter",
+    [
+        "-- ",
+        "--",
+        "--  ",  # Markdown hard break from <br> after the delimiter
+        "\\--",  # html-to-markdown 3.17+ escapes a leading "--"
+        "\\--  ",
+    ],
+)
+def test_strip_signatures_accepts_rendered_delimiter_forms(delimiter: str) -> None:
+    """Regression: the delimiter must match across html-to-markdown output versions."""
+    zone = ConversationZone(
+        kind=ZoneKind.BODY,
+        content=f"Thanks for the update.\n\n{delimiter}\nAlice Smith\n\nSenior Engineer",
+        source_kind="html",
+    )
+    cleaned = cleanup_zones([zone], ConvertOptions(strip_signatures=True))
+    assert [z.content for z in cleaned] == ["Thanks for the update."]
+
+
+def test_strip_signatures_keeps_escaped_delimiter_without_option() -> None:
+    zone = ConversationZone(
+        kind=ZoneKind.BODY,
+        content="Thanks.\n\n\\--\nAlice Smith",
+        source_kind="html",
+    )
+    cleaned = cleanup_zones([zone], ConvertOptions())
+    assert cleaned[0].content == "Thanks.\n\n\\--\nAlice Smith"
