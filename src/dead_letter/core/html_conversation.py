@@ -73,9 +73,104 @@ def _iter_nodes_in_document_order(node):
             stack.append(current.child)
 
 
+# A ``gmail_quote`` wrapper with no quote signal stays body content when the
+# text outside it is no more than this many characters and under 1/20 of the
+# text inside it (talon's rule for Gmail wrappers around the message body).
+_GMAIL_WRAPPER_STUB_MAX_CHARS = 40
+_GMAIL_WRAPPER_STUB_RATIO = 20
+
+
+def _text_chars(node, *, skip=None, limit: int) -> int:
+    """Non-whitespace text characters under ``node``, outside ``skip``'s
+    subtree, counted up to ``limit``."""
+    count = 0
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if current is not node and current.next is not None:
+            stack.append(current.next)
+        if skip is not None and current.mem_id == skip.mem_id:
+            continue
+        if current.tag == "-text":
+            count += len(_WHITESPACE_RE.sub("", current.text_content or ""))
+            if count > limit:
+                return count
+        elif current.child is not None:
+            stack.append(current.child)
+    return count
+
+
+def _has_quote_signal(node) -> bool:
+    """True when a ``gmail_quote`` element looks like quoted history.
+
+    Signals: a blockquote or ``gmail_attr`` outside nested ``div.gmail_quote``
+    blocks (which are checked on their own), or a first text line that is an
+    attribution ending in ``:``/``：`` or a forward separator.
+    """
+    if node.tag == "blockquote":
+        return True
+    stack = [node.child] if node.child is not None else []
+    while stack:
+        current = stack.pop()
+        if current.next is not None:
+            stack.append(current.next)
+        classes = _class_tokens(current)
+        if current.tag == "blockquote" or "gmail_attr" in classes:
+            return True
+        if "gmail_quote" in classes:
+            continue
+        if current.child is not None:
+            stack.append(current.child)
+    line = _first_text_line(node)
+    return line.endswith((":", "\uff1a")) or is_forward_marker_line(line)
+
+
+def _is_gmail_body_wrapper(node) -> bool:
+    """True for a ``gmail_quote`` element that wraps the message body.
+
+    With no quote signal, the wrapper is body content when the text outside
+    it is empty, or short (a greeting) and a small fraction of the text
+    inside it. Otherwise it keeps its quote-boundary handling.
+    """
+    if _has_quote_signal(node):
+        return False
+    root = node
+    while root.parent is not None and root.tag not in ("body", "html"):
+        root = root.parent
+    outside = _text_chars(root, skip=node, limit=_GMAIL_WRAPPER_STUB_MAX_CHARS)
+    if outside == 0:
+        return True
+    if outside > _GMAIL_WRAPPER_STUB_MAX_CHARS:
+        return False
+    needed = outside * _GMAIL_WRAPPER_STUB_RATIO
+    return _text_chars(node, limit=needed) > needed
+
+
+_BLOCK_TAGS = frozenset(
+    {"div", "p", "blockquote", "table", "tr", "li", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6"}
+)
+
+
+def _first_text_line(node) -> str:
+    """Text of ``node`` up to its first ``<br>`` or block boundary, whitespace-collapsed."""
+    parts: list[str] = []
+    for current in _iter_nodes_in_document_order(node):
+        if current is node:
+            continue
+        if current.tag == "br" or current.tag in _BLOCK_TAGS:
+            if "".join(parts).strip():
+                break
+            continue
+        if current.tag == "-text":
+            parts.append(current.text_content or "")
+    return _WHITESPACE_RE.sub(" ", "".join(parts).replace(" ", " ")).strip()
+
+
 def _quote_match(node) -> tuple[str, str] | None:
     classes = _class_tokens(node)
     if "gmail_quote" in classes:
+        if _is_gmail_body_wrapper(node):
+            return None
         return "gmail", "gmail_quote"
     if node.attributes.get("id") == "divRplyFwdMsg":
         return "outlook", "outlook_divRplyFwdMsg"
@@ -93,8 +188,11 @@ _WHITESPACE_RE = re.compile(r"\s+")
 
 
 def _leading_text_line(node) -> str:
-    """First line of ``node``'s own leading text, before any child element."""
+    """First line of ``node``'s own leading text, before any child element
+    other than a leading ``<br>``."""
     for child in node.iter(include_text=True):
+        if child.tag == "br":
+            continue
         if child.tag != "-text":
             return ""
         text = (child.text_content or "").strip()

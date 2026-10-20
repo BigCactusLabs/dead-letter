@@ -634,6 +634,128 @@ def test_plain_text_multiple_markers(tmp_path: Path) -> None:
     )
 
 
+# --- Issue #193 edge cases ----------------------------------------------------
+
+
+def test_plain_quoted_apple_forward_kept_in_latest(tmp_path: Path) -> None:
+    _, latest = _body("plain_apple_forward_quoted.eml", tmp_path)
+    front, structured = _body("plain_apple_forward_quoted.eml", tmp_path, thread_mode="structured")
+
+    _positions(
+        latest,
+        ["See below.", "Begin forwarded message:", "From: Shop &lt;shop@example.com&gt;",
+         "To: alice@example.com", "SHOP RECEIPT BODY"],
+    )
+    # The forward is unquoted one level, like its structured section.
+    assert "&gt; " not in latest
+    assert "thread_messages: 1" in front
+    _positions(
+        structured,
+        ["See below.",
+         "## Forwarded from Shop &lt;shop@example.com&gt; (March 4, 2026 at 9:00:00 AM EST) — Receipt",
+         "SHOP RECEIPT BODY"],
+    )
+
+
+def test_plain_quoted_forward_under_reply_attribution_stays_reply_history() -> None:
+    reply = (
+        "Thanks.\n\nOn Mon, Mar 2, 2026 at 9:00 AM Bob <b@example.com> wrote:\n"
+        "> Begin forwarded message:\n>\n> From: Shop <s@example.com>\n>\n> Old."
+    )
+    zones = segment_text_conversation(reply, quoted_forwards=True).zones
+    assert not any(zone.kind is ZoneKind.FORWARD_HEADER for zone in zones)
+    assert [zone.content for zone in zones if zone.kind is ZoneKind.BODY] == ["Thanks."]
+
+
+def test_signature_in_forward_does_not_remove_later_forward(tmp_path: Path) -> None:
+    name = "plain_forward_signature_then_forward.eml"
+    _, latest = _body(name, tmp_path, strip_signatures=True)
+    front, structured = _body(name, tmp_path, thread_mode="structured", strip_signatures=True)
+
+    _positions(latest, ["Two notes below.", "Body from person one.", "From: Person Two", "Body from person two."])
+    assert "signature line" not in latest
+    assert "thread_messages: 2" in front
+    _positions(
+        structured,
+        ["## Forwarded from Person One &lt;one@example.com&gt; — Note one", "Body from person one.",
+         "## Forwarded from Person Two &lt;two@example.com&gt; — Note two", "Body from person two."],
+    )
+    assert "signature line" not in structured
+
+
+def test_legacy_gmail_forward_with_leading_br_is_forward(tmp_path: Path) -> None:
+    html = (
+        f'<div>Note.</div><div class="gmail_quote"><br>{MARKER_LINE}<br>'
+        "From: Bob<br><div>Body.</div></div>"
+    )
+    assert _kinds(html) == [ZoneKind.BODY, ZoneKind.FORWARDED_BODY]
+
+    _, latest = _body("gmail_forward_legacy_leading_br.eml", tmp_path)
+    front, structured = _body("gmail_forward_legacy_leading_br.eml", tmp_path, thread_mode="structured")
+    _positions(latest, ["Old-style forward below.", "Forwarded message", "Dave", "LEGACY FORWARDED BODY"])
+    assert "thread_messages: 1" in front
+    _positions(
+        structured,
+        ["Old-style forward below.",
+         "## Forwarded from Dave &lt;dave@example.com&gt; (Wed, Mar 4, 2026 at 10:00 AM) — Budget",
+         "LEGACY FORWARDED BODY"],
+    )
+
+
+def test_gmail_quote_wrapping_body_is_kept_as_body(tmp_path: Path) -> None:
+    for mode in ("latest", "structured"):
+        front, body = _body("gmail_quote_body_wrapper.eml", tmp_path, thread_mode=mode)
+        _positions(body, ["Heather,", "Thank you for applying", "WRAPPED BODY"])
+        assert "thread_messages" not in front
+        assert "## " not in body
+
+
+def test_gmail_body_wrapper_still_yields_nested_reply_quote() -> None:
+    reply = (
+        '<div class="gmail_quote"><div class="gmail_attr">On Mon, Bob wrote:<br></div>'
+        '<blockquote class="gmail_quote">Old.</blockquote></div>'
+    )
+    html = (
+        '<div>Hi,</div><div class="gmail_quote gmail_quote_container">'
+        f"<div>{'Long wrapped body text. ' * 10}</div>{reply}</div>"
+    )
+    result = segment_html_conversation(html)
+    assert [zone.kind for zone in result.zones] == [ZoneKind.BODY, ZoneKind.QUOTED]
+    assert "Long wrapped body text." in result.zones[0].content
+    assert "Old." in result.zones[1].content
+
+
+def test_nested_apple_plain_forwards_get_own_sections(tmp_path: Path) -> None:
+    _, latest = _body("plain_apple_forwards_nested.eml", tmp_path)
+    front, structured = _body("plain_apple_forwards_nested.eml", tmp_path, thread_mode="structured")
+
+    _positions(latest, ["Plan thread below.", "BOB OUTER FORWARD BODY", "CAROL INNER FORWARD BODY"])
+    assert "thread_messages: 2" in front
+    assert "Begin forwarded message" not in structured
+    assert not any(line.startswith("&gt;") for line in structured.splitlines())
+    _positions(
+        structured,
+        ["Plan thread below.",
+         "## Forwarded from Bob &lt;bob@example.com&gt; (March 4, 2026 at 9:00:00 AM EST) — Fwd: Plan",
+         "BOB OUTER FORWARD BODY",
+         "## Forwarded from Carol &lt;carol@example.com&gt; (March 3, 2026 at 9:00:00 AM EST) — Plan",
+         "CAROL INNER FORWARD BODY"],
+    )
+
+
+def test_original_message_reply_has_no_separator_only_section(tmp_path: Path) -> None:
+    front, structured = _body("plain_outlook_original_message_reply.eml", tmp_path, thread_mode="structured")
+
+    assert "thread_messages: 1" in front
+    assert "Original Message" not in structured
+    assert "## Earlier message" not in structured
+    assert structured.count("OLD REPLY HISTORY LINE") == 1
+    _positions(
+        structured,
+        ["Thanks, see you then.", "## From Bob &lt;bob@example.com&gt;", "OLD REPLY HISTORY LINE"],
+    )
+
+
 # --- Byte identity for output that must not change ---------------------------
 
 

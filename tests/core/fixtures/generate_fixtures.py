@@ -755,6 +755,100 @@ def main() -> int:
 
             Body from person three.
         """,
+        "plain_apple_forward_quoted.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Receipt
+            Date: Thu, 05 Mar 2026 13:00:00 +0000
+            Message-ID: <plain-apple-forward-quoted-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            See below.
+
+            > Begin forwarded message:
+            >
+            > From: Shop <shop@example.com>
+            > Subject: Receipt
+            > Date: March 4, 2026 at 9:00:00 AM EST
+            > To: alice@example.com
+            >
+            > SHOP RECEIPT BODY
+        """,
+        "plain_apple_forwards_nested.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Fwd: Plan
+            Date: Thu, 05 Mar 2026 13:05:00 +0000
+            Message-ID: <plain-apple-forwards-nested-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Plan thread below.
+
+            > Begin forwarded message:
+            >
+            > From: Bob <bob@example.com>
+            > Subject: Fwd: Plan
+            > Date: March 4, 2026 at 9:00:00 AM EST
+            >
+            > BOB OUTER FORWARD BODY
+            >
+            >> Begin forwarded message:
+            >>
+            >> From: Carol <carol@example.com>
+            >> Subject: Plan
+            >> Date: March 3, 2026 at 9:00:00 AM EST
+            >>
+            >> CAROL INNER FORWARD BODY
+        """,
+        "gmail_forward_legacy_leading_br.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: Budget
+            Date: Thu, 05 Mar 2026 13:15:00 +0000
+            Message-ID: <gmail-forward-legacy-br-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div dir="ltr">Old-style forward below.</div><div class="gmail_quote"><br>---------- Forwarded message ----------<br>
+            From: <b class="gmail_sendername">Dave</b> <span dir="ltr">&lt;dave@example.com&gt;</span><br>
+            Date: Wed, Mar 4, 2026 at 10:00 AM<br>Subject: Budget<br>To: alice@example.com<br><br><br>
+            <div dir="ltr">LEGACY FORWARDED BODY</div></div>
+        """,
+        "gmail_quote_body_wrapper.eml": """
+            From: Recruiter <recruiter@example.com>
+            To: Heather <heather@example.com>
+            Subject: Your application
+            Date: Thu, 05 Mar 2026 13:20:00 +0000
+            Message-ID: <gmail-quote-body-wrapper-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div dir="ltr"><div><span>Heather,</span></div><div class="gmail_quote gmail_quote_container"><div dir="ltr"><div class="gmail_quote">
+            <div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature"><div>Thank you for applying to the Production Associate opening at Example Co.
+            I reviewed your resume and would like to schedule time to learn more about your background.</div>
+            <div>WRAPPED BODY: what is your availability for a phone call next week?</div></div></div></div></div></div>
+        """,
+        "plain_outlook_original_message_reply.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: RE: Minutes
+            Date: Thu, 05 Mar 2026 13:25:00 +0000
+            Message-ID: <plain-outlook-original-message-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Thanks, see you then.
+
+            -----Original Message-----
+            From: Bob <bob@example.com>
+            Sent: Wednesday, March 4, 2026 9:00 AM
+            To: Alice <alice@example.com>
+            Subject: Minutes
+
+            OLD REPLY HISTORY LINE
+        """,
     }
 
     for name, content in fixtures.items():
@@ -773,6 +867,37 @@ def main() -> int:
         "\r\n"
     ).encode("ascii") + b"Caf\xe9 in legacy charset\r\n"
     (root / "non_utf8_iso8859.eml").write_bytes(non_utf8)
+
+    # LF line endings: signature stripping matches "-- " lines only before a
+    # bare "\n", as in LF-delimited mail and HTML-derived text.
+    signature_then_forward = dedent("""
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: Fwd: notes
+            Date: Thu, 05 Mar 2026 13:10:00 +0000
+            Message-ID: <plain-forward-signature-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/plain; charset=utf-8
+
+            Two notes below.
+
+            ---------- Forwarded message ---------
+            From: Person One <one@example.com>
+            Subject: Note one
+
+            Body from person one.
+            -- 
+            Person One signature line
+
+            ---------- Forwarded message ---------
+            From: Person Two <two@example.com>
+            Subject: Note two
+
+            Body from person two.
+            -- 
+            Person Two signature line
+""").strip("\n") + "\n"
+    (root / "plain_forward_signature_then_forward.eml").write_bytes(signature_then_forward.encode("utf-8"))
 
     return 0
 

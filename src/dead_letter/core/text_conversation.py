@@ -25,6 +25,8 @@ _OUTLOOK_HEADER_RE = re.compile(
 )
 # One ``>`` quote level, removed from the body of a quoted forward.
 _QUOTE_LEVEL_RE = re.compile(r"(?m)^[ \t]*>[ \t]?")
+# Upper bound on plain-text forward sections, matching the HTML segmenter.
+_MAX_FORWARD_SECTIONS = 64
 _INDENT_SENTINEL_PREFIX = "\ue000dead-letter-indent-"
 _INDENT_SENTINEL_SUFFIX = "\ue001"
 
@@ -149,21 +151,70 @@ def _opens_quoted_forward(source: str, start: int) -> bool:
     return True
 
 
-def _segment_forwarded_message(
-    source: str, *, split_forwards: bool = False
-) -> ConversationResult | None:
+def _forward_matches(source: str, *, quoted_forwards: bool) -> list[re.Match[str]]:
+    """Forward separator lines in ``source`` that are followed by a header line.
+
+    A ``>``-quoted (Apple Mail) marker counts only with ``quoted_forwards``
+    and where it opens a quote block (see ``_opens_quoted_forward``).
+    """
     normalized = normalize_marker_text(source)
-    matches = [
+    return [
         match
         for match in FORWARD_MARKER_RE.finditer(normalized)
-        # Quoted (Apple Mail) markers are only split out for structured
-        # output; latest mode keeps its pre-existing handling of them.
         if (
             not match.group("quote")
-            or (split_forwards and _opens_quoted_forward(source, match.start()))
+            or (quoted_forwards and _opens_quoted_forward(source, match.start()))
         )
         and followed_by_header_line(normalized, match.end(), quoted=bool(match.group("quote")))
     ]
+
+
+def _forward_sections(source: str, matches: list[re.Match[str]]) -> list[tuple[str, str, bool]]:
+    """``(marker, body, quoted)`` per match; a quoted body loses one ``>`` level."""
+    sections: list[tuple[str, str, bool]] = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(source)
+        forwarded = source[match.end() : end]
+        marker = match.group(0).strip()
+        quote = match.group("quote")
+        if quote:
+            forwarded = _QUOTE_LEVEL_RE.sub("", forwarded)
+            marker = marker[len(quote) :].strip()
+        sections.append((marker, forwarded.strip(), bool(quote)))
+    return sections
+
+
+def _split_nested_quoted_forwards(
+    sections: list[tuple[str, str, bool]],
+) -> list[tuple[str, str, bool]]:
+    """Split forwards nested inside ``>``-quoted forwards into their own sections.
+
+    Apple Mail quotes each nested plain-text forward one level deeper, so a
+    nested marker only opens a quote block once the outer level is removed.
+    Each quoted body is searched again until no nested forward remains or
+    ``_MAX_FORWARD_SECTIONS`` is reached; anything not split stays in the
+    enclosing section's body.
+    """
+    result: list[tuple[str, str, bool]] = []
+    pending = list(reversed(sections))
+    while pending:
+        marker, body, quoted = pending.pop()
+        if quoted and len(result) + len(pending) + 1 < _MAX_FORWARD_SECTIONS:
+            nested = _forward_matches(body, quoted_forwards=True)
+            if nested and not _separator_in_reply_history(body[: nested[0].start()]):
+                result.append((marker, body[: nested[0].start()].strip(), quoted))
+                pending.extend(reversed(_forward_sections(body, nested)))
+                continue
+        result.append((marker, body, quoted))
+    return result
+
+
+def _segment_forwarded_message(
+    source: str, *, split_forwards: bool = False, quoted_forwards: bool = False
+) -> ConversationResult | None:
+    # Quoted (Apple Mail) markers are always split out for structured output;
+    # latest mode takes them only when the caller asks (text/plain sources).
+    matches = _forward_matches(source, quoted_forwards=quoted_forwards or split_forwards)
     if not matches or _separator_in_reply_history(source[: matches[0].start()]):
         return None
     if not split_forwards:
@@ -184,16 +235,14 @@ def _segment_forwarded_message(
             )
         )
 
-    for index, match in enumerate(matches):
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(source)
-        forwarded = source[match.end() : end]
-        if match.group("quote"):
-            forwarded = _QUOTE_LEVEL_RE.sub("", forwarded)
-        forwarded = forwarded.strip()
+    sections = _forward_sections(source, matches)
+    if split_forwards:
+        sections = _split_nested_quoted_forwards(sections)
+    for marker, forwarded, _quoted in sections:
         zones.append(
             ConversationZone(
                 kind=ZoneKind.FORWARD_HEADER,
-                content=match.group(0).strip(),
+                content=marker,
                 source_kind="plain",
                 confidence=0.9,
             )
@@ -212,17 +261,23 @@ def _segment_forwarded_message(
     return ConversationResult(zones=zones, client_hint="generic")
 
 
-def segment_text_conversation(text: str, *, split_forwards: bool = False) -> ConversationResult:
+def segment_text_conversation(
+    text: str, *, split_forwards: bool = False, quoted_forwards: bool = False
+) -> ConversationResult:
     """Split plain text into body and quoted conversation zones.
 
     With ``split_forwards`` each forward marker starts its own header/body
     zone pair; otherwise everything after the first marker is one pair.
+    ``quoted_forwards`` also keeps a ``>``-quoted (Apple Mail) forward that
+    opens a quote block when ``split_forwards`` is off.
     """
     source = (text or "").strip()
     if not source:
         return ConversationResult(zones=[])
 
-    forwarded = _segment_forwarded_message(source, split_forwards=split_forwards)
+    forwarded = _segment_forwarded_message(
+        source, split_forwards=split_forwards, quoted_forwards=quoted_forwards
+    )
     if forwarded is not None:
         return forwarded
 
