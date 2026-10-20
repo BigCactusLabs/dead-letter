@@ -4,6 +4,13 @@ Written September 18, 2026; PR #117 merged to `main` on September 21, 2026
 (merge commit `70b8e2f`). The workflow-pin follow-up landed as #134. Nothing
 below is released; the full issue remains open.
 Public contract: [experimental analysis](../reference/experimental-analysis.md).
+
+**Status, October 20, 2026:** single-message analysis shipped in 0.4.5. PR #195
+merged to `main` (merge commit `9d909e2`). It adds directory analysis (#165) and
+the #166 phase-1 evaluation harness
+([design note](2026-09-28-issue-166-evaluation-design.md)). Both are
+unreleased. Still open: human review of the evaluation pre-labels (#166), #196,
+#197 and #235.
 This supersedes the earlier offline-only handoff.
 
 ## Implemented so far
