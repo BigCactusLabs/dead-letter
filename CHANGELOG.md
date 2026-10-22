@@ -28,11 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A structural reply takes only the first direct-child blockquote and at most
   one immediately preceding attribution unit; text before that unit and after
   the blockquote stays authored. Nested wrappers keep ownership of their own
-  attribution lines, and history after the forward-section cap is still
-  extracted.
-  Classification never drops content; a message that is only reply history
-  keeps its quoted provenance and is rendered through the existing quote-only
-  fallback.
+  attribution lines. Attribution history moves as HTML with its links and
+  original characters; authored text outside that unit stays in the body.
+  Forwards past the section cap keep their own text in the body; reply,
+  Outlook and Front history inside or after them is still extracted. A message
+  that is only reply history keeps its quoted provenance and is rendered
+  through the existing quote-only fallback. Dashed separators in Gmail
+  attribution elements require non-empty text between the dashes; wrapped
+  attribution detection reads only the element's own first two lines.
 
 - Plain-text forwards normalize CRLF and bare CR line endings before segmentation,
   so signature and disclaimer cleanup works and Markdown has no stray carriage
