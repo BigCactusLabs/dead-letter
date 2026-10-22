@@ -804,3 +804,22 @@ def test_r5_dash_and_space_only_lines_are_not_labels():
     result = segment_html_conversation(html)
     assert result.rules_triggered == []
     assert 'PAYLOAD' in _zone_text(result.zones, ZoneKind.BODY)
+
+
+@pytest.mark.parametrize('leading', ['<img src="cid:avatar" alt="Bob avatar">', '<a href="mailto:bob@x.com"><img src="cid:avatar"></a>', '<span></span>'], ids=['image', 'linked-image', 'empty-span'])
+def test_r5_text_free_inline_siblings_stay_with_the_attribution(leading):
+    html = f'{leading}{BOB}<br><blockquote class="gmail_quote">QQ</blockquote>'
+    zones = segment_html_conversation(html).zones
+    assert _zone_text(zones, ZoneKind.BODY).strip() == ''
+    quoted = ''.join(z.content for z in zones if z.kind is ZoneKind.QUOTED)
+    assert BOB in quoted and 'QQ' in quoted and leading.split()[0] in quoted
+
+
+@pytest.mark.parametrize('inner', ['<img src="cid:x">', 'INNER'], ids=['image', 'text'])
+def test_r5_gmail_attr_holding_planned_history_is_not_taken_whole(inner):
+    html = f'<div><div class="gmail_attr">{BOB}<blockquote class="gmail_quote">{inner}</blockquote></div><blockquote class="gmail_quote">QQ</blockquote></div>'
+    zones = segment_html_conversation(html).zones
+    quoted = _zone_text(zones, ZoneKind.QUOTED)
+    assert quoted.count(BOB) == 1 and quoted.count('QQ') == 1
+    assert quoted.count('INNER') == (1 if inner == 'INNER' else 0)
+    assert 'wrote:' not in _zone_text(zones, ZoneKind.BODY)
