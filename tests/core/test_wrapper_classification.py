@@ -750,3 +750,57 @@ def test_r4_co2_authored_colon_leadin_stays_body(tmp_path):
     assert 'Here are my notes:' not in _zone_text(zones, ZoneKind.QUOTED)
     latest = _render(tmp_path, html, 'latest')[1]
     assert 'Hi Bob,' in latest and 'Here are my notes:' in latest
+
+
+@pytest.mark.parametrize('html, authored', [
+    (f'<div>Reply here<span><br></span>{BOB}<br><blockquote class="gmail_quote">QQ</blockquote></div>', 'Reply here'),
+    (f'<div>Sounds good.<br><br><span>--<br>Jane Doe<br>Acme Inc.<br><br></span>{BOB}<br><blockquote class="gmail_quote">QQ</blockquote></div>', 'Jane Doe'),
+    (f'<div>TOP<span>{_forward()}</span>{BOB}<br><blockquote class="gmail_quote">QQ</blockquote></div>', 'TOP'),
+    (f'<div class="protonmail_quote"><span>AUTHX<br>------- Original Message -------</span><br>{BOB}<br><blockquote class="protonmail_quote">QQ</blockquote></div>', 'AUTHX'),
+], ids=['span-br', 'span-signature', 'span-forward', 'proton-span-label'])
+def test_r5_inline_sibling_holding_other_lines_stays_authored(tmp_path, html, authored):
+    zones = segment_html_conversation(html).zones
+    body = _zone_text(zones, ZoneKind.BODY)
+    quoted = _zone_text(zones, ZoneKind.QUOTED)
+    assert authored in body and authored not in quoted
+    assert 'QQ' in quoted and 'wrote:' not in body
+    assert authored in _render(tmp_path, html, 'latest')[1]
+
+
+def test_r5_attribution_sharing_an_inline_element_with_a_later_line_stays_body():
+    html = f'<div>TOP</div><div class="gmail_quote"><span>{BOB}<br>AUTH</span><blockquote>QQ</blockquote></div>'
+    zones = segment_html_conversation(html).zones
+    body = _zone_text(zones, ZoneKind.BODY)
+    assert 'AUTH' in body and BOB in body
+    assert _zone_text(zones, ZoneKind.QUOTED).strip() == 'QQ'
+
+
+@pytest.mark.parametrize('html', [
+    '<div class="gmail_quote">Am ' + 'schrieb ' * 16000 + 'x：<br>old</div>',
+    '<div>TOP</div><div class="gmail_quote">On Mar 5, 2026, at 10:23 AM, ' + '&lt;' * 60000 + ':<br><blockquote>QQ</blockquote></div>',
+    '<div>TOP</div><div>On Mar 5, 2026, at 10:23 AM, ' + '&lt;' * 60000 + ':</div><blockquote class="gmail_quote">QQ</blockquote>',
+], ids=['fullwidth-german', 'lt-flood-wrapper', 'lt-flood-bare-blockquote'])
+def test_r5_long_colon_lines_never_reach_the_attribution_parsers(html):
+    import time
+
+    started = time.perf_counter()
+    zones = segment_html_conversation(html).zones
+    assert time.perf_counter() - started < 0.1
+    assert 'schrieb' in _zone_text(zones, ZoneKind.BODY) or 'QQ' in _zone_text(zones, ZoneKind.QUOTED)
+
+
+@pytest.mark.parametrize('inner', ['<img src="cid:x">', 'INNER'], ids=['image', 'text'])
+def test_r5_block_holding_planned_history_is_not_taken_twice(inner):
+    html = f'<div><div>{BOB}<blockquote class="gmail_quote">{inner}</blockquote></div><blockquote class="gmail_quote">QQ</blockquote></div>'
+    zones = segment_html_conversation(html).zones
+    quoted = _zone_text(zones, ZoneKind.QUOTED)
+    assert quoted.count(BOB) == 1 and quoted.count('QQ') == 1
+    assert quoted.count('INNER') == (1 if inner == 'INNER' else 0)
+    assert 'wrote:' not in _zone_text(zones, ZoneKind.BODY)
+
+
+def test_r5_dash_and_space_only_lines_are_not_labels():
+    html = '<div class="gmail_quote"><div class="gmail_attr">-- -- --<br>From: A</div>PAYLOAD</div>'
+    result = segment_html_conversation(html)
+    assert result.rules_triggered == []
+    assert 'PAYLOAD' in _zone_text(result.zones, ZoneKind.BODY)
