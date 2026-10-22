@@ -5,7 +5,7 @@ Implementation: [PR #117](https://github.com/BigCactusLabs/dead-letter/pull/117)
 merged to `main` on September 21, 2026 and first released in 0.4.5.
 
 **Status: experimental single-message analysis, released in 0.4.5.**
-Directory execution (#165) is an unreleased source capability.
+Directory execution (#165) was released in 0.4.9.
 Local EML preparation now connects to an explicitly enabled TypeSafe SDK adapter.
 CLI and async Python consumers receive versioned JSON results. Neither candidate
 profile has empirical email-triage quality results. Ordinary conversion, bundles,
@@ -207,8 +207,8 @@ semantics.
 
 ## Directory execution (#165)
 
-This capability is **unreleased**. From this checkout, analyze a directory with
-one independent inference per message:
+Released in 0.4.9. From a checkout, analyze a directory with one independent
+inference per message:
 
 ```bash
 uv run --locked --extra typesafe dead-letter analyze ./mail \

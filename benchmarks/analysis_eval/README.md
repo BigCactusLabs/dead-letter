@@ -74,7 +74,7 @@ rules are a stated limitation for the multilingual arm.
 
 ## Phase 2: lead-run pilot and full inference
 
-These commands use directory analysis from #165 (unreleased).
+These commands use directory analysis from #165 (released in 0.4.9).
 The lead owns paid inference. Human review and adjudication must precede a held-out
 quality claim. Keep the original model pre-labels and the reviewed annotation
 revision distinguishable. The phase-1 tests establish structure, not label truth.
