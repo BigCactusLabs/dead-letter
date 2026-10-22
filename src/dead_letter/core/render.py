@@ -19,7 +19,13 @@ from dead_letter.core.types import (
     ZoneKind,
 )
 
-_FENCE_OPEN_RE = re.compile(r"^( {0,3})(`{3,}|~{3,})(.*)$")
+# Email autolinks pass through unescaped. The ASCII-only local part leaves no
+# room for `/`, `=`, quotes, `%`, `?` or `#`, so even a renderer that read one
+# as a tag would get an attribute-less element, and the mailto target matches
+# the displayed address. URI autolinks stay escaped: outside autolink parsing
+# they tokenize as a tag with attributes.
+_LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+_SAFE_AUTOLINK_RE = re.compile(rf"<[A-Za-z0-9._+-]+@{_LABEL}(?:\.{_LABEL})*>")
 _FORWARD_KINDS = frozenset({ZoneKind.FORWARD_HEADER, ZoneKind.FORWARDED_BODY})
 _SECTION_KINDS = _FORWARD_KINDS | {ZoneKind.QUOTED}
 # A reply zone holding only Outlook's separator line, which mail-parser-reply
@@ -169,75 +175,17 @@ def _render_zone_content(zone: Zone, content: str) -> str:
 
 
 def _escape_plain_text_markdown_html(value: str) -> str:
-    # Markdown renderers already escape code contents; preserve those regions
-    # while neutralizing raw HTML in normal prose.
+    # Plain text is not authored as Markdown, and which regions a renderer
+    # treats as code depends on fences, containers, tables, line-break
+    # characters and joined heading fields. Escape everything instead of
+    # guessing; only attribute-free email autolinks pass through.
     rendered: list[str] = []
-    in_fence = False
-    fence_char = ""
-    fence_len = 0
-
-    for line in value.splitlines(keepends=True):
-        if in_fence:
-            rendered.append(line)
-            if _is_closing_fence(line, fence_char=fence_char, fence_len=fence_len):
-                in_fence = False
-            continue
-
-        line_body = line.rstrip("\r\n")
-        opener = _FENCE_OPEN_RE.match(line_body)
-        if opener:
-            fence = opener.group(2)
-            fence_char = fence[0]
-            fence_len = len(fence)
-            in_fence = True
-            newline = line[len(line_body):]
-            rendered.append(
-                f"{opener.group(1)}{fence}{html.escape(opener.group(3), quote=False)}{newline}"
-            )
-            continue
-
-        if line.startswith(("    ", "\t")):
-            rendered.append(line)
-            continue
-
-        rendered.append(_escape_html_outside_code_spans(line))
-
-    return "".join(rendered)
-
-
-def _is_closing_fence(line: str, *, fence_char: str, fence_len: int) -> bool:
-    stripped = line.strip()
-    return (
-        len(stripped) >= fence_len
-        and set(stripped) == {fence_char}
-    )
-
-
-def _escape_html_outside_code_spans(line: str) -> str:
-    rendered: list[str] = []
-    text_start = 0
-    index = 0
-
-    while index < len(line):
-        if line[index] != "`":
-            index += 1
-            continue
-
-        tick_end = index + 1
-        while tick_end < len(line) and line[tick_end] == "`":
-            tick_end += 1
-        tick_run = line[index:tick_end]
-        closing = line.find(tick_run, tick_end)
-        if closing == -1:
-            index = tick_end
-            continue
-
-        rendered.append(html.escape(line[text_start:index], quote=False))
-        rendered.append(line[index:closing + len(tick_run)])
-        index = closing + len(tick_run)
-        text_start = index
-
-    rendered.append(html.escape(line[text_start:], quote=False))
+    start = 0
+    for match in _SAFE_AUTOLINK_RE.finditer(value):
+        rendered.append(html.escape(value[start:match.start()], quote=False))
+        rendered.append(match.group(0))
+        start = match.end()
+    rendered.append(html.escape(value[start:], quote=False))
     return "".join(rendered)
 
 

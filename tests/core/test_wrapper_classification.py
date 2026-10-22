@@ -717,7 +717,7 @@ def test_r4_n9_attribution_original_characters_are_preserved(tmp_path):
     html = '<div>TOP</div><div class="gmail_quote">On Mon, Mar 2, 2026 at 9:00 AM Ste\u00adphen 👩\u200d💻 &lt;s@x&gt; wrote:<br><blockquote>QQ</blockquote></div>'
     structured = _render(tmp_path, html, 'structured')[1]
     heading = next(line for line in structured.splitlines() if line.startswith('## '))
-    assert heading == '## From Ste\u00adphen 👩\u200d💻 &lt;s@x&gt; (Mon, Mar 2, 2026 at 9:00 AM)'
+    assert heading == '## From Ste\u00adphen 👩\u200d💻 <s@x> (Mon, Mar 2, 2026 at 9:00 AM)'
 
 
 @pytest.mark.parametrize('cls', ['gmail_quote', 'yahoo_quoted'])
