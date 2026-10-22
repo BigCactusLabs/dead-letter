@@ -130,7 +130,27 @@ async def analyze_directory(
         "items_with_unknown_usage": 0, "billing_status": "not_attempted", "items": items,
     }
     aliases: dict[str, set[int]] = {}
+    attempts: dict[str, set[int]] = {}
     outside = set()
+    seen: dict[tuple[int, int], Path] = {}
+    known: dict[Path, Path] = {}
+
+    def canonical(path: Path) -> Path:
+        """Respell existing prefixes by identity, so NFC/NFD or link aliases share a key."""
+        prefix = Path(path.anchor)
+        for depth, part in enumerate(path.parts[1:], 2):
+            spelled = prefix / part
+            if spelled not in known:
+                try:
+                    found = os.stat(spelled)
+                except OSError:
+                    # Missing or unstattable components keep their spelling;
+                    # containment has already refused unresolvable parents.
+                    return spelled.joinpath(*path.parts[depth:])
+                known[spelled] = seen.setdefault((found.st_dev, found.st_ino), spelled)
+            prefix = known[spelled]
+        return prefix
+
     for index, target in enumerate(targets):
         # Resolve parent aliases as well as case aliases before starting any work.
         names = {str(target)}
@@ -141,11 +161,12 @@ async def analyze_directory(
             continue
         names.add(str(resolved_parent / target.name))
         for name in names:
-            key = _path_key(Path(name))
-            aliases.setdefault(key, set()).add(index)
+            aliases.setdefault(_path_key(canonical(Path(name))), set()).add(index)
+            # An existing attempts directory may be reached through another spelling.
+            attempts.setdefault(_path_key(canonical(Path(name + ".attempts"))), set()).add(index)
     reserved = {key: set(indices) for key, indices in aliases.items()}
-    for key, indices in aliases.items():
-        reserved.setdefault(key + ".attempts", set()).update(indices)
+    for key, indices in attempts.items():
+        reserved.setdefault(key, set()).update(indices)
     collisions = set()
     for key, indices in aliases.items():
         if len(indices) > 1:

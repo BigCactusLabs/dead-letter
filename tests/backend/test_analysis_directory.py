@@ -3,6 +3,7 @@
 import asyncio
 import errno
 import json
+import os
 import subprocess
 import sys
 import unicodedata
@@ -771,6 +772,44 @@ def test_prefix_collision_through_resolved_parent_alias(tmp_path, wire):
     (output / "b").symlink_to(reserved, target_is_directory=True)
     result = run(source, output)
     assert result["counts"]["failed"] == 2
+    assert all(item["error_code"] == "analysis_output_collision" for item in result["items"])
+    assert not wire["calls"] and not list(output.rglob("*.json"))
+
+
+def normalization_aliases(output):
+    """Link a and b to one directory through NFC and NFD spellings when the host allows it."""
+    nfc = output / unicodedata.normalize("NFC", "r\u00e9al")
+    nfd = output / unicodedata.normalize("NFD", nfc.name)
+    nfc.mkdir(parents=True)
+    insensitive = nfd.exists() and os.path.samefile(nfc, nfd)
+    if not insensitive:
+        nfd.mkdir()
+    (output / "a").symlink_to(nfc, target_is_directory=True)
+    (output / "b").symlink_to(nfd, target_is_directory=True)
+    return nfc, insensitive
+
+
+def test_normalization_alias_collision_follows_filesystem_identity(tmp_path, wire):
+    source, output = tree(tmp_path, ["a/x.eml", "b/x.eml"])
+    real, insensitive = normalization_aliases(output)
+    result = run(source, output)
+    if insensitive:
+        # One physical destination: refuse both before any provider request.
+        assert all(item["error_code"] == "analysis_output_collision" for item in result["items"])
+        assert not wire["calls"] and not list(output.rglob("*.json"))
+    else:
+        # Distinct directories on a normalization-sensitive filesystem.
+        assert [item["outcome"] for item in result["items"]] == ["succeeded"] * 2
+        assert len(wire["calls"]) == 2
+
+
+def test_normalization_alias_reaches_existing_attempts(tmp_path, wire):
+    source, output = tree(tmp_path, ["a/x.eml", "b/x.analysis.json.attempts/y.eml"])
+    real, insensitive = normalization_aliases(output)
+    if not insensitive:
+        pytest.skip("filesystem is normalization-sensitive")
+    (real / "x.analysis.json.attempts").mkdir()
+    result = run(source, output)
     assert all(item["error_code"] == "analysis_output_collision" for item in result["items"])
     assert not wire["calls"] and not list(output.rglob("*.json"))
 
