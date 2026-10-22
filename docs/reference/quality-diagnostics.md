@@ -25,7 +25,7 @@ This summary is intended for operator review. It is not the raw internal convers
 - `segmentation_path`: `html | plain_fallback`
   - `html` means the selected HTML body stayed on an HTML rendering path.
   - `plain_fallback` means the final zoning path was plain text. This can be a normal outcome for plain-text mail, not just an error fallback.
-- `client_hint`: `gmail | outlook | front | generic | null`
+- `client_hint`: `gmail | outlook | front | proton | yahoo | generic | null`
 - `confidence`: `high | medium | low`
 - `fallback_used`: `plain_text_reply_parser | html_failure_plain_text_fallback | html_markdown_panic_repaired | null`
   - `plain_text_reply_parser` means the plain-text conversation parser was used for the final zoning step.

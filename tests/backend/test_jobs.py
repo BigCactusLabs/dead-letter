@@ -18,6 +18,8 @@ from dead_letter.backend.jobs import (
 from dead_letter.backend.schemas import JobCreateRequest
 from dead_letter.core.types import BundleResult, ConvertOptions
 
+FIXTURES = Path(__file__).resolve().parent.parent / "core" / "fixtures"
+
 
 def _noop_bundle(tmp_path: Path):
     def fake(path: str | Path, **_kwargs: object) -> BundleResult:
@@ -292,6 +294,26 @@ async def test_job_manager_file_mode_projects_diagnostics_summary(tmp_path: Path
     assert terminal.diagnostics.confidence == "low"
     assert terminal.diagnostics.fallback_used == "plain_text_reply_parser"
     assert terminal.diagnostics.warnings[0].code == "html_segmentation_failed"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("fixture", "hint"),
+    [("proton_reply.eml", "proton"), ("yahoo_reply.eml", "yahoo")],
+)
+async def test_job_manager_file_mode_accepts_wrapper_client_hints(
+    tmp_path: Path, fixture: str, hint: str
+) -> None:
+    source = tmp_path / fixture
+    source.write_bytes((FIXTURES / fixture).read_bytes())
+
+    manager = _manager(tmp_path, worker_count=1)
+    created = await manager.create_job(JobCreateRequest(mode="file", input_path=str(source)))
+    terminal = await manager.wait_for_terminal(created.id, timeout=5.0)
+
+    assert terminal.status == "succeeded", terminal.errors
+    assert terminal.diagnostics is not None
+    assert terminal.diagnostics.client_hint == hint
 
 
 @pytest.mark.anyio

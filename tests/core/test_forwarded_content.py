@@ -222,22 +222,22 @@ def _kinds(html: str) -> list[ZoneKind]:
     return [zone.kind for zone in segment_html_conversation(html).zones]
 
 
-def test_gmail_attr_without_direct_blockquote_is_forward_in_any_language() -> None:
-    # Structural rule: the attribution wording plays no part.
+def test_gmail_attr_without_dashed_separator_or_attribution_is_body() -> None:
+    # A gmail_attr alone is not evidence of either a reply or a forward.
     html = (
         '<div>Note.</div><div class="gmail_quote gmail_quote_container">'
         '<div class="gmail_attr">Nachricht weitergeleitet<br>Von: A</div><div>Body.</div></div>'
     )
-    assert _kinds(html) == [ZoneKind.BODY, ZoneKind.FORWARDED_BODY]
+    assert _kinds(html) == [ZoneKind.BODY]
 
 
-def test_gmail_attr_with_direct_blockquote_is_reply() -> None:
+def test_forward_separator_precedes_direct_blockquote_reply_evidence() -> None:
     html = (
         '<div>Note.</div><div class="gmail_quote gmail_quote_container">'
         f'<div class="gmail_attr">{MARKER_LINE}<br></div>'
         '<blockquote class="gmail_quote">Old.</blockquote></div>'
     )
-    assert _kinds(html) == [ZoneKind.BODY, ZoneKind.QUOTED]
+    assert _kinds(html) == [ZoneKind.BODY, ZoneKind.FORWARDED_BODY]
 
 
 def test_legacy_gmail_forward_is_leading_separator_text() -> None:
@@ -266,9 +266,9 @@ def test_gmail_attr_ending_in_colon_is_reply(quote: str) -> None:
     assert _kinds(html) == [ZoneKind.BODY, ZoneKind.QUOTED]
 
 
-def test_gmail_quote_without_attr_or_separator_keeps_reply_handling() -> None:
+def test_gmail_quote_without_attr_or_separator_is_body() -> None:
     html = '<div>Note.</div><div class="gmail_quote"><div>Body.</div></div>'
-    assert _kinds(html) == [ZoneKind.BODY, ZoneKind.QUOTED]
+    assert _kinds(html) == [ZoneKind.BODY]
 
 
 def test_html_segmentation_splits_nested_forwards_outermost_first() -> None:
@@ -305,7 +305,7 @@ def test_html_segmentation_survives_deep_forward_nesting() -> None:
     assert "Body 300." in forwards[-1].content
 
 
-def test_html_forwards_past_cap_are_kept_once_in_order(tmp_path: Path) -> None:
+def test_html_forwards_past_cap_are_kept_once_in_body_before_sections(tmp_path: Path) -> None:
     html = "<div>Note.</div>" + "".join(
         f'<div class="gmail_quote"><div class="gmail_attr">{MARKER_LINE}<br>'
         f"From: P{n} &lt;p{n}@example.com&gt;<br></div><div>Note body from person {n}.</div></div>"
@@ -325,7 +325,9 @@ def test_html_forwards_past_cap_are_kept_once_in_order(tmp_path: Path) -> None:
         needles = [f"Note body from person {n}." for n in range(1, 71)]
         for needle in needles:
             assert body.count(needle) == 1, (mode, needle)
-        _positions(body, needles)
+        # Only the first 64 become sections; the remaining forwards stay
+        # in BODY, which renders before those sections.
+        _positions(body, needles[64:] + needles[:64])
 
 
 def test_marker_patterns_do_not_span_lines() -> None:
@@ -452,14 +454,15 @@ def test_plain_quoted_marker_split_only_without_attribution() -> None:
 # --- End-to-end table rows ---------------------------------------------------
 
 
-def test_gmail_reply_quote_dropped_in_latest_and_sectioned_in_structured(tmp_path: Path) -> None:
+def test_gmail_no_signal_wrapper_kept_in_both_modes(tmp_path: Path) -> None:
     _, latest = _body("gmail_quote.eml", tmp_path, thread_mode="latest")
     front, structured = _body("gmail_quote.eml", tmp_path, thread_mode="structured")
 
     assert "Latest response" in latest
-    assert "On prior mail wrote" not in latest
-    assert "thread_messages: 1" in front
-    assert "## Earlier message" in structured
+    assert "On prior mail wrote" in latest
+    assert "thread_messages:" not in front
+    assert "## Earlier message" not in structured
+    assert latest == structured
 
 
 def test_single_gmail_forward_latest_keeps_marker_headers_and_body(tmp_path: Path) -> None:
@@ -1066,6 +1069,9 @@ _GOLDEN = json.loads((FIXTURES / "pre_forward_fix_golden.json").read_text(encodi
 @pytest.mark.parametrize("key", sorted(_GOLDEN))
 def test_output_that_must_not_change_is_byte_identical(key: str, tmp_path: Path) -> None:
     """Goldens were captured from main before forward handling changed.
+
+    The gmail_quote fixture was updated for #233: no positive evidence means
+    current body. All other entries retain their previous bytes.
 
     Covers every fixture without a forward (including reply markup that must
     not be mistaken for a forward, and separators inside reply history or

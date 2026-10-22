@@ -22,6 +22,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- HTML forwards and replies now classify the unchanged tree before extraction,
+  preserving gogcli-style forwards, Proton containers, OWA `x_` classes and
+  Yahoo wrappers without losing current text between history blocks (#233).
+  A structural reply takes only the first direct-child blockquote and at most
+  one immediately preceding attribution unit; text before that unit and after
+  the blockquote stays authored. Nested wrappers keep ownership of their own
+  attribution lines. Attribution history moves as HTML with its links and
+  original characters; authored text outside that unit stays in the body.
+  Forwards past the section cap keep their own text in the body; reply,
+  Outlook and Front history inside or after them is still extracted. A message
+  that is only reply history keeps its quoted provenance and is rendered
+  through the existing quote-only fallback. Dashed separators in Gmail
+  attribution elements require non-empty text between the dashes; wrapped
+  attribution detection reads only the element's own first two lines, and
+  lines longer than 1000 characters are never parsed as attributions.
+  Quality diagnostics accept the new `proton` and `yahoo` client hints, so
+  file-mode jobs for those messages no longer fail schema validation.
+
 - Plain-text forwards normalize CRLF and bare CR line endings before segmentation,
   so signature and disclaimer cleanup works and Markdown has no stray carriage
   returns (#232).
@@ -62,6 +80,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     introduction is recognized.
 
 ### Changed
+
+- HTML div quote wrappers with no positive reply or forward evidence now remain
+  current body in both thread modes. This changes output for messages whose
+  unmarked `gmail_quote` content was previously treated as reply history (#233).
 
 - Experimental analysis now pins TypeSafe SDK 0.7.5 with adapter version
   `typesafe-sdk-0.7.5-v1`, with SDK compression disabled to keep request bodies

@@ -57,7 +57,8 @@ def test_segment_html_conversation_handles_deeply_nested_gmail_quote() -> None:
     result = segment_html_conversation(html, client_hint="gmail")
 
     assert any(zone.kind is ZoneKind.BODY and "Latest response" in zone.content for zone in result.zones)
-    assert any(zone.kind is ZoneKind.QUOTED and "Quoted message" in zone.content for zone in result.zones)
+    assert len(result.zones) == 1
+    assert "Quoted message" in result.zones[0].content
 
 
 def test_segment_html_conversation_handles_deeply_nested_outlook_quote() -> None:
@@ -95,10 +96,10 @@ def test_segment_html_conversation_extracts_gmail_body_before_quote() -> None:
 
     assert result.zones[0].kind is ZoneKind.BODY
     assert "<div>Latest response</div>" in result.zones[0].content
-    assert any(
-        zone.kind is ZoneKind.QUOTED and 'class="gmail_quote"' in zone.content and "On prior mail wrote" in zone.content
-        for zone in result.zones
-    )
+    # The ellipsis after the colon is not a recognized attribution line.
+    assert len(result.zones) == 1
+    assert "On prior mail wrote" in result.zones[0].content
+    assert 'class="gmail_quote"' not in result.zones[0].content
 
 
 def test_segment_html_conversation_extracts_outlook_reply_before_divrplyfwdmsg() -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from dead_letter.backend.schemas import JobOptions, QualityDiagnostics, StrippedImageInfo
 
 
@@ -72,15 +74,16 @@ def test_quality_diagnostics_preserves_attachments() -> None:
     assert diag.model_dump()["attachments"] == {"referenced": 1, "retained": 1}
 
 
-def test_quality_diagnostics_accepts_front_client_hint() -> None:
+@pytest.mark.parametrize("hint", ["front", "proton", "yahoo"])
+def test_quality_diagnostics_accepts_wrapper_client_hints(hint: str) -> None:
     diag = QualityDiagnostics(
         state="normal",
         selected_body="html",
         segmentation_path="html",
-        client_hint="front",
+        client_hint=hint,
         confidence="high",
     )
-    assert diag.client_hint == "front"
+    assert diag.client_hint == hint
 
 
 def test_quality_diagnostics_attachments_default_none() -> None:
