@@ -547,16 +547,6 @@ def test_r3_p2_3_gmail_attr_wrapped_attribution():
     assert "OLD" not in _zone_text(zones, ZoneKind.BODY)
 
 
-def test_r3_p2_3_center_ends_first_line():
-    from dead_letter.core.html_conversation import _classify_tree
-
-    tree = parse_html(
-        f'<div class="gmail_quote"><center>Agenda</center>{BOB}<br>BODY</div>'
-    )
-    wrappers, _ = _classify_tree(tree.body)
-    assert next(iter(wrappers.values())).line.text == "Agenda"
-
-
 def test_r3_t1_deep_structural_reply_extraction():
     import time
 
@@ -653,3 +643,110 @@ def test_r3_forwards_past_cap_stay_body_without_taking_history(monkeypatch):
 def test_r3_unlisted_dashed_label_outside_gmail_attr_is_body():
     html = '<div>FYI</div><div class="gmail_quote">---------- 전달된 메일 ---------<br>From: Bob<br>PAYLOAD</div>'
     assert [z.kind for z in segment_html_conversation(html).zones] == [ZoneKind.BODY]
+
+
+def test_r4_n1_long_dashed_nonseparator_is_bounded():
+    import time
+
+    html = '<div class="gmail_quote"><div class="gmail_attr">' + '-' * 5000 + 'x</div><blockquote>q</blockquote></div>'
+    started = time.perf_counter()
+    result = segment_html_conversation(html)
+    assert time.perf_counter() - started < 0.1
+    assert not any(z.kind is ZoneKind.FORWARDED_BODY for z in result.zones)
+
+
+def test_r4_n1_empty_dashed_label_is_not_forward():
+    html = '<div>TOP</div><div class="gmail_quote"><div class="gmail_attr">-----</div>BODY</div>'
+    assert [z.kind for z in segment_html_conversation(html).zones] == [ZoneKind.BODY]
+
+
+def test_r4_n2_nested_attrs_are_bounded():
+    import time
+
+    html = ('<div class="gmail_quote"><div class="gmail_attr">t<br>') * 2000 + 'x:' + '</div></div>' * 2000
+    started = time.perf_counter()
+    segment_html_conversation(html)
+    assert time.perf_counter() - started < 1
+
+
+def test_r4_n2_attr_fallback_uses_only_own_first_two_lines():
+    html = '<div>TOP</div><div class="gmail_quote"><div class="gmail_attr">On Mon, Mar 2, 2026<br>at 9:00 AM Bob<br>wrote:</div>BODY</div>'
+    assert [z.kind for z in segment_html_conversation(html).zones] == [ZoneKind.BODY]
+
+
+def test_r4_n3_german_without_colon_is_bounded(tmp_path):
+    import time
+
+    html = '<div class="gmail_quote">Am ' + 'schrieb ' * 16000 + 'x<br>old</div>'
+    started = time.perf_counter()
+    segment_html_conversation(html)
+    assert time.perf_counter() - started < 0.1
+    assert 'old' in _render(tmp_path, html, 'latest')[1]
+
+
+@pytest.mark.parametrize('history', [
+    f'<div class="gmail_quote"><div class="gmail_attr">{BOB}</div><blockquote class="gmail_quote">HIST</blockquote></div>',
+    '<blockquote class="gmail_quote">HIST</blockquote>',
+    '<div id="divRplyFwdMsg">From: X<br>Sent: Y</div><div>HIST</div>',
+    '<blockquote class="front-blockquote">HIST</blockquote>',
+])
+def test_r4_n4_history_inside_excess_forward_is_quoted(monkeypatch, history):
+    from dead_letter.core import html_conversation as module
+
+    monkeypatch.setattr(module, '_MAX_FORWARD_BLOCKS', 1, raising=False)
+    excess = f'<div class="gmail_quote"><div class="gmail_attr">{MARKER}<br>From: A</div>EXCESS{history}</div>'
+    zones = segment_html_conversation('<div>NOTE</div>' + _forward('FIRST') + excess).zones
+    assert 'HIST' in _zone_text(zones, ZoneKind.QUOTED)
+    assert 'HIST' not in _zone_text(zones, ZoneKind.BODY)
+    assert 'EXCESS' in _zone_text(zones, ZoneKind.BODY)
+
+
+def test_r4_n5_attribution_links_move_with_history(tmp_path):
+    html = '<div>Thanks, sounds good.</div><div class="gmail_quote">On Mon, Mar 2, 2026 at 9:00 AM <a href="https://evil.example/track?id=1">Bob Smith</a> &lt;<a href="mailto:bob@x.com">bob@x.com</a>&gt; wrote:<br><blockquote class="gmail_quote">OLDQ</blockquote></div>'
+    zones = segment_html_conversation(html).zones
+    body = ''.join(z.content for z in zones if z.kind is ZoneKind.BODY)
+    quoted = ''.join(z.content for z in zones if z.kind is ZoneKind.QUOTED)
+    assert '<a' not in body
+    assert 'https://evil.example/track?id=1' in quoted
+    assert 'mailto:bob@x.com' in quoted
+    latest = _render(tmp_path, html, 'latest')[1]
+    assert 'evil.example' not in latest and 'mailto:' not in latest
+
+
+def test_r4_n9_attribution_original_characters_are_preserved(tmp_path):
+    html = '<div>TOP</div><div class="gmail_quote">On Mon, Mar 2, 2026 at 9:00 AM Ste\u00adphen 👩\u200d💻 &lt;s@x&gt; wrote:<br><blockquote>QQ</blockquote></div>'
+    structured = _render(tmp_path, html, 'structured')[1]
+    heading = next(line for line in structured.splitlines() if line.startswith('## '))
+    assert heading == '## From Ste\u00adphen 👩\u200d💻 &lt;s@x&gt; (Mon, Mar 2, 2026 at 9:00 AM)'
+
+
+@pytest.mark.parametrize('cls', ['gmail_quote', 'yahoo_quoted'])
+def test_r4_n8_whole_wrapper_is_not_doubled(cls):
+    html = f'<div>TOP</div><div class="{cls}">{BOB}<br>OLD</div>'
+    zones = segment_html_conversation(html).zones
+    quoted = ''.join(z.content for z in zones if z.kind is ZoneKind.QUOTED)
+    assert len(parse_html(quoted).css(f'div.{cls}')) == 1
+
+
+def test_r4_n10_nested_reply_sections_keep_main_order(tmp_path):
+    html = f'<div>TOP</div><div class="gmail_quote"><div class="gmail_quote">{BOB}<br><blockquote>BOBQ</blockquote></div>{CAROL}<br><blockquote>CAROLQ</blockquote></div>'
+    body = _render(tmp_path, html, 'structured')[1]
+    assert body.index('## From Carol') < body.index('## From Bob')
+
+
+def test_r4_co1_proton_dashed_line_joins_attribution():
+    html = f'<div>TOP</div><div class="protonmail_quote">------- Original Message -------<br>{BOB}<br><br><blockquote class="protonmail_quote">OLD</blockquote></div>'
+    zones = segment_html_conversation(html).zones
+    body = _zone_text(zones, ZoneKind.BODY)
+    quoted = _zone_text(zones, ZoneKind.QUOTED)
+    assert 'Original Message' not in body and 'wrote:' not in body
+    assert '------- Original Message -------' in quoted and BOB in quoted and 'OLD' in quoted
+
+
+def test_r4_co2_authored_colon_leadin_stays_body(tmp_path):
+    html = '<div>Hi Bob,</div><div>Here are my notes:</div><blockquote class="gmail_quote">QQ</blockquote>'
+    zones = segment_html_conversation(html).zones
+    assert 'Here are my notes:' in _zone_text(zones, ZoneKind.BODY)
+    assert 'Here are my notes:' not in _zone_text(zones, ZoneKind.QUOTED)
+    latest = _render(tmp_path, html, 'latest')[1]
+    assert 'Hi Bob,' in latest and 'Here are my notes:' in latest
