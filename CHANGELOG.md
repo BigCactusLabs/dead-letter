@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTML forwards and replies now classify the unchanged tree before extraction,
   preserving gogcli-style forwards, Proton containers, OWA `x_` classes and
   Yahoo wrappers without losing current text between history blocks (#233).
+  A structural reply takes only the first direct-child blockquote and at most
+  one immediately preceding attribution unit; text before that unit and after
+  the blockquote stays authored. Nested wrappers keep ownership of their own
+  attribution lines, and history after the forward-section cap is still
+  extracted.
   Classification never drops content; a message that is only reply history
   keeps its quoted provenance and is rendered through the existing quote-only
   fallback.
@@ -70,7 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- HTML quote wrappers with no positive reply or forward evidence now remain
+- HTML div quote wrappers with no positive reply or forward evidence now remain
   current body in both thread modes. This changes output for messages whose
   unmarked `gmail_quote` content was previously treated as reply history (#233).
 
