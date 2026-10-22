@@ -161,6 +161,12 @@ def normalize_marker_text(text: str) -> str:
 def is_forward_marker_line(line: str) -> bool:
     """Return True when ``line`` is a forward marker, ignoring hard-break syntax."""
     candidate = _HARD_BREAK_RE.sub("", normalize_marker_text(line).strip())
+    # HTML inline emphasis can surround the separator in the Markdown
+    # projection. Strip only a balanced outer pair, never internal marks.
+    for delimiter in ("**", "__", "*", "_"):
+        if candidate.startswith(delimiter) and candidate.endswith(delimiter):
+            candidate = candidate[len(delimiter):-len(delimiter)].strip()
+            break
     return FORWARD_MARKER_RE.fullmatch(candidate) is not None
 
 
