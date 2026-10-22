@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from html import escape
 
@@ -76,21 +77,83 @@ def _iter_nodes_in_document_order(node):
 
 
 # A line ends at a visual block boundary, not at inline formatting.
-_BLOCK_TAGS = frozenset({
-    "address", "article", "aside", "blockquote", "div", "dl", "dt", "dd",
-    "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3",
-    "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol", "p",
-    "pre", "section", "table", "tbody", "td", "th", "thead", "tr", "ul",
-})
+_BLOCK_TAGS = frozenset(
+    {
+        "address",
+        "article",
+        "aside",
+        "blockquote",
+        "div",
+        "dl",
+        "dt",
+        "dd",
+        "fieldset",
+        "figcaption",
+        "figure",
+        "footer",
+        "form",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "header",
+        "hr",
+        "li",
+        "main",
+        "nav",
+        "ol",
+        "p",
+        "pre",
+        "section",
+        "table",
+        "tbody",
+        "td",
+        "th",
+        "thead",
+        "tr",
+        "ul",
+        "center",
+        "details",
+        "summary",
+        "caption",
+        "legend",
+        "menu",
+        "dialog",
+    }
+)
 _MAX_FORWARD_BLOCKS = 64
 _WHITESPACE_RE = re.compile(r"\s+")
+_ATTR_FORWARD_RE = re.compile(r"^-{2,}\s*\S.*?\s*-{2,}$")
+
+
+def _format_whitespace(text: str) -> str:
+    if text.isascii():
+        return text
+    return "".join(
+        " " if char == "\u00ad" or unicodedata.category(char) == "Cf" else char
+        for char in text
+    )
+
+
+def _recognized_attribution(text: str) -> bool:
+    return parse_attribution_line(text) is not None or (
+        text.endswith((":", "："))
+        and any(reply.headers for reply in parse_email_replies(text))
+    )
+
+
+def _attribution_shaped(text: str) -> bool:
+    return text.endswith((":", "：")) or _recognized_attribution(text)
 
 
 @dataclass(slots=True)
 class _Line:
     parts: list[str] = field(default_factory=list)
     nodes: list = field(default_factory=list)
-    in_attr: bool = False
+    attr: object | None = None
+    container: object | None = None
     text: str = ""
     kind: str = "body"
     classified: bool = False
@@ -99,21 +162,30 @@ class _Line:
         self.text = _WHITESPACE_RE.sub(" ", "".join(self.parts)).strip()
         self.parts.clear()
 
-    def classify(self) -> None:
+    def classify(self, attr_replies: dict[int, bool]) -> None:
         if self.classified:
             return
         self.classified = True
-        if is_forward_marker_line(self.text):
+        if is_forward_marker_line(self.text) or (
+            self.attr is not None and _ATTR_FORWARD_RE.fullmatch(self.text)
+        ):
             self.kind = "forward"
-        elif self.text.endswith((":", "：")):
-            if self.in_attr or parse_attribution_line(self.text) is not None:
+        elif (self.attr is not None and _attribution_shaped(self.text)) or (
+            _recognized_attribution(self.text)
+        ):
+            self.kind = "reply"
+        elif self.attr is not None:
+            # A br can split a Gmail attribution before "wrote:". Cache the
+            # whole-attribute oracle once, even when wrappers share this attr.
+            key = self.attr.mem_id
+            if key not in attr_replies:
+                text = _WHITESPACE_RE.sub(
+                    " ",
+                    _format_whitespace(self.attr.text(separator=" ")),
+                ).strip()
+                attr_replies[key] = _recognized_attribution(text)
+            if attr_replies[key]:
                 self.kind = "reply"
-            else:
-                # Use the same upstream attribution grammar as text replies;
-                # a bare colon heading must not become reply evidence.
-                self.kind = "reply" if any(
-                    reply.headers for reply in parse_email_replies(self.text)
-                ) else "body"
 
 
 @dataclass(slots=True)
@@ -144,19 +216,27 @@ def _wrapper_match(node, classes: set[str]) -> tuple[str, str] | None:
     return None
 
 
-def _classify_tree(root) -> tuple[dict[int, _Wrapper], dict[int, _Line]]:
-    """Read the unchanged DOM once, sharing each line across its ancestors.
+@dataclass(slots=True)
+class _Lines:
+    first: dict[int, _Line] = field(default_factory=dict)
+    last: dict[int, _Line] = field(default_factory=dict)
 
-    Empty/whitespace subtrees contribute no spans. Each text byte is joined
-    at most once; even thousands of empty nested wrappers share one result.
-    The explicit enter/exit stack also keeps Python recursion depth bounded.
+
+def _classify_tree(root) -> tuple[dict[int, _Wrapper], _Lines]:
+    """Read the unchanged DOM once, sharing lines but recording their owner.
+
+    The nearest block container identifies direct content. First-line lookup
+    can be shared by ancestors for classification; attribution extraction may
+    only take a line owned by that wrapper or one non-wrapper direct child.
+    Empty subtrees contribute no spans, and traversal is iterative.
     """
     wrappers: dict[int, _Wrapper] = {}
-    first: dict[int, _Line] = {}
+    lines = _Lines()
+    first, last = lines.first, lines.last
     line = _Line()
-    stack = [(root, False, False)]
+    stack = [(root, False, None, root)]
     while stack:
-        node, exiting, in_attr = stack.pop()
+        node, exiting, attr, container = stack.pop()
         if exiting:
             if node.tag in _BLOCK_TAGS and line.nodes:
                 line.finish()
@@ -164,22 +244,26 @@ def _classify_tree(root) -> tuple[dict[int, _Wrapper], dict[int, _Line]]:
             child_line = first.get(node.mem_id)
             if child_line is not None and node.parent is not None:
                 first.setdefault(node.parent.mem_id, child_line)
+                last[node.parent.mem_id] = last[node.mem_id]
             continue
         if node is not root and node.next is not None:
-            stack.append((node.next, False, in_attr))
+            stack.append((node.next, False, attr, container))
         if (node.tag in _BLOCK_TAGS or node.tag == "br") and line.nodes:
             line.finish()
             line = _Line()
         if node.tag == "-text":
-            raw = node.text_content or ""
-            # HTML source newlines are whitespace, just like spaces. Only
-            # rendered block boundaries / br end a line.
+            raw = _format_whitespace(node.text_content or "")
+            # Source newlines are whitespace; rendered block/br boundaries
+            # end lines. Format-only text must not mask a later attribution.
             if raw.strip():
-                line.in_attr = in_attr if not line.nodes else line.in_attr
+                if not line.nodes:
+                    line.attr, line.container = attr, container
                 line.parts.append(raw)
                 line.nodes.append(node)
                 first[node.mem_id] = line
+                last[node.mem_id] = line
                 first.setdefault(node.parent.mem_id, line)
+                last[node.parent.mem_id] = line
             elif line.nodes:
                 line.parts.append(" ")
             continue
@@ -191,52 +275,73 @@ def _classify_tree(root) -> tuple[dict[int, _Wrapper], dict[int, _Line]]:
         match = _wrapper_match(node, classes)
         if match is not None:
             wrappers[node.mem_id] = _Wrapper(node, *match)
-        stack.append((node, True, in_attr))
+        stack.append((node, True, attr, container))
         if node.child is not None:
-            stack.append((node.child, False, in_attr or "gmail_attr" in classes))
+            child_attr = node if node.tag == "div" and "gmail_attr" in classes else attr
+            child_container = node if node.tag in _BLOCK_TAGS else container
+            stack.append((node.child, False, child_attr, child_container))
     line.finish()
+    attr_replies: dict[int, bool] = {}
     for wrapper in wrappers.values():
         wrapper.line = first.get(wrapper.node.mem_id)
         if wrapper.line is not None:
-            wrapper.line.classify()
+            wrapper.line.classify(attr_replies)
         if wrapper.hint in ("outlook", "front"):
             wrapper.kind = "reply"
         elif wrapper.line is not None and wrapper.line.kind == "forward":
             wrapper.kind = "forward"
-        elif wrapper.quotes:
+        elif wrapper.node.tag == "blockquote" or wrapper.quotes:
             wrapper.kind = "reply"
         elif wrapper.line is not None:
             wrapper.kind = wrapper.line.kind
-    return wrappers, first
+    return wrappers, lines
 
 
-def _reply_parts(wrapper: _Wrapper, first: dict[int, _Line]) -> tuple[list, _Line | None]:
-    """Select direct blockquotes plus their attribution, leaving other body.
+def _preceding_attribution(
+    quote, parent, wrappers, lines: _Lines
+) -> tuple[list, _Line | None]:
+    """Take at most one adjacent attribution unit from this parent's content."""
+    previous = quote.prev
+    while previous is not None:
+        # A nested wrapper is an ownership boundary, including an empty one.
+        if previous.tag == "blockquote" or previous.mem_id in wrappers:
+            return [], None
+        line = lines.last.get(previous.mem_id)
+        if line is not None:
+            break
+        previous = previous.prev
+    if previous is None:
+        return [], None
+    if previous.tag == "div" and "gmail_attr" in _class_tokens(previous):
+        return [previous], None
+    container = line.container
+    direct = container.mem_id == parent.mem_id
+    child_block = (
+        container.parent is not None
+        and container.parent.mem_id == parent.mem_id
+        and container.mem_id not in wrappers
+    )
+    if not (direct or child_block) or not _attribution_shaped(line.text):
+        return [], None
+    if child_block and lines.first.get(container.mem_id) is line:
+        return [container], None
+    return [], line
 
-    gmail_attr is taken as an element. Otherwise only the leading text line
-    before the first blockquote is selected, including inline formatting.
-    """
-    selected = []
-    leading = None
-    previous = None
-    for child in wrapper.node.iter(include_text=True):
-        if child.tag == "blockquote":
-            if previous is not None and "gmail_attr" in _class_tokens(previous):
-                selected.append(previous)
-            elif not selected and wrapper.line is not first.get(child.mem_id):
-                leading = wrapper.line
-            selected.append(child)
-        if child.tag != "br" and (child.tag != "-text" or (child.text_content or "").strip()):
-            previous = child
-    return selected, leading
+
+def _reply_parts(
+    wrapper: _Wrapper, wrappers, lines: _Lines
+) -> tuple[list, _Line | None]:
+    """Select the first direct quote and one adjacent, locally owned attribution."""
+    quote = wrapper.node if wrapper.node.tag == "blockquote" else wrapper.quotes[0]
+    selected, leading = _preceding_attribution(quote, quote.parent, wrappers, lines)
+    return [*selected, quote], leading
 
 
-def _plan_extraction(root, wrappers: dict[int, _Wrapper], first: dict[int, _Line]):
+def _plan_extraction(root, wrappers: dict[int, _Wrapper], lines: _Lines):
     forwards, replies, body_wrappers = [], [], []
     skipped: set[int] = set()
     outlook = None
     stack = [(root, None)]
-    capped = False
     while stack:
         node, forward_line = stack.pop()
         if node is not root and node.next is not None:
@@ -248,11 +353,13 @@ def _plan_extraction(root, wrappers: dict[int, _Wrapper], first: dict[int, _Line
             if wrapper.kind == "forward":
                 # Transparent containers can share the exact same separator.
                 # It introduces one forward, not an empty enclosing section.
-                if wrapper.line is not forward_line:
+                if (
+                    wrapper.line is not forward_line
+                    and len(forwards) < _MAX_FORWARD_BLOCKS
+                ):
                     forwards.append(wrapper)
-                    if len(forwards) == _MAX_FORWARD_BLOCKS:
-                        capped = True
-                        break
+                # The cap limits forward sections, never subsequent history
+                # planning. Uncollected forwards retain their own content.
                 forward_line = wrapper.line
             elif wrapper.kind == "reply":
                 if forward_line is not None:
@@ -260,10 +367,14 @@ def _plan_extraction(root, wrappers: dict[int, _Wrapper], first: dict[int, _Line
                 if wrapper.hint == "outlook":
                     outlook = wrapper
                     break  # Outlook owns the remainder in document order
-                if wrapper.quotes and wrapper.hint != "front":
-                    selected, leading = _reply_parts(wrapper, first)
+                if (
+                    node.tag == "blockquote" or wrapper.quotes
+                ) and wrapper.hint != "front":
+                    selected, leading = _reply_parts(wrapper, wrappers, lines)
                     skipped.update(child.mem_id for child in selected)
                     replies.append((wrapper, selected, leading))
+                    if node.tag == "blockquote":
+                        continue
                 else:
                     replies.append((wrapper, [node], None))
                     continue
@@ -271,7 +382,7 @@ def _plan_extraction(root, wrappers: dict[int, _Wrapper], first: dict[int, _Line
                 body_wrappers.append(node)
         if node.child is not None:
             stack.append((node.child, forward_line))
-    return forwards, replies, body_wrappers, outlook, capped
+    return forwards, replies, body_wrappers, outlook
 
 
 def _split_node_html(node, quote_mem_id: int) -> tuple[str, str, bool]:
@@ -322,7 +433,9 @@ def _split_node_html(node, quote_mem_id: int) -> tuple[str, str, bool]:
     return _node_html(node), "", False
 
 
-def _split_outlook_body_and_quote(tree: LexborHTMLParser, quote_node) -> tuple[str | None, str | None]:
+def _split_outlook_body_and_quote(
+    tree: LexborHTMLParser, quote_node
+) -> tuple[str | None, str | None]:
     root = tree.body or tree.css_first("html")
     if root is None:
         return None, None
@@ -333,7 +446,9 @@ def _split_outlook_body_and_quote(tree: LexborHTMLParser, quote_node) -> tuple[s
     return body_html or None, quoted_html or None
 
 
-def _extract_quote_html(quote_node, *, include_following_siblings: bool = False) -> str | None:
+def _extract_quote_html(
+    quote_node, *, include_following_siblings: bool = False
+) -> str | None:
     nodes = [quote_node]
     if include_following_siblings:
         sibling = quote_node.next
@@ -349,47 +464,59 @@ def _extract_quote_html(quote_node, *, include_following_siblings: bool = False)
     return quoted_content or None
 
 
-def segment_html_conversation(html: str, *, client_hint: str | None = None) -> ConversationResult:
+def segment_html_conversation(
+    html: str, *, client_hint: str | None = None
+) -> ConversationResult:
     """Classify the unchanged tree, then extract only positively identified history."""
     tree = parse_html(sanitize_html(html))
     root = tree.body or tree.css_first("html")
     if root is None:
         return ConversationResult(zones=[], client_hint=client_hint, rules_triggered=[])
-    wrappers, first = _classify_tree(root)
-    forwards, replies, body_wrappers, outlook, capped = _plan_extraction(root, wrappers, first)
+    wrappers, lines = _classify_tree(root)
+    forwards, replies, body_wrappers, outlook = _plan_extraction(root, wrappers, lines)
     rules = list(dict.fromkeys(f"{item.hint}_forward" for item in forwards))
     rules.extend(dict.fromkeys(item.rule for item, _, _ in replies))
     if outlook is not None:
         rules.append(outlook.rule)
-    hint = (replies[0][0].hint if replies else outlook.hint if outlook else
-            forwards[0].hint if forwards else client_hint)
+    hint = (
+        replies[0][0].hint
+        if replies
+        else outlook.hint
+        if outlook
+        else forwards[0].hint
+        if forwards
+        else client_hint
+    )
+
+    # Unwrap planned body containers before removing history. This keeps
+    # references valid when a bare quote takes a preceding attribution unit.
+    for node in body_wrappers:
+        node.unwrap()
 
     forwarded = []
-    for index, wrapper in enumerate(reversed(forwards)):
-        forwarded.append(_extract_quote_html(
-            wrapper.node, include_following_siblings=capped and index == 0,
-        ) or "")
+    for wrapper in reversed(forwards):
+        forwarded.append(_extract_quote_html(wrapper.node) or "")
     forwarded.reverse()
 
     quoted = []
     for wrapper, selected, leading in replies:
-        if selected == [wrapper.node]:
+        bare_quote = wrapper.node.tag == "blockquote"
+        if len(selected) == 1 and selected[0] is wrapper.node and leading is None:
             quoted.append(_extract_quote_html(wrapper.node) or "")
             continue
         parts = []
         if leading is not None:
-            # The first line can span inline nodes. Remove those text nodes
-            # only; all following lines/elements remain in the current body.
+            # This adjacent line is owned by exactly one parent. Remove only
+            # its text nodes; preceding and following current lines stay body.
             parts.append(escape(leading.text) + "<br>")
             for node in leading.nodes:
                 node.decompose()
         for node in selected:
             parts.append(_extract_quote_html(node) or "")
-        quoted.append(_wrap_node_html(wrapper.node, "".join(parts)))
-
-    # Unwrap from outside in; nested one-child wrappers need constant work.
-    for node in body_wrappers:
-        node.unwrap()
+        fragment = "".join(parts)
+        quoted.append(
+            fragment if bare_quote else _wrap_node_html(wrapper.node, fragment)
+        )
     body = _body_html(tree)
     if outlook is not None:
         body, quote = _split_outlook_body_and_quote(tree, outlook.node)
@@ -397,17 +524,34 @@ def segment_html_conversation(html: str, *, client_hint: str | None = None) -> C
     # Quote-only messages keep their provenance; rendering supplies the
     # existing visibility fallback without creating authored evidence.
 
-    zones = [ConversationZone(
-        kind=ZoneKind.BODY, content=body or "", source_kind="html",
-        client_hint=hint, confidence=0.95 if rules else 0.7,
-    )]
-    zones.extend(ConversationZone(
-        kind=ZoneKind.FORWARDED_BODY, content=content, source_kind="html",
-        client_hint=hint, confidence=0.95,
-    ) for content in forwarded if content)
+    zones = [
+        ConversationZone(
+            kind=ZoneKind.BODY,
+            content=body or "",
+            source_kind="html",
+            client_hint=hint,
+            confidence=0.95 if rules else 0.7,
+        )
+    ]
+    zones.extend(
+        ConversationZone(
+            kind=ZoneKind.FORWARDED_BODY,
+            content=content,
+            source_kind="html",
+            client_hint=hint,
+            confidence=0.95,
+        )
+        for content in forwarded
+        if content
+    )
     if any(quoted):
-        zones.append(ConversationZone(
-            kind=ZoneKind.QUOTED, content="".join(quoted), source_kind="html",
-            client_hint=hint, confidence=0.95,
-        ))
+        zones.append(
+            ConversationZone(
+                kind=ZoneKind.QUOTED,
+                content="".join(quoted),
+                source_kind="html",
+                client_hint=hint,
+                confidence=0.95,
+            )
+        )
     return ConversationResult(zones=zones, client_hint=hint, rules_triggered=rules)
