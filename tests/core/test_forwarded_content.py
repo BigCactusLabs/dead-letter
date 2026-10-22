@@ -43,6 +43,69 @@ def _positions(text: str, needles: list[str]) -> list[int]:
 # --- Shared marker constant -------------------------------------------------
 
 
+@pytest.mark.parametrize("thread_mode", ["latest", "structured"])
+@pytest.mark.parametrize("line_ending", [b"\r\n", b"\r"])
+def test_plain_forward_line_endings_strip_signatures(
+    tmp_path: Path, thread_mode: str, line_ending: bytes
+) -> None:
+    lf_source = FIXTURES / "plain_forward_signatures.eml"
+    source = tmp_path / "forward.eml"
+    crlf = (FIXTURES / "plain_forward_signatures_crlf.eml").read_bytes()
+    assert crlf == lf_source.read_bytes().replace(b"\n", b"\r\n")
+    outputs = []
+    for index, payload in enumerate((lf_source.read_bytes(), crlf.replace(b"\r\n", line_ending))):
+        source.write_bytes(payload)
+        output = tmp_path / f"forward-{index}.md"
+        result = convert(
+            source, output=output,
+            options=ConvertOptions(thread_mode=thread_mode, strip_signatures=True),
+        )
+        assert result.success, result.error
+        rendered = output.read_bytes()
+        assert b"FYI below." in rendered
+        assert b"Forwarded body." in rendered
+        assert b"Bob Sender" not in rendered
+        assert b"Carol Example" not in rendered
+        assert b"Carol Corp" not in rendered
+        assert b"\r" not in rendered
+        outputs.append(rendered)
+    assert outputs[0] == outputs[1]
+
+
+@pytest.mark.parametrize(
+    "name", ["plain_forward_signature_then_forward", "plain_apple_forward_quoted"]
+)
+def test_existing_plain_forward_crlf_matches_lf(tmp_path: Path, name: str) -> None:
+    original = (FIXTURES / f"{name}.eml").read_bytes()
+    lf_source = tmp_path / "forward-lf.eml"
+    lf_source.write_bytes(original.replace(b"\r\n", b"\n"))
+    crlf_source = FIXTURES / f"{name}_crlf.eml"
+    assert crlf_source.read_bytes() == lf_source.read_bytes().replace(b"\n", b"\r\n")
+    outputs = []
+    source = tmp_path / "forward.eml"
+    for index, payload in enumerate((lf_source.read_bytes(), crlf_source.read_bytes())):
+        source.write_bytes(payload)
+        output = tmp_path / f"forward-{index}.md"
+        result = convert(source, output=output)
+        assert result.success, result.error
+        outputs.append(output.read_bytes())
+    assert b"\r" not in outputs[1]
+    assert outputs[0] == outputs[1]
+
+
+def test_plain_crlf_signature_without_forward_still_strips(tmp_path: Path) -> None:
+    source = tmp_path / "plain.eml"
+    message = (FIXTURES / "plain_forward_signatures_crlf.eml").read_bytes()
+    source.write_bytes(message.split(b"---------- Forwarded message", 1)[0])
+    output = tmp_path / "plain.md"
+    result = convert(source, output=output, options=ConvertOptions(strip_signatures=True))
+    assert result.success, result.error
+    rendered = output.read_bytes()
+    assert b"FYI below." in rendered
+    assert b"Bob Sender" not in rendered
+    assert b"\r" not in rendered
+
+
 @pytest.mark.parametrize(
     "line",
     [

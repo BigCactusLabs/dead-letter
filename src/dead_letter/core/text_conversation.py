@@ -292,7 +292,8 @@ def segment_text_conversation(
     ``quoted_forwards`` also keeps a ``>``-quoted (Apple Mail) forward that
     opens a quote block when ``split_forwards`` is off.
     """
-    source = (text or "").strip()
+    # Normalize before either forward segmentation or reply parsing sees the body.
+    source = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     if not source:
         return ConversationResult(zones=[])
 
