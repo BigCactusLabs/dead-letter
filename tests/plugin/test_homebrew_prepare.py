@@ -43,6 +43,10 @@ TEXT = f'''class DeadLetter < Formula
     rm bin/"dead-letter-mcp"
     rm bin/"dead-letter-ui"
   end
+  test do
+    refute_path_exists bin/"dead-letter-mcp"
+    refute_path_exists bin/"dead-letter-ui"
+  end
 end
 '''
 
@@ -261,7 +265,10 @@ class HomebrewTests(unittest.TestCase):
         self.assertTrue(data["resources"][0]["url"].endswith(".whl"))
         self.assertTrue(h.same_contract(TEXT, self.path.read_text()))
         self.assertNotIn('rm bin/"dead-letter-mcp"', self.path.read_text())
+        self.assertNotIn('refute_path_exists bin/"dead-letter-mcp"', self.path.read_text())
+        self.assertIn('    assert_path_exists bin/"dead-letter-mcp"\n', self.path.read_text())
         self.assertIn('rm bin/"dead-letter-ui"', self.path.read_text())
+        self.assertIn('refute_path_exists bin/"dead-letter-ui"', self.path.read_text())
         self.assertEqual(packet["status"], "prepared-not-tested")
         self.assertEqual(packet["diff_sha256"], hashlib.sha256((self.output / "formula.patch").read_bytes()).hexdigest())
         self.assertFalse(any("push" in c or "commit" in c or c[:2] == ["gh", "pr"] for c, _ in self.calls))
@@ -325,7 +332,9 @@ class HomebrewTests(unittest.TestCase):
         self.assertEqual(h.require_libyaml(TEXT), TEXT)
         # open-pr also accepts the required MCP entrypoint migration.
         self.assertTrue(h.same_contract(text, h.retain_mcp(updated)))
-        self.assertTrue(h.same_contract(TEXT, TEXT.replace('    rm bin/"dead-letter-mcp"\n', '')))
+        self.assertTrue(h.same_contract(TEXT, h.retain_mcp(TEXT)))
+        # Dropping the removal while the test block still refutes the entrypoint is not the migration.
+        self.assertFalse(h.same_contract(TEXT, TEXT.replace('    rm bin/"dead-letter-mcp"\n', '')))
         self.assertFalse(h.same_contract(text, h.retain_mcp(updated.replace('"libyaml"', '"openssl@3"'))))
         self.assertFalse(h.same_contract(TEXT, h.retain_mcp(TEXT.replace('  depends_on "python', '  depends_on "libyaml"\n  depends_on "python'))))
 

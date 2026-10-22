@@ -299,7 +299,8 @@ includes the CLI and core MCP server. In a checkout of `BigCactusLabs/homebrew-t
 update `Formula/dead-letter.rb` to the exact released sdist URL and SHA-256
 from PyPI. Review its dependency resources; do not accidentally add the
 optional UI/watch extras or unrelated development packages. MCP and its core
-dependency subtree must remain included, and `dead-letter-mcp` must be retained.
+dependency subtree must remain included, and `dead-letter-mcp` must be retained
+(the formula's `test do` block asserts that entrypoint exists).
 The optional `dead-letter-ui` entrypoint must still be removed.
 
 `scripts/release.py homebrew-prepare` can generate the formula change and open

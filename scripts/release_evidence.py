@@ -240,7 +240,8 @@ def formula(text: str) -> dict:
     if len(set(names)) != len(names) or set(names) & (OPTIONAL | {"dead-letter"}):
         raise Conflict("duplicate resources or non-core packages in formula")
     # MCP became a core dependency in 0.4.7; older tap releases may remove it.
-    if tuple(map(int, version.split("."))) >= (0, 4, 7) and 'rm bin/"dead-letter-mcp"' in text:
+    removes_mcp = 'rm bin/"dead-letter-mcp"' in text or 'refute_path_exists bin/"dead-letter-mcp"' in text
+    if tuple(map(int, version.split("."))) >= (0, 4, 7) and removes_mcp:
         raise Conflict("formula must retain the core MCP entrypoint")
     if 'rm bin/"dead-letter-ui"' not in text:
         raise Conflict("formula must remove the optional UI entrypoint")

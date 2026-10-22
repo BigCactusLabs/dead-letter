@@ -27,9 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider's two-decimal precision makes a Score or probability sum differ
   slightly from the exact value.
 - Homebrew preparation includes the core MCP dependency graph and retains
-  `dead-letter-mcp`. Formula evidence checks still exclude optional UI/watch
-  dependencies and require removal of `dead-letter-ui`. Adoption in the tap
-  remains a separate maintainer update (#213).
+  `dead-letter-mcp`; the generated formula's test block asserts that
+  entrypoint exists instead of refuting it, and evidence checks reject a
+  formula that still refutes it. Formula evidence checks still exclude
+  optional UI/watch dependencies and require removal of `dead-letter-ui`.
+  Adoption in the tap remains a separate maintainer update (#213).
 - Forwarded-content edge cases from #193:
   - Latest mode keeps a text/plain Apple Mail forward quoted with `>` when it
     opens its own quote block. A quoted forward under an `On … wrote:`

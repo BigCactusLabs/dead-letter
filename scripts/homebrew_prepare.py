@@ -168,8 +168,10 @@ def require_libyaml(text: str) -> str:
 
 
 def retain_mcp(text: str) -> str:
-    """Migrate the tap's old literal removal line now that MCP is core."""
-    return re.sub(r'^    rm bin/"dead-letter-mcp"\n', "", text, flags=re.M)
+    """Migrate the tap's old MCP removal line and test assertion now that MCP is core."""
+    text = re.sub(r'^    rm bin/"dead-letter-mcp"\n', "", text, flags=re.M)
+    return re.sub(r'^    refute_path_exists bin/"dead-letter-mcp"$',
+                  '    assert_path_exists bin/"dead-letter-mcp"', text, flags=re.M)
 
 
 def same_contract(before: str, after: str) -> bool:
