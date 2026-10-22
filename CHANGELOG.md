@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- HTML forwards and replies now classify the unchanged tree before extraction,
+  preserving gogcli-style forwards, Proton containers, OWA `x_` classes and
+  Yahoo wrappers without losing current text between history blocks (#233).
+  Classification never drops content; a message that is only reply history
+  keeps its quoted provenance and is rendered through the existing quote-only
+  fallback.
+
 - Plain-text forwards normalize CRLF and bare CR line endings before segmentation,
   so signature and disclaimer cleanup works and Markdown has no stray carriage
   returns (#232).
@@ -62,6 +69,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     introduction is recognized.
 
 ### Changed
+
+- HTML quote wrappers with no positive reply or forward evidence now remain
+  current body in both thread modes. This changes output for messages whose
+  unmarked `gmail_quote` content was previously treated as reply history (#233).
 
 - Experimental analysis now pins TypeSafe SDK 0.7.5 with adapter version
   `typesafe-sdk-0.7.5-v1`, with SDK compression disabled to keep request bodies
