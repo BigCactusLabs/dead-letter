@@ -27,7 +27,7 @@ No branding assets, public runtime APIs, or package versions change.
 | Plugin tag identity/ordering could be checked too late | Peeled commit identity, ancestry check before marketplace writes, serialized workflow and exact PyPI availability |
 | A retry could replace a bundle whose hash was already advertised | Reuse published bytes, compare existing assets, refuse replacement, archive resolved registry metadata |
 | MCP publisher resolved an unpinned latest executable | Reviewed version plus archive SHA-256 |
-| Maintainer handoff blurred package/plugin/tap/catalog updates | Explicit event table, completion ledger, partial-failure recovery, manual core-only Homebrew handoff |
+| Maintainer handoff blurred package/plugin/tap/catalog updates | Explicit event table, completion ledger, partial-failure recovery, manual Homebrew handoff (core-only at that audit; see current [preparation policy](../reference/release-operations.md#prepare-a-homebrew-update)) |
 | Agent guide referenced removed docs directories | Canonical `docs/reference`, `docs/project`, and `docs/brand` map |
 | New distribution docs escaped the old link inventory | Tracked root/plugin/skill/bundle/container/benchmark inventory; regression executes the real command |
 | Current pins and channel availability were duplicated in prose | Link to reviewed releases/metadata, distinguish source templates from published artifacts |

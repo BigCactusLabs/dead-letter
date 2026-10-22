@@ -22,6 +22,9 @@ from dead_letter.core.types import (
 _FENCE_OPEN_RE = re.compile(r"^( {0,3})(`{3,}|~{3,})(.*)$")
 _FORWARD_KINDS = frozenset({ZoneKind.FORWARD_HEADER, ZoneKind.FORWARDED_BODY})
 _SECTION_KINDS = _FORWARD_KINDS | {ZoneKind.QUOTED}
+# A reply zone holding only Outlook's separator line, which mail-parser-reply
+# splits off ahead of the From/Sent block it introduces.
+_SEPARATOR_ONLY_RE = re.compile(r"\\?-{3,}[ \t]*Original Message[ \t]*-{3,}", re.IGNORECASE)
 
 
 def render_markdown(
@@ -103,7 +106,8 @@ def _build_thread_sections(threaded: ThreadedContent, opts: ConvertOptions) -> l
         return []
     sections: list[str] = []
     for zone in quoted:
-        if not zone.content.strip():
+        content = zone.content.strip()
+        if not content or _SEPARATOR_ONLY_RE.fullmatch(content):
             continue
         sections.append(_render_thread_section(zone))
     if opts.thread_order is ThreadOrder.OLDEST_FIRST:

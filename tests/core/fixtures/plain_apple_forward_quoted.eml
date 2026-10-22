@@ -1,0 +1,18 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Fwd: Receipt
+Date: Thu, 05 Mar 2026 13:00:00 +0000
+Message-ID: <plain-apple-forward-quoted-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+See below.
+
+> Begin forwarded message:
+>
+> From: Shop <shop@example.com>
+> Subject: Receipt
+> Date: March 4, 2026 at 9:00:00 AM EST
+> To: alice@example.com
+>
+> SHOP RECEIPT BODY

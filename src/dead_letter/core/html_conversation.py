@@ -93,8 +93,11 @@ _WHITESPACE_RE = re.compile(r"\s+")
 
 
 def _leading_text_line(node) -> str:
-    """First line of ``node``'s own leading text, before any child element."""
+    """First line of ``node``'s own leading text, before any child element
+    other than a leading ``<br>``."""
     for child in node.iter(include_text=True):
+        if child.tag == "br":
+            continue
         if child.tag != "-text":
             return ""
         text = (child.text_content or "").strip()

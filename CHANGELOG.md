@@ -19,6 +19,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   See [MBOX worker budgets](docs/reference/mbox-workers.md#optional-resource-budgets)
   (#188). macOS memory stays unsupported because it cannot be enforced; an
   optional soft watchdog is tracked in #220.
+- Experimental BYOK directory analysis with required `--output-dir`, bounded
+  `--jobs` (default 4, range 1–16), mirrored no-clobber sidecars and keyless reuse.
+  Independent per-message execution preserves completed results and safe
+  interrupted attempts, stops on provider failure thresholds, and reports a JSON
+  summary of this run's fresh work. Destinations that resolve outside
+  `--output-dir` through a symlink are refused per item as
+  `analysis_output_outside_root`. Python consumers can use async
+  `analyze_directory` (#165). Single-message `--output` also preserves a safe
+  interrupted attempt record after HTTP starts, with billing status unknown;
+  cancellation and outer timeout behavior are preserved.
+
+### Fixed
+
+- Experimental analysis no longer rejects valid TypeSafe answers as
+  `inconsistent_score_distribution` or `invalid_probability_sum` when the
+  provider's two-decimal precision makes a Score or probability sum differ
+  slightly from the exact value.
+- Homebrew preparation includes the core MCP dependency graph and retains
+  `dead-letter-mcp`. Formula evidence checks still exclude optional UI/watch
+  dependencies and require removal of `dead-letter-ui`. Adoption in the tap
+  remains a separate maintainer update (#213).
+- Forwarded-content edge cases from #193:
+  - Latest mode keeps a text/plain Apple Mail forward quoted with `>` when it
+    opens its own quote block. A quoted forward under an `On … wrote:`
+    attribution is still reply history.
+  - Structured mode gives a forward nested one `>` level deeper its own
+    section instead of leaving its separator inside the outer section.
+  - `strip_signatures` and `strip_disclaimers` no longer remove a later
+    forwarded message that follows a `-- ` or disclaimer line.
+  - Legacy Gmail forwards whose `gmail_quote` block opens with `<br>` before
+    the separator are detected.
+  - Structured output no longer ends `-----Original Message-----` replies
+    with a section that holds only the separator line.
+  - Forwarded header blocks with localized labels (French, German, Spanish,
+    Italian, Portuguese, Dutch, Japanese and Chinese, for example `De :`,
+    `Von:`, `Betreff:`, `差出人:`, `发件人：`) now give `## Forwarded from …`
+    headings in structured mode instead of `## Forwarded message`, and
+    plain-text forwards whose first header uses a full-width colon (Chinese
+    Gmail) are detected. Apple Mail's Japanese `転送されたメッセージ:`
+    introduction is recognized.
+
+### Changed
+
+- Claude plugin 0.4.10 pins package 0.4.8 (`dead-letter==0.4.8`) and
+  relocks `plugin/uv.lock`, which moves selectolax to 1.0.0. Plugin users get
+  the 0.4.8 fixes, including `strip_signatures` on HTML emails with
+  html-to-markdown 3.17, and the `convert_directory` `error_code` field that
+  `/dead-letter:triage` reports.
+
+## [0.4.8] - 2026-10-09
 
 ### Changed
 
