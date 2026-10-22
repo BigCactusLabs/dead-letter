@@ -81,16 +81,47 @@ def test_render_markdown_escapes_plain_text_html_tags() -> None:
     ("text", "expected"),
     [
         ("From: Vendor <vendor@example.net>", "From: Vendor <vendor@example.net>"),
-        ("See <https://example.com/a?b=1>.", "See <https://example.com/a?b=1>."),
+        ("<first.last+tag@sub.example.net>", "<first.last+tag@sub.example.net>"),
+        ("See <https://example.com/a?b=1>.", "See &lt;https://example.com/a?b=1&gt;."),
+        ("<httpſ://x/onmouseover=alert(1)>", "&lt;httpſ://x/onmouseover=alert(1)&gt;"),
+        ("<a@b.Ktest>", "&lt;a@b.Ktest&gt;"),
+        ("<sales%2Bvip@example.net>", "&lt;sales%2Bvip@example.net&gt;"),
+        ("<svg/onload=location=name//@x.test>", "&lt;svg/onload=location=name//@x.test&gt;"),
         ("<a@b.test onclick=alert(1)>", "&lt;a@b.test onclick=alert(1)&gt;"),
         ('<a@b.test"onclick=x>', '&lt;a@b.test"onclick=x&gt;'),
         ("<javascript:alert(1)>", "&lt;javascript:alert(1)&gt;"),
-        ("<data:text/html,x>", "&lt;data:text/html,x&gt;"),
         ("<a@b.test><img src=x>", "<a@b.test>&lt;img src=x&gt;"),
         ("<a&amp;b@c.test> & <x>", "&lt;a&amp;amp;b@c.test&gt; &amp; &lt;x&gt;"),
     ],
 )
 def test_render_markdown_keeps_only_safe_plain_text_autolinks(text: str, expected: str) -> None:
+    threaded = ThreadedContent(zones=[Zone(kind=ZoneKind.BODY, content=text)])
+
+    assert render_markdown(_parsed_email(), threaded).body == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Mismatched closing run: renderers need an exact-length closer.
+        ("`<img src=x onerror=a>``", "`&lt;img src=x onerror=a&gt;``"),
+        # A backslash-escaped backtick does not open a code span.
+        ("\\`<img src=x onerror=a>`", "\\`&lt;img src=x onerror=a&gt;`"),
+        # A code span may open on one line and close on the next.
+        ("`a\nx` <img src=x onerror=a> `", "`a\nx` &lt;img src=x onerror=a&gt; `"),
+        # A backtick fence info string cannot contain a backtick.
+        ("```x`\n<img src=x onerror=a>\n```", "```x`\n&lt;img src=x onerror=a&gt;\n```"),
+        # Indentation is a paragraph continuation or list content in context.
+        ("hello\n    <img src=x onerror=a>", "hello\n    &lt;img src=x onerror=a&gt;"),
+        ("- item\n\n    <img src=x onerror=a>", "- item\n\n    &lt;img src=x onerror=a&gt;"),
+        # Unambiguous spans and fences are still preserved.
+        ("a `<b>` and ``<i>``", "a `<b>` and ``<i>``"),
+        ("text\n\n```\n<div>x</div>\n```", "text\n\n```\n<div>x</div>\n```"),
+    ],
+)
+def test_render_markdown_escapes_ambiguous_plain_text_code_regions(
+    text: str, expected: str
+) -> None:
     threaded = ThreadedContent(zones=[Zone(kind=ZoneKind.BODY, content=text)])
 
     assert render_markdown(_parsed_email(), threaded).body == expected
