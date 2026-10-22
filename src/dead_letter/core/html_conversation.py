@@ -333,6 +333,16 @@ def _line_span(line: _Line, lines: _Lines, wrapper_orders: list[int]) -> list:
         first = first.parent
     if _holds_other_line(first, line, lines) or _holds_wrapper(first, lines, wrapper_orders):
         return []
+    # Text-free inline siblings on the same line (an avatar image, an empty
+    # span) belong to the unit; anything holding text or a wrapper bounds it.
+    while (
+        first.prev is not None
+        and first.prev.tag not in _BLOCK_TAGS
+        and first.prev.tag != "br"
+        and lines.first.get(first.prev.mem_id) is None
+        and not _holds_wrapper(first.prev, lines, wrapper_orders)
+    ):
+        first = first.prev
     selected = []
     node = first
     while node is not None and node.tag not in _BLOCK_TAGS and node.tag != "br":
@@ -364,6 +374,9 @@ def _preceding_attribution(
     if previous is None:
         return [], None
     if previous.tag == "div" and "gmail_attr" in _class_tokens(previous):
+        # An attribution element already holding planned history is not a unit.
+        if _holds_wrapper(previous, lines, wrapper_orders):
+            return [], None
         return [previous], None
     container = line.container
     direct = container.mem_id == parent.mem_id
