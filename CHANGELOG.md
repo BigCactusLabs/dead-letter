@@ -22,14 +22,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Plain-text forwards normalize CRLF and bare CR line endings before segmentation,
+  so signature and disclaimer cleanup works and Markdown has no stray carriage
+  returns (#232).
+- Directory analysis collision detection now keys destinations by filesystem
+  identity, so NFC/NFD aliases of one output directory (for example two
+  in-root symlinks on APFS) are refused as `analysis_output_collision` before
+  any provider request (#235).
 - Experimental analysis no longer rejects valid TypeSafe answers as
   `inconsistent_score_distribution` or `invalid_probability_sum` when the
   provider's two-decimal precision makes a Score or probability sum differ
   slightly from the exact value.
 - Homebrew preparation includes the core MCP dependency graph and retains
-  `dead-letter-mcp`. Formula evidence checks still exclude optional UI/watch
-  dependencies and require removal of `dead-letter-ui`. Adoption in the tap
-  remains a separate maintainer update (#213).
+  `dead-letter-mcp`; the generated formula's test block asserts that
+  entrypoint exists instead of refuting it, and evidence checks reject a
+  formula that still refutes it. The test block reads `doctor --json` with
+  `pipe_output`, since `doctor` exits 1 when the UI extra or inbox paths are
+  absent, as they are in the formula sandbox. Formula evidence checks still exclude
+  optional UI/watch dependencies and require removal of `dead-letter-ui`.
+  Adoption in the tap remains a separate maintainer update (#213).
 - Forwarded-content edge cases from #193:
   - Latest mode keeps a text/plain Apple Mail forward quoted with `>` when it
     opens its own quote block. A quoted forward under an `On … wrote:`
