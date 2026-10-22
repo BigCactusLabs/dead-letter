@@ -814,6 +814,22 @@ def test_normalization_alias_reaches_existing_attempts(tmp_path, wire):
     assert not wire["calls"] and not list(output.rglob("*.json"))
 
 
+@pytest.mark.parametrize("link", ["a", "z"])
+def test_link_into_existing_attempts_collides_in_either_discovery_order(tmp_path, wire, link):
+    # output/<link> -> output/x.analysis.json.attempts/sub; the alias spelling must not
+    # hide the reserved .attempts ancestor whichever item canonicalizes first.
+    source, output = tree(tmp_path, [f"{link}/y.eml", "x.eml"])
+    sub = output / "x.analysis.json.attempts" / "sub"
+    sub.mkdir(parents=True)
+    (output / link).symlink_to(sub, target_is_directory=True)
+    result = run(source, output)
+    # Discovery is sorted, so the link name decides which item canonicalizes first.
+    expected = [f"{link}/y.eml", "x.eml"] if link == "a" else ["x.eml", f"{link}/y.eml"]
+    assert [item["source"] for item in result["items"]] == expected
+    assert all(item["error_code"] == "analysis_output_collision" for item in result["items"])
+    assert not wire["calls"] and not list(output.rglob("*.json"))
+
+
 @pytest.mark.parametrize("tail", ["out", "existing/out"])
 def test_case_alias_output_inside_source_is_rejected(tmp_path, wire, tail):
     source, _ = tree(tmp_path, ["0.eml"])

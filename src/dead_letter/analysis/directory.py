@@ -136,18 +136,23 @@ async def analyze_directory(
     known: dict[Path, Path] = {}
 
     def canonical(path: Path) -> Path:
-        """Respell existing prefixes by identity, so NFC/NFD or link aliases share a key."""
+        """Respell existing prefixes by identity, so NFC/NFD or link aliases share a key.
+
+        Each identity keeps the first-seen *real* spelling: a link alias must not
+        hide the resolved ancestry that a reserved `.attempts` key relies on.
+        """
         prefix = Path(path.anchor)
         for depth, part in enumerate(path.parts[1:], 2):
             spelled = prefix / part
             if spelled not in known:
                 try:
                     found = os.stat(spelled)
-                except OSError:
+                    real = spelled.resolve(strict=True)
+                except (OSError, RuntimeError):
                     # Missing or unstattable components keep their spelling;
                     # containment has already refused unresolvable parents.
                     return spelled.joinpath(*path.parts[depth:])
-                known[spelled] = seen.setdefault((found.st_dev, found.st_ino), spelled)
+                known[spelled] = seen.setdefault((found.st_dev, found.st_ino), real)
             prefix = known[spelled]
         return prefix
 
