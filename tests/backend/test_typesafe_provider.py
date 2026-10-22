@@ -229,7 +229,7 @@ def test_long_retry_after_does_not_exceed_budget():
     ("ConnectError", "provider_connection_failed"), ("ReadTimeout", "provider_timeout"),
 ])
 def test_transport_errors_are_safe(error_type, code):
-    # SDK 0.7.1 re-raises from a redacted copy of the transport error; the
+    # SDK 0.7.5 re-raises from a redacted copy of the transport error; the
     # classification must still follow the original error type exactly.
     def handler(request):
         raise getattr(httpx, error_type)(PRIVATE + KEY, request=request)

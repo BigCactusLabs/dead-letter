@@ -52,6 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Experimental analysis now pins TypeSafe SDK 0.7.5 with adapter version
+  `typesafe-sdk-0.7.5-v1`. Existing analysis sidecars will be re-analyzed
+  rather than reused because the SDK and adapter versions bind the reuse key.
 - Claude plugin 0.4.10 pins package 0.4.8 (`dead-letter==0.4.8`) and
   relocks `plugin/uv.lock`, which moves selectolax to 1.0.0. Plugin users get
   the 0.4.8 fixes, including `strip_signatures` on HTML emails with
