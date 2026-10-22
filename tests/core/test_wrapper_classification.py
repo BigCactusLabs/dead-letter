@@ -303,10 +303,14 @@ def test_r10_reply_only_render_fallback_preserves_quoted_provenance(tmp_path, mo
         f'<div class="gmail_quote">{BOB}<br><blockquote>ONLY CONTENT</blockquote></div>'
     )
     zones = segment_html_conversation(html).zones
-    assert any(zone.kind is ZoneKind.QUOTED and "ONLY CONTENT" in zone.content for zone in zones)
+    assert any(
+        zone.kind is ZoneKind.QUOTED and "ONLY CONTENT" in zone.content
+        for zone in zones
+    )
     assert all(
         not parse_html(zone.content).text(strip=True)
-        for zone in zones if zone.kind is ZoneKind.BODY
+        for zone in zones
+        if zone.kind is ZoneKind.BODY
     )
     meta, body = _render(tmp_path, html, mode)
     assert "ONLY CONTENT" in body and "Bob" in body
@@ -415,3 +419,237 @@ def test_emphasized_separator_projection(marker):
         marker,
         "From: Bob\nPAYLOAD",
     )
+
+
+# Cross-model review regressions, T233 r3. These precede the repair.
+def _zone_text(zones, kind):
+    return "\n".join(
+        parse_html(zone.content).text(separator=" ", strip=True)
+        for zone in zones
+        if zone.kind is kind
+    )
+
+
+def test_r3_p1_1_approval_before_adjacent_attribution(tmp_path):
+    html = f'<div class="gmail_quote">APPROVED, ship it today.<br>{BOB}<br><blockquote>OLD HISTORY</blockquote></div>'
+    zones = segment_html_conversation(html).zones
+    assert "APPROVED, ship it today." in _zone_text(zones, ZoneKind.BODY)
+    assert BOB in _zone_text(zones, ZoneKind.QUOTED)
+    assert "APPROVED" not in _zone_text(zones, ZoneKind.QUOTED)
+    assert "APPROVED, ship it today." in _render(tmp_path, html, "latest")[1]
+
+
+def test_r3_p1_1_single_block_attribution_preserves_before_after(tmp_path):
+    html = f'<div class="gmail_quote"><div>CURRENT BEFORE</div><div>{BOB}</div><blockquote>OLD HISTORY</blockquote><div>CURRENT AFTER</div></div>'
+    zones = segment_html_conversation(html).zones
+    assert "CURRENT BEFORE" in _zone_text(zones, ZoneKind.BODY)
+    assert "CURRENT AFTER" in _zone_text(zones, ZoneKind.BODY)
+    assert BOB in _zone_text(zones, ZoneKind.QUOTED)
+    assert "CURRENT" not in _zone_text(zones, ZoneKind.QUOTED)
+    latest = _render(tmp_path, html, "latest")[1]
+    assert "CURRENT BEFORE" in latest and "CURRENT AFTER" in latest
+    assert "Bob" not in latest
+
+
+@pytest.mark.parametrize("quote", ['<img src="cid:a" alt="">', ""])
+def test_r3_p1_1_empty_quote_never_takes_following_answer(tmp_path, quote):
+    html = f'<div>Hi</div><div class="gmail_quote"><blockquote class="gmail_quote">{quote}</blockquote>MY ANSWER AFTER<br>more</div>'
+    zones = segment_html_conversation(html).zones
+    assert "MY ANSWER AFTER" in _zone_text(zones, ZoneKind.BODY)
+    assert "more" in _zone_text(zones, ZoneKind.BODY)
+    assert "MY ANSWER AFTER" not in _zone_text(zones, ZoneKind.QUOTED)
+    assert any(zone.kind is ZoneKind.QUOTED for zone in zones)
+    latest = _render(tmp_path, html, "latest")[1]
+    assert "MY ANSWER AFTER" in latest and "more" in latest
+
+
+def test_r3_p1_1_proton_note_is_authored(tmp_path):
+    html = '<div class="protonmail_quote"><div>Yes, approved.</div><blockquote class="protonmail_quote">OLD</blockquote></div>'
+    zones = segment_html_conversation(html).zones
+    assert "Yes, approved." in _zone_text(zones, ZoneKind.BODY)
+    assert _zone_text(zones, ZoneKind.QUOTED) == "OLD"
+    assert _render(tmp_path, html, "latest")[1] == "Yes, approved."
+
+
+def test_r3_p1_1_nested_attribution_stays_with_its_owner(tmp_path):
+    html = f'<div>CURRENT</div><div class="gmail_quote"><div class="gmail_quote">{BOB}<br>OLD BOB</div><blockquote>OLDER</blockquote></div>'
+    zones = segment_html_conversation(html).zones
+    quoted = "".join(z.content for z in zones if z.kind is ZoneKind.QUOTED)
+    tree = parse_html(quoted)
+    # The innermost wrapper containing OLD BOB retains its own attribution.
+    matches = [node for node in tree.css("div.gmail_quote") if "OLD BOB" in node.text()]
+    bob = matches[-1]
+    assert BOB in bob.text()
+    assert quoted.count(BOB) == 1
+    assert "CURRENT" in _zone_text(zones, ZoneKind.BODY)
+    assert _render(tmp_path, html, "latest")[1] == "CURRENT"
+
+
+def test_r3_p1_2_shared_line_does_not_amplify_history():
+    n, length = 50, 2000
+    html = (
+        '<div class="gmail_quote">' * n
+        + "Z" * length
+        + "<br>"
+        + "<blockquote>b</blockquote></div>" * n
+    )
+    zones = segment_html_conversation(html).zones
+    quoted_size = sum(len(z.content) for z in zones if z.kind is ZoneKind.QUOTED)
+    assert quoted_size <= len(html) + 64 * n
+    assert _zone_text(zones, ZoneKind.BODY).count("Z") == length
+
+
+def test_r3_p1_4_reply_after_forward_cap(monkeypatch):
+    from dead_letter.core import html_conversation as module
+
+    monkeypatch.setattr(module, "_MAX_FORWARD_BLOCKS", 2)
+    forward = f'<div><div class="gmail_quote"><div class="gmail_attr">{MARKER}<br>From: Bob<br></div>FWD</div></div>'
+    reply = f'<div><div class="gmail_quote"><div class="gmail_attr">{BOB}</div><blockquote>OLDREPLY</blockquote></div></div>'
+    zones = segment_html_conversation(
+        "<div>NOTE</div>" + forward * 2 + reply + "<div>TRAILING BODY</div>"
+    ).zones
+    assert "OLDREPLY" in _zone_text(zones, ZoneKind.QUOTED)
+    assert "OLDREPLY" not in _zone_text(zones, ZoneKind.BODY)
+    assert "TRAILING BODY" in _zone_text(zones, ZoneKind.BODY)
+
+
+@pytest.mark.parametrize("cls", CLASSES)
+def test_r3_p2_1_bare_classed_blockquote_is_history(tmp_path, cls):
+    html = f'<div>Reply</div><blockquote class="{cls}">old quoted history line</blockquote>'
+    zones = segment_html_conversation(html).zones
+    assert _zone_text(zones, ZoneKind.BODY) == "Reply"
+    assert _zone_text(zones, ZoneKind.QUOTED) == "old quoted history line"
+    assert "<blockquote" in next(z.content for z in zones if z.kind is ZoneKind.QUOTED)
+    assert _render(tmp_path, html, "latest")[1] == "Reply"
+
+
+def test_r3_p2_2_gmail_attr_accepts_unlisted_dashed_label():
+    html = '<div>FYI</div><div class="gmail_quote gmail_quote_container"><div dir="ltr" class="gmail_attr">---------- 전달된 메일 ---------<br>보낸사람: Bob &lt;b@x&gt;<br>Date: 2026년 3월 2일<br>Subject: Report<br></div><div>FORWARDED PAYLOAD</div></div>'
+    result = segment_html_conversation(html)
+    assert "gmail_forward" in result.rules_triggered
+    assert "FORWARDED PAYLOAD" in _zone_text(result.zones, ZoneKind.FORWARDED_BODY)
+
+
+@pytest.mark.parametrize(
+    "blank", ["\u200b", "\u200c", "\u200d", "\u2060", "\ufeff", "\u00ad"]
+)
+def test_r3_p2_3_format_only_first_line_is_blank(blank):
+    html = f'<div>Top</div><div class="gmail_quote">{blank}<br>{BOB}<br>OLD</div>'
+    zones = segment_html_conversation(html).zones
+    assert "OLD" in _zone_text(zones, ZoneKind.QUOTED)
+    assert "OLD" not in _zone_text(zones, ZoneKind.BODY)
+
+
+def test_r3_p2_3_gmail_attr_wrapped_attribution():
+    html = '<div>Top</div><div class="gmail_quote"><div class="gmail_attr">On Mon, Mar 2, 2026 at 9:00 AM Bob &lt;a@x&gt;<br>wrote:<br></div>OLD</div>'
+    zones = segment_html_conversation(html).zones
+    assert "OLD" in _zone_text(zones, ZoneKind.QUOTED)
+    assert "OLD" not in _zone_text(zones, ZoneKind.BODY)
+
+
+def test_r3_p2_3_center_ends_first_line():
+    from dead_letter.core.html_conversation import _classify_tree
+
+    tree = parse_html(
+        f'<div class="gmail_quote"><center>Agenda</center>{BOB}<br>BODY</div>'
+    )
+    wrappers, _ = _classify_tree(tree.body)
+    assert next(iter(wrappers.values())).line.text == "Agenda"
+
+
+def test_r3_t1_deep_structural_reply_extraction():
+    import time
+
+    html = (
+        "<div>LATEST</div>"
+        + "<div>" * 2000
+        + f'<div class="gmail_quote">{BOB}<br><blockquote>HISTORY</blockquote></div>'
+        + "</div>" * 2000
+    )
+    started = time.perf_counter()
+    zones = segment_html_conversation(html).zones
+    elapsed = time.perf_counter() - started
+    assert "HISTORY" in _zone_text(zones, ZoneKind.QUOTED)
+    assert "HISTORY" not in _zone_text(zones, ZoneKind.BODY)
+    assert elapsed < 2
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        f"KEEP BEFORE<br><b>{BOB}</b><br>",
+        f"<div>KEEP BEFORE<br>{BOB}<br></div>",
+    ],
+)
+def test_r3_adjacent_inline_or_last_block_line_keeps_earlier_text(tmp_path, prefix):
+    html = (
+        f'<div class="gmail_quote">{prefix}<blockquote>OLD</blockquote>KEEP AFTER</div>'
+    )
+    zones = segment_html_conversation(html).zones
+    assert "KEEP BEFORE" in _zone_text(zones, ZoneKind.BODY)
+    assert "KEEP AFTER" in _zone_text(zones, ZoneKind.BODY)
+    assert BOB in _zone_text(zones, ZoneKind.QUOTED)
+    assert "KEEP" not in _zone_text(zones, ZoneKind.QUOTED)
+    latest = _render(tmp_path, html, "latest")[1]
+    assert "KEEP BEFORE" in latest and "KEEP AFTER" in latest
+
+
+def test_r3_first_direct_quote_only():
+    html = f'<div>TOP</div><div class="gmail_quote">{BOB}<br><blockquote>OLD</blockquote><div>CURRENT AFTER</div><blockquote>UNCLASSIFIED AFTER</blockquote></div>'
+    zones = segment_html_conversation(html).zones
+    assert "UNCLASSIFIED AFTER" in _zone_text(zones, ZoneKind.BODY)
+    assert "UNCLASSIFIED AFTER" not in _zone_text(zones, ZoneKind.QUOTED)
+
+
+def test_r3_bare_blockquote_takes_one_parent_attribution():
+    html = f'<div>CURRENT</div>{BOB}<br><blockquote class="gmail_quote">OLD</blockquote><div>AFTER</div>'
+    zones = segment_html_conversation(html).zones
+    assert "Bob" not in _zone_text(zones, ZoneKind.BODY)
+    assert BOB in _zone_text(zones, ZoneKind.QUOTED)
+    assert "AFTER" in _zone_text(zones, ZoneKind.BODY)
+
+
+def test_r3_empty_quote_is_an_attribution_boundary():
+    html = f'<div>CURRENT</div><div class="gmail_quote">{BOB}<br><blockquote></blockquote><blockquote class="gmail_quote">OLD</blockquote></div>'
+    zones = segment_html_conversation(html).zones
+    assert sum(z.content.count(BOB) for z in zones) == 1
+
+
+@pytest.mark.parametrize(
+    "history",
+    [
+        '<div id="divRplyFwdMsg">OLD HISTORY</div>',
+        '<blockquote class="front-blockquote">OLD HISTORY</blockquote>',
+    ],
+)
+def test_r3_outlook_front_after_cap_remain_history(monkeypatch, history):
+    from dead_letter.core import html_conversation as module
+
+    monkeypatch.setattr(module, "_MAX_FORWARD_BLOCKS", 1)
+    zones = segment_html_conversation(
+        "<div>NOTE</div><div>" + _forward() + "</div>" + history
+    ).zones
+    assert "OLD HISTORY" in _zone_text(zones, ZoneKind.QUOTED)
+    assert "OLD HISTORY" not in _zone_text(zones, ZoneKind.BODY)
+
+
+def test_r3_forwards_past_cap_stay_body_without_taking_history(monkeypatch):
+    from dead_letter.core import html_conversation as module
+
+    monkeypatch.setattr(module, "_MAX_FORWARD_BLOCKS", 1)
+    html = (
+        "<div>NOTE</div>"
+        + _forward("FIRST")
+        + _forward("EXCESS")
+        + f'<div class="gmail_quote">{BOB}<br><blockquote>HISTORY</blockquote></div><div>AFTER</div>'
+    )
+    zones = segment_html_conversation(html).zones
+    assert "FIRST" in _zone_text(zones, ZoneKind.FORWARDED_BODY)
+    assert "EXCESS" in _zone_text(zones, ZoneKind.BODY)
+    assert "HISTORY" in _zone_text(zones, ZoneKind.QUOTED)
+    assert "AFTER" in _zone_text(zones, ZoneKind.BODY)
+
+
+def test_r3_unlisted_dashed_label_outside_gmail_attr_is_body():
+    html = '<div>FYI</div><div class="gmail_quote">---------- 전달된 메일 ---------<br>From: Bob<br>PAYLOAD</div>'
+    assert [z.kind for z in segment_html_conversation(html).zones] == [ZoneKind.BODY]

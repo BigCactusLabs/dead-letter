@@ -222,7 +222,7 @@ def _kinds(html: str) -> list[ZoneKind]:
     return [zone.kind for zone in segment_html_conversation(html).zones]
 
 
-def test_gmail_attr_without_separator_or_attribution_is_body() -> None:
+def test_gmail_attr_without_dashed_separator_or_attribution_is_body() -> None:
     # A gmail_attr alone is not evidence of either a reply or a forward.
     html = (
         '<div>Note.</div><div class="gmail_quote gmail_quote_container">'
@@ -305,7 +305,7 @@ def test_html_segmentation_survives_deep_forward_nesting() -> None:
     assert "Body 300." in forwards[-1].content
 
 
-def test_html_forwards_past_cap_are_kept_once_in_order(tmp_path: Path) -> None:
+def test_html_forwards_past_cap_are_kept_once_in_body_before_sections(tmp_path: Path) -> None:
     html = "<div>Note.</div>" + "".join(
         f'<div class="gmail_quote"><div class="gmail_attr">{MARKER_LINE}<br>'
         f"From: P{n} &lt;p{n}@example.com&gt;<br></div><div>Note body from person {n}.</div></div>"
@@ -325,7 +325,9 @@ def test_html_forwards_past_cap_are_kept_once_in_order(tmp_path: Path) -> None:
         needles = [f"Note body from person {n}." for n in range(1, 71)]
         for needle in needles:
             assert body.count(needle) == 1, (mode, needle)
-        _positions(body, needles)
+        # Only the first 64 become sections; the remaining forwards stay
+        # in BODY, which renders before those sections.
+        _positions(body, needles[64:] + needles[:64])
 
 
 def test_marker_patterns_do_not_span_lines() -> None:
