@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Plain-text forwards normalize CRLF and bare CR line endings before segmentation,
+  so signature and disclaimer cleanup works and Markdown has no stray carriage
+  returns (#232).
 - Experimental analysis no longer rejects valid TypeSafe answers as
   `inconsistent_score_distribution` or `invalid_probability_sum` when the
   provider's two-decimal precision makes a Score or probability sum differ
