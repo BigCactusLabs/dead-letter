@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Claude plugin 0.4.11 pins package 0.4.9 (`dead-letter==0.4.9`) and relocks
+  `plugin/uv.lock`. Plugin users get the 0.4.9 forward and wrapper fixes and
+  the stricter plain-text HTML escaping.
+
 ## [0.4.9] - 2026-10-22
 
 ### Added
