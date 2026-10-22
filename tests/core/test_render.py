@@ -101,45 +101,44 @@ def test_render_markdown_keeps_only_safe_plain_text_autolinks(text: str, expecte
 
 
 @pytest.mark.parametrize(
-    ("text", "expected"),
+    "text",
     [
-        # Mismatched closing run: renderers need an exact-length closer.
-        ("`<img src=x onerror=a>``", "`&lt;img src=x onerror=a&gt;``"),
-        # A backslash-escaped backtick does not open a code span.
-        ("\\`<img src=x onerror=a>`", "\\`&lt;img src=x onerror=a&gt;`"),
-        # A code span may open on one line and close on the next.
-        ("`a\nx` <img src=x onerror=a> `", "`a\nx` &lt;img src=x onerror=a&gt; `"),
-        # A backtick fence info string cannot contain a backtick.
-        ("```x`\n<img src=x onerror=a>\n```", "```x`\n&lt;img src=x onerror=a&gt;\n```"),
-        # Indentation is a paragraph continuation or list content in context.
-        ("hello\n    <img src=x onerror=a>", "hello\n    &lt;img src=x onerror=a&gt;"),
-        ("- item\n\n    <img src=x onerror=a>", "- item\n\n    &lt;img src=x onerror=a&gt;"),
-        # Unambiguous spans and fences are still preserved.
-        ("a `<b>` and ``<i>``", "a `<b>` and ``<i>``"),
-        ("text\n\n```\n<div>x</div>\n```", "text\n\n```\n<div>x</div>\n```"),
+        "`<img src=x onerror=a>``",
+        "\\`<img src=x onerror=a>`",
+        "`a\nx` <img src=x onerror=a> `",
+        "```x`\n<img src=x onerror=a>\n```",
+        "```\n    ```\n```\n<img src=x onerror=a>",
+        "- item\n  ```\n<img src=x onerror=a>",
+        "x\u2028```\n<img src=x onerror=a>",
+        "`a\n\xa0\nx` <img src=x onerror=a> `",
+        "```\n<img src=x onerror=a>",
+        "`<img src=x onerror=a> | `\n--- | ---",
+        "`<img src=x onerror=a>`\x02``x``",
+        "hello\n    <img src=x onerror=a>",
     ],
 )
-def test_render_markdown_escapes_ambiguous_plain_text_code_regions(
-    text: str, expected: str
-) -> None:
+def test_render_markdown_escapes_plain_text_regardless_of_markdown_code_syntax(text: str) -> None:
+    # Which regions a renderer treats as code depends on context this layer
+    # cannot see, so code-looking plain text gets no exemption.
     threaded = ThreadedContent(zones=[Zone(kind=ZoneKind.BODY, content=text)])
 
-    assert render_markdown(_parsed_email(), threaded).body == expected
+    body = render_markdown(_parsed_email(), threaded).body
+
+    assert "<" not in body
+    assert "&lt;img src=x onerror=a&gt;" in body
 
 
-def test_render_markdown_preserves_plain_text_markdown_code_regions() -> None:
+def test_render_markdown_escapes_plain_text_markdown_code_regions() -> None:
     parsed = _parsed_email()
     threaded = ThreadedContent(
         zones=[
             Zone(
                 kind=ZoneKind.BODY,
                 content=(
-                    "Inline code keeps `<div>` literal.\n\n"
+                    "Inline code `<div>` is escaped too.\n\n"
                     "```html\n"
-                    "<script>alert('in code')</script>\n"
                     "<div>fixture</div>\n"
-                    "```\n\n"
-                    "Outside code is still <img src=x onerror=alert(2)>."
+                    "```"
                 ),
             ),
         ]
@@ -147,10 +146,31 @@ def test_render_markdown_preserves_plain_text_markdown_code_regions() -> None:
 
     rendered = render_markdown(parsed, threaded)
 
-    assert "`<div>`" in rendered.body
-    assert "```html\n<script>alert('in code')</script>\n<div>fixture</div>\n```" in rendered.body
-    assert "&lt;img src=x onerror=alert(2)&gt;" in rendered.body
-    assert "<img" not in rendered.body
+    assert rendered.body == (
+        "Inline code `&lt;div&gt;` is escaped too.\n\n```html\n&lt;div&gt;fixture&lt;/div&gt;\n```"
+    )
+
+
+def test_render_structured_escapes_heading_fields_before_joining() -> None:
+    threaded = ThreadedContent(
+        zones=[
+            Zone(kind=ZoneKind.BODY, content="Latest body"),
+            Zone(
+                kind=ZoneKind.QUOTED,
+                content="prior",
+                metadata={
+                    "attribution_from": "`Alice",
+                    "attribution_date": "`<img src=x onerror=a>`",
+                },
+            ),
+        ]
+    )
+
+    rendered = render_markdown(
+        _parsed_email(), threaded, options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+    )
+
+    assert "## From `Alice (`&lt;img src=x onerror=a&gt;`)" in rendered.body
 
 
 def test_render_structured_escapes_plain_text_thread_metadata_and_body() -> None:

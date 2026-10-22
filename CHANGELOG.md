@@ -26,10 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Vendor <vendor@example.net>` as written instead of escaping them to
   `&lt;vendor@example.net&gt;`. Every other angle bracket, including URLs and
   address-like text carrying attributes, is still escaped.
-- Plain-text HTML escaping no longer skips text that only looks like code:
-  mismatched or backslash-escaped backtick runs, code spans that cross lines,
-  backtick fences whose info string contains a backtick, and indented lines are
-  now escaped. Unambiguous inline code and fenced blocks are still preserved.
+- Plain-text HTML escaping no longer exempts text that looks like Markdown
+  code. Renderers disagree about which regions are code (fence indentation,
+  list containers, tables, Unicode line separators, joined heading fields), and
+  several of these let raw HTML through. Backtick spans and fences in plain-text
+  mail are now escaped like the rest of the text, so `<div>` inside them reads
+  `&lt;div&gt;`.
 - HTML forwards and replies now classify the unchanged tree before extraction,
   preserving gogcli-style forwards, Proton containers, OWA `x_` classes and
   Yahoo wrappers without losing current text between history blocks (#233).
