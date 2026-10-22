@@ -12,7 +12,7 @@ profile has empirical email-triage quality results. Ordinary conversion, bundles
 MCP tools and UI remain local and do not enable analysis when a key is present.
 
 The package includes an optional `typesafe` extra, pinned to
-`typesafe-sdk==0.7.1`. Base and normal development installs remain SDK-free.
+`typesafe-sdk==0.7.5`. Base and normal development installs remain SDK-free.
 The extra and the `analyze` command are available in 0.4.5 and later; 0.4.0
 and earlier do not include them. The commands below run from a development
 checkout. With an installed package, drop the `uv run` prefix and its options;
@@ -410,7 +410,7 @@ use the shared snapshot rather than build another MIME parser.
 
 ## Provider, credentials and privacy
 
-The adapter lazily imports exactly SDK 0.7.1. Missing or different versions fail
+The adapter lazily imports exactly SDK 0.7.5. Missing or different versions fail
 preflight rather than silently using an untested API. Normal conversion, previews,
 help and imports do not load the SDK. `dead-letter doctor` reports only installed
 and configured booleans and does not contact TypeSafe or validate a real key.
@@ -421,7 +421,8 @@ never an email/profile field. The default is `https://api.typesafe.ai`. HTTPS is
 required except for literal loopback test servers. Credentials, query/fragment
 components and ambiguous paths are rejected. Only POST to the configured API root
 plus `/v1/systemone` is permitted; redirects, including same-host redirects, are
-rejected. Implicit HTTP(S) proxy environment configuration is not honored. Use an
+rejected. Request bodies are uncompressed JSON (SDK compression is disabled by
+the adapter). Implicit HTTP(S) proxy environment configuration is not honored. Use an
 explicit validated API-root proxy when needed and assess its privacy policy too.
 
 The SDK can log unredacted request/response bodies at DEBUG. The adapter installs
@@ -535,9 +536,9 @@ Still pending: reviewed held-out evaluation (#166). See the
 
 ## First-party implementation references
 
-Checked September 18, 2026; SDK source link updated to 0.7.1 on September 27, 2026:
+Checked September 18, 2026; SDK source link updated for the 0.7.5 pin:
 
-- [SDK 0.7.1 source](https://github.com/typesafe-ai/typesafe-sdk-python/tree/v0.7.1)
+- [SDK 0.7.5 source](https://github.com/typesafe-ai/typesafe-sdk-python/tree/v0.7.5)
   and [changelog](https://docs.typesafe.ai/sdk/python/changelog).
 - [SDK usage](https://docs.typesafe.ai/sdk/python/usage),
   [retry policy](https://docs.typesafe.ai/sdk/python/api/retries), and

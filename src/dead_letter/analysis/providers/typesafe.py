@@ -29,8 +29,8 @@ from dead_letter.analysis.profiles import get_profile
 from dead_letter.analysis.responses import validate_response
 from dead_letter.analysis.providers._logging import install_filters, private_provider_logs
 
-SDK_VERSION = "0.7.1"
-ADAPTER_VERSION = "typesafe-sdk-0.7.1-v1"
+SDK_VERSION = "0.7.5"
+ADAPTER_VERSION = "typesafe-sdk-0.7.5-v1"
 SYSTEM_ONE_PATH = "/v1/systemone"
 MAX_RESPONSE_BYTES = 512_000
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,255}\Z")
@@ -272,7 +272,8 @@ class TypeSafeProvider:
                         # fallback model/provider, and no invisible environment proxy.
                         async with sdk.AsyncTypeSafeClient(
                             api_key=key, base_url=self.config.base_url, model=request.model,
-                            http_client=http_client,
+                            # Request fingerprints and fake-HTTP contracts require plain JSON.
+                            http_client=http_client, compression=False,
                             retry=sdk.RetryPolicy(max_retries=self.config.max_retries,
                                                   timeout=self.config.budget_seconds,
                                                   backoff_initial=0.25, backoff_max=2.0),

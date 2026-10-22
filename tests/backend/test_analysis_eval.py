@@ -356,7 +356,7 @@ def _fake_sidecar(case, profile, *, expectation=None, mismatch=False):
         returned_model="jev-1.13.0",
         usage={"input_tokens": 100},
         attempts=[{"duration_ms": 10}, {"duration_ms": 30}],
-        sdk_version="0.7.1",
+        sdk_version="0.7.5",
     )
     for q, spec in get_profile(profile).questions().items():
         if spec["type"] == "noul":
