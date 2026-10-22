@@ -114,18 +114,14 @@ _BLOCK_TAGS = frozenset(
         "thead",
         "tr",
         "ul",
-        "center",
-        "details",
-        "summary",
-        "caption",
-        "legend",
-        "menu",
-        "dialog",
     }
 )
 _MAX_FORWARD_BLOCKS = 64
 _WHITESPACE_RE = re.compile(r"\s+")
-_ATTR_FORWARD_RE = re.compile(r"^-{2,}\s*\S.*?\s*-{2,}$")
+
+
+def _is_dashed_label(text: str) -> bool:
+    return text.startswith("--") and text.endswith("--") and bool(text.strip("-").strip())
 
 
 def _format_whitespace(text: str) -> str:
@@ -138,9 +134,10 @@ def _format_whitespace(text: str) -> str:
 
 
 def _recognized_attribution(text: str) -> bool:
+    if not text.endswith((":", "：")):
+        return False
     return parse_attribution_line(text) is not None or (
-        text.endswith((":", "："))
-        and any(reply.headers for reply in parse_email_replies(text))
+        any(reply.headers for reply in parse_email_replies(text))
     )
 
 
@@ -162,12 +159,12 @@ class _Line:
         self.text = _WHITESPACE_RE.sub(" ", "".join(self.parts)).strip()
         self.parts.clear()
 
-    def classify(self, attr_replies: dict[int, bool]) -> None:
+    def classify(self, attr_replies: dict[int, bool], attr_lines: dict[int, list]) -> None:
         if self.classified:
             return
         self.classified = True
         if is_forward_marker_line(self.text) or (
-            self.attr is not None and _ATTR_FORWARD_RE.fullmatch(self.text)
+            self.attr is not None and _is_dashed_label(self.text)
         ):
             self.kind = "forward"
         elif (self.attr is not None and _attribution_shaped(self.text)) or (
@@ -175,14 +172,11 @@ class _Line:
         ):
             self.kind = "reply"
         elif self.attr is not None:
-            # A br can split a Gmail attribution before "wrote:". Cache the
-            # whole-attribute oracle once, even when wrappers share this attr.
+            # A br can split an attribution before "wrote:". Only join the
+            # attr's own first two collected lines, never its whole subtree.
             key = self.attr.mem_id
             if key not in attr_replies:
-                text = _WHITESPACE_RE.sub(
-                    " ",
-                    _format_whitespace(self.attr.text(separator=" ")),
-                ).strip()
+                text = " ".join(line.text for line in attr_lines.get(key, []))
                 attr_replies[key] = _recognized_attribution(text)
             if attr_replies[key]:
                 self.kind = "reply"
@@ -220,6 +214,8 @@ def _wrapper_match(node, classes: set[str]) -> tuple[str, str] | None:
 class _Lines:
     first: dict[int, _Line] = field(default_factory=dict)
     last: dict[int, _Line] = field(default_factory=dict)
+    attrs: dict[int, list[_Line]] = field(default_factory=dict)
+    order: dict[int, int] = field(default_factory=dict)
 
 
 def _classify_tree(root) -> tuple[dict[int, _Wrapper], _Lines]:
@@ -246,7 +242,8 @@ def _classify_tree(root) -> tuple[dict[int, _Wrapper], _Lines]:
                 first.setdefault(node.parent.mem_id, child_line)
                 last[node.parent.mem_id] = last[node.mem_id]
             continue
-        if node is not root and node.next is not None:
+        lines.order[node.mem_id] = len(lines.order)
+        if node.mem_id != root.mem_id and node.next is not None:
             stack.append((node.next, False, attr, container))
         if (node.tag in _BLOCK_TAGS or node.tag == "br") and line.nodes:
             line.finish()
@@ -258,6 +255,10 @@ def _classify_tree(root) -> tuple[dict[int, _Wrapper], _Lines]:
             if raw.strip():
                 if not line.nodes:
                     line.attr, line.container = attr, container
+                    if attr is not None:
+                        own_lines = lines.attrs.setdefault(attr.mem_id, [])
+                        if len(own_lines) < 2:
+                            own_lines.append(line)
                 line.parts.append(raw)
                 line.nodes.append(node)
                 first[node.mem_id] = line
@@ -285,7 +286,7 @@ def _classify_tree(root) -> tuple[dict[int, _Wrapper], _Lines]:
     for wrapper in wrappers.values():
         wrapper.line = first.get(wrapper.node.mem_id)
         if wrapper.line is not None:
-            wrapper.line.classify(attr_replies)
+            wrapper.line.classify(attr_replies, lines.attrs)
         if wrapper.hint in ("outlook", "front"):
             wrapper.kind = "reply"
         elif wrapper.line is not None and wrapper.line.kind == "forward":
@@ -295,6 +296,26 @@ def _classify_tree(root) -> tuple[dict[int, _Wrapper], _Lines]:
         elif wrapper.line is not None:
             wrapper.kind = wrapper.line.kind
     return wrappers, lines
+
+
+def _line_span(line: _Line) -> list:
+    """Select the direct-child HTML run, retaining inline elements verbatim."""
+    first = line.nodes[0]
+    while first.parent.mem_id != line.container.mem_id:
+        first = first.parent
+    while first.prev is not None and first.prev.tag not in _BLOCK_TAGS and first.prev.tag != "br":
+        first = first.prev
+    selected = []
+    node = first
+    while node is not None and node.tag not in _BLOCK_TAGS and node.tag != "br":
+        selected.append(node)
+        node = node.next
+    while node is not None and (
+        node.tag == "br" or (node.tag == "-text" and not _format_whitespace(node.text_content or "").strip())
+    ):
+        selected.append(node)
+        node = node.next
+    return selected
 
 
 def _preceding_attribution(
@@ -321,11 +342,21 @@ def _preceding_attribution(
         and container.parent.mem_id == parent.mem_id
         and container.mem_id not in wrappers
     )
-    if not (direct or child_block) or not _attribution_shaped(line.text):
+    if not (direct or child_block) or not _recognized_attribution(line.text):
         return [], None
     if child_block and lines.first.get(container.mem_id) is line:
         return [container], None
-    return [], line
+    selected = _line_span(line)
+    previous = selected[0].prev
+    while previous is not None and (
+        previous.tag == "br" or (previous.tag == "-text" and not _format_whitespace(previous.text_content or "").strip())
+    ):
+        previous = previous.prev
+    if previous is not None and previous.tag not in _BLOCK_TAGS and previous.mem_id not in wrappers:
+        marker = lines.last.get(previous.mem_id)
+        if marker is not None and marker.container.mem_id == container.mem_id and _is_dashed_label(marker.text):
+            selected = _line_span(marker) + selected
+    return selected, None
 
 
 def _reply_parts(
@@ -344,7 +375,7 @@ def _plan_extraction(root, wrappers: dict[int, _Wrapper], lines: _Lines):
     stack = [(root, None)]
     while stack:
         node, forward_line = stack.pop()
-        if node is not root and node.next is not None:
+        if node.mem_id != root.mem_id and node.next is not None:
             stack.append((node.next, forward_line))
         if node.mem_id in skipped:
             continue
@@ -358,9 +389,9 @@ def _plan_extraction(root, wrappers: dict[int, _Wrapper], lines: _Lines):
                     and len(forwards) < _MAX_FORWARD_BLOCKS
                 ):
                     forwards.append(wrapper)
+                    forward_line = wrapper.line
                 # The cap limits forward sections, never subsequent history
                 # planning. Uncollected forwards retain their own content.
-                forward_line = wrapper.line
             elif wrapper.kind == "reply":
                 if forward_line is not None:
                     continue  # reply history inside a forward stays with it
@@ -382,6 +413,7 @@ def _plan_extraction(root, wrappers: dict[int, _Wrapper], lines: _Lines):
                 body_wrappers.append(node)
         if node.child is not None:
             stack.append((node.child, forward_line))
+    replies.sort(key=lambda reply: lines.order[reply[1][0].mem_id])
     return forwards, replies, body_wrappers, outlook
 
 
@@ -501,16 +533,10 @@ def segment_html_conversation(
     quoted = []
     for wrapper, selected, leading in replies:
         bare_quote = wrapper.node.tag == "blockquote"
-        if len(selected) == 1 and selected[0] is wrapper.node and leading is None:
+        if len(selected) == 1 and selected[0].mem_id == wrapper.node.mem_id:
             quoted.append(_extract_quote_html(wrapper.node) or "")
             continue
         parts = []
-        if leading is not None:
-            # This adjacent line is owned by exactly one parent. Remove only
-            # its text nodes; preceding and following current lines stay body.
-            parts.append(escape(leading.text) + "<br>")
-            for node in leading.nodes:
-                node.decompose()
         for node in selected:
             parts.append(_extract_quote_html(node) or "")
         fragment = "".join(parts)
