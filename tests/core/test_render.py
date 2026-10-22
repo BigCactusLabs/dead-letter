@@ -77,6 +77,25 @@ def test_render_markdown_escapes_plain_text_html_tags() -> None:
     assert "&lt;img src=x onerror=alert(2)&gt;" in rendered.body
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("From: Vendor <vendor@example.net>", "From: Vendor <vendor@example.net>"),
+        ("See <https://example.com/a?b=1>.", "See <https://example.com/a?b=1>."),
+        ("<a@b.test onclick=alert(1)>", "&lt;a@b.test onclick=alert(1)&gt;"),
+        ('<a@b.test"onclick=x>', '&lt;a@b.test"onclick=x&gt;'),
+        ("<javascript:alert(1)>", "&lt;javascript:alert(1)&gt;"),
+        ("<data:text/html,x>", "&lt;data:text/html,x&gt;"),
+        ("<a@b.test><img src=x>", "<a@b.test>&lt;img src=x&gt;"),
+        ("<a&amp;b@c.test> & <x>", "&lt;a&amp;amp;b@c.test&gt; &amp; &lt;x&gt;"),
+    ],
+)
+def test_render_markdown_keeps_only_safe_plain_text_autolinks(text: str, expected: str) -> None:
+    threaded = ThreadedContent(zones=[Zone(kind=ZoneKind.BODY, content=text)])
+
+    assert render_markdown(_parsed_email(), threaded).body == expected
+
+
 def test_render_markdown_preserves_plain_text_markdown_code_regions() -> None:
     parsed = _parsed_email()
     threaded = ThreadedContent(
@@ -206,8 +225,8 @@ def test_render_structured_emits_per_message_sections() -> None:
     )
 
     assert "Latest body" in rendered.body
-    assert "## From Alice &lt;alice@example.com&gt; (Mar 5, 2026)" in rendered.body
-    assert "## From Bob &lt;bob@example.com&gt; (Mar 4, 2026)" in rendered.body
+    assert "## From Alice <alice@example.com> (Mar 5, 2026)" in rendered.body
+    assert "## From Bob <bob@example.com> (Mar 4, 2026)" in rendered.body
     assert "prior 1 body" in rendered.body
     assert "prior 2 body" in rendered.body
     assert rendered.front_matter["thread_messages"] == 2

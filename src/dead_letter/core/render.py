@@ -20,6 +20,17 @@ from dead_letter.core.types import (
 )
 
 _FENCE_OPEN_RE = re.compile(r"^( {0,3})(`{3,}|~{3,})(.*)$")
+# CommonMark email and http(s) URI autolinks render as links, never raw HTML,
+# so they pass through unescaped. Backticks and `&` are excluded so the
+# surrounding code-span and entity handling stay unambiguous.
+_LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+_SAFE_AUTOLINK_RE = re.compile(
+    r"<(?:"
+    rf"[A-Za-z0-9.!#$%'*+/=?^_{{|}}~-]+@{_LABEL}(?:\.{_LABEL})*"
+    r"|https?://[^\s<>`&\x00-\x1f\x7f]+"
+    r")>",
+    re.IGNORECASE,
+)
 _FORWARD_KINDS = frozenset({ZoneKind.FORWARD_HEADER, ZoneKind.FORWARDED_BODY})
 _SECTION_KINDS = _FORWARD_KINDS | {ZoneKind.QUOTED}
 # A reply zone holding only Outlook's separator line, which mail-parser-reply
@@ -232,12 +243,23 @@ def _escape_html_outside_code_spans(line: str) -> str:
             index = tick_end
             continue
 
-        rendered.append(html.escape(line[text_start:index], quote=False))
+        rendered.append(_escape_html_preserving_autolinks(line[text_start:index]))
         rendered.append(line[index:closing + len(tick_run)])
         index = closing + len(tick_run)
         text_start = index
 
-    rendered.append(html.escape(line[text_start:], quote=False))
+    rendered.append(_escape_html_preserving_autolinks(line[text_start:]))
+    return "".join(rendered)
+
+
+def _escape_html_preserving_autolinks(text: str) -> str:
+    rendered: list[str] = []
+    start = 0
+    for match in _SAFE_AUTOLINK_RE.finditer(text):
+        rendered.append(html.escape(text[start:match.start()], quote=False))
+        rendered.append(match.group(0))
+        start = match.end()
+    rendered.append(html.escape(text[start:], quote=False))
     return "".join(rendered)
 
 

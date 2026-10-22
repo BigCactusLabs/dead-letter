@@ -166,7 +166,7 @@ def test_convert_forwarded_email_preserves_forwarded_message_content(tmp_path: P
     assert result.output is not None
 
     body = result.output.read_text(encoding="utf-8")
-    assert "Vendor &lt;vendor@example.net&gt;" in body
+    assert "Vendor <vendor@example.net>" in body
     assert "Please review the attached quote." in body
 
 

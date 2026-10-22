@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Plain-text bodies and thread headings keep email and `http(s)` autolinks
+  such as `Vendor <vendor@example.net>` as written instead of escaping them to
+  `&lt;vendor@example.net&gt;`. Every other angle bracket, including
+  `<javascript:…>` and address-like tags carrying attributes, is still escaped.
 - HTML forwards and replies now classify the unchanged tree before extraction,
   preserving gogcli-style forwards, Proton containers, OWA `x_` classes and
   Yahoo wrappers without losing current text between history blocks (#233).

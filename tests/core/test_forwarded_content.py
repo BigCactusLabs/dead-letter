@@ -375,7 +375,7 @@ def test_forward_after_note_with_reply_like_lines_is_kept(
     assert "## Earlier message" not in structured
     _positions(
         structured,
-        [*note, "## Forwarded from Dave &lt;dave@example.com&gt; (Wed, Mar 4, 2026) — Budget",
+        [*note, "## Forwarded from Dave <dave@example.com> (Wed, Mar 4, 2026) — Budget",
          "To: alice@example.com", "DAVE FORWARDED BODY"],
     )
 
@@ -390,7 +390,7 @@ def test_separator_inside_outlook_history_stays_reply(name: str, tmp_path: Path)
     assert "OLD REPLY HISTORY LINE" not in latest
     assert "## Forwarded" not in structured
     assert "thread_messages: 1" in front
-    _positions(structured, ["## From Bob &lt;bob@example.com&gt;", "OLD REPLY HISTORY LINE"])
+    _positions(structured, ["## From Bob <bob@example.com>", "OLD REPLY HISTORY LINE"])
 
 
 @pytest.mark.parametrize(
@@ -490,7 +490,7 @@ def test_single_gmail_forward_structured_has_one_section(tmp_path: Path) -> None
     # Emphasis from <strong class="gmail_sendername"> is not carried into the
     # heading; To stays in the section content.
     assert (
-        "## Forwarded from Vendor &lt;vendor@example.net&gt; "
+        "## Forwarded from Vendor <vendor@example.net> "
         "(Thu, Mar 5, 2026 at 8:00 AM) — Vendor Note\n\n"
         "To: Alice <alice@example.com>  \n\nPlease review the attached quote."
     ) in body
@@ -501,7 +501,7 @@ def test_real_gmail_sender_markup_gives_clean_heading(tmp_path: Path) -> None:
     _, body = _body("gmail_forward_body_headers.eml", tmp_path, thread_mode="structured")
 
     assert (
-        "## Forwarded from Dave &lt;dave@example.com&gt; (Wed, Mar 4, 2026 at 10:00 AM) — Budget"
+        "## Forwarded from Dave <dave@example.com> (Wed, Mar 4, 2026 at 10:00 AM) — Budget"
     ) in body
     assert "**Dave**" not in body.split("\n\n", 2)[1]
 
@@ -530,13 +530,13 @@ def test_forward_body_header_lines_and_recipients_are_kept(tmp_path: Path) -> No
     [
         (
             "gmail_forward_empty_body.eml",
-            "## Forwarded from Dave &lt;dave@example.com&gt; (Wed, Mar 4, 2026 at 10:00 AM) — Budget",
+            "## Forwarded from Dave <dave@example.com> (Wed, Mar 4, 2026 at 10:00 AM) — Budget",
             ["To: <alice@example.com>", "Cc: Carol <carol@example.com>"],
         ),
         (
             "plain_forward_empty_body.eml",
-            "## Forwarded from Dave &lt;dave@example.com&gt; (Wed, Mar 4, 2026) — Invoice",
-            ["To: alice@example.com", "Cc: Carol &lt;carol@example.com&gt;"],
+            "## Forwarded from Dave <dave@example.com> (Wed, Mar 4, 2026) — Invoice",
+            ["To: alice@example.com", "Cc: Carol <carol@example.com>"],
         ),
     ],
 )
@@ -587,7 +587,7 @@ def test_french_gmail_forward_detected_structurally(tmp_path: Path) -> None:
     _positions(
         structured,
         ["Pour info.",
-         "## Forwarded from Expéditeur &lt;sender@example.fr&gt; (jeu. 5 mars 2026 à 08:00) — Stage",
+         "## Forwarded from Expéditeur <sender@example.fr> (jeu. 5 mars 2026 à 08:00) — Stage",
          "To: Alice", "Le programme du stage est joint."],
     )
 
@@ -616,7 +616,7 @@ def test_thunderbird_and_apple_forwards_kept_in_latest(
     ("name", "header", "last_line"),
     [
         ("thunderbird_forward.eml", "## Forwarded message", "Minutes from the Wednesday meeting."),
-        ("apple_mail_forward.eml", "## Forwarded from Shop &lt;shop@example.com&gt; — Receipt",
+        ("apple_mail_forward.eml", "## Forwarded from Shop <shop@example.com> — Receipt",
          "Thank you for your order."),
     ],
 )
@@ -698,9 +698,9 @@ def test_plain_text_multiple_markers(tmp_path: Path) -> None:
         structured,
         [
             "Digest of notes below.",
-            "## Forwarded from Person One &lt;one@example.com&gt; (Mon, Mar 2, 2026 at 9:00 AM) — Note one",
+            "## Forwarded from Person One <one@example.com> (Mon, Mar 2, 2026 at 9:00 AM) — Note one",
             "## Forwarded from Person Two",
-            "## Forwarded from Person Three &lt;three@example.com&gt; (March 4, 2026 at 9:00:00 AM EST)",
+            "## Forwarded from Person Three <three@example.com> (March 4, 2026 at 9:00:00 AM EST)",
         ],
     )
 
@@ -714,7 +714,7 @@ def test_plain_quoted_apple_forward_kept_in_latest(tmp_path: Path) -> None:
 
     _positions(
         latest,
-        ["See below.", "Begin forwarded message:", "From: Shop &lt;shop@example.com&gt;",
+        ["See below.", "Begin forwarded message:", "From: Shop <shop@example.com>",
          "To: alice@example.com", "SHOP RECEIPT BODY"],
     )
     # The forward is unquoted one level, like its structured section.
@@ -723,7 +723,7 @@ def test_plain_quoted_apple_forward_kept_in_latest(tmp_path: Path) -> None:
     _positions(
         structured,
         ["See below.",
-         "## Forwarded from Shop &lt;shop@example.com&gt; (March 4, 2026 at 9:00:00 AM EST) — Receipt",
+         "## Forwarded from Shop <shop@example.com> (March 4, 2026 at 9:00:00 AM EST) — Receipt",
          "SHOP RECEIPT BODY"],
     )
 
@@ -748,8 +748,8 @@ def test_signature_in_forward_does_not_remove_later_forward(tmp_path: Path) -> N
     assert "thread_messages: 2" in front
     _positions(
         structured,
-        ["## Forwarded from Person One &lt;one@example.com&gt; — Note one", "Body from person one.",
-         "## Forwarded from Person Two &lt;two@example.com&gt; — Note two", "Body from person two."],
+        ["## Forwarded from Person One <one@example.com> — Note one", "Body from person one.",
+         "## Forwarded from Person Two <two@example.com> — Note two", "Body from person two."],
     )
     assert "signature line" not in structured
 
@@ -768,7 +768,7 @@ def test_legacy_gmail_forward_with_leading_br_is_forward(tmp_path: Path) -> None
     _positions(
         structured,
         ["Old-style forward below.",
-         "## Forwarded from Dave &lt;dave@example.com&gt; (Wed, Mar 4, 2026 at 10:00 AM) — Budget",
+         "## Forwarded from Dave <dave@example.com> (Wed, Mar 4, 2026 at 10:00 AM) — Budget",
          "LEGACY FORWARDED BODY"],
     )
 
@@ -784,9 +784,9 @@ def test_nested_apple_plain_forwards_get_own_sections(tmp_path: Path) -> None:
     _positions(
         structured,
         ["Plan thread below.",
-         "## Forwarded from Bob &lt;bob@example.com&gt; (March 4, 2026 at 9:00:00 AM EST) — Fwd: Plan",
+         "## Forwarded from Bob <bob@example.com> (March 4, 2026 at 9:00:00 AM EST) — Fwd: Plan",
          "BOB OUTER FORWARD BODY",
-         "## Forwarded from Carol &lt;carol@example.com&gt; (March 3, 2026 at 9:00:00 AM EST) — Plan",
+         "## Forwarded from Carol <carol@example.com> (March 3, 2026 at 9:00:00 AM EST) — Plan",
          "CAROL INNER FORWARD BODY"],
     )
 
@@ -800,7 +800,7 @@ def test_original_message_reply_has_no_separator_only_section(tmp_path: Path) ->
     assert structured.count("OLD REPLY HISTORY LINE") == 1
     _positions(
         structured,
-        ["Thanks, see you then.", "## From Bob &lt;bob@example.com&gt;", "OLD REPLY HISTORY LINE"],
+        ["Thanks, see you then.", "## From Bob <bob@example.com>", "OLD REPLY HISTORY LINE"],
     )
 
 
@@ -842,17 +842,17 @@ def test_localized_forward_header_labels_parse(text: str, expected: dict[str, st
     ("name", "heading", "kept", "body"),
     [
         ("plain_thunderbird_forward_french.eml",
-         "## Forwarded from Claire &lt;claire@example.fr&gt; (mer. 4 mars 2026 09:00:00 +0100) — Planning",
+         "## Forwarded from Claire <claire@example.fr> (mer. 4 mars 2026 09:00:00 +0100) — Planning",
          "Copie à :", "THUNDERBIRD FRENCH BODY"),
         ("plain_apple_forward_dutch.eml",
-         "## Forwarded from Daan &lt;daan@example.nl&gt; (4 maart 2026 om 09:00:00 CET) — Rooster",
+         "## Forwarded from Daan <daan@example.nl> (4 maart 2026 om 09:00:00 CET) — Rooster",
          "Aan: alice@example.com", "APPLE DUTCH BODY"),
         ("plain_apple_forward_japanese.eml",
-         "## Forwarded from Kenji &lt;kenji@example.jp&gt; (2026年3月4日 9:00:00 JST) — Schedule",
+         "## Forwarded from Kenji <kenji@example.jp> (2026年3月4日 9:00:00 JST) — Schedule",
          "宛先: alice@example.com", "APPLE JAPANESE BODY"),
         ("plain_gmail_forward_chinese.eml",
-         "## Forwarded from Wei &lt;wei@example.cn&gt; (2026年3月4日周三 09:00) — Report",
-         "To: &lt;alice@example.com&gt;", "GMAIL CHINESE BODY"),
+         "## Forwarded from Wei <wei@example.cn> (2026年3月4日周三 09:00) — Report",
+         "To: <alice@example.com>", "GMAIL CHINESE BODY"),
     ],
 )
 def test_localized_plain_forwards_get_parsed_headings(
@@ -1071,7 +1071,9 @@ def test_output_that_must_not_change_is_byte_identical(key: str, tmp_path: Path)
     """Goldens were captured from main before forward handling changed.
 
     The gmail_quote fixture was updated for #233: no positive evidence means
-    current body. All other entries retain their previous bytes.
+    current body. Safe plain-text autolinks such as ``<a@example.com>`` were
+    later unescaped from ``&lt;...&gt;``; that was the only change to the
+    other entries' bytes.
 
     Covers every fixture without a forward (including reply markup that must
     not be mistaken for a forward, and separators inside reply history or
