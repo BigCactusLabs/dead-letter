@@ -421,7 +421,8 @@ never an email/profile field. The default is `https://api.typesafe.ai`. HTTPS is
 required except for literal loopback test servers. Credentials, query/fragment
 components and ambiguous paths are rejected. Only POST to the configured API root
 plus `/v1/systemone` is permitted; redirects, including same-host redirects, are
-rejected. Implicit HTTP(S) proxy environment configuration is not honored. Use an
+rejected. Request bodies are uncompressed JSON (SDK compression is disabled by
+the adapter). Implicit HTTP(S) proxy environment configuration is not honored. Use an
 explicit validated API-root proxy when needed and assess its privacy policy too.
 
 The SDK can log unredacted request/response bodies at DEBUG. The adapter installs

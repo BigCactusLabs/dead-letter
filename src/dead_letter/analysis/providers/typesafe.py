@@ -272,7 +272,8 @@ class TypeSafeProvider:
                         # fallback model/provider, and no invisible environment proxy.
                         async with sdk.AsyncTypeSafeClient(
                             api_key=key, base_url=self.config.base_url, model=request.model,
-                            http_client=http_client,
+                            # Request fingerprints and fake-HTTP contracts require plain JSON.
+                            http_client=http_client, compression=False,
                             retry=sdk.RetryPolicy(max_retries=self.config.max_retries,
                                                   timeout=self.config.budget_seconds,
                                                   backoff_initial=0.25, backoff_max=2.0),

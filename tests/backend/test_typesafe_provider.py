@@ -146,6 +146,29 @@ def test_real_sdk_serialization_and_allowlisted_native_result(profile):
             assert answer == {"type": "noul", "noul": 0.01}
 
 
+def test_large_request_remains_uncompressed_json():
+    request = prepare_request(NormalizedMessage(
+        subject="Synthetic", sender="sender@example.test", sent_at="2001-01-02T10:30:00-05:00",
+        normalization_version="synthetic-test-v1",
+        segments=(Segment("body-1", "authored", "Synthetic body. " * 256),),
+    ))
+    assert len(request.state_json.encode("utf-8")) >= 2048
+    calls = []
+
+    def handler(wire):
+        calls.append(wire)
+        return success(wire)
+
+    result = evaluate(handler, request=request)
+    assert len(calls) == 1
+    wire = calls[0]
+    payload = json.loads(wire.content)
+    assert "content-encoding" not in wire.headers
+    assert set(payload) == {"model", "questions", "state"}
+    assert len(json.dumps(payload["state"]).encode("utf-8")) >= 2048
+    assert result["execution_status"] == "succeeded"
+
+
 def test_endpoint_configuration_and_disclosure_cannot_diverge():
     config = TypeSafeConfig(base_url="https://proxy.example.test/gateway")
     request = replace(prepared_request(), base_url=config.base_url)
