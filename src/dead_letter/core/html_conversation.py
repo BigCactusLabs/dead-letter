@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from bisect import bisect_right
 from dataclasses import dataclass, field
 from html import escape
 
@@ -120,8 +121,13 @@ _MAX_FORWARD_BLOCKS = 64
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
+# Real attribution lines are a few hundred characters; the parsers behind
+# the colon gate are not linear, so longer lines are never attribution.
+_MAX_ATTRIBUTION_CHARS = 1000
+
+
 def _is_dashed_label(text: str) -> bool:
-    return text.startswith("--") and text.endswith("--") and bool(text.strip("-").strip())
+    return text.startswith("--") and text.endswith("--") and bool(text.strip("- "))
 
 
 def _format_whitespace(text: str) -> str:
@@ -134,7 +140,7 @@ def _format_whitespace(text: str) -> str:
 
 
 def _recognized_attribution(text: str) -> bool:
-    if not text.endswith((":", "：")):
+    if len(text) > _MAX_ATTRIBUTION_CHARS or not text.endswith((":", "：")):
         return False
     return parse_attribution_line(text) is not None or (
         any(reply.headers for reply in parse_email_replies(text))
@@ -216,6 +222,7 @@ class _Lines:
     last: dict[int, _Line] = field(default_factory=dict)
     attrs: dict[int, list[_Line]] = field(default_factory=dict)
     order: dict[int, int] = field(default_factory=dict)
+    end: dict[int, int] = field(default_factory=dict)
 
 
 def _classify_tree(root) -> tuple[dict[int, _Wrapper], _Lines]:
@@ -234,6 +241,7 @@ def _classify_tree(root) -> tuple[dict[int, _Wrapper], _Lines]:
     while stack:
         node, exiting, attr, container = stack.pop()
         if exiting:
+            lines.end[node.mem_id] = len(lines.order)
             if node.tag in _BLOCK_TAGS and line.nodes:
                 line.finish()
                 line = _Line()
@@ -298,16 +306,38 @@ def _classify_tree(root) -> tuple[dict[int, _Wrapper], _Lines]:
     return wrappers, lines
 
 
-def _line_span(line: _Line) -> list:
-    """Select the direct-child HTML run, retaining inline elements verbatim."""
+def _holds_other_line(node, line: _Line, lines: _Lines) -> bool:
+    """True when ``node``'s subtree holds text from any line other than ``line``."""
+    return (
+        lines.first.get(node.mem_id, line) is not line
+        or lines.last.get(node.mem_id, line) is not line
+    )
+
+
+def _holds_wrapper(node, lines: _Lines, wrapper_orders: list[int]) -> bool:
+    """True when ``node``'s subtree contains a classified wrapper."""
+    start = lines.order[node.mem_id]
+    end = lines.end.get(node.mem_id, start + 1)
+    index = bisect_right(wrapper_orders, start)
+    return index < len(wrapper_orders) and wrapper_orders[index] < end
+
+
+def _line_span(line: _Line, lines: _Lines, wrapper_orders: list[int]) -> list:
+    """Select the direct-child HTML run that holds only this line.
+
+    Siblings holding any other line, or a planned wrapper, are authored
+    content and bound the run; an empty result leaves the line in the body.
+    """
     first = line.nodes[0]
     while first.parent.mem_id != line.container.mem_id:
         first = first.parent
-    while first.prev is not None and first.prev.tag not in _BLOCK_TAGS and first.prev.tag != "br":
-        first = first.prev
+    if _holds_other_line(first, line, lines) or _holds_wrapper(first, lines, wrapper_orders):
+        return []
     selected = []
     node = first
     while node is not None and node.tag not in _BLOCK_TAGS and node.tag != "br":
+        if _holds_other_line(node, line, lines) or _holds_wrapper(node, lines, wrapper_orders):
+            break
         selected.append(node)
         node = node.next
     while node is not None and (
@@ -319,7 +349,7 @@ def _line_span(line: _Line) -> list:
 
 
 def _preceding_attribution(
-    quote, parent, wrappers, lines: _Lines
+    quote, parent, wrappers, lines: _Lines, wrapper_orders: list[int]
 ) -> tuple[list, _Line | None]:
     """Take at most one adjacent attribution unit from this parent's content."""
     previous = quote.prev
@@ -345,8 +375,13 @@ def _preceding_attribution(
     if not (direct or child_block) or not _recognized_attribution(line.text):
         return [], None
     if child_block and lines.first.get(container.mem_id) is line:
+        # A block already holding planned history is never taken whole.
+        if _holds_wrapper(container, lines, wrapper_orders):
+            return [], None
         return [container], None
-    selected = _line_span(line)
+    selected = _line_span(line, lines, wrapper_orders)
+    if not selected:
+        return [], None
     previous = selected[0].prev
     while previous is not None and (
         previous.tag == "br" or (previous.tag == "-text" and not _format_whitespace(previous.text_content or "").strip())
@@ -355,22 +390,25 @@ def _preceding_attribution(
     if previous is not None and previous.tag not in _BLOCK_TAGS and previous.mem_id not in wrappers:
         marker = lines.last.get(previous.mem_id)
         if marker is not None and marker.container.mem_id == container.mem_id and _is_dashed_label(marker.text):
-            selected = _line_span(marker) + selected
+            selected = _line_span(marker, lines, wrapper_orders) + selected
     return selected, None
 
 
 def _reply_parts(
-    wrapper: _Wrapper, wrappers, lines: _Lines
+    wrapper: _Wrapper, wrappers, lines: _Lines, wrapper_orders: list[int]
 ) -> tuple[list, _Line | None]:
     """Select the first direct quote and one adjacent, locally owned attribution."""
     quote = wrapper.node if wrapper.node.tag == "blockquote" else wrapper.quotes[0]
-    selected, leading = _preceding_attribution(quote, quote.parent, wrappers, lines)
+    selected, leading = _preceding_attribution(
+        quote, quote.parent, wrappers, lines, wrapper_orders
+    )
     return [*selected, quote], leading
 
 
 def _plan_extraction(root, wrappers: dict[int, _Wrapper], lines: _Lines):
     forwards, replies, body_wrappers = [], [], []
     skipped: set[int] = set()
+    wrapper_orders = sorted(lines.order[mem_id] for mem_id in wrappers)
     outlook = None
     stack = [(root, None)]
     while stack:
@@ -401,7 +439,7 @@ def _plan_extraction(root, wrappers: dict[int, _Wrapper], lines: _Lines):
                 if (
                     node.tag == "blockquote" or wrapper.quotes
                 ) and wrapper.hint != "front":
-                    selected, leading = _reply_parts(wrapper, wrappers, lines)
+                    selected, leading = _reply_parts(wrapper, wrappers, lines, wrapper_orders)
                     skipped.update(child.mem_id for child in selected)
                     replies.append((wrapper, selected, leading))
                     if node.tag == "blockquote":
