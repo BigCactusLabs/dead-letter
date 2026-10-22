@@ -44,6 +44,7 @@ TEXT = f'''class DeadLetter < Formula
     rm bin/"dead-letter-ui"
   end
   test do
+    assert_match "\\"version\\": \\"#{{version}}\\"", shell_output("#{{bin}}/dead-letter doctor --json")
     refute_path_exists bin/"dead-letter-mcp"
     refute_path_exists bin/"dead-letter-ui"
   end
@@ -267,6 +268,8 @@ class HomebrewTests(unittest.TestCase):
         self.assertNotIn('rm bin/"dead-letter-mcp"', self.path.read_text())
         self.assertNotIn('refute_path_exists bin/"dead-letter-mcp"', self.path.read_text())
         self.assertIn('    assert_path_exists bin/"dead-letter-mcp"\n', self.path.read_text())
+        self.assertNotIn('shell_output("#{bin}/dead-letter doctor --json")', self.path.read_text())
+        self.assertIn(', pipe_output("#{bin}/dead-letter doctor --json")\n', self.path.read_text())
         self.assertIn('rm bin/"dead-letter-ui"', self.path.read_text())
         self.assertIn('refute_path_exists bin/"dead-letter-ui"', self.path.read_text())
         self.assertEqual(packet["status"], "prepared-not-tested")
@@ -331,12 +334,14 @@ class HomebrewTests(unittest.TestCase):
         self.assertEqual(h.require_libyaml(updated), updated)
         self.assertEqual(h.require_libyaml(TEXT), TEXT)
         # open-pr also accepts the required MCP entrypoint migration.
-        self.assertTrue(h.same_contract(text, h.retain_mcp(updated)))
-        self.assertTrue(h.same_contract(TEXT, h.retain_mcp(TEXT)))
+        self.assertTrue(h.same_contract(text, h.migrate_formula(updated)))
+        self.assertTrue(h.same_contract(TEXT, h.migrate_formula(TEXT)))
+        self.assertIn(', pipe_output("#{bin}/dead-letter doctor --json")\n', h.migrate_formula(TEXT))
+        self.assertEqual(h.migrate_formula(h.migrate_formula(TEXT)), h.migrate_formula(TEXT))
         # Dropping the removal while the test block still refutes the entrypoint is not the migration.
         self.assertFalse(h.same_contract(TEXT, TEXT.replace('    rm bin/"dead-letter-mcp"\n', '')))
-        self.assertFalse(h.same_contract(text, h.retain_mcp(updated.replace('"libyaml"', '"openssl@3"'))))
-        self.assertFalse(h.same_contract(TEXT, h.retain_mcp(TEXT.replace('  depends_on "python', '  depends_on "libyaml"\n  depends_on "python'))))
+        self.assertFalse(h.same_contract(text, h.migrate_formula(updated.replace('"libyaml"', '"openssl@3"'))))
+        self.assertFalse(h.same_contract(TEXT, h.migrate_formula(TEXT.replace('  depends_on "python', '  depends_on "libyaml"\n  depends_on "python'))))
 
     def test_extra_file_is_not_deleted_or_silently_committed(self):
         self.extra_file = True
@@ -346,7 +351,7 @@ class HomebrewTests(unittest.TestCase):
         self.assertTrue((self.tap / "unexpected.txt").exists())
 
     def test_same_version_and_review_directory_reuse_refused(self):
-        self.path.write_text(h.retain_mcp(TEXT.replace("dead_letter-0.4.5.tar.gz", f"dead_letter-{VERSION}.tar.gz")))
+        self.path.write_text(h.migrate_formula(TEXT.replace("dead_letter-0.4.5.tar.gz", f"dead_letter-{VERSION}.tar.gz")))
         subprocess.run(["git", "commit", "-am", "synthetic same version"], cwd=self.tap, check=True, capture_output=True)
         with self.assertRaisesRegex(ValueError, "newer"):
             self.prepare()

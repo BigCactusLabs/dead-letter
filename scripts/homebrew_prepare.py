@@ -167,16 +167,24 @@ def require_libyaml(text: str) -> str:
     return re.sub(r'^(  depends_on "python@)', '  depends_on "libyaml"\n\\1', text, count=1, flags=re.M)
 
 
-def retain_mcp(text: str) -> str:
-    """Migrate the tap's old MCP removal line and test assertion now that MCP is core."""
+def migrate_formula(text: str) -> str:
+    """Migrate the tap's test and install blocks to the current package contract.
+
+    MCP is core since 0.4.7, so the old removal line goes and the test asserts
+    the entrypoint. `doctor --json` exits 1 whenever a check errs (the UI extra
+    and inbox paths are absent in the formula sandbox), so the test reads its
+    output with `pipe_output`, which does not assert the exit status.
+    """
     text = re.sub(r'^    rm bin/"dead-letter-mcp"\n', "", text, flags=re.M)
-    return re.sub(r'^    refute_path_exists bin/"dead-letter-mcp"$',
+    text = re.sub(r'^    refute_path_exists bin/"dead-letter-mcp"$',
                   '    assert_path_exists bin/"dead-letter-mcp"', text, flags=re.M)
+    return re.sub(r'(?<=, )shell_output\(("#\{bin\}/dead-letter doctor --json")\)$',
+                  r"pipe_output(\1)", text, flags=re.M)
 
 
 def same_contract(before: str, after: str) -> bool:
-    """Allow resource/release updates, libyaml, and retaining the MCP entrypoint."""
-    return skeleton(retain_mcp(require_libyaml(before))) == skeleton(after)
+    """Allow resource/release updates, libyaml, and the contract migrations above."""
+    return skeleton(migrate_formula(require_libyaml(before))) == skeleton(after)
 
 
 def wheel_resources(client: Client, items: list[dict], wheels: Path) -> dict[str, dict]:
@@ -248,10 +256,10 @@ def prepare_tap(tap: Path, output: Path, recipe: dict, *, client: Client) -> dic
             finally:
                 owned = path.read_text(encoding="utf-8")
             generated = owned
-        generated = retain_mcp(generated)
+        generated = migrate_formula(generated)
         data = formula(generated)
         if (data["version"] != version or data["url"] != recipe["sdist_url"]
-                or data["sha256"] != recipe["sdist_sha256"] or skeleton(generated) != skeleton(retain_mcp(before))):
+                or data["sha256"] != recipe["sdist_sha256"] or skeleton(generated) != skeleton(migrate_formula(before))):
             raise Conflict("Homebrew changed fields outside the approved version/resources layout")
         # Homebrew resolves the dependency graph, not us. pip selects compatible
         # wheels for those exact versions under the tap's native interpreter;

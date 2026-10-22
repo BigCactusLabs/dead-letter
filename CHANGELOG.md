@@ -36,7 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Homebrew preparation includes the core MCP dependency graph and retains
   `dead-letter-mcp`; the generated formula's test block asserts that
   entrypoint exists instead of refuting it, and evidence checks reject a
-  formula that still refutes it. Formula evidence checks still exclude
+  formula that still refutes it. The test block reads `doctor --json` with
+  `pipe_output`, since `doctor` exits 1 when the UI extra or inbox paths are
+  absent, as they are in the formula sandbox. Formula evidence checks still exclude
   optional UI/watch dependencies and require removal of `dead-letter-ui`.
   Adoption in the tap remains a separate maintainer update (#213).
 - Forwarded-content edge cases from #193:
