@@ -346,7 +346,7 @@ Response (`200`):
     "state": "normal|degraded|review_recommended",
     "selected_body": "html|plain",
     "segmentation_path": "html|plain_fallback",
-    "client_hint": "gmail|outlook|front|generic|null",
+    "client_hint": "gmail|outlook|front|proton|yahoo|generic|null",
     "confidence": "high|medium|low",
     "fallback_used": "plain_text_reply_parser|html_failure_plain_text_fallback|html_markdown_panic_repaired|null",
     "warnings": [{"code": "string", "message": "string", "severity": "warning"}],

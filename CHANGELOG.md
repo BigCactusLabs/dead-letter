@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   attribution elements require non-empty text between the dashes; wrapped
   attribution detection reads only the element's own first two lines, and
   lines longer than 1000 characters are never parsed as attributions.
+  Quality diagnostics accept the new `proton` and `yahoo` client hints, so
+  file-mode jobs for those messages no longer fail schema validation.
 
 - Plain-text forwards normalize CRLF and bare CR line endings before segmentation,
   so signature and disclaimer cleanup works and Markdown has no stray carriage
