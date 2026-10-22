@@ -59,7 +59,7 @@ This summary is intended for operator review. It is not the raw internal convers
 
 - `high`
   - Strong structure signals were available.
-  - Example: Gmail, Outlook, or supported Front quote boundaries were recognized directly.
+  - Example: Gmail, Outlook, Proton, Yahoo, or supported Front quote boundaries were recognized directly.
 - `medium`
   - Conversion succeeded on a standard path without strong provider-specific evidence.
 - `low`
