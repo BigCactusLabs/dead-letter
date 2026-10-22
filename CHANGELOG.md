@@ -35,7 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that is only reply history keeps its quoted provenance and is rendered
   through the existing quote-only fallback. Dashed separators in Gmail
   attribution elements require non-empty text between the dashes; wrapped
-  attribution detection reads only the element's own first two lines.
+  attribution detection reads only the element's own first two lines, and
+  lines longer than 1000 characters are never parsed as attributions.
 
 - Plain-text forwards normalize CRLF and bare CR line endings before segmentation,
   so signature and disclaimer cleanup works and Markdown has no stray carriage
