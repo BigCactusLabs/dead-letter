@@ -4,7 +4,8 @@ Status: offline corpus and harness implemented; **reviewed held-out quality
 evidence remains pending**. All 192 messages and their labels are model-authored,
 public synthetic material. Every label is a `model_prelabel` with
 `human_review_status: unreviewed`. They are not gold labels. The baseline, scorer,
-identity staging helper and repeat-run comparator run locally without credentials.
+identity staging helper, review-artifact workflow and repeat-run comparator run
+locally without credentials.
 Issues [#196](https://github.com/BigCactusLabs/dead-letter/issues/196) and
 [#197](https://github.com/BigCactusLabs/dead-letter/issues/197) record a September
 28 live run against those pre-labels. Its result trees are not bundled here;
@@ -23,19 +24,98 @@ uv run --locked --extra dev --extra typesafe pytest -q tests/backend/test_analys
 uv run --locked --extra dev --extra typesafe dead-letter analyze benchmarks/analysis_eval/corpus/seed-reply-positive.eml --provider typesafe --profile triage-v1 --model jev-1.13.0 --dry-run --show-state
 ```
 
-The generator rewrites only corpus files and labels in this directory. MIME
-boundaries are deterministic. Regenerate only before labels have been reviewed;
-regeneration overwrites those labels. The generator does not remove stale files;
-the checker fails if an extra `.eml` exists.
+The generator rewrites corpus files and model pre-labels in this directory. MIME
+boundaries are deterministic. Human annotations belong in a separate review
+artifact described below. Regenerating different source bytes or pre-label content makes
+existing review bindings stale; the importer rejects them rather than silently
+retargeting judgments. The generator does not remove stale files; the checker
+fails if an extra `.eml` exists.
 
 ```bash
 uv run --locked --extra dev --extra typesafe python -m benchmarks.analysis_eval.generate
 ```
 
 The JSON Schema is `labels.schema.json`. Schema validation uses the already locked
-`jsonschema` dependency in tests; the split checker uses only the standard library.
+`jsonschema` dependency; the split checker uses only the standard library.
 All 22 original seed cases stay in dev. Paired additions keep the same family,
 thread root and mailbox. Dates are fabricated and do not describe real traffic.
+
+## Review annotations without replacing pre-labels (#166)
+
+Create an editable review revision in a new file:
+
+```bash
+uv run --locked --extra dev python -m benchmarks.analysis_eval.reviewed_labels template \
+  --revision review-v1 --out /tmp/triage-review-v1.json
+```
+
+The template copies all 192 draft label sets from `labels.json`. Every row starts
+`pending`; reviewer names, review time and adjudicator stay empty. Creating the
+file does not claim that anyone has reviewed it. The original model pre-labels,
+their schema and corpus remain unchanged. The output uses
+`reviewed-labels.schema.json` and refuses to overwrite an existing file.
+
+Each row binds the original case ID, immutable metadata (including split,
+thread/template/mailbox, identity scope and source path) and exact source SHA256.
+The artifact also binds the canonical original-label document hash. Leave those
+bindings unchanged. Editing source bytes, changing a split/identity/family,
+using another pre-label revision, or adding/removing/duplicating a case causes
+validation to fail. Keep unfinished rows as `pending`.
+
+A reviewer edits only `labels`, `ambiguity_notes` and `review`. Preserve `null`
+for unknown binary/urgency judgments; `insufficient_context` requires both
+reply/action labels to be null. Provide a nonblank per-question ambiguity note
+for every unknown judgment. Notes can also record uncertainty around a
+determinate judgment. Urgency is an integer 0–2 or null, never a Boolean.
+
+Once a case has actually been reviewed, set `review.status` to `reviewed`, enter
+at least one nonblank reviewer identifier and a timestamp such as
+`2026-10-27T12:00:00Z` in `reviewed_at` (seconds and timezone required; fractional
+seconds and a numeric timezone offset are accepted). Retain any useful review
+note and leave `adjudicator` null.
+For an adjudicated case, use `adjudicated`, at least two distinct reviewer
+identifiers, an adjudicator identifier, a timestamp and a nonblank decision note.
+These fields record entered review provenance; the tool cannot authenticate the
+reviewers or independently establish annotation quality. It fills none of them.
+
+```bash
+# Structural/provenance check; pending rows are valid drafts.
+uv run --locked --extra dev python -m benchmarks.analysis_eval.reviewed_labels validate \
+  /tmp/triage-review-v1.json
+
+# Also check that review coverage is complete for scoring the test split.
+uv run --locked --extra dev python -m benchmarks.analysis_eval.reviewed_labels validate \
+  /tmp/triage-review-v1.json --split test
+```
+
+Scoring requires every case in the requested split **and every clean dev case**
+to be reviewed or adjudicated, even if some cases have no successful predictions.
+For this corpus, `--split dev` requires 72 reviewed cases; `--split test` requires
+120 test cases plus 37 clean dev cases. Other rows may remain pending. Pending
+rows have no usable truth in the imported projection, and missing review never
+falls back to a model pre-label. The same checks apply to programmatic
+`apply_review(..., split=...)` and `score.evaluate(..., reviewed_labels=...)`.
+
+Select the review file explicitly when scoring saved results or a local baseline:
+
+```bash
+uv run --locked --extra dev python -m benchmarks.analysis_eval.score \
+  --reviewed-labels /tmp/triage-review-v1.json \
+  --baseline /tmp/triage-eval/baseline.json --split test \
+  --out /tmp/triage-eval/reviewed-test-report
+```
+
+Add the usual `--run PROFILE=DIR` arguments to score captured provider results.
+The `--labels` option still identifies the **original** pre-label file and corpus;
+the review file can live anywhere. The scorer records review revision/hash,
+original-label hash, reviewer/adjudicator records and exact coverage in
+`metrics.json`, and labels the Markdown report accordingly. Omitting
+`--reviewed-labels` retains the existing model-prelabel mode and wording.
+Threshold/review-band fitting still uses clean dev cases only. Test labels never
+enter fitting; full required review coverage does not invent missing predictions.
+
+This workflow prepares the annotation handoff. No human annotations or new live
+provider results are supplied by this implementation.
 
 ## Evidence limits
 
@@ -201,8 +281,9 @@ uv run --locked --extra dev --extra typesafe python -m benchmarks.analysis_eval.
 
 `metrics.json` contains every metric and denominator; `report.md` links it and
 summarizes clean error, calibration/review metrics, paired comparisons, diagnostics,
-and dev fitting. Reports are descriptive comparisons to model pre-labels, never
-an automatic quality claim. Test labels do not enter fitting. Each Noul threshold
+and dev fitting. Reports compare with model pre-labels by default, or the explicitly
+selected reviewed revision when `--reviewed-labels` is supplied. Neither mode
+automatically establishes general quality. Test labels do not enter fitting. Each Noul threshold
 uses only successful clean dev observations; thresholds, dev IDs, input digests
 and the objective are frozen in the report. See the design for the exact grid,
 tie-breaks and review-band policy. No profile or production threshold is modified.
@@ -218,7 +299,9 @@ duplicate matches and wrong profile runs fail explicitly.
 Clean cases alone form headline accuracy. Missing-context, long-thread and
 adversarial arms are separate. Attachment injections are reported as unexposed
 controls and excluded from the exposed flip headline. Null binary labels are
-excluded, not treated as negatives. Returned Choice supplies categorical decisions;
+excluded, not treated as negatives. CC false-positive rates use only actual
+negative labels in the frozen CC stratum; corrected positive and unknown review
+labels are excluded with visible counts. Returned Choice supplies categorical decisions;
 its distribution supplies marginals without removing insufficient-context mass.
 Argmax disagreements (including deterministic alphabetical tie-breaks) are counted.
 Four-way abstentions count as errors against determinate labels; five-way Choice

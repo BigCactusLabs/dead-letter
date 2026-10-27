@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import logging
+import subprocess
+import sys
+import textwrap
 import time
 
 import pytest
@@ -189,6 +192,114 @@ def test_consumed_end_skips_following_blank_lines() -> None:
     assert text[result.consumed_end:] == "> body\n"
 
 
+@pytest.mark.parametrize("line_ending", ["\n", "\r\n"])
+@pytest.mark.parametrize("header", [
+    "On Thu, Mar 5, 2026 at 10:23 AM Alice Verylongname\n"
+    "<alice.verylongname@example.com> wrote:\n",
+    "From: Alice <alice@example.com>\nSent: Thursday, March 5, 2026 10:23 AM\n"
+    "To: Bob <bob@example.com>\n"
+    + "Cc: Carol <carol@example.com>\n" * 8 + "Subject: Re: project status\n",
+    "**From:** Alice <alice@example.com>\n**Sent:** Thursday, March 5, 2026 10:23 AM\n"
+    "**To:** Bob <bob@example.com>\n**Subject:** Re: project status\n",
+], ids=["wrapped-gmail", "outlook-eight-intermediate-headers", "bold-outlook"])
+def test_short_complete_headers_before_large_body_keep_original_offsets(header, line_ending):
+    header = header.replace("\n", line_ending)
+    body = "BODY_START " + "x" * 128_000 + " BODY_END\n"
+    text = header + body
+
+    match = parse_attribution_line(text)
+
+    assert match is not None
+    assert match.consumed_end == len(header)
+    assert match.matched_text == header == text[:match.consumed_end]
+    assert text[match.consumed_end:] == body
+    assert "Alice" in match.metadata.from_
+
+
+def _german_header_of_length(length: int) -> str:
+    prefix = "Am Donnerstag schrieb "
+    return prefix + "A" * (length - len(prefix) - 1) + ":"
+
+
+def test_complete_line_at_character_budget_is_accepted():
+    header = _german_header_of_length(999) + "\n"
+    text = header + "BODY\n"
+
+    match = parse_attribution_line(text)
+
+    assert match is not None
+    assert match.consumed_end == 1000
+    assert match.matched_text == header
+    assert text[match.consumed_end:] == "BODY\n"
+
+
+def test_line_ending_beyond_character_budget_is_not_invented():
+    header = _german_header_of_length(1000)
+    assert parse_attribution_line(header) is not None  # A genuine EOF at the budget.
+    assert parse_attribution_line(header + "\nBODY\n") is None  # LF is character 1001.
+    assert parse_attribution_line(header + "not an attribution\n") is None
+
+
+def test_cutoff_inside_wrapped_header_preserves_it_as_unrecognized():
+    text = (
+        "On Thu, Mar 5, 2026 at 10:23 AM Alice\n"
+        + "Verylongname " * 100 + "wrote:\nBODY\n"
+    )
+
+    assert parse_attribution_line(text) is None
+
+
+def test_valid_header_skips_long_blank_prefix_without_consuming_indented_payload():
+    header = "Am Donnerstag schrieb Alice:\n"
+    blanks = "\n" * 2000
+    body = "    INDENTED_PAYLOAD\n"
+    text = header + blanks + body
+
+    match = parse_attribution_line(text)
+
+    assert match is not None
+    assert match.consumed_end == len(header + blanks)
+    assert match.matched_text == header + blanks
+    assert text[match.consumed_end:] == body
+
+
+def test_adversarial_attribution_candidates_finish_in_killable_process():
+    # Timing an in-process call cannot interrupt a catastrophic regex. This
+    # child exercises both direct callers and structured quote annotation.
+    script = textwrap.dedent("""\
+        from dead_letter.core.attribution import parse_attribution_line, annotate_quoted_zones
+        from dead_letter.core.types import ConversationZone, ConvertOptions, ThreadMode, ZoneKind
+
+        candidates = [
+            'Am X' + ' ' * 128_000 + ':',
+            'Am ' + 'schrieb ' * 16_000 + 'x:',
+            'Le X,' + ' ' * 128_000 + ':',
+            'On Mar 5, 2026, at 10:23 AM, ' + '<' * 128_000 + ':',
+            'On Thu, Mar 5, 2026 at 10:23 AM Alice\\n' + 'sender ' * 32_000 + ':',
+            'From: Alice\\nSent: Thursday\\nTo: ' + 'Bob ' * 32_000 + '\\nSubject: X\\n',
+        ]
+        options = ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+        for text in candidates:
+            assert parse_attribution_line(text) is None
+            original = '> ' + text + '\\n> QUOTED_PAYLOAD'
+            zones = [
+                ConversationZone(kind=ZoneKind.BODY, content='AUTHORED_PAYLOAD', source_kind='plain'),
+                ConversationZone(kind=ZoneKind.QUOTED, content=original, source_kind='plain'),
+            ]
+            annotated = annotate_quoted_zones(zones, options)
+            assert annotated[1].content == text + '\\nQUOTED_PAYLOAD'
+            assert annotated[1].metadata['_quoted_original'] == original
+            assert 'attribution_from' not in annotated[1].metadata
+        print('bounded candidates and annotation passed')
+    """)
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True,
+        timeout=10, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "bounded candidates and annotation passed" in result.stdout
+
+
 from dead_letter.core.attribution import annotate_quoted_zones
 from dead_letter.core.types import ConversationZone, ConvertOptions, ThreadMode, ZoneKind
 
@@ -304,3 +415,49 @@ def test_annotate_strips_quote_markers_even_when_attribution_fails() -> None:
     assert out[1].content == "some unrecognized prefix\nmore body\n"
     assert "attribution_from" not in out[1].metadata
     assert out[1].metadata["_quoted_original"] == "> some unrecognized prefix\n> more body\n"
+
+
+@pytest.mark.parametrize("quoted_only", [False, True])
+def test_oversized_attribution_preserves_quote_fallback(quoted_only):
+    text = "> " + _german_header_of_length(1001) + "\n> QUOTED_PAYLOAD\n"
+    quoted = _quoted(text)
+    zones = [quoted] if quoted_only else [_body("AUTHORED_PAYLOAD"), quoted]
+
+    result = annotate_quoted_zones(zones, ConvertOptions(thread_mode=ThreadMode.STRUCTURED))
+
+    assert "attribution_from" not in result[-1].metadata
+    if quoted_only:
+        assert result[-1] is quoted
+        assert result[-1].content == text
+    else:
+        assert result[-1].content == text.replace("> ", "")
+        assert result[-1].metadata["_quoted_original"] == text
+
+
+def test_oversized_attribution_reaches_rendered_output_once(tmp_path):
+    from dead_letter.core import convert
+
+    # Two explicit quote zones bypass the separate mail-parser-reply splitter;
+    # this regression owns attribution's budget, not that dependency's parser.
+    header = "Am CANDIDATE_START " + "date-token " * 1000 + "schrieb Alice:"
+    html = (
+        '<p>AUTHORED_PAYLOAD</p><blockquote class="gmail_quote">'
+        + header + '<br>FIRST_QUOTED_PAYLOAD</blockquote>'
+        '<blockquote class="gmail_quote">SECOND_QUOTED_PAYLOAD</blockquote>'
+    )
+    source = tmp_path / "synthetic.eml"
+    output = tmp_path / "out.md"
+    source.write_text(
+        "From: synthetic@example.test\nSubject: Bounded attribution\n"
+        "Content-Type: text/html; charset=utf-8\n\n" + html,
+        encoding="utf-8",
+    )
+
+    result = convert(source, output=output, options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED))
+
+    assert result.success, result.error
+    rendered = output.read_text(encoding="utf-8")
+    for sentinel in ("AUTHORED_PAYLOAD", "CANDIDATE_START", "FIRST_QUOTED_PAYLOAD", "SECOND_QUOTED_PAYLOAD"):
+        assert rendered.count(sentinel) == 1
+    assert rendered.count("date-token") == 1000
+    assert "## From " not in rendered

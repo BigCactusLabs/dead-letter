@@ -75,7 +75,7 @@ def _read_json(path):
         return result
 
     return json.loads(
-        path.read_text(), parse_constant=invalid, object_pairs_hook=unique
+        path.read_text(encoding="utf-8"), parse_constant=invalid, object_pairs_hook=unique
     )
 
 
@@ -483,6 +483,11 @@ def summarize(cases, predictions):
     ]
     cc = [c for c in clean if c["attribution"] == "cc_not_asked"]
     cc_available = [c for c in cc if c["case_id"] in predictions]
+    # Attribution is frozen corpus metadata, not a substitute for reviewed
+    # truth. A reviewer may correct an originally negative case or mark it unknown.
+    cc_negative = [
+        c for c in cc_available if all(c["labels"][q] is False for q in (REPLY, ACTION))
+    ]
     result = {
         "headline_clean": questions(clean),
         "by_arm": {
@@ -517,10 +522,12 @@ def summarize(cases, predictions):
                         predictions[c["case_id"]]["decisions"][q] is True
                         for q in (REPLY, ACTION)
                     )
-                    for c in cc_available
+                    for c in cc_negative
                 ),
-                len(cc_available),
+                len(cc_negative),
             ),
+            "false_positive_excluded_nonnegative_or_unknown": len(cc_available)
+            - len(cc_negative),
             "abstentions": sum(
                 predictions[c["case_id"]]["abstain"] for c in cc_available
             ),
@@ -536,15 +543,17 @@ def summarize(cases, predictions):
         ),
         "note": "Includes fitted Noul review bands; separate from native insufficient_context.",
     }
-    result["cc_not_asked"]["per_question_false_positive"] = {
-        q: wilson(
-            sum(
-                predictions[c["case_id"]]["decisions"][q] is True for c in cc_available
-            ),
-            len(cc_available),
+    result["cc_not_asked"]["per_question_false_positive"] = {}
+    result["cc_not_asked"]["per_question_excluded_nonnegative_or_unknown"] = {}
+    for q in (REPLY, ACTION):
+        negative = [c for c in cc_available if c["labels"][q] is False]
+        result["cc_not_asked"]["per_question_false_positive"][q] = wilson(
+            sum(predictions[c["case_id"]]["decisions"][q] is True for c in negative),
+            len(negative),
         )
-        for q in (REPLY, ACTION)
-    }
+        result["cc_not_asked"]["per_question_excluded_nonnegative_or_unknown"][q] = len(
+            cc_available
+        ) - len(negative)
     result["risk_coverage"] = {}
     for arm in sorted({c["arm"] for c in cases}):
         selected = [c for c in cases if c["arm"] == arm]
@@ -675,7 +684,24 @@ def operational(records, ids):
     }
 
 
-def evaluate(document, runs, *, source_root=ROOT, baseline=None, split="test"):
+def evaluate(
+    document,
+    runs,
+    *,
+    source_root=ROOT,
+    baseline=None,
+    split="test",
+    reviewed_labels=None,
+):
+    if "label_review" in document:
+        raise ValueError("provide original pre-labels and explicit reviewed_labels")
+    label_provenance = None
+    if reviewed_labels is not None:
+        from .reviewed_labels import apply_review
+
+        document, label_provenance = apply_review(
+            document, reviewed_labels, source_root, split=split
+        )
     cases = document["cases"]
     selected = [c for c in cases if c["split"] == split]
     report = {
@@ -694,6 +720,11 @@ def evaluate(document, runs, *, source_root=ROOT, baseline=None, split="test"):
             "calibration_confidence": "probabilities only; never native confidence",
         },
     }
+    if label_provenance is not None:
+        report["status"] = (
+            "descriptive comparison to reviewed annotations; scope limited to the recorded review revision"
+        )
+        report["label_provenance"] = label_provenance
     normalized = {}
     for profile, directory in runs.items():
         raw, diagnostics, records = load_run(directory, profile, cases, source_root)
@@ -777,7 +808,14 @@ def write_report(report, out):
         report["status"],
         "",
         f"Split: `{report['split']}`. Headline: clean arm only.",
-        "Labels remain model pre-labels. Adversarial and unexposed attachment controls are separate.",
+        (
+            "Reviewed annotation revision: "
+            + report["label_provenance"]["revision"]
+            + ". Reviewer/adjudication records and coverage are in metrics.json."
+            if "label_provenance" in report
+            else "Labels remain model pre-labels."
+        ),
+        "Adversarial and unexposed attachment controls are separate.",
         "",
         "Full confusion matrices, intervals, calibration bins, risk curves, pairs, usage and frozen dev thresholds are in [metrics.json](metrics.json).",
         "",
@@ -868,6 +906,11 @@ def write_report(report, out):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--labels", type=Path, default=ROOT / "labels.json")
+    parser.add_argument(
+        "--reviewed-labels",
+        type=Path,
+        help="Explicit review revision; requires scored-split and clean-dev coverage",
+    )
     parser.add_argument("--run", action="append", default=[], metavar="PROFILE=DIR")
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--split", choices=("dev", "test"), default="test")
@@ -890,6 +933,9 @@ def main():
         source_root=args.labels.parent,
         baseline=_read_json(args.baseline) if args.baseline else None,
         split=args.split,
+        reviewed_labels=_read_json(args.reviewed_labels)
+        if args.reviewed_labels
+        else None,
     )
     write_report(report, args.out)
     print(

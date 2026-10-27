@@ -27,6 +27,9 @@ class AttributionMatch:
 
 
 _WHITESPACE_RE = re.compile(r"\s+")
+# Some patterns backtrack on ambiguous whitespace. Bound their input centrally,
+# including callers that pass an entire quoted body, not just an HTML line.
+_MAX_ATTRIBUTION_CHARS = 1000
 
 
 # Apple Mail: "On Mar 5, 2026, at 10:23 AM, Alice <alice@example.com> wrote:"
@@ -102,11 +105,24 @@ def _normalize_field(value: str | None) -> str | None:
 
 
 def parse_attribution_line(text: str) -> AttributionMatch | None:
-    """Parse the leading attribution line(s) of a quoted reply."""
+    """Parse complete leading attribution lines within a 1000-character window.
+
+    The regex budget includes line endings. A large following body does not
+    disqualify a short header, but an incomplete line at the cutoff cannot
+    become a false end-of-input match. Returned offsets address the original
+    text; skipping following blank lines remains a separate linear scan.
+    """
     if not text:
         return None
+    candidate = text
+    if len(text) > _MAX_ATTRIBUTION_CHARS:
+        end = text.rfind("\n", 0, _MAX_ATTRIBUTION_CHARS) + 1
+        candidate = text[:end]
+    if not candidate:
+        _LOGGER.debug("attribution: no complete leading line within character budget")
+        return None
     for pattern in _PATTERNS:
-        match = pattern.match(text)
+        match = pattern.match(candidate)
         if match is None:
             continue
         groups = match.groupdict()

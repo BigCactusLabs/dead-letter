@@ -24,13 +24,13 @@ did not repeat third-party submissions, desktop installs or live inference.
   recipes, importer features, analysis batching and parser fixes are not
   assigned again.
 
-## Work that can start independently
+## First slices and follow-up status
 
-| First slice | Existing foundation | First completion boundary |
+| First slice | Existing foundation | Status / next boundary |
 | --- | --- | --- |
-| #241: bound attribution parsing | `core/attribution.py`, existing fallback and locale tests | Malformed long attribution candidates finish within bounded work; short valid headers before large bodies still parse; body content is preserved. |
+| #241: bound attribution parsing | `core/attribution.py`, existing fallback and locale tests | Regex bound implemented in follow-up; remaining wrapper changes need representative paired fixtures. |
 | #146: local-path MBOX jobs | `core/mbox_import.py`, `StreamingReport`, job IDs/status/polling | One flat archive streams into a job-owned destination with bounded retained state and accurate partial/cancelled outcomes. Upload and UI follow. |
-| #166: reviewed annotation import | 192-case corpus, frozen split, baseline and scorer | A separate versioned review artifact validates source IDs/hashes, ambiguity and adjudication without rewriting model pre-labels or changing splits. |
+| #166: reviewed annotation import | 192-case corpus, frozen split, baseline and scorer | Review artifacts and scorer coverage checks implemented in follow-up; human review and held-out comparison remain. |
 | #196: compare independent repeats | New offline comparator | Read already captured, separately executed runs and publish matched-denominator results. New provider calls are separate from this offline slice. |
 | #161: visual demo | Five tested recipes and their two-message synthetic inbox | A reproducible 20–30 second silent-readable capture plus still, showing actual released outputs. |
 
@@ -112,7 +112,7 @@ a hard memory limit.
 
 ## Analysis: separate label review, stability and profile experiments
 
-### #166: reviewed labels are the next missing artifact
+### #166: review labels before quality claims
 
 `benchmarks/analysis_eval/` already contains 192 synthetic cases: 72 dev and
 120 held out, with 43 template/thread families. The old 22-case issue description
@@ -120,13 +120,21 @@ is stale. `check_split.py`, `stage.py`, `baseline.py` and `score.py` already
 provide split checks, identity grouping, deterministic baseline, provenance
 validation and dev-only threshold/review-band fitting.
 
-Every current annotation is an unreviewed model pre-label. In fact,
+Every checked-in annotation is still an unreviewed model pre-label.
 `labels.schema.json` fixes `human_review_status` to `unreviewed`, and
-`generate.py` rewrites labels. Start with a separate versioned reviewed-label
-artifact/schema and an explicit loader. Preserve case/source hashes, split,
-per-question ambiguity, review/adjudication status and revision identity.
-Test that the loader cannot silently fall back to pre-labels or move cases
-between splits. This engineering slice needs no inference.
+`generate.py` rewrites those pre-labels. The follow-up implementation adds a
+separate versioned review artifact/schema and an explicit scorer import; see
+the [benchmark workflow](../../benchmarks/analysis_eval/README.md). Templates
+leave review status pending. The importer binds the original label revision,
+case metadata and source bytes, preserves the frozen split and per-question
+ambiguity, and records reviewer/adjudicator provenance.
+
+Scoring a reviewed revision requires reviewed/adjudicated annotations for the
+whole requested split and every clean development case used for fitting. A
+pending or missing annotation cannot fall back to a pre-label. These checks
+and the invariant that test-label changes cannot affect development fitting
+are exercised offline. Actual human review is the next task; the tooling does
+not supply it.
 
 The September 28 run described in #196/#197 is historical reported agreement
 with pre-labels; its sidecar trees are not bundled in the checkout. Recover
@@ -171,24 +179,27 @@ cleanup, legacy Gmail, no-signal wrappers, localized headers, Proton/Yahoo,
 wrapped Gmail attributions and separator-only Outlook sections. The current
 forwarding/wrapper/attribution suites passed 809 tests in this preparation.
 
-#241 still has a reproducible attribution cost problem. HTML classification
-caps attribution candidates at 1,000 characters, but structured
-`annotate_quoted_zones` passes the whole normalized zone to
+#241 had a reproducible attribution cost problem at the audited base. HTML
+classification capped attribution candidates at 1,000 characters, but structured
+`annotate_quoted_zones` passed the whole normalized zone to
 `parse_attribution_line`. A separate-process probe of
 `"Am X" + " " * n + ":"` took approximately 0.002, 0.017 and 0.380 seconds
 at n = 1,000, 4,000 and 16,000; n = 128,000 exceeded a three-second outer
 timeout and was killed. These are diagnostic observations on one machine.
 
-First fix boundary: bound the **leading attribution candidate** centrally in
-`core/attribution.py`, preserving complete candidate lines, wrapped Gmail and
-multi-line Outlook headers. Do not truncate a physical line and let its new
-end become a false regex match. A short valid header before a large body must
-still parse. On over-budget/unrecognized input, preserve all text through
-the existing fallback and keep `consumed_end` relative to original text.
+The follow-up fix bounds regex input centrally in `core/attribution.py` to
+1,000 characters, including line breaks. For larger input it takes only complete
+leading lines within that budget, preserving wrapped Gmail and multiline Outlook
+headers. It never turns a cut-off physical line into a valid end-of-line match.
+A short valid header before a large body still parses; over-budget/unrecognized
+input keeps its text through the existing fallback, with `consumed_end` relative
+to original text and the existing following-newline consumption preserved.
 
-Add killable subprocess regressions for long whitespace/repeated-token cases,
-limit-boundary cases, short headers with large bodies, and end-to-end sentinel
-preservation. Keep wrapper classification unchanged in that first PR.
+Killable subprocess regressions cover long whitespace/repeated-token cases,
+limit boundaries, valid short headers before large bodies and content
+preservation. This bounds local attribution regex work, not total conversion
+time. The other wrapper-classification cases in #241 still need representative
+fixtures before changing semantics.
 
 The other #193/#241 changes need paired representative fixtures: Outlook
 reply/forward ambiguity, localized Outlook history headers, Gmail Japanese and
@@ -242,20 +253,21 @@ Deployment and endpoint retrieval remain separate outstanding work.
 | [#159](https://github.com/BigCactusLabs/dead-letter/issues/159) | Selected domain; prepare site-repo ARD file/headers and strict conformance, then verify deployment. |
 | [#160](https://github.com/BigCactusLabs/dead-letter/issues/160) | Prepared skill entry; preserve owner hold, share MCP-entry tracking with #150, then test named retrieval intents. |
 | [#161](https://github.com/BigCactusLabs/dead-letter/issues/161) | Produce capture/still from existing recipe fixtures and tested commands. |
-| [#166](https://github.com/BigCactusLabs/dead-letter/issues/166) | Separate reviewed-annotation artifact/loader before quality claims; reuse corpus/split/scorer. |
+| [#166](https://github.com/BigCactusLabs/dead-letter/issues/166) | Review-artifact workflow implemented in follow-up; human review and held-out comparison remain. |
 | [#188](https://github.com/BigCactusLabs/dead-letter/issues/188) | Review existing Windows PR #204 and exact-head native evidence. |
 | [#193](https://github.com/BigCactusLabs/dead-letter/issues/193) | Narrow to residual Outlook/locale/ambiguity evidence and separate reply-parser retiming. |
 | [#196](https://github.com/BigCactusLabs/dead-letter/issues/196) | Offline comparator prepared; independent repeat capture, variants and dev-only remapping remain. |
 | [#197](https://github.com/BigCactusLabs/dead-letter/issues/197) | Reuse evaluation-only variant support to add the combined arm; fit and assess the combiner against reviewed labels. |
 | [#220](https://github.com/BigCactusLabs/dead-letter/issues/220) | Keep deferred until observed macOS memory pressure justifies a soft watchdog. |
-| [#241](https://github.com/BigCactusLabs/dead-letter/issues/241) | Start with bounded attribution parsing; keep remaining wrapper semantics fixture-led. |
+| [#241](https://github.com/BigCactusLabs/dead-letter/issues/241) | Attribution regex bound implemented in follow-up; keep remaining wrapper semantics fixture-led. |
 
 ## Focused verification
 
 After the normal locked development setup:
 
 ```bash
-uv run --locked --no-sync pytest -q tests/backend/test_analysis_eval.py tests/backend/test_analysis_stability.py
+uv run --locked --no-sync pytest -q tests/backend/test_analysis_eval.py tests/backend/test_analysis_stability.py tests/backend/test_analysis_reviewed_labels.py
+uv run --locked --no-sync pytest -q tests/core/test_attribution.py
 uv run --locked --no-sync pytest -q tests/backend/test_mcp_mbox.py
 uv run --locked --no-sync pytest -q tests/plugin/test_client_installs.py tests/plugin/test_cline_registration.py
 python scripts/generate_client_installs.py --check
