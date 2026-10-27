@@ -1,6 +1,6 @@
 # Reach & Distribution Plan
 
-_Last reviewed: 2026-09-19_
+_Last reconciled with repository evidence: 2026-10-27_
 
 Make dead-letter discoverable where people already need email-to-Markdown
 conversion. This is a product/discovery plan, not a second installation guide
@@ -13,9 +13,11 @@ or a claim of acceptance by every catalog. Use the
 > Turn `.eml` email exports into clean, local, LLM-ready Markdown.
 
 Lead with email normalization, readable archives, attachment-aware ingestion,
-and Markdown knowledge bases—not only MCP. MBOX/Gmail Takeout, PST, and MSG
-remain separate format-expansion work, not shipped capabilities merely
-because an issue or PR exists.
+and Markdown knowledge bases. MBOX/Gmail Takeout is available through the
+CLI/Python importer and bounded MCP tool; the web/API extension remains #146.
+PST and MSG remain separate format-expansion work. See the
+[development handoff](2026-10-27-development-groundwork.md) for the remaining
+issue slices and their existing foundations.
 
 Ordinary conversion retains attachment metadata; bundle workflows additionally
 retain decoded files. Retained binaries are not automatically searchable
@@ -43,8 +45,8 @@ catalog acceptance.
 | OCI / GHCR (#108) | Multi-platform workflow; first public image recorded as 0.3.1 | Docker Catalog submission/outcome and actual discovery |
 | Portable skill / ARD (#109) | Portable source, catalog, CI validation | Named-host usability and domain-anchored discovery |
 | Client-native listings (#104) | Setup and submission guidance | Dated submission, acceptance, and client evidence |
-| MBOX (#103) | Separate research/implementation effort | Merge, bounded ingestion tests, and released support |
-| Demo / recipes (#105) | Product-discovery workstream | Reproducible sample output and useful integration recipes |
+| MBOX (#103) | Released CLI/Python streaming, resume, workers and bounded MCP ingestion | Real-corpus acceptance (#138), Windows PR #204, optional web/API jobs (#146) |
+| Demo / recipes (#105) | Five recipes, synthetic inbox and release-verification helper; #162 complete | Reproducible 20–30 second demo and still (#161) |
 
 Use **implemented**, **published**, **submitted**, **accepted**,
 **client-tested**, and **unverified** distinctly. Record date, version,
@@ -61,9 +63,9 @@ ones lack clear installation and update evidence.
 | Priority | Deliverable | Completion evidence |
 | --- | --- | --- |
 | Now | Consistent docs and repeatable multi-channel releases | Metadata/link gates, immutable artifact recovery, explicit plugin/tap handoff |
-| Now | Sample-first proof and two recipes (#105) | Public synthetic `.eml`, real Markdown, bundle when claimed, reproduction commands |
-| Next | Focused client/listing work (#104, #108, #109) | Named fresh install, four tools, fixture conversion, actual listing status |
-| Next | MBOX ingestion (#103) | Bounded memory, stable identity, labels, partial failure and retry tests |
+| Now | Visual proof using the completed recipes (#105 / #161) | Actual released conversion, readable motion asset and still using the existing synthetic inbox |
+| Next | Focused client/listing work (#104, #108, #109) | Named fresh install, current five-tool inventory, fixture conversion, actual listing status |
+| Next | Remaining MBOX acceptance and extensions (#103) | Independent real-export evidence, reviewed Windows budget PR, separately scoped web/API jobs |
 | Later | Broader catalogs/formats based on observed use | Evidence of user need, policy fit, maintainable release/update path |
 
 No acquisition baseline has been established by this audit. Priorities are
@@ -103,12 +105,13 @@ launch copy rather than inventing separate claims for each channel.
 
 ### Recipes that earn references
 
-Start with `.eml → Markdown/Obsidian` and `.eml → RAG preprocessing`. Show real
-file layout, front matter, the attachment boundary, and a worked query. Add
-Cabinet/auditing and an agent workflow next. A small Python loader is more
-maintainable than many framework integrations before demand is demonstrated.
-A field note about a real parser edge case can link the fixture, regression
-test, and recipe; do not invent adoption statistics.
+The [five conversion recipes](../recipes/README.md) cover Markdown/Obsidian,
+RAG preprocessing, MCP, Cabinet and auditing, with a shared synthetic inbox
+and a release-verification helper. Reuse those inputs and commands for #161
+and client acceptance. A small Python loader is more maintainable than many
+framework integrations before demand is demonstrated. A field note about a
+real parser edge case can link the fixture, regression test, and recipe;
+do not invent adoption statistics.
 
 ### Benchmark credibility
 
@@ -121,11 +124,11 @@ token count. Preserve the rows where naive extraction is cheaper.
 
 ### Format expansion is a separate product bet
 
-For MBOX, stream through the existing converter with bounded memory, stable
-source identity, Gmail-label preservation, per-message failures, and safe
-retry/deduplication behavior. Test large mailboxes, malformed messages,
-duplicates, and attachments. Evaluate PST/MSG separately; do not let search
-keywords become unsupported product promises.
+The MBOX importer already reuses the converter with streaming, source
+provenance, Gmail metadata, per-message failures and explicit resume behavior.
+Its remaining real-export acceptance and optional web/API work should reuse
+that foundation. Evaluate PST/MSG separately; do not let search keywords
+become unsupported product promises.
 
 ## Measurement without private-email telemetry
 

@@ -1,10 +1,14 @@
 # Synthetic analysis evaluation
 
-Status: offline corpus and harness implemented; **live evaluation not yet run**. All 192 messages
-and their labels are model-authored, public synthetic material. Every label is a
-`model_prelabel` with `human_review_status: unreviewed`. They are not gold labels.
-The baseline, scorer and identity staging helper run locally without credentials.
-No empirical profile results or human agreement statistics are available.
+Status: offline corpus and harness implemented; **reviewed held-out quality
+evidence remains pending**. All 192 messages and their labels are model-authored,
+public synthetic material. Every label is a `model_prelabel` with
+`human_review_status: unreviewed`. They are not gold labels. The baseline, scorer,
+identity staging helper and repeat-run comparator run locally without credentials.
+Issues [#196](https://github.com/BigCactusLabs/dead-letter/issues/196) and
+[#197](https://github.com/BigCactusLabs/dead-letter/issues/197) record a September
+28 live run against those pre-labels. Its result trees are not bundled here;
+that historical report does not establish human agreement or reviewed quality.
 
 See the [evaluation design](../../docs/project/2026-09-28-issue-166-evaluation-design.md)
 for the frozen split and planned measurement policy.
@@ -61,6 +65,57 @@ path, source hash, split and arm. Selection is sorted by case ID, then limited.
 Use `--arm clean` (repeatable) or `--split dev|test` to select a stratum; omit both
 to stage the full corpus. A limited pilot need not contain every clean pair, and
 the scorer reports dropped pairs. An empty alias array means recipient-group scope.
+
+### Compare already captured repeat runs (#196)
+
+Use the same staged selection, profile, endpoint, model and identity aliases for
+each independently executed run. Give every run a fresh output tree: analysis
+sidecars are reusable caches, so rerunning against the same output path does not
+establish run-to-run stability. Obtaining fresh provider responses remains a
+separate, explicitly authorized live run. This command only reads saved artifacts:
+
+```bash
+uv run --locked --extra dev python -m benchmarks.analysis_eval.stability \
+  --profile triage-v1 --split dev --arm clean --limit 10 \
+  --run first=/tmp/triage-eval/repeat-01/triage-v1 \
+  --run repeat=/tmp/triage-eval/repeat-02/triage-v1 \
+  --out /tmp/triage-eval/stability-report
+```
+
+Repeat with `--profile triage-choice-v1` and its corresponding run trees. The
+selection uses the staging helper's sorted case IDs and filters. Apply identical
+filters when staging and comparing. Omitting `--limit` compares the full selected
+stratum and counts absent cases. Additional `--run NAME=DIR` arguments each compare
+with the first named run; runs are never pooled. Names and trees must be distinct,
+and trees cannot overlap. Distinct runs with identical saved answers are accepted,
+but artifacts alone cannot prove that independent provider calls occurred.
+
+`metrics.json` and `report.md` include selected/matched counts, excluded case IDs,
+per-question label flip rates and probability drift. Source/state/profile hashes
+and the pinned requested model reuse the quality scorer's checks. Matching
+provider, endpoint, adapter/SDK, normalization/state-builder versions, request
+fingerprint and known returned-model identity are required for each compared
+pair. Missing/failed/malformed results and incompatible provenance never count
+as agreement; zero matched cases produces no estimate. Duplicate or unknown
+sidecars fail explicitly. Reports refuse to overwrite an existing directory or
+write inside an input run tree.
+
+Stability uses fixed diagnostic decisions: Noul probability at least 0.5,
+provider-returned Choice (including `insufficient_context`), and the highest
+probability Score level with lower-level tie breaking. A native tied Choice can
+change its returned label even when its probability vector is unchanged; an
+inconsistent Choice is excluded. Probability drift is absolute Noul change or
+half the L1 distance between reported Choice/Score distributions. Rounded vectors
+are not renormalized. Score's native numeric change is reported separately.
+Native confidence is unused. No thresholds are fitted and no label truth enters
+these metrics; the label-file hash and review-status counts identify the selected
+corpus revision without turning stability into a correctness claim.
+
+This is the offline first slice of #196. Wording/option-order variants,
+probability remapping and log-loss remain separate work. It does not claim live
+Jev stability or modify shipped profiles.
+
+### Deterministic baseline
 
 The baseline uses the exact normalized authored evidence, including signature
 candidates exposed by `prepare_eml`, but deliberately excludes quoted/forwarded
