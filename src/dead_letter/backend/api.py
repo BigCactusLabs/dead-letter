@@ -19,6 +19,7 @@ from pydantic import ValidationError
 
 from dead_letter.backend.filesystem import FilesystemBrowser
 from dead_letter.backend.jobs import JobManager
+from dead_letter.backend.mbox_jobs import MboxArchiveTooLargeError, MboxBusyError
 from dead_letter.backend.settings import SettingsStore
 from dead_letter.backend.schemas import (
     BatchImportStartResponse,
@@ -34,6 +35,7 @@ from dead_letter.backend.schemas import (
     JobOptions,
     JobRetryRequest,
     JobStatusResponse,
+    MboxJobCreateRequest,
     OpenFolderResponse,
     SettingsResponse,
     SettingsUpdateRequest,
@@ -218,7 +220,11 @@ def create_app(
         try:
             yield
         finally:
-            await watcher.stop()
+            try:
+                await watcher.stop()
+            finally:
+                if hasattr(job_manager, "shutdown_mbox_jobs"):
+                    await job_manager.shutdown_mbox_jobs()
 
     app = FastAPI(lifespan=lifespan)
     app.state.job_manager = job_manager
@@ -352,6 +358,32 @@ def create_app(
             )
 
     @app.post(
+        "/api/mbox/jobs",
+        response_model=JobCreateResponse,
+        status_code=202,
+        responses={code: ERROR_RESPONSES[code] for code in (400, 403, 409, 413, 500)},
+    )
+    async def create_mbox_job(request: MboxJobCreateRequest) -> JobCreateResponse | JSONResponse:
+        configured = _current_settings()
+        if configured is None:
+            return _error_response(
+                409, code="invalid_request", message="workflow settings are not configured", path="settings",
+            )
+        _sync_job_manager_roots(configured)
+        try:
+            return await job_manager.create_mbox_job(request, source_root=fs_browser.root)
+        except PermissionError as exc:
+            return _error_response(403, code="invalid_request", message=str(exc), path=request.input_path)
+        except MboxArchiveTooLargeError as exc:
+            return _error_response(413, code="mbox_too_large", message=str(exc), path=request.input_path)
+        except MboxBusyError as exc:
+            return _error_response(409, code="mbox_busy", message=str(exc), path=request.input_path)
+        except ValueError as exc:
+            return _error_response(400, code="invalid_request", message=str(exc), path=request.input_path)
+        except Exception:  # pragma: no cover - defensive guard
+            return _error_response(500, code="backend_error", message="Could not start MBOX job", stage="backend")
+
+    @app.post(
         "/api/jobs/{job_id}/retry",
         response_model=JobCreateResponse,
         status_code=202,
@@ -457,7 +489,10 @@ def create_app(
             return _error_response(
                 409,
                 code="invalid_request",
-                message="job is already terminal",
+                message=(
+                    "job is already terminal" if outcome.status not in {"queued", "running"}
+                    else "job cancellation has closed after report finalization"
+                ),
                 path=job_id,
             )
         return outcome

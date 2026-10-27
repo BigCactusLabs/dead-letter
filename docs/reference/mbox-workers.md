@@ -78,8 +78,13 @@ errors use fixed messages and `stage: worker`:
 | `mbox_worker_invalid_result` | The receipt is missing, malformed, oversized, or inconsistent with the record. No output is published even if some temporary artifacts exist. |
 | `conversion_error` / `html_markdown_failed` | The existing conversion pipeline returned a recoverable message error. |
 | `mbox_publish_failed` | The worker completed but artifact validation or final copying failed. Newly created incomplete final output is cleaned up. |
+| `mbox_storage_error` (Unreleased) | Conversion or worker bookkeeping encountered storage exhaustion (`ENOSPC`/`EDQUOT`), or the worker returned the reserved storage-failure exit status. Private exception text is not exposed. |
 
-Those failures allow later records to continue. Empty/oversized records already
+The core yields these as record failures, allowing callers to decide whether
+later records should continue. The unreleased
+[web job runner](v4-runtime-contracts.md#post-apimboxjobs-unreleased) stops on
+`mbox_publish_failed` and `mbox_storage_error`; ordinary message errors,
+timeouts and generic crashes remain recoverable there. Empty/oversized records already
 rejected by the scanner do not launch a worker and retain their existing error
 codes. An OS-level failure to launch a process is archive-fatal instead of
 repeatedly attempting the unavailable executable for every remaining message.
@@ -88,6 +93,31 @@ The report stores the effective setting in `mbox_options.timeout_seconds`, with
 `null` meaning the default in-process path. Existing source-order entries,
 partial-success status, exit code 1 for errors, and Ctrl-C exit code 130 remain.
 No new report schema version or inference/remote-analysis behavior is introduced.
+
+**Unreleased storage transport:** a failure receipt carries
+`mbox_storage_error` when conversion catches an actual `ENOSPC`/`EDQUOT`.
+If storage exhaustion prevents writing even that receipt or budget control
+status, the worker returns reserved exit status 5. That path deliberately needs
+no writable control file. Unexpected Python `SystemExit(5)` is normalized to
+an ordinary crash; a native `os._exit(5)` cannot be distinguished from the
+reserved outcome and also yields `mbox_storage_error`. This is a fail-closed
+worker protocol result, not proof of a particular native failure's cause.
+
+## Cooperative cancellation (Unreleased)
+
+Non-resumed flat `convert_mbox()` imports accept a thread-safe
+`cancel_requested` callback. The framer checks it between bounded reads and
+writes; the timed-worker supervisor polls every 100 ms and kills/reaps its
+direct child before raising `dead_letter.core.mbox.MboxCancelled`. Cancellation
+before final publication withholds that message. Once publication starts, the
+result is yielded before another cancellation check so the caller can count
+any completed output. Close the iterator on every early exit.
+
+This does not preempt blocked OS calls or an in-process MIME conversion.
+Without a callback, existing CLI/Python callers keep their behavior. The web
+runner always supplies timed workers and the callback; the MCP tool does not
+gain cancellation implicitly. Resume and compressed input do not expose this
+callback. See the [core runtime contract](v4-runtime-contracts.md#streaming-mbox-conversion).
 
 ## Optional resource budgets
 

@@ -636,3 +636,195 @@ test("clearOpMessages() resets opErrors and opInfo", async () => {
   assert.deepEqual(job.opErrors, []);
   assert.deepEqual(job.opInfo, []);
 });
+
+function mboxStatus(overrides = {}) {
+  return {
+    id: "archive-1", kind: "mbox", status: "running", cancel_requested: false,
+    output_location: {
+      strategy: "cabinet", cabinet_path: "/tmp/Cabinet", bundle_path: null,
+      job_path: "/tmp/Cabinet/mbox-archive-1",
+    },
+    mbox: {
+      source_path: "Downloads/mail.mbox", records_total: null, records_processed: 3,
+      bytes_total: 8192, bytes_processed: 2048, failures_omitted: 0, phase: "converting",
+    },
+    progress: { total: 0, completed: 2, failed: 1, current: null },
+    summary: { written: 2, skipped: 0, errors: 1 },
+    errors: [{ path: "mail.mbox#message-00000002", code: "conversion_error", message: "Message failed" }],
+    report_path: null, created_at: "2026-10-27T10:00:00Z",
+    started_at: "2026-10-27T10:00:01Z", finished_at: null,
+    ...overrides,
+  };
+}
+
+test("startMbox() uses the archive route with CSRF and retains its job folder", async () => {
+  const requests = [];
+  const started = mboxStatus({ status: "queued" });
+  const { job } = await createJobStore(() => Promise.resolve(makeResponse({ jsonData: started })), requests);
+  let polls = 0;
+  job.startPolling = () => { polls += 1; };
+  const payload = { input_path: "Downloads/mail.mbox", options: { timeout_seconds: 30 } };
+
+  assert.deepEqual(await job.startMbox(payload), { ok: true });
+
+  assert.deepEqual(requests.map(({ url }) => url), ["/api/session", "/api/mbox/jobs"]);
+  assert.equal(requests[1].options.method, "POST");
+  assert.equal(headerValue(requests[1].options.headers, "X-Dead-Letter-CSRF"), "csrf-test-token");
+  assert.deepEqual(JSON.parse(requests[1].options.body), payload);
+  assert.equal(job.id, "archive-1");
+  assert.equal(job.kind, "mbox");
+  assert.equal(job.origin, "mbox");
+  assert.equal(job.status, "queued");
+  assert.deepEqual(job.mbox, started.mbox);
+  assert.equal(job.outputLocation.job_path, "/tmp/Cabinet/mbox-archive-1");
+  assert.equal(polls, 1);
+});
+
+test("startMbox() returns backend validation errors without starting polling", async () => {
+  const { job } = await createJobStore(() => Promise.resolve(makeResponse({
+    ok: false, status: 400,
+    jsonData: { errors: [{ path: "input_path", message: "Archive is outside the browser root" }] },
+  })));
+  job.startPolling = () => assert.fail("A rejected import must not start polling");
+  const result = await job.startMbox({ input_path: "mail.mbox", options: {} });
+  assert.deepEqual(result, { ok: false, formErrors: ["input_path: Archive is outside the browser root"] });
+  assert.equal(job.id, "");
+  assert.equal(job.isSubmitting, false);
+});
+
+test("archive polling preserves partial counts, errors, report and job folder through failure", async () => {
+  const running = mboxStatus();
+  const finished = mboxStatus({
+    status: "failed", report_path: "/tmp/Cabinet/mbox-archive-1/report.json",
+    mbox: { ...running.mbox, phase: "finished" },
+    errors: [...running.errors, { code: "mbox_storage_error", message: "Storage exhausted" }],
+  });
+  const snapshots = [running, finished];
+  const requests = [];
+  const { job, stores, intervals } = await createJobStore(
+    () => Promise.resolve(makeResponse({ jsonData: snapshots.shift() })), requests
+  );
+  let historyLoads = 0;
+  stores.history = { load() { historyLoads += 1; } };
+  job.id = "archive-1";
+  job.pollHandle = window.setInterval(() => {}, 800);
+  const activeHandle = job.pollHandle;
+
+  await job.poll();
+  assert.equal(job.kind, "mbox");
+  assert.equal(job.status, "running");
+  assert.equal(job.mbox.records_total, null);
+  assert.equal(job.mbox.bytes_processed, 2048);
+  assert.deepEqual(job.errors, running.errors);
+  assert.deepEqual(job.summary, running.summary);
+  assert.equal(job.outputLocation.job_path, running.output_location.job_path);
+  assert.equal(job.pollHandle, activeHandle);
+  assert.equal(historyLoads, 0);
+
+  await job.poll();
+  assert.deepEqual(requests.map(({ url }) => url), ["/api/jobs/archive-1", "/api/jobs/archive-1"]);
+  assert.equal(job.status, "failed");
+  assert.deepEqual(job.errors, finished.errors);
+  assert.deepEqual(job.summary, running.summary);
+  assert.equal(job.reportPath, finished.report_path);
+  assert.equal(job.outputLocation.job_path, running.output_location.job_path);
+  assert.equal(job.pollHandle, null);
+  assert.equal(intervals.size, 0);
+  assert.equal(historyLoads, 1);
+});
+
+test("archive cancellation stays nonterminal and keeps polling until the partial report is final", async () => {
+  const requests = [];
+  const final = mboxStatus({
+    status: "cancelled", cancel_requested: true,
+    report_path: "/tmp/Cabinet/mbox-archive-1/report.json",
+  });
+  const { job, intervals } = await createJobStore((url) => Promise.resolve(makeResponse({
+    jsonData: url.endsWith("/cancel") ? { accepted: true, status: "running" } : final,
+  })), requests);
+  job.id = "archive-1";
+  job.kind = "mbox";
+  job.status = "running";
+  job.pollHandle = window.setInterval(() => {}, 800);
+  const activeHandle = job.pollHandle;
+
+  await job.cancel();
+  assert.deepEqual(requests.map(({ url }) => url), ["/api/session", "/api/jobs/archive-1/cancel"]);
+  assert.equal(requests[1].options.method, "POST");
+  assert.equal(headerValue(requests[1].options.headers, "X-Dead-Letter-CSRF"), "csrf-test-token");
+  assert.equal(job.cancelRequested, true);
+  assert.equal(job.status, "running");
+  assert.equal(job.pollHandle, activeHandle);
+  assert.equal(intervals.size, 1);
+  assert.match(job.opInfo[0], /partial report/);
+  assert.match(job.opInfo[0], /Completed bundles are kept/);
+
+  await job.poll();
+  assert.equal(job.status, "cancelled");
+  assert.equal(job.pollHandle, null);
+  assert.equal(intervals.size, 0);
+  assert.equal(job.reportPath, final.report_path);
+  assert.equal(job.summary.written, 2);
+});
+
+test("manual starts and uploads cannot replace an active or cancelling archive", async (t) => {
+  const operations = {
+    start: (job) => job.start({ mode: "file", input_path: "mail.eml", options: {} }),
+    importFile: (job) => job.importFile({ name: "mail.eml" }, {}),
+    importBatch: (job) => job.importBatch([{ name: "mail.eml" }], {}),
+  };
+  for (const [name, run] of Object.entries(operations)) {
+    for (const status of ["queued", "running", "cancelling"]) {
+      await t.test(`${name}: ${status}`, async () => {
+        const requests = [];
+        const { job } = await createJobStore(null, requests);
+        job.id = "archive-1";
+        job.kind = "mbox";
+        job.status = status === "cancelling" ? "running" : status;
+        job.cancelRequested = status === "cancelling";
+        job.mbox = mboxStatus().mbox;
+        job.outputLocation = mboxStatus().output_location;
+        job.reportPath = "/tmp/Cabinet/mbox-archive-1/report.json";
+        job.pollHandle = window.setInterval(() => {}, 800);
+        job.activePollController = new AbortController();
+        const previous = {
+          id: job.id, status: job.status, mbox: job.mbox, outputLocation: job.outputLocation,
+          reportPath: job.reportPath, pollHandle: job.pollHandle, pollSessionId: job.pollSessionId,
+        };
+        const controller = job.activePollController;
+
+        await run(job);
+
+        assert.equal(requests.length, 0);
+        for (const [key, value] of Object.entries(previous)) assert.equal(job[key], value, key);
+        assert.equal(job.cancelRequested, status === "cancelling");
+        assert.equal(controller.signal.aborted, false);
+        assert.match(job.opErrors[0], /archive import to finish/);
+      });
+    }
+  }
+});
+
+test("startMbox() cannot replace an active EML job", async () => {
+  const requests = [];
+  const { job } = await createJobStore(null, requests);
+  job.id = "eml-1";
+  job.status = "running";
+  assert.deepEqual(await job.startMbox({ input_path: "mail.mbox", options: {} }), { ok: false });
+  assert.equal(job.id, "eml-1");
+  assert.equal(requests.length, 0);
+});
+
+test("an EML start after a terminal archive clears archive metadata and report", async () => {
+  const { job } = await createJobStore(() => Promise.resolve(makeResponse({
+    jsonData: { id: "eml-next", status: "queued" },
+  })));
+  Object.assign(job, { id: "archive-1", kind: "mbox", status: "cancelled",
+    mbox: mboxStatus().mbox, reportPath: "/tmp/old-report.json" });
+  job.startPolling = () => {};
+  assert.deepEqual(await job.start({ mode: "file", input_path: "mail.eml", options: {} }), { ok: true });
+  assert.equal(job.id, "eml-next");
+  assert.equal(job.kind, "eml");
+  assert.equal(job.mbox, null);
+  assert.equal(job.reportPath, null);
+});

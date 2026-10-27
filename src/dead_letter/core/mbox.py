@@ -6,7 +6,7 @@ import hashlib
 import os
 import re
 import stat
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -144,6 +144,15 @@ class MboxFormatError(ValueError):
     """Archive-level framing failure; earlier yielded messages remain usable."""
 
 
+class MboxCancelled(Exception):
+    """Cooperative cancellation; already yielded results remain usable."""
+
+
+def _raise_if_cancelled(cancel_requested: Callable[[], bool] | None) -> None:
+    if cancel_requested is not None and cancel_requested():
+        raise MboxCancelled("MBOX import cancelled")
+
+
 @dataclass(frozen=True, slots=True)
 class MboxRecord:
     """A staged message; its path is valid only until the iterator advances.
@@ -212,6 +221,7 @@ def iter_mbox(
     *,
     limits: MboxLimits | None = None,
     unescape: UnescapeMode = "preserve",
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> Iterator[MboxRecord]:
     """Yield one disk-backed EML at a time, with no mailbox-wide index.
 
@@ -227,7 +237,14 @@ def iter_mbox(
     ``MboxFormatError`` for mboxcl2. Read only immutable exported files, not
     live mail spools. An unescaped, valid postmark in body text is inherently
     ambiguous in delimiter-framed MBOX.
+
+    ``cancel_requested`` is checked between bounded framing reads and before
+    yielding. A true value raises ``MboxCancelled`` and removes private staging;
+    it does not interrupt a blocked filesystem call or alter the source.
     """
+    if cancel_requested is not None and not callable(cancel_requested):
+        raise ValueError("MBOX cancel_requested must be callable")
+    _raise_if_cancelled(cancel_requested)
     if unescape not in {"preserve", "mboxrd", "mboxo", "mboxcl", "mboxcl2"}:
         raise ValueError(f"Unsupported MBOX unescape mode: {unescape}")
     limits = limits or MboxLimits()
@@ -260,12 +277,14 @@ def iter_mbox(
         record_end: int | None = None
         with staged.open("wb") as output:
             while True:
+                _raise_if_cancelled(cancel_requested)
                 start = offset
                 # Never follow an export that is being appended indefinitely.
                 remaining = initial.st_size - offset
                 if record_end is not None and start < record_end:
                     remaining = record_end - start
                 fragment = stream.readline(min(limits.max_line_bytes + 1, remaining)) if remaining else b""
+                _raise_if_cancelled(cancel_requested)
                 offset += len(fragment)
                 complete_line = fragment.endswith(b"\n")
                 envelope = (
@@ -286,12 +305,14 @@ def iter_mbox(
                         framing = _length_fallback(unescape, index, envelope_offset)
                     if index:
                         output.flush()
+                        _raise_if_cancelled(cancel_requested)
                         yield MboxRecord(
                             index, envelope_offset, message_offset, start,
                             digest.hexdigest(), staged if error is None and size else None,
                             error or ("mbox_empty_message" if not size else None),
                             framing,
                         )
+                        _raise_if_cancelled(cancel_requested)
                         _check_source(fd, source, initial, initial_path)
                         output.seek(0)
                         output.truncate()

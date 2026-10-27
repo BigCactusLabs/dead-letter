@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import shutil
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import closing
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -17,7 +18,9 @@ from dead_letter.core._pipeline import (
     _open_collision_safe_output,
     _write_attachment_parts,
 )
-from dead_letter.core.mbox import MboxFormatError, MboxLimits, MboxRecord, UnescapeMode, iter_mbox
+from dead_letter.core.mbox import (
+    MboxFormatError, MboxLimits, MboxRecord, UnescapeMode, _raise_if_cancelled, iter_mbox,
+)
 from dead_letter.core.mbox_isolation import MboxBudgetError, WorkerBudgets
 from dead_letter.core.render import serialize_markdown
 from dead_letter.core.types import ConvertOptions
@@ -108,6 +111,12 @@ def _convert_record(
         if not isinstance(exc, Exception) or isinstance(exc, reraise):
             raise
         code, _fallback, _repair = _convert_error_metadata(exc)
+        if isinstance(exc, OSError) and exc.errno in (
+            errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC),
+        ):
+            # Preserve an actionable storage failure through the worker receipt.
+            # Exception text can contain mail or paths and is never inspected.
+            code = "mbox_storage_error"
         return MboxConversion(
             locator, None, False, provenance,
             error={"code": code or "conversion_error", "stage": "core",
@@ -128,6 +137,7 @@ def convert_mbox(
     cpu_seconds: int | None = None,
     max_output_mib: int | None = None,
     resume: bool = False,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> Iterator[MboxConversion]:
     """Lazily convert an immutable exported mailbox; never delete the archive.
 
@@ -149,12 +159,20 @@ def convert_mbox(
     Flat publication needs hard links; bundles need exclusive directory rename.
     Dry runs and compressed input are unsupported. Results include ``recovery``.
     See docs/reference/mbox-resume.md for filesystem and durability limits.
+
+    For non-resumed flat imports, ``cancel_requested`` accepts a thread-safe
+    callback such as ``threading.Event.is_set``. Cancellation raises
+    ``core.mbox.MboxCancelled``, not a failed message or archive result. The
+    framer checks between bounded reads; timed workers are polled every 100 ms
+    and killed/reaped before cancellation returns. Already yielded results stay
+    valid. Direct MIME conversion and filesystem calls are not preempted; use
+    worker mode for cancellable parsing. Resume does not support this callback.
     """
     yield from _convert_mbox(
         path, output=output, options=options, limits=limits, unescape=unescape,
         bundles=bundles, timeout_seconds=timeout_seconds,
         memory_limit_mib=memory_limit_mib, cpu_seconds=cpu_seconds, max_output_mib=max_output_mib,
-        resume=resume,
+        resume=resume, cancel_requested=cancel_requested,
     )
 
 
@@ -187,8 +205,15 @@ def _convert_mbox(
     max_output_mib: int | None = None,
     archive: dict[str, Any] | None = None,
     resume: bool = False,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> Iterator[MboxConversion]:
     # Both public importers use this pipeline; only the provenance differs.
+    if cancel_requested is not None:
+        if not callable(cancel_requested):
+            raise ValueError("MBOX cancel_requested must be callable")
+        if resume or archive is not None:
+            raise ValueError("MBOX cooperative cancellation requires non-resumed flat input")
+    _raise_if_cancelled(cancel_requested)
     budgets = _worker_budgets(timeout_seconds, memory_limit_mib, cpu_seconds, max_output_mib)
     if budgets is not None:
         from dead_letter.core.mbox_isolation import convert_record_isolated
@@ -220,13 +245,15 @@ def _convert_mbox(
         )
         return
     try:
-        with closing(iter_mbox(source, limits=limits, unescape=unescape)) as records:
+        cancel_options = {"cancel_requested": cancel_requested} if cancel_requested is not None else {}
+        with closing(iter_mbox(source, limits=limits, unescape=unescape, **cancel_options)) as records:
             for record in records:
+                _raise_if_cancelled(cancel_requested)
                 if timeout_seconds is not None and record.path is not None:
                     yield convert_record_isolated(
                         record, label, root, opts, bundles=bundles,
                         unescape=unescape, timeout=timeout_seconds, budgets=budgets,
-                        **provenance_options,
+                        **provenance_options, **cancel_options,
                     )
                 else:
                     yield _convert_record(record, label, root, opts, bundles=bundles, unescape=unescape, **provenance_options)

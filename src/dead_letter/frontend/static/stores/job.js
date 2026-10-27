@@ -18,6 +18,8 @@ export function registerJobStore(Alpine) {
   Alpine.store("job", {
     id: "",
     origin: "",
+    kind: "eml",
+    mbox: null,
     status: "",
     outputLocation: null,
     diagnostics: null,
@@ -53,6 +55,9 @@ export function registerJobStore(Alpine) {
           cabinet_path: outputLocation.cabinet_path,
           bundle_path: typeof outputLocation.bundle_path === "string" ? outputLocation.bundle_path : null,
         };
+        if (typeof outputLocation.job_path === "string") {
+          this.outputLocation.job_path = outputLocation.job_path;
+        }
         return;
       }
       this.outputLocation = null;
@@ -80,6 +85,8 @@ export function registerJobStore(Alpine) {
       this.clearOpMessages();
       this.id = "";
       this.origin = "";
+      this.kind = "eml";
+      this.mbox = null;
       this.status = "";
       this.outputLocation = null;
       this.diagnostics = null;
@@ -103,6 +110,8 @@ export function registerJobStore(Alpine) {
 
       this.id = payload.id;
       this.origin = origin;
+      this.kind = payload.kind === "mbox" || origin === "mbox" ? "mbox" : "eml";
+      this.mbox = payload.mbox || null;
       this.status = payload.status;
       this.applyOutputLocation(payload.output_location);
       this.diagnostics = normalizeDiagnostics(payload.diagnostics);
@@ -122,7 +131,8 @@ export function registerJobStore(Alpine) {
       this.stopPolling();
     },
 
-    async start(payload) {
+    async start(payload, kind = "eml") {
+      if (this.keepActiveArchive()) return { ok: false };
       if (this.isSubmitting) {
         return { ok: false };
       }
@@ -131,9 +141,10 @@ export function registerJobStore(Alpine) {
       this.stopPolling();
       this.resetState();
       this.isSubmitting = true;
+      this.kind = kind;
 
       try {
-        const response = await apiFetch("/api/jobs", {
+        const response = await apiFetch(kind === "mbox" ? "/api/mbox/jobs" : "/api/jobs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -144,7 +155,7 @@ export function registerJobStore(Alpine) {
         }
 
         const body = await response.json();
-        if (this.applyStarted(body, "Backend returned an invalid create-job response.", "manual")) {
+        if (this.applyStarted(body, "Backend returned an invalid create-job response.", kind === "mbox" ? "mbox" : "manual")) {
           return { ok: true };
         }
         return { ok: false };
@@ -154,6 +165,20 @@ export function registerJobStore(Alpine) {
       } finally {
         this.isSubmitting = false;
       }
+    },
+
+    async startMbox(payload) {
+      if (this.id && !isTerminalStatus(this.status)) {
+        this.setOpError("Wait for the current job to finish, or cancel it, before starting an archive import.");
+        return { ok: false };
+      }
+      return this.start(payload, "mbox");
+    },
+
+    keepActiveArchive() {
+      if (this.kind !== "mbox" || !this.id || isTerminalStatus(this.status)) return false;
+      this.setOpError("Wait for the archive import to finish, or cancel it, before starting another job.");
+      return true;
     },
 
     async handleStartFailure(response) {
@@ -254,6 +279,8 @@ export function registerJobStore(Alpine) {
         }
 
         this.status = payload.status;
+        this.kind = payload.kind === "mbox" ? "mbox" : "eml";
+        this.mbox = this.kind === "mbox" && payload.mbox ? payload.mbox : null;
         this.cancelRequested = Boolean(payload.cancel_requested);
         this.applyOutputLocation(payload.output_location);
         this.progress = {
@@ -306,6 +333,7 @@ export function registerJobStore(Alpine) {
     },
 
     async importFile(file, options) {
+      if (this.keepActiveArchive()) return null;
       if (!file || this.isSubmitting) {
         return null;
       }
@@ -348,6 +376,7 @@ export function registerJobStore(Alpine) {
     },
 
     async importBatch(files, options) {
+      if (this.keepActiveArchive()) return null;
       if (!files || !files.length || this.isSubmitting) {
         return null;
       }
@@ -477,7 +506,9 @@ export function registerJobStore(Alpine) {
         this.status = payload.status;
         if (payload.accepted && !isTerminalStatus(this.status)) {
           this.cancelRequested = true;
-          this.setOpInfo("Cancellation requested. In-progress files may still complete before the job becomes cancelled.");
+          this.setOpInfo(this.kind === "mbox"
+            ? "Cancellation requested. Waiting for the message worker to stop and the partial report to finish. Completed bundles are kept."
+            : "Cancellation requested. In-progress files may still complete before the job becomes cancelled.");
         }
         if (isTerminalStatus(this.status)) {
           this.stopPolling();

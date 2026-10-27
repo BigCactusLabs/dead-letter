@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import asynccontextmanager
+from contextvars import copy_context
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
+from dead_letter.backend.mbox_jobs import MboxBusyError, MboxJobOutcome, MboxJobRunner, admit_mbox_source
 from dead_letter.backend.schemas import (
     AggregateTotals,
     ErrorItem,
@@ -18,6 +21,7 @@ from dead_letter.backend.schemas import (
     JobCreateResponse,
     JobStatus,
     JobStatusResponse,
+    MboxJobCreateRequest,
     OutputLocation,
     Progress,
     QualityDiagnostics,
@@ -61,7 +65,7 @@ def _report_filename_for_job(job_id: str) -> str:
 @dataclass(slots=True)
 class _JobRecord:
     id: str
-    request: JobCreateRequest
+    request: JobCreateRequest | MboxJobCreateRequest
     files: list[Path]
     cabinet_root: Path
     output_location: OutputLocation
@@ -78,6 +82,7 @@ class _JobRecord:
     finished_at: datetime | None = None
     origin: str = "manual"
     cancel_requested: bool = False
+    mbox_runner: MboxJobRunner | None = None
 
 
 def bundle_result_to_error(result: BundleResult) -> ErrorItem:
@@ -131,15 +136,20 @@ class JobManager:
         *,
         worker_count: int = 8,
         max_retained_terminal_jobs: int = 2000,
+        max_mbox_jobs: int = 1,
         inbox_root: str | Path | None = None,
         cabinet_root: str | Path | None = None,
     ) -> None:
         self._worker_count = max(1, int(worker_count))
         self._max_retained_terminal_jobs = max(1, int(max_retained_terminal_jobs))
+        self._max_mbox_jobs = max(1, int(max_mbox_jobs))
+        self._active_mbox_jobs = 0
+        self._mbox_shutting_down = False
         self._inbox_root = Path(inbox_root or (Path.home() / "Inbox")).expanduser().resolve()
         self._cabinet_root = Path(cabinet_root or (Path.home() / "Cabinet")).expanduser().resolve()
         self._jobs: dict[str, _JobRecord] = {}
         self._tasks: set[asyncio.Task[None]] = set()
+        self._mbox_tasks: set[asyncio.Task[None]] = set()
         self._lock = asyncio.Lock()
 
     def update_roots(self, *, inbox_root: str | Path, cabinet_root: str | Path) -> None:
@@ -165,10 +175,54 @@ class JobManager:
             self._jobs[job_id] = record
 
         task = asyncio.create_task(self._run_job(job_id))
+        self._track_task(task, job_id)
+        return JobCreateResponse(
+            id=job_id,
+            status=record.status,
+            output_location=record.output_location.model_copy(deep=True),
+        )
+
+    async def create_mbox_job(
+        self, request: MboxJobCreateRequest, *, source_root: str | Path,
+    ) -> JobCreateResponse:
+        cabinet_root = self._cabinet_root
+        admission = admit_mbox_source(
+            request.input_path, source_root=Path(source_root), cabinet_root=cabinet_root,
+        )
+        job_id = uuid4().hex
+        runner = MboxJobRunner(
+            admission=admission, cabinet_root=cabinet_root, job_id=job_id, options=request.options,
+        )
+        record = _JobRecord(
+            id=job_id, request=request.model_copy(deep=True), files=[], cabinet_root=cabinet_root,
+            output_location=OutputLocation(
+                strategy="cabinet", cabinet_path=str(cabinet_root), job_path=str(runner.output),
+            ),
+            mbox_runner=runner,
+        )
+        async with self._lock:
+            if self._mbox_shutting_down:
+                raise MboxBusyError("MBOX jobs are unavailable while the server is shutting down")
+            if self._active_mbox_jobs >= self._max_mbox_jobs:
+                raise MboxBusyError("All MBOX job slots are in use; wait for an archive job to finish")
+            # Reserve before the worker can create an output directory or spool.
+            self._active_mbox_jobs += 1
+            self._jobs[job_id] = record
+        task = asyncio.create_task(self._run_mbox_job(job_id))
+        self._track_task(task, job_id, mbox=True)
+        return JobCreateResponse(
+            id=job_id, status=record.status,
+            output_location=record.output_location.model_copy(deep=True),
+        )
+
+    def _track_task(self, task: asyncio.Task[None], job_id: str, *, mbox: bool = False) -> None:
         self._tasks.add(task)
+        if mbox:
+            self._mbox_tasks.add(task)
 
         def _on_task_done(done_task: asyncio.Task[None]) -> None:
             self._tasks.discard(done_task)
+            self._mbox_tasks.discard(done_task)
             if done_task.cancelled():
                 return
             if (exc := done_task.exception()) is not None:
@@ -179,11 +233,18 @@ class JobManager:
                 )
 
         task.add_done_callback(_on_task_done)
-        return JobCreateResponse(
-            id=job_id,
-            status=record.status,
-            output_location=record.output_location.model_copy(deep=True),
-        )
+
+    async def shutdown_mbox_jobs(self) -> None:
+        """Stop admission, signal cancellation and wait for archive workers/reports."""
+        async with self._lock:
+            self._mbox_shutting_down = True
+            for record in self._jobs.values():
+                if record.mbox_runner is not None and record.status not in TERMINAL_STATUSES:
+                    if record.mbox_runner.request_cancel():
+                        record.cancel_requested = True
+            tasks = list(self._mbox_tasks)
+        if tasks:
+            await asyncio.gather(*(asyncio.shield(task) for task in tasks), return_exceptions=True)
 
     async def get_job(self, job_id: str) -> JobStatusResponse | None:
         async with self._lock:
@@ -230,6 +291,12 @@ class JobManager:
             if record.status in TERMINAL_STATUSES:
                 return JobCancelResponse(id=job_id, status=record.status, accepted=False)
 
+            if record.mbox_runner is not None:
+                accepted = record.mbox_runner.request_cancel()
+                if accepted:
+                    record.cancel_requested = True
+                return JobCancelResponse(id=job_id, status=record.status, accepted=accepted)
+
             record.cancel_requested = True
             if record.status == "queued":
                 self._transition(record, "cancelled")
@@ -243,6 +310,8 @@ class JobManager:
                 raise KeyError(job_id)
             if record.status not in TERMINAL_STATUSES:
                 raise RuntimeError("job is not terminal")
+            if record.mbox_runner is not None:
+                raise RuntimeError("MBOX jobs do not use EML retry actions; create a new archive job")
             if action not in {_RETRY_WITH_HTML_REPAIR, _RETRY_WITH_HTML_FALLBACK}:
                 raise ValueError(f"unsupported retry action: {action}")
             if not any(item.get("kind") == action for item in record.recovery_actions):
@@ -354,15 +423,22 @@ class JobManager:
             self._jobs.pop(record.id, None)
 
     def _to_response(self, record: _JobRecord) -> JobStatusResponse:
+        mbox = None
+        summary = record.summary.model_copy(deep=True)
+        errors = [item.model_copy(deep=True) for item in record.errors]
+        if record.mbox_runner is not None:
+            mbox, summary, errors = record.mbox_runner.snapshot()
         return JobStatusResponse(
             id=record.id,
             status=record.status,
+            kind="mbox" if mbox is not None else "eml",
             origin=record.origin,
             output_location=record.output_location.model_copy(deep=True),
             cancel_requested=record.cancel_requested,
             progress=record.progress.model_copy(deep=True),
-            summary=record.summary.model_copy(deep=True),
-            errors=[item.model_copy(deep=True) for item in record.errors],
+            mbox=mbox,
+            summary=summary,
+            errors=errors,
             recovery_actions=[dict(item) for item in record.recovery_actions],
             diagnostics=None if record.diagnostics is None else record.diagnostics.model_copy(deep=True),
             report_path=record.report_path,
@@ -370,6 +446,53 @@ class JobManager:
             started_at=record.started_at,
             finished_at=record.finished_at,
         )
+
+    async def _run_mbox_job(self, job_id: str) -> None:
+        record = self._jobs[job_id]
+        runner = record.mbox_runner
+        assert runner is not None
+
+        def request_cancel() -> None:
+            if runner.request_cancel():
+                record.cancel_requested = True
+
+        @asynccontextmanager
+        async def locked():
+            # A direct Task.cancel during a lock wait must not strand a queued
+            # job or skip committing an already-finished worker's real outcome.
+            while True:
+                try:
+                    await self._lock.acquire()
+                    break
+                except asyncio.CancelledError:
+                    request_cancel()
+            try:
+                yield
+            finally:
+                self._lock.release()
+
+        try:
+            async with locked():
+                self._transition(record, "running")
+            # An executor Future is not an independently cancellable asyncio Task
+            # during loop shutdown. Shielding it preserves the completion handle.
+            worker = asyncio.get_running_loop().run_in_executor(None, copy_context().run, runner.run)
+            while True:
+                try:
+                    # Cancelling this await must never orphan the conversion thread.
+                    outcome = await asyncio.shield(worker)
+                    break
+                except asyncio.CancelledError:
+                    request_cancel()
+        except Exception as exc:
+            logger.error("MBOX job %s failed unexpectedly", job_id, exc_info=(type(exc), exc, exc.__traceback__))
+            runner.fail_unexpected()
+            outcome = MboxJobOutcome("failed", None)
+        async with locked():
+            _, record.summary, _ = runner.snapshot()
+            record.report_path = outcome.report_path
+            self._active_mbox_jobs -= 1
+            self._transition(record, outcome.status)
 
     async def _record_run_failure(
         self,

@@ -5,8 +5,9 @@ release (#103). Compressed ZIP/TGZ input shipped in 0.4.5 (#144).
 Install any CLI/Python route from the
 [installation and distribution map](distribution.md); once dead-letter is
 installed, run the commands below without a `uv run` prefix. Keep `uv run` only
-when working from a development checkout. The web UI remains EML-only (tracked:
-web/API import [#146](https://github.com/BigCactusLabs/dead-letter/issues/146)).
+when working from a development checkout. Released web UI versions remain
+EML-only; the [unreleased local-path web workflow](#web-local-path-import-unreleased)
+adds the first web/API slice of [#146](https://github.com/BigCactusLabs/dead-letter/issues/146).
 MCP servers from 0.4.5 add a bounded
 [`convert_mbox` MCP tool](#mcp-bounded-convert_mbox) (#145); 0.4.0 and earlier
 MCP servers are EML-only. Watch
@@ -436,6 +437,33 @@ and are stricter than [mutt's](https://github.com/muttmua/mutt/blob/b74263bb9381
 which compares only five bytes to `From ` at the endpoint. Dialect names
 follow [de Boyne Pollard's MBOX survey](https://jdebp.uk/FGA/mail-mbox-formats.html).
 
+## Web: local-path import (Unreleased)
+
+In a development checkout containing #146's local-path implementation, configure
+Inbox/Cabinet, choose **Import a local MBOX archive**, and enter the archive's
+path relative to the server's filesystem-browser root (your home directory by
+default), for example `Downloads/Takeout/Mail/All mail.mbox`. The file must be
+on that server already. The form accepts one flat archive up to 16 GiB and a
+per-message timeout (30 seconds by default, at most 300 seconds).
+
+Each job preserves the export and creates its own `mbox-<job-id>` folder in
+Cabinet, with one bundle per completed message and a streaming JSON report.
+The progress view shows archive bytes and processed messages without guessing
+the total message count. Cancelling waits for the active worker to stop and
+the partial report to finish; completed bundles stay available. The default
+server allows one queued/running archive job at a time.
+
+Reserve disk space for temporary data, output bundles and the report. The
+16 GiB source limit and bounded status summary do not impose a total disk or
+process-memory quota. Uploads, ZIP/TGZ web input and resumable web jobs remain
+separate work; use the CLI routes above when those capabilities are needed.
+The EML file upload and watch flows still accept only EML.
+
+For script clients, use `POST /api/mbox/jobs` with a root-relative `input_path`
+and the local CSRF session header, then reuse the existing status/history/cancel
+routes. See the [complete API contract](v4-runtime-contracts.md#post-apimboxjobs-unreleased)
+for option validation, path confinement, limits, partial reports and failures.
+
 ## MCP: bounded `convert_mbox`
 
 Available in MCP servers from 0.4.5 and later; 0.4.0 and earlier do not have
@@ -450,8 +478,8 @@ runs the same importer for small exports, with fixed bounds:
 - at most 1000 messages per call. When an archive holds more, the call stops
   cleanly and returns `truncated: true`; the remaining messages are not
   converted and there is no resume. Use the CLI for the whole archive;
-- default `preserve` quoting and default per-message limits. Unescape modes,
-  `--max-message-mib` and timed workers are CLI/Python-only;
+- default `preserve` quoting and default per-message limits. The MCP tool does
+  not expose unescape modes, `--max-message-mib` or timed workers;
 - `output_directory` is required. Output names and the
   `.dead-letter-report.json` report are collision-safe: a second call into the
   same folder writes `.dead-letter-report-2.json` and suffixed messages;
@@ -480,3 +508,12 @@ Do not wrap a large import in `list(...)`. The lower-level
 copy its path before advancing the iterator, and close it when stopping early.
 Python callers can set both resource limits through `MboxLimits`; byte counts
 must be integers, not floats or booleans.
+
+**Unreleased:** for non-resumed flat imports, pass
+`cancel_requested=event.is_set` with a `threading.Event`. Catch
+`dead_letter.core.mbox.MboxCancelled` outside the `closing` context. Framing
+checks between bounded reads; use `timeout_seconds` to also stop/reap an active
+parser worker. Already completed results remain valid. Cancellation cannot
+preempt blocked filesystem I/O or an in-process parser, and is not supported
+with `resume=True` or compressed input. See the
+[core contract](v4-runtime-contracts.md#streaming-mbox-conversion).
