@@ -338,11 +338,13 @@ Python usage, tests, and precise limits.
 
 In 0.4.5 and later, worker mode also accepts opt-in resource budgets:
 `--mbox-cpu-seconds` and `--mbox-max-output-mib` (Linux and macOS) and
-`--mbox-memory-mib` (Linux only). An unsupported control is refused before
-conversion. Budgets apply to ZIP/TGZ input as well (Python `convert_mbox_archive`
-accepts the same `memory_limit_mib`, `cpu_seconds` and `max_output_mib`).
-These are resource limits, not filesystem or network isolation; see
-[optional resource budgets](mbox-workers.md#optional-resource-budgets).
+`--mbox-memory-mib` (Linux only). **Windows support for `--mbox-cpu-seconds`
+and `--mbox-memory-mib` (committed memory) is unreleased (#188); no published
+version includes it.** Windows output size stays unsupported. An unsupported
+control is refused before conversion. Budgets apply to ZIP/TGZ input as well
+(Python `convert_mbox_archive` accepts the same `memory_limit_mib`,
+`cpu_seconds` and `max_output_mib`). These are resource limits, not filesystem
+or network isolation; see [optional resource budgets](mbox-workers.md#optional-resource-budgets).
 
 ## Dialects: do not guess away quoting
 

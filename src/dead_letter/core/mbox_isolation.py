@@ -15,18 +15,19 @@ import signal
 import stat
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from time import monotonic
+from time import monotonic, sleep
 from typing import TYPE_CHECKING, Any
 
 from dead_letter import _mbox_worker
 from dead_letter._mbox_worker import (
     BUDGET_STATUS_FILE, EXIT_BUDGET_APPLY_FAILED, EXIT_MEMORY_LIMIT, EXIT_STORAGE_ERROR,
 )
-from dead_letter.core.mbox import _raise_if_cancelled
+from dead_letter.core.mbox import MboxCancelled, _raise_if_cancelled
 
 if TYPE_CHECKING:
     from dead_letter.core.mbox import MboxRecord, UnescapeMode
@@ -57,8 +58,11 @@ _BUDGET_CONTROLS = {
 }
 # Decided before any conversion. macOS xnu counts RLIMIT_AS against a baseline
 # virtual size of hundreds of GiB, so an absolute memory budget is unavailable
-# there. Windows Job Objects are not implemented in this slice.
-_SUPPORTED_BUDGETS = {"linux": {"memory", "cpu", "output"}, "darwin": {"cpu", "output"}}
+# there. Windows Jobs support committed memory and user-mode CPU, not FSIZE.
+_SUPPORTED_BUDGETS = {
+    "linux": {"memory", "cpu", "output"}, "darwin": {"cpu", "output"},
+    "win32": {"memory", "cpu"},
+}
 _PLATFORM_NAMES = {"linux": "Linux", "darwin": "macOS", "win32": "Windows"}
 
 
@@ -95,7 +99,13 @@ def validate_budgets(budgets: WorkerBudgets, *, worker_mode: bool) -> None:
     for control in requested:
         field, flag, _arg, unit = _BUDGET_CONTROLS[control]
         value = getattr(budgets, field)
-        if type(value) is not int or value <= 0 or value * unit > 2**62:
+        maximum = 2**62
+        if sys.platform == "win32":
+            if control == "cpu":
+                unit, maximum = 10_000_000, 2**63 - 1  # signed 100-ns ticks
+            elif control == "memory":
+                maximum = min(maximum, 2 * sys.maxsize + 1)  # SIZE_T bytes
+        if type(value) is not int or value <= 0 or value * unit > maximum:
             raise ValueError(f"MBOX {field} ({flag}) must be a positive integer")
     if requested and not worker_mode:
         raise ValueError("MBOX resource budgets require worker mode (timeout_seconds / --mbox-timeout)")
@@ -174,20 +184,42 @@ def _worker_command(request: Path, *budget_args: str) -> list[str]:
     return [sys.executable, "-I", "-B", script, str(request), *budget_args]
 
 
+class _WorkerResourceLimit(Exception):
+    """A resource outcome established by the parent, not a child's exit code."""
+
+    def __init__(self, control: str) -> None:
+        self.control = control
+        super().__init__(control)
+
+
 def _run_worker(
     request: Path, timeout: float, budget_args: tuple[str, ...] = (), *,
     cancel_requested: Callable[[], bool] | None = None,
 ) -> int:
-    # DEVNULL avoids unbounded captured logs and leaking private parser errors.
-    # A new group/session leaves terminal Ctrl-C handling to the parent.
+    # Checked before the job exists: a cancel here needs no handle cleanup.
     _raise_if_cancelled(cancel_requested)
-    process = subprocess.Popen(
-        _worker_command(request, *budget_args), cwd=request.parent,
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        close_fds=True, start_new_session=os.name == "posix",
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
-    )
+    job = None
+    if sys.platform == "win32" and budget_args:
+        from dead_letter._mbox_windows import WindowsJob
+
+        try:
+            budgets, nonce = _mbox_worker._parse_budgets(list(budget_args))
+            job = WindowsJob(budgets, nonce)
+        except (OSError, ValueError, OverflowError) as exc:
+            raise MboxBudgetError(
+                "mbox_budget_apply_failed", "could not configure the message worker job; import aborted",
+            ) from exc
+    process = None
+    pending: BaseException | None = None
     try:
+        # DEVNULL avoids unbounded captured logs and leaking private parser errors.
+        # A new group/session leaves terminal Ctrl-C handling to the parent.
+        process = subprocess.Popen(
+            _worker_command(request, *budget_args), cwd=request.parent,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            close_fds=True, start_new_session=os.name == "posix",
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+        )
         deadline = monotonic() + timeout
         while True:
             _raise_if_cancelled(cancel_requested)
@@ -195,17 +227,58 @@ def _run_worker(
             # overflow for a valid but large budget without imposing a new cap.
             remaining = max(0.0, deadline - monotonic())
             try:
-                return process.wait(timeout=min(remaining, 0.1 if cancel_requested is not None else 60.0))
+                returncode = process.wait(timeout=min(remaining, 0.1 if cancel_requested is not None else 60.0))
+                break
             except subprocess.TimeoutExpired:
                 _raise_if_cancelled(cancel_requested)
                 if monotonic() >= deadline:
                     raise subprocess.TimeoutExpired(process.args, timeout) from None
+        if job is not None:
+            try:
+                exceeded = job.cpu_exceeded()
+            except OSError as exc:
+                raise MboxBudgetError(
+                    "mbox_budget_apply_failed", "could not read the message worker job; import aborted",
+                ) from exc
+            if exceeded:
+                raise _WorkerResourceLimit("cpu")
+        return returncode
+    except BaseException as exc:
+        pending = exc
+        raise
     finally:
-        # Popen's context manager alone waits forever on an uncooperative child.
-        # Reap before the scanner can reuse the source EML or staging is removed.
-        if process.poll() is None:
-            process.kill()
-        process.wait()
+        killed = False
+        try:
+            # Reap even on cancellation or a failed job-state query. Keep the
+            # parent-owned job handle until the worker can no longer publish.
+            if process is not None:
+                if process.poll() is None:
+                    # A venv launcher can be the direct child: its interpreter
+                    # in the job may outlive this kill, so close() drains it.
+                    killed = True
+                    process.kill()
+                process.wait()
+        except BaseException as exc:
+            pending = exc
+            raise
+        finally:
+            if job is not None:
+                try:
+                    job.close(terminate=killed)
+                except OSError as exc:
+                    error = MboxBudgetError(
+                        "mbox_budget_apply_failed", "could not close the message worker job; import aborted",
+                    )
+                    # An interrupt or cancellation (MboxCancelled included)
+                    # already propagating wins; the cleanup failure stays
+                    # visible on it as a note. Ordinary exceptions, timeouts
+                    # and limits included, do not: an unclosed job leaves the
+                    # guarantee unmet.
+                    if pending is None or (
+                        isinstance(pending, Exception) and not isinstance(pending, MboxCancelled)
+                    ):
+                        raise error from exc
+                    pending.add_note(str(error))
 
 
 def _regular(path: Path) -> None:
@@ -307,6 +380,33 @@ def _publish(staged: Path, root: Path, *, bundles: bool) -> Path:
         raise
 
 
+_WORKSPACE_RELEASE_SECONDS = 5.0
+
+
+@contextmanager
+def _private_workspace() -> Iterator[str]:
+    """Yield a worker workspace that is removed even after a Windows kill.
+
+    A killed venv launcher's interpreter dies asynchronously, and one that has
+    not yet joined the job is invisible to the job drain. Until it exits, its
+    working directory and open files lock the workspace (WinError 32), so the
+    removal is retried for a bounded time before failing as before.
+    """
+    directory = TemporaryDirectory(prefix="dead-letter-worker-")
+    try:
+        yield directory.name
+    finally:
+        deadline = monotonic() + _WORKSPACE_RELEASE_SECONDS
+        while True:
+            try:
+                directory.cleanup()
+                break
+            except PermissionError:
+                if sys.platform != "win32" or monotonic() >= deadline:
+                    raise
+                sleep(0.05)
+
+
 def convert_record_isolated(
     record: MboxRecord, source: Path, root: Path, options: ConvertOptions, *,
     bundles: bool, unescape: UnescapeMode, timeout: float, budgets: WorkerBudgets | None = None,
@@ -331,7 +431,7 @@ def convert_record_isolated(
             "code": code, "stage": "worker", "message": message or _ERROR_MESSAGES[code],
         })
 
-    with TemporaryDirectory(prefix="dead-letter-worker-") as temporary:
+    with _private_workspace() as temporary:
         workspace = Path(temporary)
         request = workspace / "request.json"
         record_data = asdict(record)
@@ -352,6 +452,8 @@ def convert_record_isolated(
                 returncode = _run_worker(request, timeout)
         except subprocess.TimeoutExpired:
             return failed("mbox_message_timeout")
+        except _WorkerResourceLimit as exc:
+            return failed("mbox_message_resource_limit", _RESOURCE_MESSAGES[exc.control])
         # Launch failures propagate as archive errors rather than trying to start
         # an unavailable interpreter once for every remaining message. So does a
         # requested budget the worker could not apply: the guarantee is unmet.
