@@ -199,6 +199,7 @@ def _run_worker(request: Path, timeout: float, budget_args: tuple[str, ...] = ()
                 "mbox_budget_apply_failed", "could not configure the message worker job; import aborted",
             ) from exc
     process = None
+    pending: BaseException | None = None
     try:
         # DEVNULL avoids unbounded captured logs and leaking private parser errors.
         # A new group/session leaves terminal Ctrl-C handling to the parent.
@@ -229,6 +230,9 @@ def _run_worker(request: Path, timeout: float, budget_args: tuple[str, ...] = ()
             if exceeded:
                 raise _WorkerResourceLimit("cpu")
         return returncode
+    except BaseException as exc:
+        pending = exc
+        raise
     finally:
         killed = False
         try:
@@ -241,14 +245,24 @@ def _run_worker(request: Path, timeout: float, budget_args: tuple[str, ...] = ()
                     killed = True
                     process.kill()
                 process.wait()
+        except BaseException as exc:
+            pending = exc
+            raise
         finally:
             if job is not None:
                 try:
                     job.close(terminate=killed)
                 except OSError as exc:
-                    raise MboxBudgetError(
+                    error = MboxBudgetError(
                         "mbox_budget_apply_failed", "could not close the message worker job; import aborted",
-                    ) from exc
+                    )
+                    # An interrupt or cancellation already propagating wins; the
+                    # cleanup failure stays visible on it as a note. Ordinary
+                    # exceptions, timeouts and limits included, do not: an
+                    # unclosed job leaves the guarantee unmet.
+                    if pending is None or isinstance(pending, Exception):
+                        raise error from exc
+                    pending.add_note(str(error))
 
 
 def _regular(path: Path) -> None:

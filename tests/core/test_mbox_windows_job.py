@@ -6,6 +6,7 @@ actually enforced a limit; the windows-latest real-worker cases establish that.
 
 from __future__ import annotations
 
+import asyncio
 import ctypes
 import json
 import subprocess
@@ -421,9 +422,12 @@ def test_parent_job_setup_failure_never_launches(monkeypatch, tmp_path):
         )
 
 
-# -- drain after a kill (venv launcher) -----------------------------------------
+# -- drain after a kill (venv launcher) and close-failure precedence ----------
 
 ARGS = ("cpu_seconds=5", "nonce=" + NONCE)
+CLOSE_NOTE = (
+    "mbox_budget_apply_failed: could not close the message worker job; import aborted"
+)
 
 
 def timed_out():
@@ -584,4 +588,41 @@ def test_parent_drains_a_killed_workers_job_after_reaping_and_before_closing(
     else:
         assert isolation._run_worker(tmp_path / "request.json", 5, ARGS) == 0
         assert kernel.calls == ["launch", "wait", "reap", "close"]
+    assert kernel.closed == [HANDLE]
+
+
+@pytest.mark.parametrize("interrupt", [KeyboardInterrupt, asyncio.CancelledError])
+@pytest.mark.parametrize("phase", ["wait", "reap"])
+def test_job_close_failure_never_masks_an_interrupt(
+    kernel, clock, monkeypatch, tmp_path, interrupt, phase
+):
+    kernel.failure = "close"
+    if phase == "wait":
+        fake_popen(monkeypatch, kernel.calls, wait_error=interrupt)
+    else:  # A second interrupt while reaping a timed-out worker.
+        fake_popen(
+            monkeypatch, kernel.calls, wait_error=timed_out, reap_error=interrupt
+        )
+    with pytest.raises(interrupt) as caught:
+        isolation._run_worker(tmp_path / "request.json", 5, ARGS)
+    assert caught.value.__notes__ == [CLOSE_NOTE]
+    assert "kill" in kernel.calls and kernel.closed == [HANDLE]
+
+
+@pytest.mark.parametrize("outcome", ["ok", "timeout", "cpu"])
+def test_job_close_failure_still_aborts_ordinary_outcomes(
+    kernel, clock, monkeypatch, tmp_path, outcome
+):
+    kernel.failure = "close"
+    if outcome == "cpu":
+        kernel.state = windows._WAIT_OBJECT_0
+    fake_popen(
+        monkeypatch,
+        kernel.calls,
+        wait_error=timed_out if outcome == "timeout" else None,
+    )
+    with pytest.raises(isolation.MboxBudgetError) as caught:
+        isolation._run_worker(tmp_path / "request.json", 5, ARGS)
+    assert str(caught.value) == CLOSE_NOTE
+    assert isinstance(caught.value.__cause__, OSError)
     assert kernel.closed == [HANDLE]

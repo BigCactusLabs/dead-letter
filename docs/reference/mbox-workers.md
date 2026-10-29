@@ -180,7 +180,8 @@ keeps its timeout or cancellation outcome; if the interpreter then still blocks
 workspace removal, that surfaces as an archive error. A worker that exits on
 its own is not drained, because a launcher relays its interpreter's exit status
 and so exits after it. A failure to query, terminate or close the job is
-`mbox_budget_apply_failed`.
+`mbox_budget_apply_failed`, except that a Ctrl-C or cancellation already in
+progress is kept and carries the cleanup failure as an exception note.
 
 CPU exhaustion is established from the **signaled job object** after the worker
 exits. Windows exit code 1816 alone is ambiguous and remains an ordinary crash
