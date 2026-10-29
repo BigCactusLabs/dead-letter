@@ -5,9 +5,9 @@ release (#103). Compressed ZIP/TGZ input shipped in 0.4.5 (#144).
 Install any CLI/Python route from the
 [installation and distribution map](distribution.md); once dead-letter is
 installed, run the commands below without a `uv run` prefix. Keep `uv run` only
-when working from a development checkout. Released web UI versions remain
-EML-only; the [unreleased local-path web workflow](#web-local-path-import-unreleased)
-adds the first web/API slice of [#146](https://github.com/BigCactusLabs/dead-letter/issues/146).
+when working from a development checkout. Web UI versions before 0.4.10 are
+EML-only; 0.4.10 adds the [local-path web workflow](#web-local-path-import-0410),
+the first web/API slice of [#146](https://github.com/BigCactusLabs/dead-letter/issues/146).
 MCP servers from 0.4.5 add a bounded
 [`convert_mbox` MCP tool](#mcp-bounded-convert_mbox) (#145); 0.4.0 and earlier
 MCP servers are EML-only. Watch
@@ -338,9 +338,9 @@ Python usage, tests, and precise limits.
 
 In 0.4.5 and later, worker mode also accepts opt-in resource budgets:
 `--mbox-cpu-seconds` and `--mbox-max-output-mib` (Linux and macOS) and
-`--mbox-memory-mib` (Linux only). **Windows support for `--mbox-cpu-seconds`
-and `--mbox-memory-mib` (committed memory) is unreleased (#188); no published
-version includes it.** Windows output size stays unsupported. An unsupported
+`--mbox-memory-mib` (Linux only). 0.4.10 adds Windows support for
+`--mbox-cpu-seconds` and `--mbox-memory-mib` (committed memory) (#188).
+Windows output size stays unsupported. An unsupported
 control is refused before conversion. Budgets apply to ZIP/TGZ input as well
 (Python `convert_mbox_archive` accepts the same `memory_limit_mib`,
 `cpu_seconds` and `max_output_mib`). These are resource limits, not filesystem
@@ -439,9 +439,9 @@ and are stricter than [mutt's](https://github.com/muttmua/mutt/blob/b74263bb9381
 which compares only five bytes to `From ` at the endpoint. Dialect names
 follow [de Boyne Pollard's MBOX survey](https://jdebp.uk/FGA/mail-mbox-formats.html).
 
-## Web: local-path import (Unreleased)
+## Web: local-path import (0.4.10)
 
-In a development checkout containing #146's local-path implementation, configure
+In 0.4.10 and later, configure
 Inbox/Cabinet, choose **Import a local MBOX archive**, and enter the archive's
 path relative to the server's filesystem-browser root (your home directory by
 default), for example `Downloads/Takeout/Mail/All mail.mbox`. The file must be
@@ -463,7 +463,7 @@ The EML file upload and watch flows still accept only EML.
 
 For script clients, use `POST /api/mbox/jobs` with a root-relative `input_path`
 and the local CSRF session header, then reuse the existing status/history/cancel
-routes. See the [complete API contract](v4-runtime-contracts.md#post-apimboxjobs-unreleased)
+routes. See the [complete API contract](v4-runtime-contracts.md#post-apimboxjobs-0410)
 for option validation, path confinement, limits, partial reports and failures.
 
 ## MCP: bounded `convert_mbox`
@@ -511,7 +511,7 @@ copy its path before advancing the iterator, and close it when stopping early.
 Python callers can set both resource limits through `MboxLimits`; byte counts
 must be integers, not floats or booleans.
 
-**Unreleased:** for non-resumed flat imports, pass
+**0.4.10 and later:** for non-resumed flat imports, pass
 `cancel_requested=event.is_set` with a `threading.Event`. Catch
 `dead_letter.core.mbox.MboxCancelled` outside the `closing` context. Framing
 checks between bounded reads; use `timeout_seconds` to also stop/reap an active

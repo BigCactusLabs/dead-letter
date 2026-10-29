@@ -74,7 +74,7 @@ The follow-up implements the first two slices, as unreleased work:
   canonical success report. Source/archive/report/publication/storage failures
   are fatal; ordinary record failures continue. Completed bundles are retained.
 
-The [runtime contract](../reference/v4-runtime-contracts.md#post-apimboxjobs-unreleased)
+The [runtime contract](../reference/v4-runtime-contracts.md#post-apimboxjobs-0410)
 is the source of truth for admission, status and report semantics. Synthetic
 tests cover source/attachment/provenance parity, mixed success, fatal suffixes,
 bounded retained errors, confinement/source mutation, admission limits,

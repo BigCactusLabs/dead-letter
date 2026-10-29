@@ -79,7 +79,7 @@ it under `contextlib.closing`, without collecting the archive in a list. See
 the [Takeout contract](gmail-takeout.md) for source preservation, framing,
 bundle output and reports, and [workers](mbox-workers.md) for process limits.
 
-**Unreleased:** non-resumed flat imports and the lower-level `iter_mbox()`
+**0.4.10 and later:** non-resumed flat imports and the lower-level `iter_mbox()`
 accept `cancel_requested`, a thread-safe zero-argument callback such as
 `threading.Event.is_set`. A true result raises
 `dead_letter.core.mbox.MboxCancelled`, rather than yielding a failed message.
@@ -347,7 +347,7 @@ Output placement is server-owned:
 - `delete_eml=true` changes successful file handling to delete the source instead of retaining a `.eml` artifact in Cabinet.
 - Failed file jobs leave the source at its original path.
 
-### `POST /api/mbox/jobs` (Unreleased)
+### `POST /api/mbox/jobs` (0.4.10)
 
 Starts an explicit local-path archive import. Configure Inbox/Cabinet first,
 then use the same loopback Host, same-origin and CSRF protections as other
