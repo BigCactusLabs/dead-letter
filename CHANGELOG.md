@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Local-path MBOX web/API jobs, with one active archive import by default,
+  browser-root path confinement, a 16 GiB admission cap, copy-only bundles in
+  a job-owned Cabinet folder, streamed reports, byte progress and a capped
+  failure summary. The UI exposes per-message timeouts and cancellation that
+  waits for worker cleanup and a partial report. Uploads, compressed web input
+  and web-job resume remain separate work (#146).
+- Optional cooperative cancellation for non-resumed flat Python MBOX imports
+  and framing. Timed workers are killed and reaped before cancellation returns;
+  completed results remain valid. Existing callers retain their behavior.
 - Offline review artifacts for the synthetic analysis benchmark, with explicit
   scorer selection, corpus and source bindings, reviewer provenance, and strict
   coverage checks. Review templates leave every case pending; model pre-labels
@@ -22,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- MBOX conversion preserves a distinct storage-exhaustion outcome for
+  `ENOSPC`/`EDQUOT`, including a reserved worker exit status when writing the
+  failure receipt is itself impossible. Web imports stop on that outcome and
+  retain completed bundles instead of repeatedly attempting later messages.
 - Attribution parsing bounds regex input, using only complete leading lines when
   the message is longer: 1,000 characters for single-line attributions and
   64 KiB for Outlook From/Sent/To/Subject blocks, whose matching is now linear.

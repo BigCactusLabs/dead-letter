@@ -69,9 +69,12 @@ export function registerWatchStore(Alpine) {
       jobStore?.clearOpMessages?.();
       jobStore.id = jobId;
       jobStore.origin = "watch";
+      jobStore.kind = "eml";
+      jobStore.mbox = null;
       jobStore.status = typeof initialStatus === "string" ? initialStatus : "";
       jobStore.outputLocation = null;
       jobStore.diagnostics = null;
+      jobStore.reportPath = null;
       jobStore.recoveryActions = [];
       jobStore.diagnosticsOpen = false;
       jobStore.cancelRequested = false;

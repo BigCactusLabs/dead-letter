@@ -7,6 +7,7 @@ any ``dead_letter`` package, MIME parser or native extension is imported.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import sys
@@ -17,11 +18,22 @@ from pathlib import Path
 # ordinary exit with the same number cannot impersonate a budget outcome.
 EXIT_BUDGET_APPLY_FAILED = 3
 EXIT_MEMORY_LIMIT = 4
+# Storage exhaustion can prevent even a failure receipt from being written.
+# Reserve this status for caught errno values, without a control-file write.
+EXIT_STORAGE_ERROR = 5
 BUDGET_NAMES = ("memory_mib", "cpu_seconds", "max_output_mib")
 BUDGET_STATUS_FILE = "budget-status.json"
 NONCE_LENGTH = 32
 _OUTCOMES = {EXIT_BUDGET_APPLY_FAILED: "apply_failed", EXIT_MEMORY_LIMIT: "memory_limit"}
 _MIB = 1024 * 1024
+
+
+def _exception_status(exc: BaseException) -> int:
+    if isinstance(exc, OSError) and exc.errno in (
+        errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC),
+    ):
+        return EXIT_STORAGE_ERROR
+    return 1
 
 
 def _parse_budgets(args: list[str]) -> tuple[dict[str, int], str | None]:
@@ -191,8 +203,8 @@ def _run_budgeted(request_path: Path, budgets: dict[str, int], nonce: str) -> in
     try:
         fd = os.open(request_path.parent / BUDGET_STATUS_FILE,
                      os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
-    except OSError:
-        return 1
+    except OSError as exc:
+        return _exception_status(exc)
     payloads = {
         code: json.dumps({"nonce": nonce, "outcome": outcome}).encode("ascii")
         for code, outcome in _OUTCOMES.items()
@@ -202,8 +214,8 @@ def _run_budgeted(request_path: Path, budgets: dict[str, int], nonce: str) -> in
         try:
             if os.write(fd, payloads[code]) != len(payloads[code]):
                 return 1
-        except OSError:
-            return 1
+        except OSError as exc:
+            return _exception_status(exc)
         return code
 
     watch = _MemoryErrorWatch() if "memory_mib" in budgets else None
@@ -222,10 +234,9 @@ def _run_budgeted(request_path: Path, budgets: dict[str, int], nonce: str) -> in
             return signal_outcome(EXIT_MEMORY_LIMIT) if "memory_mib" in budgets else 1
         except KeyboardInterrupt:
             raise
-        except BaseException:
-            # Includes SystemExit(3)/(4) from conversion code: an ordinary crash,
-            # never a budget outcome.
-            return 1
+        except BaseException as exc:
+            # Unexpected SystemExit cannot impersonate a reserved outcome.
+            return _exception_status(exc)
     finally:
         if watch is not None:
             watch.__exit__()
@@ -244,9 +255,11 @@ def main() -> int:
         return _run_budgeted(Path(sys.argv[1]), budgets, nonce)
     try:
         return run(Path(sys.argv[1]))
-    except Exception:
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:
         # The parent emits only a fixed safe error code; no private traceback.
-        return 1
+        return _exception_status(exc)
 
 
 if __name__ == "__main__":

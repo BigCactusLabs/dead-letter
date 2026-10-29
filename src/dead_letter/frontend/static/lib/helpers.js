@@ -81,6 +81,63 @@ export function buildPayload(mode, inputPath, options) {
   };
 }
 
+const MBOX_OPTION_KEYS = [
+  "strip_signatures", "strip_disclaimers", "strip_quoted_headers",
+  "strip_signature_images", "strip_tracking_pixels", "embed_inline_images",
+  "include_all_headers", "include_raw_html", "no_calendar_summary",
+  "allow_fallback_on_html_error", "allow_html_repair_on_panic",
+  "thread_mode", "thread_order",
+];
+
+export function buildMboxPayload(inputPath, options, timeoutSeconds = 30) {
+  const selected = Object.fromEntries(
+    MBOX_OPTION_KEYS.filter((key) => key in options).map((key) => [key, options[key]])
+  );
+  return {
+    input_path: inputPath.trim().replace(/\\/g, "/"),
+    options: { ...selected, timeout_seconds: timeoutSeconds },
+  };
+}
+
+export function validateMboxForm({ inputPath, timeoutSeconds = 30 }) {
+  const path = inputPath.trim().replace(/\\/g, "/");
+  const errors = [];
+  if (!path) errors.push("MBOX path is required.");
+  else if (!path.toLowerCase().endsWith(".mbox")) errors.push("Choose a single uncompressed .mbox file.");
+  if (/^(\/|[a-z]:|~\/)/i.test(path) || path.split("/").includes("..")) {
+    errors.push("Use a path within the file browser root, such as Downloads/Takeout.mbox.");
+  }
+  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0 || timeoutSeconds > 300) {
+    errors.push("The per-message time limit must be greater than 0 and at most 300 seconds.");
+  }
+  return errors;
+}
+
+function formatBytes(value) {
+  if (value < 1024) return value + " B";
+  const unit = Math.min(3, Math.floor(Math.log(value) / Math.log(1024)));
+  return (value / 1024 ** unit).toFixed(1) + " " + ["B", "KiB", "MiB", "GiB"][unit];
+}
+
+export function jobProgressView(job) {
+  if (job.kind === "mbox") {
+    const total = Math.max(0, Number(job.mbox?.bytes_total || 0));
+    const value = Math.min(total, Math.max(0, Number(job.mbox?.bytes_processed || 0)));
+    const records = Number(job.mbox?.records_processed || 0);
+    return {
+      value, max: total || 1, fraction: total ? value / total : 0,
+      label: records + (records === 1 ? " message processed" : " messages processed"),
+      detail: job.mbox ? formatBytes(value) + " of " + formatBytes(total) + " archive bytes processed"
+        : "Waiting for archive metadata",
+    };
+  }
+  const progress = job.progress || {};
+  const total = Math.max(0, Number(progress.total || 0));
+  const done = Number(progress.completed || 0) + Number(progress.failed || 0);
+  const value = Math.min(total, done);
+  return { value, max: total || 1, fraction: value / (total || 1), label: done + " / " + total, detail: "" };
+}
+
 export const OPTION_ENUM_VALIDATORS = {
   thread_mode: (v) => v === "latest" || v === "structured",
   thread_order: (v) => v === "oldest-first" || v === "latest-first",
@@ -131,7 +188,7 @@ export function relativeTime(isoString) {
 
 export function jobDisplayName(outputLocation) {
   if (!outputLocation) return "\u2014";
-  const path = outputLocation.bundle_path || outputLocation.cabinet_path || "";
+  const path = outputLocation.job_path || outputLocation.bundle_path || outputLocation.cabinet_path || "";
   const parts = path.replace(/\\/g, "/").split("/");
   const basename = parts[parts.length - 1] || "\u2014";
   const dot = basename.lastIndexOf(".");
