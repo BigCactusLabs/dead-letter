@@ -1,8 +1,8 @@
 [project]
 name = "dead-letter-mcpb"
-version = "0.4.9"
+version = "0.4.10"
 requires-python = ">=3.12"
-dependencies = ["dead-letter[mcp]==0.4.9"]
+dependencies = ["dead-letter[mcp]==0.4.10"]
 
 [tool.uv]
 package = false
