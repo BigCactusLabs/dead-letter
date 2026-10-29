@@ -29,6 +29,7 @@ runtime contracts and historical design notes serve different purposes.
 | Task | Read |
 | --- | --- |
 | Set up development and run the required checks | [Contributing](../CONTRIBUTING.md) |
+| Pick up an open issue with current code pointers and a first implementation slice | [October 27 development handoff](project/2026-10-27-development-groundwork.md) |
 | Orient a coding agent | [AGENTS.md](../AGENTS.md) |
 | Change core, CLI, API, or MCP behavior | [Runtime Contracts](reference/v4-runtime-contracts.md) |
 | Change UI stores, job handling, or onboarding | [Frontend State Model](reference/frontend-state-model.md) |

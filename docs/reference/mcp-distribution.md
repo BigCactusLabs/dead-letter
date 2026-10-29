@@ -171,10 +171,12 @@ npm run generate
 Follow the [current contribution guide](https://github.com/cline/marketplace/blob/main/CONTRIBUTING.md)
 and describe the candidate accurately:
 
-> Adds dead-letter, a local stdio MCP server for converting .eml exports to
-> Markdown, retaining attachments in bundles, and inspecting diagnostics.
+> Adds dead-letter, a local stdio MCP server for converting .eml exports and
+> bounded flat .mbox archives to Markdown, retaining attachments in bundles,
+> and inspecting diagnostics.
 > Requires uv/uvx; no live mailbox login, API key, or hosted email service.
-> Four tools; copy-only MCP bundles and explicit batch output. The public
+> Five tools; copy-only MCP bundles and explicit batch output. MBOX accepts
+> up to 256 MiB and stops after 1000 messages with a truncation flag. The public
 > package uses PolyForm Noncommercial 1.0.0, not an unrestricted OSS license.
 > Tool results may be sent to the MCP client's model provider. This entry
 > leaves verification and featured status false for maintainer review.

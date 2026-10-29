@@ -867,6 +867,12 @@ These differ from the CLI and the Python API:
   - `path` must be one existing, readable regular file whose name ends in
     `.mbox` (case-insensitive). Compressed archives, other suffixes and Apple
     Mail `.mbox` directories are rejected before any output is written.
+  - Paths are local to the server host and use the OS permissions of the user
+    running the MCP server. `~` is expanded and symlinks are resolved. The tool
+    can read a permitted source and write to a permitted output directory;
+    it does not enforce an Inbox/Cabinet root or an MCP client root allowlist.
+    For container deployments, the configured [mounts](containers.md) determine
+    which host paths the server can access.
   - The archive must be at most `MCP_MAX_MBOX_BYTES` (256 MiB); a larger one is
     rejected before conversion. The cap is also enforced on the bytes actually
     read: if a record ends past 256 MiB (the file grew or was swapped after
