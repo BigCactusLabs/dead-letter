@@ -15,10 +15,12 @@ import signal
 import stat
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from time import monotonic
+from time import monotonic, sleep
 from typing import TYPE_CHECKING, Any
 
 from dead_letter import _mbox_worker
@@ -364,6 +366,33 @@ def _publish(staged: Path, root: Path, *, bundles: bool) -> Path:
         raise
 
 
+_WORKSPACE_RELEASE_SECONDS = 5.0
+
+
+@contextmanager
+def _private_workspace() -> Iterator[str]:
+    """Yield a worker workspace that is removed even after a Windows kill.
+
+    A killed venv launcher's interpreter dies asynchronously, and one that has
+    not yet joined the job is invisible to the job drain. Until it exits, its
+    working directory and open files lock the workspace (WinError 32), so the
+    removal is retried for a bounded time before failing as before.
+    """
+    directory = TemporaryDirectory(prefix="dead-letter-worker-")
+    try:
+        yield directory.name
+    finally:
+        deadline = monotonic() + _WORKSPACE_RELEASE_SECONDS
+        while True:
+            try:
+                directory.cleanup()
+                break
+            except PermissionError:
+                if sys.platform != "win32" or monotonic() >= deadline:
+                    raise
+                sleep(0.05)
+
+
 def convert_record_isolated(
     record: MboxRecord, source: Path, root: Path, options: ConvertOptions, *,
     bundles: bool, unescape: UnescapeMode, timeout: float, budgets: WorkerBudgets | None = None,
@@ -386,7 +415,7 @@ def convert_record_isolated(
             "code": code, "stage": "worker", "message": message or _ERROR_MESSAGES[code],
         })
 
-    with TemporaryDirectory(prefix="dead-letter-worker-") as temporary:
+    with _private_workspace() as temporary:
         workspace = Path(temporary)
         request = workspace / "request.json"
         record_data = asdict(record)

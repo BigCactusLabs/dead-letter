@@ -176,8 +176,11 @@ the handle and remove the workspace, which the exiting interpreter may still
 hold open. Microsoft documents that count as decremented once a terminated
 process has exited and all references to it are released. If the bound
 expires, the handle is closed anyway (kill-on-close stays set) and the record
-keeps its timeout or cancellation outcome; if the interpreter then still blocks
-workspace removal, that surfaces as an archive error. A worker that exits on
+keeps its timeout or cancellation outcome. The drain cannot see an interpreter
+killed before it joined the job, yet that interpreter's working directory and
+open control file still lock the workspace. On Windows, workspace removal
+therefore retries a sharing violation every 50 ms for at most 5 seconds; a
+workspace still locked after that surfaces as an archive error. A worker that exits on
 its own is not drained, because a launcher relays its interpreter's exit status
 and so exits after it. A failure to query, terminate or close the job is
 `mbox_budget_apply_failed`, except that a Ctrl-C or cancellation already in
@@ -276,7 +279,7 @@ Under a Windows virtual-environment launcher the direct worker is the launcher:
 a killed budgeted worker's interpreter is drained through its job, within the
 bound described in [Windows Job Objects](#windows-job-objects), but an
 unbudgeted worker has no parent-owned job, so the parent does not wait for that
-interpreter. The current parser path has no child process tree; unbudgeted
+interpreter beyond the bounded Windows workspace-removal retry. The current parser path has no child process tree; unbudgeted
 workers and the POSIX supervisor do not promise to terminate hypothetical
 future grandchildren.
 
