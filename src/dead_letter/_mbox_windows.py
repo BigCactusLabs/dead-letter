@@ -1,13 +1,15 @@
 """Parent-owned Windows Job Object for one budgeted MBOX worker.
 
 Only the standard library is used. The worker joins by a per-launch name before
-importing parsers; the parent keeps the handle until the worker has been reaped.
+importing parsers; the parent keeps the handle until the worker has been reaped
+and, after a kill, until the job has drained or a bounded wait has expired.
 These resource controls are not a security sandbox.
 """
 
 from __future__ import annotations
 
 import ctypes
+from time import monotonic, sleep
 
 # Windows uses LLP64 even on 64-bit hosts. Explicit widths also let the ABI
 # contract tests run on POSIX, where ctypes.c_ulong can be eight bytes.
@@ -16,6 +18,7 @@ _BOOL = ctypes.c_int32
 _HANDLE = ctypes.c_void_p
 _SIZE_T = ctypes.c_size_t
 _TICKS_PER_SECOND = 10_000_000
+_BASIC_ACCOUNTING_INFORMATION = 1
 _EXTENDED_LIMIT_INFORMATION = 9
 _JOB_TIME = 0x00000004
 _ACTIVE_PROCESS = 0x00000008
@@ -24,6 +27,23 @@ _KILL_ON_JOB_CLOSE = 0x00002000
 _WAIT_OBJECT_0 = 0
 _WAIT_TIMEOUT = 258
 _ERROR_ALREADY_EXISTS = 183
+# Bounded wait for a terminated job to report no active process. Termination
+# is asynchronous; past the bound the handle is closed anyway (kill-on-close).
+_DRAIN_SECONDS = 5.0
+_DRAIN_INTERVAL = 0.01
+
+
+class _BasicAccounting(ctypes.Structure):
+    _fields_ = [
+        ("TotalUserTime", ctypes.c_int64),
+        ("TotalKernelTime", ctypes.c_int64),
+        ("ThisPeriodTotalUserTime", ctypes.c_int64),
+        ("ThisPeriodTotalKernelTime", ctypes.c_int64),
+        ("TotalPageFaultCount", _DWORD),
+        ("TotalProcesses", _DWORD),
+        ("ActiveProcesses", _DWORD),
+        ("TotalTerminatedProcesses", _DWORD),
+    ]
 
 
 class _BasicLimits(ctypes.Structure):
@@ -80,6 +100,7 @@ def _kernel32():
             _BOOL,
         ),
         ("WaitForSingleObject", [_HANDLE, _DWORD], _DWORD),
+        ("TerminateJobObject", [_HANDLE, _DWORD], _BOOL),
         ("CloseHandle", [_HANDLE], _BOOL),
     ):
         function = getattr(api, name)
@@ -180,8 +201,46 @@ class WindowsJob:
             raise OSError("Could not read worker job state")
         return state == _WAIT_OBJECT_0
 
-    def close(self) -> None:
+    def _active_processes(self, handle: int) -> int:
+        info = _BasicAccounting()
+        returned = _DWORD()
+        if not self._api.QueryInformationJobObject(
+            handle,
+            _BASIC_ACCOUNTING_INFORMATION,
+            ctypes.byref(info),
+            ctypes.sizeof(info),
+            ctypes.byref(returned),
+        ) or returned.value != ctypes.sizeof(info):
+            raise OSError("Could not read worker job processes")
+        return info.ActiveProcesses
+
+    def _drain(self, handle: int) -> None:
+        # The reaped direct child can be a venv launcher; the interpreter in
+        # this job may still be exiting with workspace files open.
+        if not self._active_processes(handle):
+            return
+        # Like TerminateProcess, this starts termination and does not wait.
+        if not self._api.TerminateJobObject(handle, 1):
+            raise OSError("Could not terminate worker job")
+        deadline = monotonic() + _DRAIN_SECONDS
+        while self._active_processes(handle) and monotonic() < deadline:
+            sleep(_DRAIN_INTERVAL)
+
+    def close(self, *, terminate: bool = False) -> None:
+        """Close the job, first ending and draining its processes if asked.
+
+        Failed setup never terminates: an existing name may be another owner's
+        job. A drain that outlasts its bound is not an error; the handle is
+        closed anyway and kill-on-close remains set.
+        """
         if self._handle is not None:
             handle, self._handle = self._handle, None
+            try:
+                if terminate:
+                    self._drain(handle)
+            except BaseException as exc:
+                if not self._api.CloseHandle(handle):
+                    exc.add_note("Could not close worker job")
+                raise
             if not self._api.CloseHandle(handle):
                 raise OSError("Could not close worker job")

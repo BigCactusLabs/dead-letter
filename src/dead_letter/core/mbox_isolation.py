@@ -230,17 +230,21 @@ def _run_worker(request: Path, timeout: float, budget_args: tuple[str, ...] = ()
                 raise _WorkerResourceLimit("cpu")
         return returncode
     finally:
+        killed = False
         try:
             # Reap even on cancellation or a failed job-state query. Keep the
             # parent-owned job handle until the worker can no longer publish.
             if process is not None:
                 if process.poll() is None:
+                    # A venv launcher can be the direct child: its interpreter
+                    # in the job may outlive this kill, so close() drains it.
+                    killed = True
                     process.kill()
                 process.wait()
         finally:
             if job is not None:
                 try:
-                    job.close()
+                    job.close(terminate=killed)
                 except OSError as exc:
                     raise MboxBudgetError(
                         "mbox_budget_apply_failed", "could not close the message worker job; import aborted",

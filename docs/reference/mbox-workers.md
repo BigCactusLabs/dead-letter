@@ -62,7 +62,8 @@ files rejected before publication.
 The parent then copies completed artifacts with the existing collision-safe
 writers. Temporary parser output is discarded on timeout or abnormal exit.
 The worker is killed and reaped before its input EML is reused or its workspace
-is removed. There is only one worker active for this import, with no parallel
+is removed; [precise limits](#precise-limits) covers Windows
+virtual-environment launchers. There is only one worker active for this import, with no parallel
 fan-out, shared result queue or worker pool.
 
 ## Errors and reports
@@ -154,8 +155,8 @@ The parent creates a fresh job named with the per-launch random nonce, sets
 its limits, then queries them back before starting a worker. It refuses an
 already-existing name instead of adopting or modifying another job. The worker
 opens this job with assignment rights only and joins before importing the
-package. Its temporary handle is closed immediately; the parent owns the job
-handle until the worker has been reaped. No extra runtime dependency is added.
+package. Its temporary handle is closed immediately; only the parent keeps a
+job handle. No extra runtime dependency is added.
 
 The job permits one active process and has kill-on-close enabled, with no
 breakaway flags. This also rejects ordinary child-process creation by the
@@ -164,6 +165,22 @@ nested-job assignment aborts instead of retrying without enforcement. The
 parent closes the handle on launch failure, timeout, cancellation, query
 failure and normal exit. This is containment for the current single-worker
 pipeline, not a general hostile-process-tree or security-sandbox promise.
+
+In a Windows virtual environment `sys.executable` can be a launcher that runs
+the real interpreter as its child, so the direct worker the parent reaps is not
+necessarily the process in the job. When the parent has to kill a running
+worker (timeout, cancellation or a failure while it waits), it reaps the direct
+worker, calls `TerminateJobObject`, and polls the job's `ActiveProcesses` count
+every 10 ms until it is zero, for at most 5 seconds. Only then does it close
+the handle and remove the workspace, which the exiting interpreter may still
+hold open. Microsoft documents that count as decremented once a terminated
+process has exited and all references to it are released. If the bound
+expires, the handle is closed anyway (kill-on-close stays set) and the record
+keeps its timeout or cancellation outcome; if the interpreter then still blocks
+workspace removal, that surfaces as an archive error. A worker that exits on
+its own is not drained, because a launcher relays its interpreter's exit status
+and so exits after it. A failure to query, terminate or close the job is
+`mbox_budget_apply_failed`.
 
 CPU exhaustion is established from the **signaled job object** after the worker
 exits. Windows exit code 1816 alone is ambiguous and remains an ordinary crash
@@ -254,8 +271,13 @@ time-limit archive framing, creating the process, parent-side receipt
 validation/final copying, or report I/O. OS scheduling, process creation and
 uninterruptible I/O can delay termination. Cleanup waits for the direct worker
 to exit, rather than knowingly reusing an input while it is still running.
-The current parser path has no child process tree; unbudgeted workers and the
-POSIX supervisor do not promise to terminate hypothetical future grandchildren.
+Under a Windows virtual-environment launcher the direct worker is the launcher:
+a killed budgeted worker's interpreter is drained through its job, within the
+bound described in [Windows Job Objects](#windows-job-objects), but an
+unbudgeted worker has no parent-owned job, so the parent does not wait for that
+interpreter. The current parser path has no child process tree; unbudgeted
+workers and the POSIX supervisor do not promise to terminate hypothetical
+future grandchildren.
 
 Child stdout/stderr go to the OS null device rather than memory buffers or
 normal logs. On POSIX, the worker makes a best-effort attempt to disable core
@@ -310,9 +332,12 @@ needed kill-on-timeout behavior.
 kill-on-close, committed-memory accounting and the native structure fields.
 The implementation queries back limits and uses the job signal rather than
 assuming that an exit code or an ordinary completion-port message proves a CPU
-limit event. See [Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
+limit event. After a kill it drains the job rather than assuming that
+termination is synchronous. See [Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
 [basic limits](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_limit_information),
-and [extended limits](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information).
+[extended limits](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information),
+[TerminateJobObject](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-terminatejobobject)
+and [basic accounting](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_accounting_information).
 
 **Apple's archived limit contract** is background for rejecting `RLIMIT_RSS`
 as a hard ceiling, not a substitute for testing current macOS kernels.
@@ -342,6 +367,8 @@ POSIX inherited-limit cases keep their explicit platform restriction.
 Windows-specific cases distinguish an ordinary native exit 1816 from a genuine
 CPU-limit signal and request a 768 MiB allocation under a 512 MiB committed-memory
 limit, rather than relying only on a 64 GiB request that could exhaust the host.
+Another hangs a budgeted worker past its wall-clock timeout and requires the
+next record to convert with every private workspace removed.
 CLI/report integration covers both a flat MBOX and zipped Takeout input.
 `tests/core/test_mbox_windows_job.py` adds platform-independent fake-API contracts
 for ABI widths, units, verification and cleanup; these are not native Windows

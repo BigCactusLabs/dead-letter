@@ -66,12 +66,17 @@ if sys.platform != "win32":
         real_setrlimit(resource.RLIMIT_FSIZE, (2 * 1024 * 1024, resource.getrlimit(resource.RLIMIT_FSIZE)[1]))
     atexit.register(lambda: note({"final": {"cpu": resource.getrlimit(resource.RLIMIT_CPU),
                                             "fsize": resource.getrlimit(resource.RLIMIT_FSIZE)}}))
-if index == 2 and mode in ("spin", "allocate", "exit3", "exit4", "decode-memory", "quota-exit", "allocate-bounded"):
+if index == 2 and mode in ("spin", "hang", "allocate", "exit3", "exit4", "decode-memory", "quota-exit",
+                            "allocate-bounded"):
     import dead_letter.core.mbox_import as mbox_import
     def hook(*args, **kwargs):
         if mode == "spin":
             while True:
                 pass
+        if mode == "hang":
+            import time
+            while True:
+                time.sleep(1)
         if mode == "allocate":
             return bytearray(64 * 1024 ** 3)
         if mode == "allocate-bounded":
@@ -533,3 +538,26 @@ def test_windows_commit_limit_rejects_a_host_sized_allocation(tmp_path, monkeypa
     assert rows[1].error["message"] == isolation._RESOURCE_MESSAGES["memory"]
     assert not [name for name in outputs(root) if name.startswith("00000002-")]
     assert source.read_bytes() == original
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows job drain after a wall-clock timeout")
+def test_windows_budgeted_timeout_drains_job_before_workspace_cleanup(tmp_path, monkeypatch):
+    # Under a venv, sys.executable is a launcher: killing it on timeout leaves
+    # the joined interpreter, which holds budget-status.json open and uses the
+    # workspace as its cwd, until the parent terminates and drains the job.
+    # Five seconds leaves startup headroom for the records that do convert.
+    hooked_worker(monkeypatch, "hang")
+    requests = []
+    hooked = isolation._worker_command
+    def command(request, *budget_args):
+        requests.append(request)
+        return hooked(request, *budget_args)
+    monkeypatch.setattr(isolation, "_worker_command", command)
+    source = archive(tmp_path, MESSAGE, MESSAGE, MESSAGE)
+    root = tmp_path / "out"
+    rows = list(convert_mbox(source, output=root, timeout_seconds=5, cpu_seconds=30))
+    assert [row.success for row in rows] == [True, False, True]
+    assert [row.mbox["index"] for row in rows] == [1, 2, 3]
+    assert rows[1].error["code"] == "mbox_message_timeout"
+    assert len(requests) == 3 and all(not request.parent.exists() for request in requests)
+    assert not [name for name in outputs(root) if name.startswith("00000002-")]

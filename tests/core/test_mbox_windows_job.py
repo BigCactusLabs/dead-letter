@@ -37,10 +37,15 @@ class FakeKernel:
         self.assigned = []
         self.state = windows._WAIT_TIMEOUT
         self.waits = []
+        # ActiveProcesses per accounting query (the last value repeats); None
+        # fails that query. calls orders the drain and close in the parent.
+        self.active = [0]
+        self.calls = []
         self.CreateJobObjectW = Function(self.create)
         self.SetInformationJobObject = Function(self.set_limits)
         self.QueryInformationJobObject = Function(self.query_limits)
         self.WaitForSingleObject = Function(self.wait)
+        self.TerminateJobObject = Function(self.terminate)
         self.CloseHandle = Function(self.close)
         self.OpenJobObjectW = Function(self.open)
         self.GetCurrentProcess = Function(lambda: -1)
@@ -61,6 +66,8 @@ class FakeKernel:
         return self.failure != "set"
 
     def query_limits(self, handle, kind, pointer, size, returned):
+        if kind == 1:
+            return self.query_accounting(handle, pointer, size, returned)
         assert handle == HANDLE and kind == 9
         ctypes.memmove(pointer, self.limits, size)
         ctypes.cast(returned, ctypes.POINTER(ctypes.c_uint32)).contents.value = size
@@ -77,12 +84,30 @@ class FakeKernel:
             ctypes.cast(returned, ctypes.POINTER(ctypes.c_uint32)).contents.value = 0
         return self.failure != "query"
 
+    def query_accounting(self, handle, pointer, size, returned):
+        assert handle == HANDLE and size == ctypes.sizeof(windows._BasicAccounting)
+        active = self.active.pop(0) if len(self.active) > 1 else self.active[0]
+        self.calls.append("active")
+        if active is None:
+            return False
+        info = ctypes.cast(pointer, ctypes.POINTER(windows._BasicAccounting)).contents
+        info.TotalProcesses = 1
+        info.ActiveProcesses = active
+        ctypes.cast(returned, ctypes.POINTER(ctypes.c_uint32)).contents.value = size
+        return True
+
     def wait(self, handle, milliseconds):
         assert handle == HANDLE and milliseconds == 0
         self.waits.append(handle)
         return self.state
 
+    def terminate(self, handle, code):
+        assert handle == HANDLE and code == 1
+        self.calls.append("terminate")
+        return self.failure != "terminate"
+
     def close(self, handle):
+        self.calls.append("close")
         self.closed.append(handle)
         return self.failure != "close"
 
@@ -107,6 +132,21 @@ def kernel(monkeypatch):
         raising=False,
     )
     return fake
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    """Drain-time clock: each sleep advances it; returns the sleeps taken."""
+    now = [0.0]
+    sleeps = []
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        now[0] += seconds
+
+    monkeypatch.setattr(windows, "monotonic", lambda: now[0])
+    monkeypatch.setattr(windows, "sleep", sleep)
+    return sleeps
 
 
 def test_windows_abi_widths_and_layout():
@@ -282,6 +322,7 @@ def test_parent_keeps_job_through_reaping_and_closes_on_all_exit_paths(
     monkeypatch, tmp_path, mode
 ):
     events = []
+    terminations = []
 
     class Job:
         def __init__(self, budgets, nonce):
@@ -294,8 +335,9 @@ def test_parent_keeps_job_through_reaping_and_closes_on_all_exit_paths(
                 raise OSError("private native details")
             return mode == "cpu"
 
-        def close(self):
+        def close(self, *, terminate=False):
             events.append("close")
+            terminations.append(terminate)
             if mode == "close":
                 raise OSError("private native details")
 
@@ -360,6 +402,8 @@ def test_parent_keeps_job_through_reaping_and_closes_on_all_exit_paths(
         assert events[-2] == "reap"
     if mode in ("wait", "timeout", "cancel"):
         assert "kill" in events
+    # The job is terminated and drained exactly when the worker was killed.
+    assert terminations == [mode in ("wait", "timeout", "cancel")]
 
 
 def test_parent_job_setup_failure_never_launches(monkeypatch, tmp_path):
@@ -375,3 +419,169 @@ def test_parent_job_setup_failure_never_launches(monkeypatch, tmp_path):
         isolation._run_worker(
             tmp_path / "request.json", 5, ("cpu_seconds=5", "nonce=" + NONCE)
         )
+
+
+# -- drain after a kill (venv launcher) -----------------------------------------
+
+ARGS = ("cpu_seconds=5", "nonce=" + NONCE)
+
+
+def timed_out():
+    return subprocess.TimeoutExpired("synthetic-worker", 5)
+
+
+def fake_popen(monkeypatch, events, *, wait_error=None, reap_error=None):
+    """A direct worker that exits 0 unless its timed wait or its reap raises."""
+
+    class Process:
+        args = ["synthetic-worker"]
+        returncode = None
+
+        def __init__(self, *args, **kwargs):
+            events.append("launch")
+
+        def poll(self):
+            return self.returncode
+
+        def kill(self):
+            events.append("kill")
+            self.returncode = 1
+
+        def wait(self, timeout=None):
+            events.append("wait" if timeout is not None else "reap")
+            error = wait_error if timeout is not None else reap_error
+            if error is not None:
+                raise error()
+            if self.returncode is None:
+                self.returncode = 0
+            return self.returncode
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(isolation.subprocess, "Popen", Process)
+    times = iter([0, 1, 10])
+    monkeypatch.setattr(isolation, "monotonic", lambda: next(times))
+
+
+def test_basic_accounting_layout_matches_winnt():
+    # Four LARGE_INTEGERs then four DWORDs on both 32- and 64-bit Windows.
+    assert ctypes.sizeof(windows._BasicAccounting) == 48
+    assert windows._BasicAccounting.ActiveProcesses.offset == 40
+
+
+def test_close_without_terminate_never_queries_or_terminates(kernel):
+    job = windows.WindowsJob({"cpu_seconds": 3}, NONCE)
+    kernel.active = [1]
+    job.close()
+    assert kernel.calls == ["close"] and kernel.closed == [HANDLE]
+
+
+@pytest.mark.parametrize("failure", ["existing", "set", "query", "flags", "length"])
+def test_failed_setup_never_terminates_a_job_it_may_not_own(kernel, failure):
+    kernel.failure = failure
+    kernel.active = [1]
+    with pytest.raises(OSError):
+        windows.WindowsJob({"cpu_seconds": 3}, NONCE)
+    assert kernel.calls == ["close"]
+
+
+def test_kill_path_terminates_then_drains_before_closing(kernel, clock):
+    job = windows.WindowsJob({"cpu_seconds": 3}, NONCE)
+    kernel.active = [1, 1, 1, 0]
+    job.close(terminate=True)
+    assert kernel.calls == [
+        "active",
+        "terminate",
+        "active",
+        "active",
+        "active",
+        "close",
+    ]
+    assert clock == [windows._DRAIN_INTERVAL] * 2
+    assert kernel.TerminateJobObject.restype is windows._BOOL
+    job.close(terminate=True)
+    assert kernel.closed == [HANDLE]
+
+
+def test_already_empty_job_is_closed_without_terminating(kernel, clock):
+    job = windows.WindowsJob({"memory_mib": 32}, NONCE)
+    job.close(terminate=True)
+    assert kernel.calls == ["active", "close"] and clock == []
+
+
+def test_drain_that_never_empties_is_bounded_and_still_closes(kernel, clock):
+    job = windows.WindowsJob({"cpu_seconds": 3}, NONCE)
+    kernel.active = [1]
+    job.close(terminate=True)  # A slow drain is not a failure.
+    assert kernel.calls.count("terminate") == 1 and kernel.calls[-1] == "close"
+    assert kernel.closed == [HANDLE]
+    assert set(clock) == {windows._DRAIN_INTERVAL}
+    bound = windows._DRAIN_SECONDS
+    assert 1 <= bound <= 10
+    assert bound <= sum(clock) < bound + 2 * windows._DRAIN_INTERVAL
+
+
+@pytest.mark.parametrize(
+    "active, failure, match",
+    [
+        ([None], None, "processes"),  # before terminating
+        ([1, 1, None], None, "processes"),  # while draining
+        ([1], "terminate", "terminate"),
+    ],
+)
+def test_drain_failure_still_closes_the_handle_and_raises(
+    kernel, clock, active, failure, match
+):
+    job = windows.WindowsJob({"cpu_seconds": 3}, NONCE)
+    kernel.active, kernel.failure = active, failure
+    with pytest.raises(OSError, match=match) as caught:
+        job.close(terminate=True)
+    assert kernel.calls[-1] == "close" and kernel.closed == [HANDLE]
+    assert not getattr(caught.value, "__notes__", None)
+
+
+def test_drain_and_close_failures_keep_the_drain_error_with_a_note(kernel, clock):
+    job = windows.WindowsJob({"cpu_seconds": 3}, NONCE)
+    kernel.active, kernel.failure = [1, None], "close"
+    with pytest.raises(OSError, match="processes") as caught:
+        job.close(terminate=True)
+    assert caught.value.__notes__ == ["Could not close worker job"]
+
+
+def test_interrupted_drain_still_closes_the_handle(kernel, monkeypatch):
+    job = windows.WindowsJob({"cpu_seconds": 3}, NONCE)
+    kernel.active = [1]
+
+    def interrupted(seconds):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(windows, "sleep", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        job.close(terminate=True)
+    assert kernel.calls == ["active", "terminate", "active", "close"]
+
+
+@pytest.mark.parametrize("killed", [False, True])
+def test_parent_drains_a_killed_workers_job_after_reaping_and_before_closing(
+    kernel, clock, monkeypatch, tmp_path, killed
+):
+    kernel.active = [1, 0]
+    fake_popen(monkeypatch, kernel.calls, wait_error=timed_out if killed else None)
+    if killed:
+        with pytest.raises(subprocess.TimeoutExpired):
+            isolation._run_worker(tmp_path / "request.json", 5, ARGS)
+        # Under a venv the reaped child is the launcher; the interpreter in the
+        # job is terminated and drained before the handle and workspace go.
+        assert kernel.calls == [
+            "launch",
+            "wait",
+            "kill",
+            "reap",
+            "active",
+            "terminate",
+            "active",
+            "close",
+        ]
+    else:
+        assert isolation._run_worker(tmp_path / "request.json", 5, ARGS) == 0
+        assert kernel.calls == ["launch", "wait", "reap", "close"]
+    assert kernel.closed == [HANDLE]
