@@ -79,11 +79,11 @@ errors use fixed messages and `stage: worker`:
 | `mbox_worker_invalid_result` | The receipt is missing, malformed, oversized, or inconsistent with the record. No output is published even if some temporary artifacts exist. |
 | `conversion_error` / `html_markdown_failed` | The existing conversion pipeline returned a recoverable message error. |
 | `mbox_publish_failed` | The worker completed but artifact validation or final copying failed. Newly created incomplete final output is cleaned up. |
-| `mbox_storage_error` (Unreleased) | Conversion or worker bookkeeping encountered storage exhaustion (`ENOSPC`/`EDQUOT`), or the worker returned the reserved storage-failure exit status. Private exception text is not exposed. |
+| `mbox_storage_error` (0.4.10) | Conversion or worker bookkeeping encountered storage exhaustion (`ENOSPC`/`EDQUOT`), or the worker returned the reserved storage-failure exit status. Private exception text is not exposed. |
 
 The core yields these as record failures, allowing callers to decide whether
-later records should continue. The unreleased
-[web job runner](v4-runtime-contracts.md#post-apimboxjobs-unreleased) stops on
+later records should continue. The 0.4.10
+[web job runner](v4-runtime-contracts.md#post-apimboxjobs-0410) stops on
 `mbox_publish_failed` and `mbox_storage_error`; ordinary message errors,
 timeouts and generic crashes remain recoverable there. Empty/oversized records already
 rejected by the scanner do not launch a worker and retain their existing error
@@ -95,7 +95,7 @@ The report stores the effective setting in `mbox_options.timeout_seconds`, with
 partial-success status, exit code 1 for errors, and Ctrl-C exit code 130 remain.
 No new report schema version or inference/remote-analysis behavior is introduced.
 
-**Unreleased storage transport:** a failure receipt carries
+**Storage transport (0.4.10):** a failure receipt carries
 `mbox_storage_error` when conversion catches an actual `ENOSPC`/`EDQUOT`.
 If storage exhaustion prevents writing even that receipt or budget control
 status, the worker returns reserved exit status 5. That path deliberately needs
@@ -104,7 +104,7 @@ an ordinary crash; a native `os._exit(5)` cannot be distinguished from the
 reserved outcome and also yields `mbox_storage_error`. This is a fail-closed
 worker protocol result, not proof of a particular native failure's cause.
 
-## Cooperative cancellation (Unreleased)
+## Cooperative cancellation (0.4.10)
 
 Non-resumed flat `convert_mbox()` imports accept a thread-safe
 `cancel_requested` callback. The framer checks it between bounded reads and
@@ -123,8 +123,8 @@ callback. See the [core runtime contract](v4-runtime-contracts.md#streaming-mbox
 ## Optional resource budgets
 
 **Availability:** POSIX budgets shipped in 0.4.5 (#140); 0.4.0 and earlier do
-not accept these flags. **Windows CPU and committed-memory budgets are
-unreleased (#188); no published version includes them.** Budgets are opt-in
+not accept these flags. Windows CPU and committed-memory budgets shipped in
+0.4.10 (#188). Budgets are opt-in
 and apply only in worker mode. Without them, worker conversion is unchanged.
 
 ```bash
@@ -132,21 +132,21 @@ and apply only in worker mode. Without them, worker conversion is unchanged.
 uv run dead-letter convert archive.mbox --output markdown/ --report \
   --mbox-timeout 60 --mbox-cpu-seconds 30 --mbox-max-output-mib 256
 
-# Linux: address space. Windows (unreleased): committed memory, not RSS.
+# Linux: address space. Windows (0.4.10+): committed memory, not RSS.
 uv run dead-letter convert archive.mbox --output markdown/ --report \
   --mbox-timeout 60 --mbox-cpu-seconds 30 --mbox-memory-mib 2048
 ```
 
 ```python
 convert_mbox("archive.mbox", output="markdown", timeout_seconds=60,
-             cpu_seconds=30, memory_limit_mib=2048)  # Linux / unreleased Windows
+             cpu_seconds=30, memory_limit_mib=2048)  # Linux / Windows 0.4.10+
 ```
 
 Each value is a positive integer. A budget without `--mbox-timeout`
 (`timeout_seconds`) is a usage error, reported before any conversion or output.
 The wall-clock timeout remains the universal backstop on every platform.
 
-| Control | CLI / Python | Linux | macOS | Windows (unreleased) | Mechanism and limitation |
+| Control | CLI / Python | Linux | macOS | Windows (0.4.10+) | Mechanism and limitation |
 | --- | --- | --- | --- | --- | --- |
 | Memory | `--mbox-memory-mib` / `memory_limit_mib` | Supported | **Unavailable** | Supported | MiB of virtual address space with Linux `RLIMIT_AS`; MiB of committed memory with Windows `JOB_OBJECT_LIMIT_PROCESS_MEMORY`. Neither is an RSS ceiling. Linux counts interpreter/native-library mappings and reservations; Windows denies commits over its limit. The same numeric value does not mean the same accounting on both platforms. |
 | CPU time | `--mbox-cpu-seconds` / `cpu_seconds` | Supported | Supported | Supported | POSIX `RLIMIT_CPU`: `SIGXCPU` at the limit, with the hard limit one second later. Windows `JOB_OBJECT_LIMIT_JOB_TIME`: user-mode CPU seconds, checked periodically by the OS, so termination may overshoot. Neither bounds blocked time; the wall timeout does. |
