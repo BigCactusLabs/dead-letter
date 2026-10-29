@@ -17,6 +17,7 @@ import pytest
 from dead_letter import _mbox_windows as windows
 from dead_letter import _mbox_worker as worker
 from dead_letter.core import mbox_isolation as isolation
+from dead_letter.core.mbox import MboxCancelled
 
 NONCE = "0123456789abcdef" * 2
 HANDLE = 0x123456789  # Exercise handles that cannot fit in a DWORD.
@@ -607,6 +608,30 @@ def test_job_close_failure_never_masks_an_interrupt(
         isolation._run_worker(tmp_path / "request.json", 5, ARGS)
     assert caught.value.__notes__ == [CLOSE_NOTE]
     assert "kill" in kernel.calls and kernel.closed == [HANDLE]
+
+
+def test_job_close_failure_never_masks_cooperative_cancellation(
+    kernel, clock, monkeypatch, tmp_path
+):
+    kernel.failure = "close"
+    fake_popen(monkeypatch, kernel.calls, wait_error=timed_out)
+    checks = iter([False, True])
+    with pytest.raises(MboxCancelled) as caught:
+        isolation._run_worker(
+            tmp_path / "request.json", 5, ARGS, cancel_requested=lambda: next(checks)
+        )
+    # A web job then reports cancelled, not mbox_budget_apply_failed.
+    assert caught.value.__notes__ == [CLOSE_NOTE]
+    assert "kill" in kernel.calls and kernel.closed == [HANDLE]
+
+
+def test_cancellation_before_launch_creates_no_job(kernel, monkeypatch, tmp_path):
+    fake_popen(monkeypatch, kernel.calls)
+    with pytest.raises(MboxCancelled):
+        isolation._run_worker(
+            tmp_path / "request.json", 5, ARGS, cancel_requested=lambda: True
+        )
+    assert kernel.calls == [] and kernel.closed == []
 
 
 @pytest.mark.parametrize("outcome", ["ok", "timeout", "cpu"])

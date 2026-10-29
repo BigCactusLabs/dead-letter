@@ -2,7 +2,7 @@
 title: dead-letter v4 Runtime Contracts
 doc_type: reference
 status: canonical
-last_updated: 2026-10-02
+last_updated: 2026-10-27
 audience:
   - maintainers
   - contributors
@@ -71,6 +71,29 @@ Rules:
 - In `dry_run=True`, planned bundle paths are returned but no bundle directory, attachments, markdown, or source moves/copies/deletes are performed.
 - If bundle creation fails after filesystem work has started, any partial bundle directory is removed.
 - If the source file is missing at conversion time, conversion returns a failed `BundleResult` instead of raising.
+
+### Streaming MBOX conversion
+
+`dead_letter.core.mbox_import.convert_mbox()` returns a lazy iterator; consume
+it under `contextlib.closing`, without collecting the archive in a list. See
+the [Takeout contract](gmail-takeout.md) for source preservation, framing,
+bundle output and reports, and [workers](mbox-workers.md) for process limits.
+
+**Unreleased:** non-resumed flat imports and the lower-level `iter_mbox()`
+accept `cancel_requested`, a thread-safe zero-argument callback such as
+`threading.Event.is_set`. A true result raises
+`dead_letter.core.mbox.MboxCancelled`, rather than yielding a failed message.
+Framing checks between bounded reads and writes, including oversized-record
+drains. Timed workers poll at most every 100 ms, then kill and reap the direct
+worker before raising. Once final artifact publication begins, it finishes
+and its result is yielded before the next cancellation check, so callers can
+account for completed output. Already yielded results remain valid.
+
+The callback cannot preempt an in-process MIME parser or a blocked filesystem
+call; use timed workers for cancellable parsing. Combining the callback with
+`resume=True` is rejected, and compressed input does not expose it. Omitting
+the callback preserves existing behavior, including the MCP tool's separate
+cancellation limitations.
 
 ### `ConvertOptions`
 
@@ -324,6 +347,119 @@ Output placement is server-owned:
 - `delete_eml=true` changes successful file handling to delete the source instead of retaining a `.eml` artifact in Cabinet.
 - Failed file jobs leave the source at its original path.
 
+### `POST /api/mbox/jobs` (Unreleased)
+
+Starts an explicit local-path archive import. Configure Inbox/Cabinet first,
+then use the same loopback Host, same-origin and CSRF protections as other
+mutating API routes.
+
+```json
+{
+  "input_path": "Downloads/Takeout/Mail/All mail.mbox",
+  "options": {"thread_mode": "structured", "timeout_seconds": 30}
+}
+```
+
+Admission and output rules:
+
+- `input_path` is relative to the server's filesystem-browser root (the OS
+  user's home directory by default). It selects one regular, flat `.mbox`
+  file, case-insensitively. Absolute paths, root escapes, symlinks escaping
+  the root, Cabinet sources, directories and compressed archives are rejected.
+  The file must already be present on the server; this endpoint is not an upload.
+- Archives larger than 16 GiB are rejected before staging. The admitted
+  device/inode, size and modification/change timestamps are rechecked before
+  work and at message boundaries, with the core reader's own handle checks.
+  These are best-effort mutation checks, not a filesystem snapshot; use an
+  immutable export. A detected source change fails the job even if cancellation
+  was also requested.
+- Queued and running MBOX jobs share one slot by default, reserved before
+  output or temporary work begins. `JobManager(max_mbox_jobs=...)` can change
+  that server-side limit. EML worker concurrency is a separate setting.
+- Every job owns a new `<Cabinet>/mbox-<job-id>/` directory. Source bytes are
+  always preserved; each completed message becomes a bundle with Markdown,
+  retained attachments and `source.eml`. The create response uses the usual
+  `id`/`status` fields and adds `output_location.job_path`; `bundle_path` is null.
+  Completed bundles survive cancellation and later failures.
+- Options accept the conversion flags `strip_signatures`, `strip_disclaimers`,
+  `strip_quoted_headers`, `strip_signature_images`, `strip_tracking_pixels`,
+  `embed_inline_images`, `include_all_headers`, `include_raw_html`,
+  `no_calendar_summary`, `allow_fallback_on_html_error`,
+  `allow_html_repair_on_panic`, `thread_mode` and `thread_order`, with their
+  existing defaults. `timeout_seconds` is a finite JSON number in `(0, 300]`,
+  default 30. Unknown request/option fields are rejected, including `delete_eml`,
+  `dry_run`, `report`, `output`, `source_handling` and `resume`.
+- The runner uses timed, sequential message workers, default `preserve`
+  quoting, a 64 MiB stored-message cap and a 1 MiB physical-line cap. It does
+  not pre-scan for a message count. Retained job state contains counters and
+  at most 20 errors, with path/code/message lengths capped at 512/64/512
+  characters. A terminal fatal reason remains in that sample even after many
+  recoverable errors; `failures_omitted` counts errors outside the sample.
+
+Success is `202`. Admission failures use `400` for invalid input/options,
+`403` for path confinement failures, `409` for missing settings or occupied
+archive slots (`mbox_busy`), and `413` for an oversized archive
+(`mbox_too_large`). Validation and busy failures create no job output.
+
+Poll the existing `GET /api/jobs/{id}` route. MBOX snapshots have `kind="mbox"`,
+`diagnostics=null`, no retry actions, and an additive `mbox` object:
+
+```json
+{
+  "source_path": "/home/user/Downloads/Takeout/Mail/All mail.mbox",
+  "records_total": null,
+  "records_processed": 12,
+  "bytes_total": 1048576,
+  "bytes_processed": 524288,
+  "failures_omitted": 0,
+  "phase": "converting"
+}
+```
+
+Phases are `queued`, `converting`, `publishing` and `finished`. Byte progress is
+the last processed record's end offset, not a live read counter or a count of
+successful messages. It can stay still while a message is framed/converted,
+and reach the archive size before report publication finishes. Use `mbox` for
+archive progress; legacy EML `progress.total` remains zero. `summary` counts
+actual written/skipped results and errors, including archive-level failures.
+
+Ordinary message failures, timeouts and generic worker crashes permit later
+records and produce `completed_with_errors`. Archive-fatal results, source
+changes, `mbox_publish_failed`, `mbox_storage_error` and report failures make
+the job `failed`. Error text does not include private exception tracebacks.
+The [worker contract](mbox-workers.md#errors-and-reports) explains the reserved
+storage-exhaustion outcome, including failure to write a receipt.
+
+The runner spools report rows to disk and publishes
+`<job_path>/.dead-letter-report.json`. Its schema remains 1, with MBOX provenance,
+`mbox_options` and terminal status. `archive.observed_summary` records the
+actual observed counts; `report.summary` counts committed report rows.
+`archive.report_complete` means all observed outcomes were appended, not that
+the whole source archive was imported. After an append failure, a completed
+bundle may exist without a committed report row; the retained prefix report
+has `report_complete=false`. A cancelled prefix can have `report_complete=true`.
+If final report writing/rename fails, the job fails with `report_path=null`.
+Report staging prevents an earlier success report from becoming canonical
+while an accepted cancellation still requires a rewritten report.
+
+`POST /api/jobs/{id}/cancel` returns `202` when accepted. The response
+acknowledges the request; the job remains queued/running while the runner stops
+the framer/worker, waits for direct-child termination and iterator cleanup, and
+publishes the partial report before terminal `cancelled` is visible. A
+fatal error takes precedence over cancellation. Report finalization eventually
+seals cancellation; a request after that point returns `409`, even if the
+terminal snapshot has not yet been installed. Graceful server shutdown stops
+new archive admission, signals active jobs and waits for this same cleanup.
+
+The UI's **Import a local MBOX archive** action opens this path/timeout form
+and displays byte progress, processed messages, cancellation state, retained
+output and omitted errors. Its EML drag-and-drop/upload flow remains separate.
+Archive jobs use the existing bounded, in-memory history. They have no durable
+job resume or automatic retry. There is no total output/temp-disk quota or
+worker-memory cap on this endpoint: reserve space for staging, bundles and the
+disk-backed report. Cancellation/timeouts cannot bound blocked OS I/O, and a
+hard process kill cannot guarantee a final report or cleanup.
+
 ### `GET /api/jobs/{id}`
 
 Returns job snapshot.
@@ -334,14 +470,17 @@ Response (`200`):
 {
   "id": "string",
   "status": "queued|running|succeeded|completed_with_errors|failed|cancelled",
+  "kind": "eml|mbox",
   "origin": "manual|import|watch",
   "cancel_requested": true,
   "output_location": {
     "strategy": "cabinet",
     "cabinet_path": "absolute Cabinet path string",
-    "bundle_path": "absolute bundle path string|null"
+    "bundle_path": "absolute bundle path string|null",
+    "job_path": "absolute MBOX job directory string|null"
   },
   "progress": {"total": 0, "completed": 0, "failed": 0, "current": null},
+  "mbox": null,
   "summary": {"written": 0, "skipped": 0, "errors": 0},
   "errors": [{"path": "string|null", "code": "string", "message": "string", "stage": "validation|backend|core"}],
   "recovery_actions": [
@@ -379,7 +518,8 @@ Directory-job variant:
 }
 ```
 
-Diagnostics semantics:
+The example's null `mbox` is the EML variant; archive snapshots use the object
+defined above. The following diagnostics/report rules describe EML jobs:
 
 - `diagnostics` is populated for `mode="file"` jobs only.
 - Directory jobs return `"diagnostics": null`.
@@ -420,7 +560,8 @@ Success response (`202` when accepted):
 
 Other responses:
 
-- `409` when job is already terminal (standard top-level `errors` envelope).
+- `409` when the job is terminal, or MBOX report finalization has sealed
+  cancellation (standard top-level `errors` envelope).
 - `404` for unknown or evicted job id.
 
 ### `POST /api/jobs/{id}/retry`
@@ -454,6 +595,8 @@ Notes:
 - `retry_with_html_fallback` forces `allow_fallback_on_html_error=true` for the new job only.
 - Does not mutate the original job snapshot or saved UI options.
 - Returns `409` when the retry action is not currently available for the referenced job.
+- MBOX jobs do not expose retry actions; restarting an archive creates a new job
+  and output directory rather than resuming its prior results.
 
 ### `GET /api/jobs/history`
 
@@ -731,6 +874,8 @@ Common error codes:
 
 ## Cancellation Semantics
 
+- MBOX jobs use the worker/partial-report lifecycle described under
+  `POST /api/mbox/jobs`; the following queue rules describe EML jobs.
 - Cancellation is cooperative and flag-based (`cancel_requested`).
 - New queue items are not started after workers observe `cancel_requested=True`.
 - In multi-worker mode, one or more files already in progress may still complete before terminal `cancelled`.

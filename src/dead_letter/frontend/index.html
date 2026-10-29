@@ -187,6 +187,11 @@
                 x-show="$store.job.opErrors.length"
                 x-text="$store.job.opErrors[0]"
                 x-cloak></span>
+          <button type="button" class="drop-zone-subtitle mbox-launch"
+                  @click="openMboxImport()"
+                  :disabled="!$store.settings.configured || $store.settings.loading || $store.job.isSubmitting">
+            Import a local MBOX archive
+          </button>
         </div>
 
         <!-- State: Converting -->
@@ -196,21 +201,23 @@
              :aria-hidden="(workspaceState !== 'converting').toString()">
           <div class="converting-header">
             <div class="title-chip-row">
-              <span class="converting-title">Converting</span>
+              <span class="converting-title" x-text="$store.job.kind === 'mbox' ? 'Importing archive' : 'Converting'"></span>
             </div>
             <span class="counter-badge" x-text="progressCountLabel"></span>
           </div>
           <div class="progress-track" role="progressbar"
                aria-label="Conversion progress"
-               :aria-valuenow="$store.job.progress.completed + $store.job.progress.failed"
-               :aria-valuemin="0" :aria-valuemax="$store.job.progress.total || 1">
+               :aria-valuenow="progressView.value" :aria-valuetext="progressCountLabel + '. ' + progressView.detail"
+               :aria-valuemin="0" :aria-valuemax="progressView.max">
             <div class="progress-fill"
                  :class="{ active: workspaceState === 'converting', complete: progressPercent >= 1 }"
                  :style="{ transform: 'scaleX(' + progressPercent + ')' }"></div>
           </div>
-          <div class="converting-current">
+          <div class="converting-current" x-show="$store.job.kind !== 'mbox'">
             now: <span class="filename" x-text="$store.job.progress.current || '\u2014'"></span>
           </div>
+          <p class="mbox-note" x-show="$store.job.kind === 'mbox'" x-text="progressView.detail" x-cloak></p>
+          <p class="mbox-note" x-show="mboxNotice" x-text="mboxNotice" x-cloak></p>
           <div class="converting-footer">
             <div class="result-counts">
               <span class="count-ok" x-text="`${$store.job.summary.written} written`"></span>
@@ -249,6 +256,7 @@
           <p class="grade-message"
              x-show="conversionGrade && conversionGrade !== 'pass' && isCurrentFileJob"
              x-text="diagnosticsStateMessage" x-cloak></p>
+          <p class="mbox-note" x-show="mboxNotice" x-text="mboxNotice" x-cloak></p>
 
           <div class="done-counts">
             <div class="done-count">
@@ -295,6 +303,8 @@
                 <span class="error-path" x-show="error.path" x-text="error.path"></span>
               </div>
             </template>
+            <p class="mbox-note" x-show="$store.job.mbox?.failures_omitted > 0"
+               x-text="($store.job.mbox?.failures_omitted || 0) + ' additional errors are omitted from this summary.'" x-cloak></p>
             <div class="op-error-list" x-show="$store.job.opErrors.length">
               <template x-for="(msg, idx) in $store.job.opErrors" :key="`operr-${idx}`">
                 <div class="op-error-item" x-text="msg"></div>
@@ -406,7 +416,7 @@
                     <div class="job-expanded" @click.stop>
                       <div class="job-expanded-output">
                         <span class="je-label">Output</span>
-                        <span x-text="hjob.output_location?.bundle_path || hjob.output_location?.cabinet_path || '\u2014'"></span>
+                        <span x-text="hjob.output_location?.job_path || hjob.output_location?.bundle_path || hjob.output_location?.cabinet_path || '\u2014'"></span>
                       </div>
                       <template x-for="(err, eidx) in hjob.errors || []" :key="eidx">
                         <div class="job-expanded-error">
@@ -414,6 +424,8 @@
                           <span class="je-msg" x-text="err.message"></span>
                         </div>
                       </template>
+                      <p class="mbox-note" x-show="hjob.mbox?.failures_omitted > 0"
+                         x-text="(hjob.mbox?.failures_omitted || 0) + ' additional errors omitted.'"></p>
                       <template x-if="hjob.diagnostics">
                         <div class="job-expanded-diag">
                           <span class="je-diag-label">State</span>
@@ -441,6 +453,10 @@
                    @change="handleFileInput($event)"
                    :disabled="!$store.settings.configured || $store.settings.loading || $store.job.isSubmitting" />
           </label>
+          <button type="button" class="drop-zone-subtitle mbox-launch" @click="openMboxImport()"
+                  :disabled="!$store.settings.configured || $store.settings.loading || $store.job.isSubmitting">
+            Import a local MBOX archive
+          </button>
         </div>
 
         <!-- State: Settings (Workspace Takeover) -->
@@ -493,19 +509,36 @@
                 <div class="field">
                   <label class="field-label" for="settings-manual-path">Input Path</label>
                   <input id="settings-manual-path" type="text" x-model="inputPath"
-                         placeholder="/path/to/file.eml or /path/to/folder" />
+                         :placeholder="mode === 'mbox' ? 'Downloads/Takeout.mbox' : '/path/to/file.eml or /path/to/folder'"
+                         :aria-describedby="mode === 'mbox' ? 'mbox-path-help' : null" />
                 </div>
                 <div class="mode-toggle">
                   <button class="mode-btn" :class="{ active: mode === 'file' }"
                           @click="mode = 'file'">FILE</button>
                   <button class="mode-btn" :class="{ active: mode === 'directory' }"
                           @click="mode = 'directory'">DIR</button>
+                  <button class="mode-btn" :class="{ active: mode === 'mbox' }"
+                          @click="mode = 'mbox'">MBOX</button>
+                </div>
+                <div x-show="mode === 'mbox'" x-cloak>
+                  <p id="mbox-path-help" class="mbox-note">
+                    Use one uncompressed .mbox file already on the machine running dead-letter (up to 16 GiB).
+                    Enter a path relative to the file browser root, your home folder by default.
+                  </p>
+                  <p class="mbox-note">
+                    This import writes message bundles and a report into a new Cabinet folder. The source archive stays in place.
+                    Allow space for converted messages and attachments. One archive can run at a time.
+                  </p>
+                  <div class="field">
+                    <label class="field-label" for="mbox-timeout">Per-message time limit (seconds)</label>
+                    <input id="mbox-timeout" type="number" min="0.1" max="300" step="0.1" x-model.number="mboxTimeout" />
+                  </div>
                 </div>
                 <div class="field--spaced">
                   <button class="btn-primary" @click="submitJob()"
-                          :disabled="!$store.settings.configured || $store.settings.loading || $store.job.isSubmitting"
-                          :title="!$store.settings.configured ? 'Configure inbox & cabinet to enable imports' : ''">
-                    Start Manual Job
+                          :disabled="!$store.settings.configured || $store.settings.loading || $store.job.isSubmitting || ((mode === 'mbox' || $store.job.kind === 'mbox') && $store.job.id && !isTerminalStatus($store.job.status))"
+                          :title="!$store.settings.configured ? 'Configure inbox & cabinet to enable imports' : ''"
+                          x-text="mode === 'mbox' ? 'Import archive' : 'Start Manual Job'">
                   </button>
                 </div>
               </div>
@@ -601,12 +634,12 @@
                   <input type="checkbox" x-model="options.allow_fallback_on_html_error" />
                   Allow plain-text fallback if HTML conversion fails
                 </label>
-                <label>
+                <label x-show="mode !== 'mbox'">
                   <input type="checkbox" x-model="options.delete_eml" :disabled="options.dry_run" />
                   Delete original .eml
                 </label>
-                <label><input type="checkbox" x-model="options.dry_run" @change="applyDryRunSafety" /> Dry run</label>
-                <label><input type="checkbox" x-model="options.report" /> Generate conversion report</label>
+                <label x-show="mode !== 'mbox'"><input type="checkbox" x-model="options.dry_run" @change="applyDryRunSafety" /> Dry run</label>
+                <label x-show="mode !== 'mbox'"><input type="checkbox" x-model="options.report" /> Generate conversion report</label>
               </div>
             </div>
           </div>

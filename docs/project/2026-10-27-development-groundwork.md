@@ -29,7 +29,7 @@ did not repeat third-party submissions, desktop installs or live inference.
 | First slice | Existing foundation | Status / next boundary |
 | --- | --- | --- |
 | #241: bound attribution parsing | `core/attribution.py`, existing fallback and locale tests | Regex bound implemented in follow-up; remaining wrapper changes need representative paired fixtures. |
-| #146: local-path MBOX jobs | `core/mbox_import.py`, `StreamingReport`, job IDs/status/polling | One flat archive streams into a job-owned destination with bounded retained state and accurate partial/cancelled outcomes. Upload and UI follow. |
+| #146: local-path MBOX jobs | `core/mbox_import.py`, `StreamingReport`, job IDs/status/polling | Local API and UI implemented in follow-up, with bounded status, timed workers and partial/cancelled reports. Upload, compressed web input and web-job resume remain. |
 | #166: reviewed annotation import | 192-case corpus, frozen split, baseline and scorer | Review artifacts and scorer coverage checks implemented in follow-up; human review and held-out comparison remain. |
 | #196: compare independent repeats | New offline comparator | Read already captured, separately executed runs and publish matched-denominator results. New provider calls are separate from this offline slice. |
 | #161: visual demo | Five tested recipes and their two-message synthetic inbox | A reproducible 20–30 second silent-readable capture plus still, showing actual released outputs. |
@@ -56,43 +56,39 @@ unreadable-file case requires a non-root POSIX host for its permission check.
 
 ### #146: split local ingestion, UI and upload
 
-1. **Local-path job and runner.** Add a dedicated MBOX request/options model
-   in `backend/schemas.py` and an explicit route in `backend/api.py`. Reuse
-   `JobManager` IDs, polling, terminal history and cancellation state, with a
-   streaming execution branch. Use one immutable flat archive, unconditional
-   source preservation, and a job-owned Cabinet destination. Resolve selected
-   paths against the configured browser root; existing `_resolve_files` does
-   not automatically provide that confinement.
-2. **Bounded progress and UI.** Consume the core iterator under
-   `contextlib.closing` and append detached results directly to `StreamingReport`.
-   Keep counters and a capped error sample plus omitted count, not every result
-   in `_JobRecord.report_entries` or every error in `_JobRecord.errors`. Report
-   byte progress and processed-record counts without inventing a message total
-   or pre-scanning the archive. Then expose selection/progress in the frontend.
-3. **Upload after the runner.** `_stream_upload_to_file` already uses bounded
-   chunks, but multipart parsing precedes the handler. Increasing its 100 MiB
-   constant alone does not bound a multi-GB request. Select a streaming request
-   path or verified multipart limits, enforce actual bytes, and define staging
-   cleanup for disconnect, oversize and disk-full failures.
+The follow-up implements the first two slices, as unreleased work:
 
-Do not feed archive entries through `run_bundle_conversion`, whose EML path
-can move/delete sources. Keep archive-fatal events (`item.mbox is None`) separate
-from per-message failures. Set completed-with-errors only for recoverable
-message failures; archive/report failures must remain failures.
+- `POST /api/mbox/jobs` and strict dedicated options admit one immutable flat
+  archive under the browser root, with a 16 GiB source limit and one active
+  archive slot by default. Each job writes copy-only bundles to a new Cabinet
+  subdirectory; EML move/delete conversion is not reused.
+- `backend/mbox_jobs.py` consumes the closable core iterator and disk-backed
+  `StreamingReport`. Status retains counters, at most 20 bounded errors and
+  an omitted count. Byte progress and processed-message counts have no invented
+  record total. The frontend exposes a local-path/timeout form and partial,
+  cancelled, failed and completed-with-errors states.
+- Optional core cancellation checks framing and polls timed workers, then
+  kills/reaps the direct child. The backend waits for iterator cleanup and
+  report publication before exposing a terminal state, including during
+  graceful shutdown. A staged report prevents cancellation from leaving a
+  canonical success report. Source/archive/report/publication/storage failures
+  are fatal; ordinary record failures continue. Completed bundles are retained.
 
-Decide cancellation at the first slice: a flag between yielded records only
-cancels between records. Prompt cancellation needs checks during framing and
-worker supervision plus worker reaping. Cancelling `asyncio.to_thread` alone
-does not stop conversion. Also define concurrent-job admission before staging;
-the current eight-worker setting is per EML job, not a global archive limit.
+The [runtime contract](../reference/v4-runtime-contracts.md#post-apimboxjobs-unreleased)
+is the source of truth for admission, status and report semantics. Synthetic
+tests cover source/attachment/provenance parity, mixed success, fatal suffixes,
+bounded retained errors, confinement/source mutation, admission limits,
+worker cancellation/reaping and report-publication failures. Frontend tests
+cover the separate request payload and keeping an active archive accessible.
 
-Acceptance should cover source/attachment/provenance parity, mixed success,
-fatal suffixes, bounded status memory, path escape/source mutation, job limits,
-and cancellation during framing, parsing and report publication. Upload tests
-must exercise chunked/misdeclared request bodies, not only the copy helper.
-Reuse `tests/backend/test_jobs.py`, `test_api.py`, core MBOX suites and
-`tests/frontend/job.test.js`. Existing EML/watch behavior remains its own
-contract. Compressed archives and web-job resume are later explicit slices.
+**Next: bounded upload.** `_stream_upload_to_file` already uses bounded chunks,
+but multipart parsing precedes the handler. Increasing its 100 MiB constant
+alone does not bound a multi-GB request. Select a streaming request path or
+verified multipart limits, enforce actual bytes and staging-disk limits, and
+test disconnect, oversize, disk-full and chunked/misdeclared bodies through the
+endpoint. Total output/temp-disk quotas, compressed web input and durable
+web-job resume remain explicit later work. These local synthetic checks do not
+replace #138's real-export acceptance or #140's resource measurements.
 
 ### #138 / #140 / #188 / #220: evidence and existing work
 
@@ -252,7 +248,7 @@ Deployment and endpoint retrieval remain separate outstanding work.
 | [#138](https://github.com/BigCactusLabs/dead-letter/issues/138) | Run existing full-import audit on an authorized real export with an independent baseline. |
 | [#140](https://github.com/BigCactusLabs/dead-letter/issues/140) | Measure remaining child CPU/expansion/disk behavior; resource controls already exist. |
 | [#145](https://github.com/BigCactusLabs/dead-letter/issues/145) | Existing bounded MCP implementation; finish transport/permission evidence with explicit cancellation limits. |
-| [#146](https://github.com/BigCactusLabs/dead-letter/issues/146) | Implement local-path streaming jobs, then UI, then bounded upload. |
+| [#146](https://github.com/BigCactusLabs/dead-letter/issues/146) | Local-path streaming jobs and UI implemented in follow-up; bounded upload/staging limits, compressed web input and web-job resume remain. |
 | [#150](https://github.com/BigCactusLabs/dead-letter/issues/150) | Refresh complete curated-catalog/duplicate-request lookup; direct install is separate #156 evidence. |
 | [#151](https://github.com/BigCactusLabs/dead-letter/issues/151) | Corrected generated candidate; README-only autonomous install and current submission-contract validation remain. |
 | [#152](https://github.com/BigCactusLabs/dead-letter/issues/152) | Reproduce Smithery's recorded `server.type: uv` rejection against current released manifest before new packaging. |
@@ -278,6 +274,8 @@ After the normal locked development setup:
 uv run --locked --no-sync pytest -q tests/backend/test_analysis_eval.py tests/backend/test_analysis_stability.py tests/backend/test_analysis_reviewed_labels.py
 uv run --locked --no-sync pytest -q tests/core/test_attribution.py
 uv run --locked --no-sync pytest -q tests/backend/test_mcp_mbox.py
+uv run --locked --no-sync pytest -q tests/backend/test_mbox_jobs.py tests/core/test_mbox_cancellation.py tests/core/test_mbox_storage.py
+node --test tests/frontend/*.test.js
 uv run --locked --no-sync pytest -q tests/plugin/test_client_installs.py tests/plugin/test_cline_registration.py
 python scripts/generate_client_installs.py --check
 python scripts/release.py check

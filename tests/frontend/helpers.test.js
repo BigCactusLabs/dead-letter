@@ -9,7 +9,10 @@ const {
   normalizeDiagnostics,
   normalizeRecoveryActions,
   buildPayload,
+  buildMboxPayload,
   validateForm,
+  validateMboxForm,
+  jobProgressView,
 } = await import("../../src/dead_letter/frontend/static/lib/helpers.js");
 
 test("isTerminalStatus recognises all terminal statuses", () => {
@@ -108,6 +111,88 @@ test("validateForm returns errors for missing fields", () => {
     "Mode must be file or directory.",
   ]);
   assert.deepEqual(validateForm({ mode: "file", inputPath: "/tmp/x" }), []);
+});
+
+test("buildMboxPayload selects supported options and normalizes a root-relative path", () => {
+  const allowed = {
+    strip_signatures: true,
+    strip_disclaimers: false,
+    strip_quoted_headers: true,
+    strip_signature_images: true,
+    strip_tracking_pixels: true,
+    embed_inline_images: false,
+    include_all_headers: true,
+    include_raw_html: false,
+    no_calendar_summary: true,
+    allow_fallback_on_html_error: true,
+    allow_html_repair_on_panic: true,
+    thread_mode: "structured",
+    thread_order: "latest-first",
+  };
+  const options = Object.freeze({
+    ...allowed, delete_eml: true, dry_run: true, report: true,
+    source_handling: "move", resume: true, timeout_seconds: 999, output_path: "/outside",
+  });
+
+  assert.deepEqual(buildMboxPayload("  Downloads\\Takeout.MBOX  ", options, 45), {
+    input_path: "Downloads/Takeout.MBOX",
+    options: { ...allowed, timeout_seconds: 45 },
+  });
+  assert.deepEqual(buildMboxPayload("mail.mbox", {}), {
+    input_path: "mail.mbox", options: { timeout_seconds: 30 },
+  });
+});
+
+test("validateMboxForm accepts only root-relative flat MBOX paths and bounded numeric timeouts", () => {
+  for (const inputPath of ["mail.mbox", " Downloads/Takeout.MBOX ", "Mail\\Export.mbox"]) {
+    for (const timeoutSeconds of [0.5, 30, 300]) {
+      assert.deepEqual(validateMboxForm({ inputPath, timeoutSeconds }), [], inputPath);
+    }
+  }
+  for (const inputPath of [
+    "", "mail.eml", "mail.mbox.gz", "/tmp/mail.mbox", "C:\\Mail\\mail.mbox",
+    "C:mail.mbox", "\\\\server\\mail.mbox", "~/mail.mbox", "../mail.mbox", "Mail/../mail.mbox",
+  ]) {
+    assert.ok(validateMboxForm({ inputPath }).length > 0, inputPath);
+  }
+  for (const timeoutSeconds of [0, -1, 300.1, NaN, Infinity, -Infinity, "30", null, true]) {
+    assert.match(
+      validateMboxForm({ inputPath: "mail.mbox", timeoutSeconds }).join(" "),
+      /time limit/,
+      String(timeoutSeconds)
+    );
+  }
+});
+
+test("jobProgressView measures archive bytes while the record total is unknown", () => {
+  assert.deepEqual(jobProgressView({
+    kind: "mbox",
+    progress: { total: 0, completed: 2, failed: 1 },
+    mbox: { bytes_total: 8192, bytes_processed: 2048, records_processed: 3, records_total: null },
+  }), {
+    value: 2048, max: 8192, fraction: 0.25,
+    label: "3 messages processed", detail: "2.0 KiB of 8.0 KiB archive bytes processed",
+  });
+  const waiting = jobProgressView({ kind: "mbox", mbox: null });
+  assert.deepEqual(waiting, {
+    value: 0, max: 1, fraction: 0, label: "0 messages processed", detail: "Waiting for archive metadata",
+  });
+  assert.deepEqual(jobProgressView({
+    kind: "mbox", mbox: { bytes_total: 0, bytes_processed: 0, records_processed: 0, records_total: null },
+  }), {
+    value: 0, max: 1, fraction: 0, label: "0 messages processed", detail: "0 B of 0 B archive bytes processed",
+  });
+  assert.equal(jobProgressView({
+    kind: "mbox", mbox: { bytes_total: 10, bytes_processed: 20, records_processed: 1 },
+  }).fraction, 1);
+});
+
+test("jobProgressView preserves EML completed-plus-failed progress", () => {
+  for (const kind of ["eml", undefined]) {
+    assert.deepEqual(jobProgressView({ kind, progress: { total: 8, completed: 3, failed: 1 } }), {
+      value: 4, max: 8, fraction: 0.5, label: "4 / 8", detail: "",
+    });
+  }
 });
 
 test("normalizeDiagnostics preserves stripped_images", async () => {
