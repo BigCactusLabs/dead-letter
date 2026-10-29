@@ -83,6 +83,7 @@ class _JobRecord:
     origin: str = "manual"
     cancel_requested: bool = False
     mbox_runner: MboxJobRunner | None = None
+    mbox_slot_held: bool = False
 
 
 def bundle_result_to_error(result: BundleResult) -> ErrorItem:
@@ -207,22 +208,27 @@ class JobManager:
                 raise MboxBusyError("All MBOX job slots are in use; wait for an archive job to finish")
             # Reserve before the worker can create an output directory or spool.
             self._active_mbox_jobs += 1
+            record.mbox_slot_held = True
             self._jobs[job_id] = record
         task = asyncio.create_task(self._run_mbox_job(job_id))
-        self._track_task(task, job_id, mbox=True)
+        self._track_task(task, job_id, mbox_record=record)
         return JobCreateResponse(
             id=job_id, status=record.status,
             output_location=record.output_location.model_copy(deep=True),
         )
 
-    def _track_task(self, task: asyncio.Task[None], job_id: str, *, mbox: bool = False) -> None:
+    def _track_task(
+        self, task: asyncio.Task[None], job_id: str, *, mbox_record: _JobRecord | None = None,
+    ) -> None:
         self._tasks.add(task)
-        if mbox:
+        if mbox_record is not None:
             self._mbox_tasks.add(task)
 
         def _on_task_done(done_task: asyncio.Task[None]) -> None:
             self._tasks.discard(done_task)
             self._mbox_tasks.discard(done_task)
+            if mbox_record is not None:
+                self._settle_mbox_job(mbox_record, cancelled=done_task.cancelled())
             if done_task.cancelled():
                 return
             if (exc := done_task.exception()) is not None:
@@ -233,6 +239,34 @@ class JobManager:
                 )
 
         task.add_done_callback(_on_task_done)
+
+    def _release_mbox_slot(self, record: _JobRecord) -> None:
+        if record.mbox_slot_held:
+            record.mbox_slot_held = False
+            self._active_mbox_jobs -= 1
+
+    def _settle_mbox_job(self, record: _JobRecord, *, cancelled: bool) -> None:
+        """Release the slot and end the job if its task exited without committing.
+
+        A Task cancelled before its first step never runs ``_run_mbox_job``. This
+        runs synchronously on the loop, and no locked section awaits while it
+        changes job state; after a normal commit it finds nothing left to do.
+        """
+        self._release_mbox_slot(record)
+        if record.status in TERMINAL_STATUSES:
+            return
+        runner = record.mbox_runner
+        assert runner is not None
+        if cancelled and record.status == "queued":
+            # No worker started, so no output folder or report exists.
+            runner.close_unstarted()
+            record.cancel_requested = True
+            self._transition(record, "cancelled")
+            return
+        runner.fail_unexpected()
+        if record.status == "queued":
+            self._transition(record, "running")
+        self._transition(record, "failed")
 
     async def shutdown_mbox_jobs(self) -> None:
         """Stop admission, signal cancellation and wait for archive workers/reports."""
@@ -491,7 +525,7 @@ class JobManager:
         async with locked():
             _, record.summary, _ = runner.snapshot()
             record.report_path = outcome.report_path
-            self._active_mbox_jobs -= 1
+            self._release_mbox_slot(record)
             self._transition(record, outcome.status)
 
     async def _record_run_failure(

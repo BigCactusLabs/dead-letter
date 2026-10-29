@@ -151,6 +151,12 @@ class MboxJobRunner:
             self._cancel_open = False
             self._progress.phase = "finished"
 
+    def close_unstarted(self) -> None:
+        """Finish a runner whose worker was cancelled before it started."""
+        with self._lock:
+            self._cancel_open = False
+            self._progress.phase = "finished"
+
     def _check_source(self) -> None:
         source = self.admission.source
         try:

@@ -733,3 +733,49 @@ async def test_direct_task_cancel_during_manager_lock_wait_commits_outcome(
         json.loads(Path(terminal.report_path).read_text())["job"]["status"] == expected
     )
     assert manager._active_mbox_jobs == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("yield_before_cancel", [False, True])
+async def test_task_cancel_at_any_point_releases_the_slot_exactly_once(
+    tmp_path: Path,
+    monkeypatch,
+    yield_before_cancel: bool,
+) -> None:
+    manager = _manager(tmp_path)
+    source = tmp_path / "mail.mbox"
+    source.write_bytes(POSTMARK + MESSAGE)
+
+    def results(path, *, output, cancel_requested, **kwargs):
+        if cancel_requested():
+            raise MboxCancelled()
+        yield _success(Path(path), Path(output))
+
+    monkeypatch.setattr(mbox_jobs, "convert_mbox", results)
+    request = MboxJobCreateRequest(input_path="mail.mbox")
+    created = await manager.create_mbox_job(request, source_root=tmp_path)
+    task = next(iter(manager._mbox_tasks))
+    if yield_before_cancel:
+        await asyncio.sleep(0)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+    terminal = await manager.get_job(created.id)
+    assert terminal.status == "cancelled"
+    assert terminal.mbox.phase == "finished"
+    assert manager._active_mbox_jobs == 0
+    assert not manager._mbox_tasks
+    if not yield_before_cancel:
+        # The worker never started, so it allocated no job folder.
+        assert terminal.report_path is None
+        assert not Path(terminal.output_location.job_path).exists()
+    late = await manager.cancel_job(created.id)
+    assert (late.status, late.accepted) == ("cancelled", False)
+
+    # One slot remains: a double release would admit two concurrent archives.
+    following = await manager.create_mbox_job(request, source_root=tmp_path)
+    with pytest.raises(MboxBusyError):
+        await manager.create_mbox_job(request, source_root=tmp_path)
+    finished = await manager.wait_for_terminal(following.id)
+    assert finished.status == "succeeded"
+    assert manager._active_mbox_jobs == 0
