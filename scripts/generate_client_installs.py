@@ -91,12 +91,14 @@ def artifacts(root: Path = ROOT) -> dict[str, str]:
         "name": server["title"],
         "tagline": server["description"],
         "description": (
-            "Convert local .eml email exports to Markdown with YAML front matter, "
+            "Convert local .eml exports and bounded flat .mbox archives to Markdown with YAML front matter, "
             "retain attachments in bundles, and inspect conversion diagnostics. "
-            "Four stdio tools: convert_eml, convert_eml_to_bundle, convert_directory, "
-            "and get_diagnostics. No live mailbox access, account, API key, or hosted "
+            "Five stdio tools: convert_eml, convert_eml_to_bundle, convert_directory, "
+            "convert_mbox, and get_diagnostics. No live mailbox access, account, API key, or hosted "
             "email-processing service. MCP bundle conversion is copy-only; directory "
             "calls require explicit output and accept at most 50 .eml files. "
+            "MBOX calls require explicit output, accept archives up to 256 MiB, "
+            "and stop after 1000 messages with a truncation flag. "
             "The MCP host may send returned text to its model provider. "
             "PolyForm Noncommercial 1.0.0; commercial use requires separate permission."
         ),

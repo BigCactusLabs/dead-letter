@@ -9,8 +9,16 @@ Public contract: [experimental analysis](../reference/experimental-analysis.md).
 merged to `main` (merge commit `9d909e2`). It adds directory analysis (#165) and
 the #166 phase-1 evaluation harness
 ([design note](2026-09-28-issue-166-evaluation-design.md)). Both are
-unreleased. Still open: human review of the evaluation pre-labels (#166), #196,
-#197 and #235.
+unreleased. Still open: human review of the evaluation pre-labels (#166), #196
+and #197.
+
+**Status, October 22, 2026:** #235 fixed in PR #238 (merge commit `1446b97`):
+directory-analysis destinations are keyed by filesystem identity, each existing
+prefix canonicalized to its first-seen resolved spelling, so NFC/NFD aliases and
+symlinks into an existing `.attempts` directory are refused as
+`analysis_output_collision` in either discovery order. PR #237 (merge commit
+`965ae32`) moved the SDK pin to 0.7.5; see the October 22 pin section below.
+Both are unreleased.
 This supersedes the earlier offline-only handoff.
 
 ## Implemented so far
@@ -105,6 +113,28 @@ With 0.7.1 installed, the provider, analysis contract and EML suites passed
 (192 tests). SDK-free, backend/core/plugin passed (1397, 1 skipped), as did
 `release.py check` and all 11 `verify.py packaging` checks, including both
 TypeSafe install probes. No live inference was used.
+
+### SDK pin upgrade — October 22, 2026
+
+#237 moves the exact pin to 0.7.5 at every pin site (adapter `SDK_VERSION`,
+`ADAPTER_VERSION` `typesafe-sdk-0.7.5-v1`, `scripts/package_probe.py`, the
+`typesafe-contracts` workflow and the contract doc), superseding Dependabot
+#236, which bumped only the lock and failed the version assertions.
+[Upstream 0.7.1 to 0.7.5](https://github.com/typesafe-ai/typesafe-sdk-python/compare/v0.7.1...v0.7.5):
+optional HTTP/2 extra, a TLS fix for concurrent async with truststore, request
+validation, SDK-owned client pool limits (bypassed; the adapter injects its own
+client), non-finite numbers serialized as strings (the adapter already rejects
+non-finite input), image/asset support, and zstd request compression on by
+default for bodies of 1024 bytes or more, even with an injected HTTP client.
+That compression broke 31 fake-HTTP contract tests and would change request
+fingerprints, so the adapter passes `compression=False`; a regression test sends
+a 2048-byte state and requires decodable JSON with no `content-encoding`. No
+used public symbol changed. New direct dependencies: `anyio`, `packaging`,
+`truststore`. Because the adapter version binds the reuse key, existing
+sidecars are refused as `analysis_output_mismatch` on an occupied output path.
+With 0.7.5 installed, backend passed (999 tests); `release.py check` and all 11
+`verify.py packaging` checks passed, including both TypeSafe install probes.
+No live inference was used.
 
 ## Next work, in implementation order
 

@@ -19,6 +19,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   See [MBOX worker budgets](docs/reference/mbox-workers.md#optional-resource-budgets)
   (#188). macOS memory stays unsupported because it cannot be enforced; an
   optional soft watchdog is tracked in #220.
+- Offline review artifacts for the synthetic analysis benchmark, with explicit
+  scorer selection, corpus and source bindings, reviewer provenance, and strict
+  coverage checks. Review templates leave every case pending; model pre-labels
+  remain unchanged, and no human-reviewed quality result is implied (#166).
+
+### Changed
+
+- Claude plugin 0.4.11 pins package 0.4.9 (`dead-letter==0.4.9`) and relocks
+  `plugin/uv.lock`. Plugin users get the 0.4.9 forward and wrapper fixes and
+  the stricter plain-text HTML escaping.
+
+### Fixed
+
+- Attribution parsing bounds regex input, using only complete leading lines when
+  the message is longer: 1,000 characters for single-line attributions and
+  64 KiB for Outlook From/Sent/To/Subject blocks, whose matching is now linear.
+  Malformed long attribution lines no longer trigger excessive regex work in
+  structured history. Gmail headers and Outlook headers with long recipient
+  lists still parse before large bodies; over-budget or unrecognized candidates
+  keep their text through the existing fallback (#241).
+
+## [0.4.9] - 2026-10-22
+
+### Added
+
 - Experimental BYOK directory analysis with required `--output-dir`, bounded
   `--jobs` (default 4, range 1–16), mirrored no-clobber sidecars and keyless reuse.
   Independent per-message execution preserves completed results and safe
@@ -32,14 +57,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Plain-text bodies and thread headings keep plain email addresses such as
+  `Vendor <vendor@example.net>` as written instead of escaping them to
+  `&lt;vendor@example.net&gt;`. Every other angle bracket, including URLs and
+  address-like text carrying attributes, is still escaped.
+- Plain-text HTML escaping no longer exempts text that looks like Markdown
+  code. Renderers disagree about which regions are code (fence indentation,
+  list containers, tables, Unicode line separators, joined heading fields), and
+  several of these let raw HTML through. Backtick spans and fences in plain-text
+  mail are now escaped like the rest of the text, so `<div>` inside them reads
+  `&lt;div&gt;`.
+- HTML forwards and replies now classify the unchanged tree before extraction,
+  preserving gogcli-style forwards, Proton containers, OWA `x_` classes and
+  Yahoo wrappers without losing current text between history blocks (#233).
+  A structural reply takes only the first direct-child blockquote and at most
+  one immediately preceding attribution unit; text before that unit and after
+  the blockquote stays authored. Nested wrappers keep ownership of their own
+  attribution lines. Attribution history moves as HTML with its links and
+  original characters; authored text outside that unit stays in the body.
+  Forwards past the section cap keep their own text in the body; reply,
+  Outlook and Front history inside or after them is still extracted. A message
+  that is only reply history keeps its quoted provenance and is rendered
+  through the existing quote-only fallback. Dashed separators in Gmail
+  attribution elements require non-empty text between the dashes; wrapped
+  attribution detection reads only the element's own first two lines, and
+  lines longer than 1000 characters are never parsed as attributions.
+  Quality diagnostics accept the new `proton` and `yahoo` client hints, so
+  file-mode jobs for those messages no longer fail schema validation.
+
+- Plain-text forwards normalize CRLF and bare CR line endings before segmentation,
+  so signature and disclaimer cleanup works and Markdown has no stray carriage
+  returns (#232).
+- Directory analysis collision detection now keys destinations by filesystem
+  identity, so NFC/NFD aliases of one output directory (for example two
+  in-root symlinks on APFS) are refused as `analysis_output_collision` before
+  any provider request (#235).
 - Experimental analysis no longer rejects valid TypeSafe answers as
   `inconsistent_score_distribution` or `invalid_probability_sum` when the
   provider's two-decimal precision makes a Score or probability sum differ
   slightly from the exact value.
 - Homebrew preparation includes the core MCP dependency graph and retains
-  `dead-letter-mcp`. Formula evidence checks still exclude optional UI/watch
-  dependencies and require removal of `dead-letter-ui`. Adoption in the tap
-  remains a separate maintainer update (#213).
+  `dead-letter-mcp`; the generated formula's test block asserts that
+  entrypoint exists instead of refuting it, and evidence checks reject a
+  formula that still refutes it. The test block reads `doctor --json` with
+  `pipe_output`, since `doctor` exits 1 when the UI extra or inbox paths are
+  absent, as they are in the formula sandbox. Formula evidence checks still exclude
+  optional UI/watch dependencies and require removal of `dead-letter-ui`.
+  Adoption in the tap remains a separate maintainer update (#213).
 - Forwarded-content edge cases from #193:
   - Latest mode keeps a text/plain Apple Mail forward quoted with `>` when it
     opens its own quote block. A quoted forward under an `On … wrote:`
@@ -62,6 +126,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- HTML div quote wrappers with no positive reply or forward evidence now remain
+  current body in both thread modes. This changes output for messages whose
+  unmarked `gmail_quote` content was previously treated as reply history (#233).
+
+- Experimental analysis now pins TypeSafe SDK 0.7.5 with adapter version
+  `typesafe-sdk-0.7.5-v1`, with SDK compression disabled to keep request bodies
+  as uncompressed JSON. Existing analysis sidecars are invalidated because
+  the SDK and adapter versions bind the reuse key: rerunning against an
+  occupied output path is refused with `analysis_output_mismatch` and makes
+  no provider request, so remove the sidecar or use a new output path.
 - Claude plugin 0.4.10 pins package 0.4.8 (`dead-letter==0.4.8`) and
   relocks `plugin/uv.lock`, which moves selectolax to 1.0.0. Plugin users get
   the 0.4.8 fixes, including `strip_signatures` on HTML emails with

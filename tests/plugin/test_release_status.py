@@ -280,6 +280,17 @@ class StatusTests(unittest.TestCase):
                     with self.assertRaisesRegex(e.Conflict, "core MCP entrypoint"):
                         e.formula(text)
 
+    def test_formula_mcp_test_assertion_depends_on_package_version(self):
+        for version in ("0.4.5", "0.4.6", "0.4.7", "0.4.8", "0.10.0", "1.0.0"):
+            with self.subTest(version=version):
+                text = formula_text(version).replace(
+                    "  def install", '  test do\n    refute_path_exists bin/"dead-letter-mcp"\n  end\n  def install')
+                if version in {"0.4.5", "0.4.6"}:
+                    self.assertEqual(e.formula(text)["version"], version)
+                else:
+                    with self.assertRaisesRegex(e.Conflict, "core MCP entrypoint"):
+                        e.formula(text)
+
     def test_formula_accepts_core_mcp_resources(self):
         # Resolved core names, including httpx2 (httpx remains a UI extra).
         for name in ("mcp", "mcp-types", "httpx2", "httpcore2", "starlette",

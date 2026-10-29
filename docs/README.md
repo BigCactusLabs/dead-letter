@@ -29,6 +29,7 @@ runtime contracts and historical design notes serve different purposes.
 | Task | Read |
 | --- | --- |
 | Set up development and run the required checks | [Contributing](../CONTRIBUTING.md) |
+| Pick up an open issue with current code pointers and a first implementation slice | [October 27 development handoff](project/2026-10-27-development-groundwork.md) |
 | Orient a coding agent | [AGENTS.md](../AGENTS.md) |
 | Change core, CLI, API, or MCP behavior | [Runtime Contracts](reference/v4-runtime-contracts.md) |
 | Change UI stores, job handling, or onboarding | [Frontend State Model](reference/frontend-state-model.md) |
@@ -56,7 +57,7 @@ importer and its worker follow-up, both shipped in 0.4.0; current availability
 lives in [Gmail Takeout / MBOX](reference/gmail-takeout.md) and
 [MBOX Workers](reference/mbox-workers.md). The
 [analysis foundation checkpoint](project/2026-09-18-issue-110-analysis-foundation.md)
-records what #117 landed for issue #110 and what remains. The
+records what #117, #195, #237 and #238 landed for issue #110 and what remains. The
 [issue #166 evaluation design](project/2026-09-28-issue-166-evaluation-design.md)
 describes the synthetic triage corpus, split and scorer merged in #195. The
 [issue #109 discovery evidence](project/2026-09-24-issue-109-discovery-evidence.md)

@@ -158,8 +158,8 @@ Rules:
 ## Output shape
 
 Each Markdown file starts with YAML front matter, then the body. Quoted
-reply history is collapsed by default (`thread-mode latest`). Releases after
-0.4.5 keep Gmail and plain-text forwarded messages in the default output;
+reply history is collapsed by default (`thread-mode latest`). 0.4.6 and later
+keep Gmail and plain-text forwarded messages in the default output;
 0.4.5 and earlier drop Gmail HTML forwards unless you pass
 `--thread-mode structured`. Calendar invites get a summary block. Read the front matter for metadata instead of re-parsing
 headers from the body.

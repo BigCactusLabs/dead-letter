@@ -5,14 +5,14 @@ Implementation: [PR #117](https://github.com/BigCactusLabs/dead-letter/pull/117)
 merged to `main` on September 21, 2026 and first released in 0.4.5.
 
 **Status: experimental single-message analysis, released in 0.4.5.**
-Directory execution (#165) is an unreleased source capability.
+Directory execution (#165) was released in 0.4.9.
 Local EML preparation now connects to an explicitly enabled TypeSafe SDK adapter.
 CLI and async Python consumers receive versioned JSON results. Neither candidate
 profile has empirical email-triage quality results. Ordinary conversion, bundles,
 MCP tools and UI remain local and do not enable analysis when a key is present.
 
 The package includes an optional `typesafe` extra, pinned to
-`typesafe-sdk==0.7.1`. Base and normal development installs remain SDK-free.
+`typesafe-sdk==0.7.5`. Base and normal development installs remain SDK-free.
 The extra and the `analyze` command are available in 0.4.5 and later; 0.4.0
 and earlier do not include them. The commands below run from a development
 checkout. With an installed package, drop the `uv run` prefix and its options;
@@ -207,8 +207,8 @@ semantics.
 
 ## Directory execution (#165)
 
-This capability is **unreleased**. From this checkout, analyze a directory with
-one independent inference per message:
+Released in 0.4.9. From a checkout, analyze a directory with one independent
+inference per message:
 
 ```bash
 uv run --locked --extra typesafe dead-letter analyze ./mail \
@@ -410,7 +410,7 @@ use the shared snapshot rather than build another MIME parser.
 
 ## Provider, credentials and privacy
 
-The adapter lazily imports exactly SDK 0.7.1. Missing or different versions fail
+The adapter lazily imports exactly SDK 0.7.5. Missing or different versions fail
 preflight rather than silently using an untested API. Normal conversion, previews,
 help and imports do not load the SDK. `dead-letter doctor` reports only installed
 and configured booleans and does not contact TypeSafe or validate a real key.
@@ -421,7 +421,8 @@ never an email/profile field. The default is `https://api.typesafe.ai`. HTTPS is
 required except for literal loopback test servers. Credentials, query/fragment
 components and ambiguous paths are rejected. Only POST to the configured API root
 plus `/v1/systemone` is permitted; redirects, including same-host redirects, are
-rejected. Implicit HTTP(S) proxy environment configuration is not honored. Use an
+rejected. Request bodies are uncompressed JSON (SDK compression is disabled by
+the adapter). Implicit HTTP(S) proxy environment configuration is not honored. Use an
 explicit validated API-root proxy when needed and assess its privacy policy too.
 
 The SDK can log unredacted request/response bodies at DEBUG. The adapter installs
@@ -524,20 +525,26 @@ message time, not unresolved obligations or today's user priority.
 
 ## Evaluation and remaining work
 
-The 22 synthetic seed cases remain unreviewed development material. Tests exercise
-actual core/SDK contracts with synthetic EML and fake HTTP; they are not empirical
-JEV inference, accuracy, calibration or latency benchmarks. No real key or private
-email was submitted during this implementation. Human-review/expand the seed and
-compare both profiles on a family-separated held-out set before freezing semantics.
+The [offline evaluation corpus](../../benchmarks/analysis_eval/README.md) contains
+192 synthetic cases with 72 development and 120 held-out cases, including the
+original 22 seeds in development. The checked-in labels remain unreviewed model
+pre-labels. A separate review-artifact workflow binds annotations to the corpus
+revision and source bytes, preserves the frozen split, and requires explicit
+selection when scoring. Exporting a review template does not review the labels.
 
-Still pending: reviewed held-out evaluation (#166). See the
-[implementation checkpoint](../project/2026-09-18-issue-110-analysis-foundation.md).
+Tests exercise core/SDK contracts with synthetic EML and fake HTTP; they are not
+empirical JEV inference, accuracy, calibration or latency benchmarks. Reviewed
+held-out evaluation (#166) still requires human annotations and captured results
+from both profiles before freezing semantics. The offline tooling makes no
+provider calls. See the [development handoff](../project/2026-10-27-development-groundwork.md)
+for implementation boundaries and the
+[original checkpoint](../project/2026-09-18-issue-110-analysis-foundation.md) for history.
 
 ## First-party implementation references
 
-Checked September 18, 2026; SDK source link updated to 0.7.1 on September 27, 2026:
+Checked September 18, 2026; SDK source link updated for the 0.7.5 pin:
 
-- [SDK 0.7.1 source](https://github.com/typesafe-ai/typesafe-sdk-python/tree/v0.7.1)
+- [SDK 0.7.5 source](https://github.com/typesafe-ai/typesafe-sdk-python/tree/v0.7.5)
   and [changelog](https://docs.typesafe.ai/sdk/python/changelog).
 - [SDK usage](https://docs.typesafe.ai/sdk/python/usage),
   [retry policy](https://docs.typesafe.ai/sdk/python/api/retries), and

@@ -12,7 +12,7 @@ _ON_WROTE_RE = re.compile(r"\bon\s+.+\bwrote:\s*$", re.IGNORECASE)
 def _detect_element_patterns(tag: str, attrs: dict[str, str], patterns: set[str]) -> None:
     element_id = attrs.get("id", "").lower()
     element_type = attrs.get("type", "").lower()
-    classes = {part.strip().lower() for part in attrs.get("class", "").split() if part.strip()}
+    classes = {re.sub(r"^(?:x_)+", "", part.lower()) for part in attrs.get("class", "").split()}
     style = attrs.get("style", "").lower()
 
     if tag == "div" and ({"gmail_quote", "gmail_attr"} & classes):
@@ -28,8 +28,13 @@ def _detect_element_patterns(tag: str, attrs: dict[str, str], patterns: set[str]
     if tag == "hr" and "border-top" in style and ("#b5c4df" in style or "#e1e1e1" in style):
         patterns.add("outlook")
 
-    if tag == "div" and "yahoo_quoted" in classes:
+    if tag in ("div", "blockquote") and (
+        any("yahoo_quoted" in token for token in classes) or element_id.startswith("yahoo_quoted_")
+    ):
         patterns.add("yahoo")
+
+    if tag in ("div", "blockquote") and "protonmail_quote" in classes:
+        patterns.add("proton")
 
     if tag == "blockquote":
         patterns.add("generic")

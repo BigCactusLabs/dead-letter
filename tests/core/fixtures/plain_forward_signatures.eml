@@ -1,0 +1,24 @@
+From: Bob <b@example.com>
+To: Alice <a@example.com>
+Subject: Fwd: signature test
+Date: Sun, 18 Oct 2026 12:00:00 +0000
+Message-ID: <forward-line-endings@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+FYI below.
+
+-- 
+Bob Sender
+
+---------- Forwarded message ---------
+From: Carol <c@example.com>
+Date: Sun, 18 Oct 2026
+Subject: sig test
+To: Bob <b@example.com>
+
+Forwarded body.
+
+-- 
+Carol Example
+Carol Corp

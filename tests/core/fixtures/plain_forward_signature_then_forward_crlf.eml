@@ -1,0 +1,25 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Fwd: notes
+Date: Thu, 05 Mar 2026 13:10:00 +0000
+Message-ID: <plain-forward-signature-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Two notes below.
+
+---------- Forwarded message ---------
+From: Person One <one@example.com>
+Subject: Note one
+
+Body from person one.
+-- 
+Person One signature line
+
+---------- Forwarded message ---------
+From: Person Two <two@example.com>
+Subject: Note two
+
+Body from person two.
+-- 
+Person Two signature line
