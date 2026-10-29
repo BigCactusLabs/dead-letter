@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import time
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -745,8 +746,18 @@ async def test_task_cancel_at_any_point_releases_the_slot_exactly_once(
     manager = _manager(tmp_path)
     source = tmp_path / "mail.mbox"
     source.write_bytes(POSTMARK + MESSAGE)
+    entered = threading.Event()
+    gate = [yield_before_cancel]
 
     def results(path, *, output, cancel_requested, **kwargs):
+        if gate[0]:
+            # Hold the first worker until the manager forwards the cancel, so
+            # it cannot finish and seal success before task.cancel() runs.
+            entered.set()
+            deadline = time.monotonic() + 5
+            while not cancel_requested():
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
         if cancel_requested():
             raise MboxCancelled()
         yield _success(Path(path), Path(output))
@@ -756,7 +767,8 @@ async def test_task_cancel_at_any_point_releases_the_slot_exactly_once(
     created = await manager.create_mbox_job(request, source_root=tmp_path)
     task = next(iter(manager._mbox_tasks))
     if yield_before_cancel:
-        await asyncio.sleep(0)
+        await _event(entered)
+    gate[0] = False
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
 
