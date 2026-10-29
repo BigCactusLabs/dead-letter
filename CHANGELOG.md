@@ -7,11 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Offline review artifacts for the synthetic analysis benchmark, with explicit
+  scorer selection, corpus and source bindings, reviewer provenance, and strict
+  coverage checks. Review templates leave every case pending; model pre-labels
+  remain unchanged, and no human-reviewed quality result is implied (#166).
+
 ### Changed
 
 - Claude plugin 0.4.11 pins package 0.4.9 (`dead-letter==0.4.9`) and relocks
   `plugin/uv.lock`. Plugin users get the 0.4.9 forward and wrapper fixes and
   the stricter plain-text HTML escaping.
+
+### Fixed
+
+- Attribution parsing bounds regex input, using only complete leading lines when
+  the message is longer: 1,000 characters for single-line attributions and
+  64 KiB for Outlook From/Sent/To/Subject blocks, whose matching is now linear.
+  Malformed long attribution lines no longer trigger excessive regex work in
+  structured history. Gmail headers and Outlook headers with long recipient
+  lists still parse before large bodies; over-budget or unrecognized candidates
+  keep their text through the existing fallback (#241).
 
 ## [0.4.9] - 2026-10-22
 

@@ -525,14 +525,20 @@ message time, not unresolved obligations or today's user priority.
 
 ## Evaluation and remaining work
 
-The 22 synthetic seed cases remain unreviewed development material. Tests exercise
-actual core/SDK contracts with synthetic EML and fake HTTP; they are not empirical
-JEV inference, accuracy, calibration or latency benchmarks. No real key or private
-email was submitted during this implementation. Human-review/expand the seed and
-compare both profiles on a family-separated held-out set before freezing semantics.
+The [offline evaluation corpus](../../benchmarks/analysis_eval/README.md) contains
+192 synthetic cases with 72 development and 120 held-out cases, including the
+original 22 seeds in development. The checked-in labels remain unreviewed model
+pre-labels. A separate review-artifact workflow binds annotations to the corpus
+revision and source bytes, preserves the frozen split, and requires explicit
+selection when scoring. Exporting a review template does not review the labels.
 
-Still pending: reviewed held-out evaluation (#166). See the
-[implementation checkpoint](../project/2026-09-18-issue-110-analysis-foundation.md).
+Tests exercise core/SDK contracts with synthetic EML and fake HTTP; they are not
+empirical JEV inference, accuracy, calibration or latency benchmarks. Reviewed
+held-out evaluation (#166) still requires human annotations and captured results
+from both profiles before freezing semantics. The offline tooling makes no
+provider calls. See the [development handoff](../project/2026-10-27-development-groundwork.md)
+for implementation boundaries and the
+[original checkpoint](../project/2026-09-18-issue-110-analysis-foundation.md) for history.
 
 ## First-party implementation references
 
