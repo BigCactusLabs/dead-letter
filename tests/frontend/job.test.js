@@ -767,6 +767,61 @@ test("archive cancellation stays nonterminal and keeps polling until the partial
   assert.equal(job.summary.written, 2);
 });
 
+test("a cancel response that arrives after a terminal poll cannot reopen the archive", async () => {
+  const cancelResponse = deferred();
+  const final = mboxStatus({
+    status: "cancelled", cancel_requested: true,
+    report_path: "/tmp/Cabinet/mbox-archive-1/report.json",
+  });
+  const { job, intervals } = await createJobStore((url) => (
+    url.endsWith("/cancel") ? cancelResponse.promise : Promise.resolve(makeResponse({ jsonData: final }))
+  ));
+  job.id = "archive-1";
+  job.kind = "mbox";
+  job.status = "running";
+  job.pollHandle = window.setInterval(() => {}, 800);
+
+  const cancelling = job.cancel();
+  await job.poll();
+  assert.equal(job.status, "cancelled");
+  assert.equal(job.pollHandle, null);
+
+  cancelResponse.resolve(makeResponse({ jsonData: { accepted: true, status: "running" } }));
+  await cancelling;
+
+  assert.equal(job.status, "cancelled");
+  assert.equal(job.pollHandle, null);
+  assert.equal(intervals.size, 0);
+  assert.equal(job.cancelInFlight, false);
+  assert.equal(job.keepActiveArchive(), false);
+});
+
+test("an accepted nonterminal cancel restarts polling that had already stopped", async () => {
+  const pollResponse = deferred();
+  const final = mboxStatus({ status: "cancelled", cancel_requested: true });
+  const { job, intervals } = await createJobStore((url) => (
+    url.endsWith("/cancel")
+      ? Promise.resolve(makeResponse({ jsonData: { accepted: true, status: "running" } }))
+      : pollResponse.promise
+  ));
+  job.id = "archive-1";
+  job.kind = "mbox";
+  job.status = "running";
+  assert.equal(job.pollHandle, null);
+
+  await job.cancel();
+  assert.equal(job.cancelRequested, true);
+  assert.notEqual(job.pollHandle, null);
+  assert.equal(intervals.size, 1);
+  assert.equal(job.pollInFlight, true);
+
+  pollResponse.resolve(makeResponse({ jsonData: final }));
+  for (let i = 0; i < 20 && job.pollInFlight; i += 1) await Promise.resolve();
+  assert.equal(job.status, "cancelled");
+  assert.equal(job.pollHandle, null);
+  assert.equal(intervals.size, 0);
+});
+
 test("manual starts and uploads cannot replace an active or cancelling archive", async (t) => {
   const operations = {
     start: (job) => job.start({ mode: "file", input_path: "mail.eml", options: {} }),

@@ -499,7 +499,8 @@ export function registerJobStore(Alpine) {
         }
 
         const payload = await response.json();
-        if (this.id !== requestedJobId) {
+        // Polling may already have recorded the final state; a late reply must not reopen it.
+        if (this.id !== requestedJobId || isTerminalStatus(this.status)) {
           return;
         }
 
@@ -512,6 +513,9 @@ export function registerJobStore(Alpine) {
         }
         if (isTerminalStatus(this.status)) {
           this.stopPolling();
+        } else if (!this.pollHandle) {
+          // Only polling can report the final state, so restart it if it had stopped.
+          this.startPolling();
         }
       } catch (err) {
         if (err && err.name === "AbortError") {
