@@ -35,11 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ENOSPC`/`EDQUOT`, including a reserved worker exit status when writing the
   failure receipt is itself impossible. Web imports stop on that outcome and
   retain completed bundles instead of repeatedly attempting later messages.
-- Attribution parsing caps regex input at 1,000 characters, using only complete
-  leading lines when the message is longer. Malformed long attribution lines
-  no longer trigger excessive regex work in structured history. Short Gmail
-  and Outlook headers before large bodies still parse; over-budget or
-  unrecognized candidates keep their text through the existing fallback (#241).
+- Attribution parsing bounds regex input, using only complete leading lines when
+  the message is longer: 1,000 characters for single-line attributions and
+  64 KiB for Outlook From/Sent/To/Subject blocks, whose matching is now linear.
+  Malformed long attribution lines no longer trigger excessive regex work in
+  structured history. Gmail headers and Outlook headers with long recipient
+  lists still parse before large bodies; over-budget or unrecognized candidates
+  keep their text through the existing fallback (#241).
 
 ## [0.4.9] - 2026-10-22
 

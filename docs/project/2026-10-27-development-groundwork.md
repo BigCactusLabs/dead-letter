@@ -185,8 +185,17 @@ timeout and was killed. These are diagnostic observations on one machine.
 
 The follow-up fix bounds regex input centrally in `core/attribution.py` to
 1,000 characters, including line breaks. For larger input it takes only complete
-leading lines within that budget, preserving wrapped Gmail and multiline Outlook
-headers. It never turns a cut-off physical line into a valid end-of-line match.
+leading lines within that budget, preserving wrapped Gmail headers. It never
+turns a cut-off physical line into a valid end-of-line match.
+
+A review of that fix found the 1,000-character budget dropped Outlook headers
+with long recipient lists (about 25 or more recipients) and measured the
+original Outlook pattern as the slowest of all: `"From:" + " " * n` took about
+0.27 seconds at n = 1,000 and exceeded five seconds at n = 4,000. The Outlook
+fields are now possessive and never cross a line, which makes the block linear
+(under 1 ms at 64,000 characters on the same adversarial inputs), and the block
+gets its own 64 KiB window of complete lines. Single-line patterns keep the
+1,000-character window.
 A short valid header before a large body still parses; over-budget/unrecognized
 input keeps its text through the existing fallback, with `consumed_end` relative
 to original text and the existing following-newline consumption preserved.

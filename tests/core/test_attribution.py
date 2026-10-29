@@ -153,6 +153,37 @@ def test_parses_outlook_block_with_cc_between_to_and_subject() -> None:
     assert result.metadata.subject == "Re: project status"
 
 
+@pytest.mark.parametrize("recipients", [25, 400], ids=["25-recipients", "400-recipients"])
+def test_parses_outlook_block_with_long_recipient_lists(recipients: int) -> None:
+    to_line = "; ".join(f"Person {i} <person{i}@example.com>" for i in range(recipients))
+    header = (
+        "From: Alice Example <alice@example.com>\n"
+        "Sent: Thursday, March 5, 2026 10:23 AM\n"
+        f"To: {to_line}\n"
+        f"Cc: {to_line}\n"
+        "Subject: Re: project status\n"
+    )
+    assert len(header) > 1000  # Beyond the single-line pattern budget.
+    text = header + "\nBody text\n"
+
+    result = parse_attribution_line(text)
+
+    assert result is not None
+    assert result.metadata.from_ == "Alice Example <alice@example.com>"
+    assert result.metadata.subject == "Re: project status"
+    assert text[result.consumed_end:] == "Body text\n"
+
+
+def test_outlook_block_beyond_its_window_is_unrecognized() -> None:
+    to_line = "Bob <bob@example.com>; " * 3000  # About 69 KiB, past the 64 KiB window.
+    text = (
+        "From: Alice <alice@example.com>\nSent: Thursday, March 5, 2026 10:23 AM\n"
+        f"To: {to_line}\nSubject: Re: project status\n\nBody text\n"
+    )
+
+    assert parse_attribution_line(text) is None
+
+
 def test_parses_german_attribution() -> None:
     text = "Am Donnerstag, 5. März 2026 um 10:23 schrieb Alice <alice@example.com>:\n> body\n"
 
@@ -277,6 +308,12 @@ def test_adversarial_attribution_candidates_finish_in_killable_process():
             'On Mar 5, 2026, at 10:23 AM, ' + '<' * 128_000 + ':',
             'On Thu, Mar 5, 2026 at 10:23 AM Alice\\n' + 'sender ' * 32_000 + ':',
             'From: Alice\\nSent: Thursday\\nTo: ' + 'Bob ' * 32_000 + '\\nSubject: X\\n',
+            # Inside the 64 KiB Outlook window; quadratic+ before possessive fields.
+            'From:' + ' ' * 64_000,
+            'From: Alice\\nSent:' + ' ' * 64_000,
+            'From: Alice\\nSent: Thursday\\nTo:' + ' \\t' * 32_000,
+            'From:' + ' \\n' * 32_000,
+            'From: Alice\\nSent: Thursday\\nTo: Bob\\n' + 'Cc:  \\n' * 10_000,
         ]
         options = ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
         for text in candidates:
