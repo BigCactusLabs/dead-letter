@@ -394,6 +394,32 @@ and [manual tests](../../plugin/TESTING.md) in **both** Claude Code and Cowork.
 They retain separate installed copies. Matching source/pins does not prove
 matching client caches or successful runtime resolution.
 
+### Claude directory listing
+
+The Claude directory (claude.ai/directory/manage) tracks the `release`
+branch, plugin path `plugin`. Each `plugin-vX.Y.Z` that moves `release`
+becomes a new directory version, and every version is held for a human
+reviewer because the server runs a pinned `uvx` package. The README and
+`plugin.json` on `release` are what the listing shows, so listing copy ships
+only with a plugin release.
+
+- Re-run **Validate** in the portal on the exact `release` commit before
+  submitting; results are per commit.
+- Do not move `release` while a version is with a reviewer. The tracked
+  branch cannot change during review, and a pushed version can queue behind
+  the held one.
+- An approved version is not live until someone clicks **Publish**.
+- The directory policy requires telling Anthropic about material changes
+  after listing: tool or capability descriptions, data practices, or
+  connected endpoints. A new package pin can count. Batch pin bumps instead
+  of shipping one plugin release per package patch.
+- For a stalled review, use **Get help** or **Contact Anthropic** in the
+  portal before emailing directory@anthropic.com.
+
+The `bigcactuslabs-plugins` marketplace above is separate from the directory.
+Anthropic's `claude-plugins-official` marketplace takes no portal
+submissions.
+
 ## Plugin Versioning Model
 
 | Field | Meaning | Relationship |

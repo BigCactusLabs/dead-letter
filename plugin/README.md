@@ -53,6 +53,15 @@ Anything that writes files needs the slash command typed explicitly. If you ask 
 - `/dead-letter:triage ~/exports/vendor-thread` converts up to 50 `.eml` files and groups them by sender and subject with priority hints.
 - `/dead-letter:mbox ~/Takeout/Mail/Inbox.mbox ~/mail-md` converts the first 1000 messages of a flat `.mbox` archive up to 256 MiB.
 
+## Sample mail for testing
+
+You can try every command without an account or real mail. The repository's [synthetic fixtures](https://github.com/BigCactusLabs/dead-letter/tree/main/tests/core/fixtures) are generated test messages with no personal data. Good starting points:
+
+- [`gmail_3_message_thread.eml`](https://github.com/BigCactusLabs/dead-letter/blob/main/tests/core/fixtures/gmail_3_message_thread.eml) for `convert` and summaries
+- [`outlook_attachment_with_cid.eml`](https://github.com/BigCactusLabs/dead-letter/blob/main/tests/core/fixtures/outlook_attachment_with_cid.eml) for `/dead-letter:cabinet`
+- the fixtures folder itself for `/dead-letter:triage`
+- [`takeout-synthetic.mbox`](https://github.com/BigCactusLabs/dead-letter/blob/main/tests/core/fixtures/takeout-synthetic.mbox) for `/dead-letter:mbox`
+
 ## Requirements
 
 - **In Cowork:** none. `uv` is already in the sandbox image.
@@ -83,6 +92,7 @@ Without the MCP tools, the commands can explain the workflow but cannot convert 
 - Text a tool returns to Claude enters the conversation and is sent to the model provider with it; see [Privacy](#privacy).
 - The tools read only the `.eml`, `.mbox`, or folder paths you give them. They write only to the output paths you give them, under new collision-safe names, and never modify, move, or delete your source files.
 - Each tool declares MCP annotations: `get_diagnostics` is read-only, and the four conversion tools create new files without being destructive. None declares network access.
+- The plugin ships no scripts or hooks. Two commands ask Claude to run small shell helpers through the host's own tools, under the host's usual permission prompts: `/dead-letter:triage` counts `.eml` files with `find <folder> -type f -iname '*.eml' | wc -l` (or a Glob search) and writes to a fresh `mktemp -d` folder, and `/dead-letter:mbox` uses `mktemp -d` when you give no output folder. In Cowork, both write under `outputs/` instead.
 
 ## Privacy
 

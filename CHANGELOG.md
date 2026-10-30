@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Claude plugin 0.4.12 pins package 0.4.10 (`dead-letter==0.4.10`) and relocks
   `plugin/uv.lock`. Plugin users get the 0.4.10 bounded attribution parsing and
   the distinct MBOX storage-exhaustion outcome.
+- Claude plugin 0.4.13 keeps the 0.4.10 pin. Its README links synthetic
+  sample mail for trying each command and lists the shell helpers that the
+  `triage` and `mbox` commands ask Claude to run.
 
 ## [0.4.10] - 2026-10-29
 
