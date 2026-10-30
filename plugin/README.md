@@ -59,7 +59,7 @@ You can try every command without an account or real mail. The repository's [syn
 
 - [`gmail_3_message_thread.eml`](https://github.com/BigCactusLabs/dead-letter/blob/main/tests/core/fixtures/gmail_3_message_thread.eml) for `convert` and summaries
 - [`outlook_attachment_with_cid.eml`](https://github.com/BigCactusLabs/dead-letter/blob/main/tests/core/fixtures/outlook_attachment_with_cid.eml) for `/dead-letter:cabinet`
-- the fixtures folder itself for `/dead-letter:triage`
+- a folder with a few of these `.eml` files for `/dead-letter:triage` (the full fixtures folder is over its 50-file cap)
 - [`takeout-synthetic.mbox`](https://github.com/BigCactusLabs/dead-letter/blob/main/tests/core/fixtures/takeout-synthetic.mbox) for `/dead-letter:mbox`
 
 ## Requirements
