@@ -41,6 +41,7 @@ import: [#146](https://github.com/BigCactusLabs/dead-letter/issues/146)).
 | GHCR | Tested multi-platform OCI image | Same package release; version and digest, no `latest` alias |
 | Homebrew tap | Separate CLI/MCP formula | Maintainer update after PyPI |
 | BCL plugin marketplace | Versioned plugin source pointer | Separate `plugin-vX.Y.Z` tag and marketplace PR |
+| Claude directory | Anthropic-reviewed plugin listing for Claude Code and Cowork | Tracks the `release` branch; each version is reviewed, then published ([runbook](publishing.md#claude-directory-listing)) |
 | Official MCP Registry | Discovery metadata for existing packages and artifacts | After PyPI, MCPB, and OCI verification |
 | Portable skill / ARD | Repository-hosted task instructions and discovery metadata | Reviewed source tag/commit; package version in ARD |
 | Docker Catalog, Agent Finder, other curated directories | Third-party discovery and review | Separate submission, acceptance, and client validation |
@@ -49,6 +50,11 @@ A repository file is **implemented**. An accessible release artifact is
 **published**. A catalog PR is **submitted**, not **accepted**. A successful
 CLI/MCP smoke test is not a GUI **client-tested** result. Record the version,
 commit or digest, date, platform/client, and evidence with each status.
+
+Claude directory: plugin 0.4.13 (`release` at `fb8f48a`, pin `dead-letter==0.4.10`)
+was **submitted** on 2026-10-29 and is held for review because it runs a
+pinned `uvx` package and ships an icon image. It is not listed until it is
+approved and published.
 
 The first public GHCR image is recorded as `0.3.1`; the failed `0.3.0` attempt
 must not be advertised as an available container. See the dated
