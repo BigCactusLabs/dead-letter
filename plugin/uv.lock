@@ -196,7 +196,7 @@ wheels = [
 
 [[package]]
 name = "dead-letter"
-version = "0.4.9"
+version = "0.4.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "html-to-markdown" },
@@ -208,9 +208,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "selectolax" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2a/73/5553e95e5d3757fa9c40d9df4df8872d50bb97358c0fc21683f92cecaab0/dead_letter-0.4.9.tar.gz", hash = "sha256:e7ad11517c33764bfa8ba9e0982e173b8f77dae4f7d9528464893b67c6b2b25c", size = 252285, upload-time = "2026-10-22T21:21:32.88Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a7/07/d78898dd1782976a90855be7cb8579bc28f95cddbc03f2da980fcc9c9750/dead_letter-0.4.10.tar.gz", hash = "sha256:55a5261118afd30c9a91fe84848d5f423cf45e4e97a576cb85f0e429f440fd64", size = 265284, upload-time = "2026-10-29T20:59:18.795Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/69/db/4f8f83d08da3191202cccbcbd11f90897a8137277452a786a98bc7b96c0d/dead_letter-0.4.9-py3-none-any.whl", hash = "sha256:a88d923fb802c92040ddef72a63dc71c6cd8dda5a78fe441ba024afba528830d", size = 273089, upload-time = "2026-10-22T21:21:31.314Z" },
+    { url = "https://files.pythonhosted.org/packages/c6/da/146b7302ca3dc010005b571e936b2d4503964b620744104380226d3ad03d/dead_letter-0.4.10-py3-none-any.whl", hash = "sha256:6d8c2deaefa18c1b372fc0222be8458ed65e62ae1c4b036c7548e68240b806d1", size = 288682, upload-time = "2026-10-29T20:59:16.936Z" },
 ]
 
 [[package]]
@@ -222,7 +222,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "dead-letter", specifier = "==0.4.9" }]
+requires-dist = [{ name = "dead-letter", specifier = "==0.4.10" }]
 
 [[package]]
 name = "h11"
