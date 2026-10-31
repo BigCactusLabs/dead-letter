@@ -465,6 +465,45 @@ def test_gmail_no_signal_wrapper_kept_in_both_modes(tmp_path: Path) -> None:
     assert latest == structured
 
 
+def test_gmail_quote_wrapping_body_is_kept_as_body(tmp_path: Path) -> None:
+    for mode in ("latest", "structured"):
+        front, body = _body("gmail_quote_body_wrapper.eml", tmp_path, thread_mode=mode)
+        _positions(body, ["Heather,", "Thank you for applying", "WRAPPED BODY"])
+        assert "thread_messages" not in front
+        assert "## " not in body
+
+
+def test_gmail_body_wrapper_still_yields_nested_reply_quote() -> None:
+    reply = (
+        '<div class="gmail_quote"><div class="gmail_attr">On Mon, Bob wrote:<br></div>'
+        '<blockquote class="gmail_quote">Old.</blockquote></div>'
+    )
+    html = (
+        '<div>Hi,</div><div class="gmail_quote gmail_quote_container">'
+        f"<div>{'Long wrapped body text. ' * 10}</div>{reply}</div>"
+    )
+    result = segment_html_conversation(html)
+    assert [zone.kind for zone in result.zones] == [ZoneKind.BODY, ZoneKind.QUOTED]
+    assert "Long wrapped body text." in result.zones[0].content
+    assert "Old." in result.zones[1].content
+
+
+def test_owa_prefixed_gmail_forward(tmp_path: Path) -> None:
+    _, latest = _body("owa_gmail_forward.eml", tmp_path)
+    front, structured = _body("owa_gmail_forward.eml", tmp_path, thread_mode="structured")
+
+    _positions(latest, ["See the Gmail forward below.", MARKER_LINE, "OWA PREFIXED FORWARD BODY"])
+    assert "thread_messages: 1" in front
+    _positions(
+        structured,
+        [
+            "See the Gmail forward below.",
+            "## Forwarded from Dave <dave@example.com> (Wed, Mar 4, 2026 at 10:00 AM) — Budget",
+            "OWA PREFIXED FORWARD BODY",
+        ],
+    )
+
+
 def test_single_gmail_forward_latest_keeps_marker_headers_and_body(tmp_path: Path) -> None:
     front, body = _body("gmail_forward_single.eml", tmp_path)
 

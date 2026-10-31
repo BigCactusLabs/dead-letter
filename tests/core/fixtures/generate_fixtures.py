@@ -816,6 +816,20 @@ def main() -> int:
             Date: Wed, Mar 4, 2026 at 10:00 AM<br>Subject: Budget<br>To: alice@example.com<br><br><br>
             <div dir="ltr">LEGACY FORWARDED BODY</div></div>
         """,
+        "gmail_quote_body_wrapper.eml": """
+            From: Recruiter <recruiter@example.com>
+            To: Heather <heather@example.com>
+            Subject: Your application
+            Date: Thu, 05 Mar 2026 13:20:00 +0000
+            Message-ID: <gmail-quote-body-wrapper-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div dir="ltr"><div><span>Heather,</span></div><div class="gmail_quote gmail_quote_container"><div dir="ltr"><div class="gmail_quote">
+            <div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature"><div>Thank you for applying to the Production Associate opening at Example Co.
+            I reviewed your resume and would like to schedule time to learn more about your background.</div>
+            <div>WRAPPED BODY: what is your availability for a phone call next week?</div></div></div></div></div></div>
+        """,
         "plain_outlook_original_message_reply.eml": """
             From: Alice <alice@example.com>
             To: Bob <bob@example.com>
@@ -913,6 +927,20 @@ def main() -> int:
             To: <alice@example.com>
 
             GMAIL CHINESE BODY
+        """,
+        "owa_gmail_forward.eml": """
+            From: Alice <alice@example.com>
+            To: Bob <bob@example.com>
+            Subject: FW: Fwd: Budget
+            Date: Thu, 05 Mar 2026 14:40:00 +0000
+            Message-ID: <owa-gmail-forward-1@example.com>
+            MIME-Version: 1.0
+            Content-Type: text/html; charset=utf-8
+
+            <div>See the Gmail forward below.</div><div class="x_gmail_quote x_gmail_quote_container"><div dir="ltr" class="x_gmail_attr">---------- Forwarded message ---------<br>
+            From: <strong class="x_gmail_sendername" dir="auto">Dave</strong> <span dir="auto">&lt;dave@example.com&gt;</span><br>
+            Date: Wed, Mar 4, 2026 at 10:00 AM<br>Subject: Budget<br>To: &lt;alice@example.com&gt;<br></div><br><br>
+            <div dir="ltr">OWA PREFIXED FORWARD BODY</div></div>
         """,
     }
 
