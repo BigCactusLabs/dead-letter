@@ -6,7 +6,9 @@ from collections.abc import Iterator
 import re
 import warnings
 
-from mailparser_reply import EmailReply, EmailReplyParser
+from mailparser_reply import EmailReply
+from mailparser_reply.constants import GENERIC_MAIL_SEPARATOR, QUOTED_MATCH_INCLUDE
+from mailparser_reply.parser import EmailMessage
 
 from dead_letter.core.conversation import ConversationResult
 from dead_letter.core.forwarding import (
@@ -16,6 +18,33 @@ from dead_letter.core.forwarding import (
     normalize_marker_text,
 )
 from dead_letter.core.types import ConversationZone, ZoneKind
+
+# In 1.36, .+?\s?.+? matches at least two non-newline characters, or two
+# nonempty lines joined by one newline. Lazy branches keep the earliest end.
+_WROTE_BODY = r"(?:[^\n]{2,}?|[^\n]+\n[^\n]+?)"
+_WROTE_HEADER = (
+    r"^(?!On[.\s]*On\s(" + _WROTE_BODY + r")\swrote:)("
+    + QUOTED_MATCH_INCLUDE + r"On\s" + _WROTE_BODY + r"\s?wrote:)$"
+)
+# Each header iteration must end at a line end, or at a line start with an
+# empty .* branch. Atomic runs keep that order without retrying star suffixes.
+_FROM_HEADER = (
+    r"((?:(?:^|\n|\n" + QUOTED_MATCH_INCLUDE
+    + r")[* ]*(?:From|Sent|To|Subject|Date|Cc|Organization):"
+    r"(?>[ *]*)(?:\s{,2})(?:(?>.*)|)){2,}(?:\n.*){,1})"
+)
+_LINEAR_HEADER_RE = re.compile(
+    "|".join([_WROTE_HEADER, _FROM_HEADER, f"({GENERIC_MAIL_SEPARATOR})"]),
+    re.MULTILINE | re.IGNORECASE,
+)
+
+
+class _BoundedEmailMessage(EmailMessage):
+    def _process_signatures_disclaimers(self, text: str) -> tuple[list[str], str]:
+        # Consumers use only content/headers, which do not depend on these
+        # fields. Avoid upstream's quadratic signature/disclaimer searches.
+        return [], ""
+
 
 # Outlook-style reply separator line, which opens a From/Sent header block.
 _OUTLOOK_SEPARATOR_RE = re.compile(
@@ -77,11 +106,10 @@ def _protect_leading_indentation(text: str, *, sentinel: str) -> str:
 
 
 def parse_email_replies(text: str) -> list[EmailReply]:
-    """Run ``mailparser_reply.EmailReplyParser`` with the upstream deprecation
-    filter applied. Returns the parsed ``replies`` list.
+    """Read content/headers with the bounded English reply parser.
 
-    HTML callers retain this unbounded entry point. Plain-text callers use
-    ``_parse_text_replies`` with the whitespace-run guard and the same reader.
+    Plain-text callers also use ``_parse_text_replies`` with the existing
+    whitespace-run guard as defense in depth.
     """
     return _read_email_replies(text, budget=None)
 
@@ -107,14 +135,15 @@ def _read_email_replies(
                 if whitespace_work > budget.remaining:
                     return []
         budget.remaining -= whitespace_work
-    parser = EmailReplyParser()
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
             message="'count' is passed as positional argument",
             category=DeprecationWarning,
         )
-        message = parser.read(protected_text)
+        message = _BoundedEmailMessage(
+            text=protected_text, languages=["en"], _header_regex=_LINEAR_HEADER_RE,
+        ).read()
 
     replies = list(message.replies)
     for reply in replies:
