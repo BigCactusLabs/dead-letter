@@ -8,6 +8,8 @@ installed, run the commands below without a `uv run` prefix. Keep `uv run` only
 when working from a development checkout. Web UI versions before 0.4.10 are
 EML-only; 0.4.10 adds the [local-path web workflow](#web-local-path-import-0410),
 the first web/API slice of [#146](https://github.com/BigCactusLabs/dead-letter/issues/146).
+Unreleased source adds a [browser upload](#web-browser-upload-unreleased) of one
+flat archive.
 MCP servers from 0.4.5 add a bounded
 [`convert_mbox` MCP tool](#mcp-bounded-convert_mbox) (#145); 0.4.0 and earlier
 MCP servers are EML-only. Watch
@@ -457,14 +459,31 @@ server allows one queued/running archive job at a time.
 
 Reserve disk space for temporary data, output bundles and the report. The
 16 GiB source limit and bounded status summary do not impose a total disk or
-process-memory quota. Uploads, ZIP/TGZ web input and resumable web jobs remain
+process-memory quota. ZIP/TGZ web input and resumable web jobs remain
 separate work; use the CLI routes above when those capabilities are needed.
+Browser upload is unreleased; see the next section.
 The EML file upload and watch flows still accept only EML.
 
 For script clients, use `POST /api/mbox/jobs` with a root-relative `input_path`
 and the local CSRF session header, then reuse the existing status/history/cancel
 routes. See the [complete API contract](v4-runtime-contracts.md#post-apimboxjobs-0410)
 for option validation, path confinement, limits, partial reports and failures.
+
+## Web: browser upload (unreleased)
+
+Unreleased source adds **Upload archive** beside the path field in the same
+form. Choose one uncompressed `.mbox` file of up to 16 GiB; the browser sends it
+to the server, which saves a copy in `<Inbox>/mbox-uploads/` and then imports
+that copy exactly like a local-path archive. The copy stays there after the
+import as the job's source, so delete it yourself when you no longer need it.
+The Inbox needs room for the copy plus 1 GiB, and the Cabinet needs room for
+the bundles. An interrupted upload cannot be resumed; it starts again from the
+beginning. When the archive is already on the machine running dead-letter, the
+local path is faster and needs no second copy.
+
+Script clients send the raw bytes to `POST /api/mbox/uploads`; see the
+[upload contract](v4-runtime-contracts.md#post-apimboxuploads-unreleased) for
+headers, limits and error codes.
 
 ## MCP: bounded `convert_mbox`
 
