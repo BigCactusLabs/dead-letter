@@ -18,6 +18,7 @@ from dead_letter import _mbox_windows as windows
 from dead_letter import _mbox_worker as worker
 from dead_letter.core import mbox_isolation as isolation
 from dead_letter.core.mbox import MboxCancelled
+from dead_letter.core.mbox_import import convert_mbox
 
 NONCE = "0123456789abcdef" * 2
 HANDLE = 0x123456789  # Exercise handles that cannot fit in a DWORD.
@@ -42,6 +43,8 @@ class FakeKernel:
         # ActiveProcesses per accounting query (the last value repeats); None
         # fails that query. calls orders the drain and close in the parent.
         self.active = [0]
+        self.total_processes = 1
+        self.user_time = 0
         self.calls = []
         self.CreateJobObjectW = Function(self.create)
         self.SetInformationJobObject = Function(self.set_limits)
@@ -90,12 +93,15 @@ class FakeKernel:
         assert handle == HANDLE and size == ctypes.sizeof(windows._BasicAccounting)
         active = self.active.pop(0) if len(self.active) > 1 else self.active[0]
         self.calls.append("active")
-        if active is None:
+        if active is None or self.failure == "accounting":
             return False
         info = ctypes.cast(pointer, ctypes.POINTER(windows._BasicAccounting)).contents
-        info.TotalProcesses = 1
+        info.TotalProcesses = self.total_processes
+        info.TotalUserTime = self.user_time
         info.ActiveProcesses = active
         ctypes.cast(returned, ctypes.POINTER(ctypes.c_uint32)).contents.value = size
+        if self.failure == "accounting_length":
+            ctypes.cast(returned, ctypes.POINTER(ctypes.c_uint32)).contents.value = size - 1
         return True
 
     def wait(self, handle, milliseconds):
@@ -257,7 +263,10 @@ def test_cpu_uses_job_signal_not_process_exit_codes(kernel):
 def test_memory_only_job_does_not_claim_cpu_exhaustion(kernel):
     job = windows.WindowsJob({"memory_mib": 32}, NONCE)
     kernel.state = windows._WAIT_OBJECT_0
+    kernel.user_time = 50_000_000
     assert not job.cpu_exceeded() and kernel.waits == []
+    assert not job.cpu_exceeded(failed=True) and kernel.waits == []
+    assert kernel.calls == []
     job.close()
 
 
@@ -331,7 +340,10 @@ def test_parent_keeps_job_through_reaping_and_closes_on_all_exit_paths(
             assert budgets == {"cpu_seconds": 5} and nonce == NONCE
             events.append("job")
 
-        def cpu_exceeded(self):
+        def verify_joined(self):
+            events.append("membership")
+
+        def cpu_exceeded(self, *, failed=False):
             events.append("query")
             if mode == "query":
                 raise OSError("private native details")
@@ -435,8 +447,8 @@ def timed_out():
     return subprocess.TimeoutExpired("synthetic-worker", 5)
 
 
-def fake_popen(monkeypatch, events, *, wait_error=None, reap_error=None):
-    """A direct worker that exits 0 unless its timed wait or its reap raises."""
+def fake_popen(monkeypatch, events, *, wait_error=None, reap_error=None, exit_code=0):
+    """A direct worker with a chosen exit code and optional wait/reap errors."""
 
     class Process:
         args = ["synthetic-worker"]
@@ -458,7 +470,7 @@ def fake_popen(monkeypatch, events, *, wait_error=None, reap_error=None):
             if error is not None:
                 raise error()
             if self.returncode is None:
-                self.returncode = 0
+                self.returncode = exit_code
             return self.returncode
 
     monkeypatch.setattr(sys, "platform", "win32")
@@ -470,7 +482,82 @@ def fake_popen(monkeypatch, events, *, wait_error=None, reap_error=None):
 def test_basic_accounting_layout_matches_winnt():
     # Four LARGE_INTEGERs then four DWORDs on both 32- and 64-bit Windows.
     assert ctypes.sizeof(windows._BasicAccounting) == 48
+    assert windows._BasicAccounting.TotalUserTime.offset == 0
+    assert windows._BasicAccounting.TotalProcesses.offset == 36
     assert windows._BasicAccounting.ActiveProcesses.offset == 40
+
+
+@pytest.mark.parametrize("budget", [{"cpu_seconds": 5}, {"memory_limit_mib": 32}])
+@pytest.mark.parametrize("failure", ["no_member", "accounting", "accounting_length"])
+def test_clean_exit_without_verified_membership_aborts_import(
+    kernel, monkeypatch, tmp_path, budget, failure
+):
+    kernel.total_processes = 0 if failure == "no_member" else 1
+    kernel.failure = failure
+    fake_popen(monkeypatch, kernel.calls)
+    monkeypatch.setattr(isolation, "monotonic", lambda: 0)
+    source = tmp_path / "mail.mbox"
+    source.write_bytes(
+        b"From sender@example.test Thu Jun 11 00:38:38 2020\n"
+        b"Subject: Synthetic\n\nHello\n\n" * 2
+    )
+    output = tmp_path / "out"
+    rows = list(convert_mbox(source, output=output, timeout_seconds=5, **budget))
+    assert len(rows) == 1 and rows[0].mbox is None and not rows[0].success
+    assert rows[0].error["code"] == "mbox_budget_apply_failed"
+    assert rows[0].error["stage"] == "worker"
+    assert kernel.calls.count("launch") == 1
+    assert kernel.closed == [HANDLE]
+    assert not list(output.rglob("*.md"))
+
+
+@pytest.mark.parametrize("total", [1, 2])
+@pytest.mark.parametrize("user_time", [0, 50_000_000])
+def test_clean_exit_accepts_lifetime_members_after_they_exit(
+    kernel, monkeypatch, tmp_path, total, user_time
+):
+    kernel.total_processes = total
+    kernel.active = [0]
+    kernel.user_time = user_time
+    fake_popen(monkeypatch, kernel.calls)
+    assert isolation._run_worker(tmp_path / "request.json", 5, ARGS) == 0
+    assert kernel.calls == ["launch", "wait", "active", "reap", "close"]
+
+
+@pytest.mark.parametrize("exit_code", [1, 1816])
+@pytest.mark.parametrize(
+    "user_time, expected",
+    [
+        (49_999_999, "mbox_worker_crashed"),
+        (50_000_000, "mbox_message_resource_limit"),
+        (50_000_001, "mbox_message_resource_limit"),
+    ],
+)
+def test_failed_exit_uses_cpu_accounting_before_job_signal(
+    kernel, monkeypatch, tmp_path, exit_code, user_time, expected
+):
+    kernel.user_time = user_time
+    fake_popen(monkeypatch, kernel.calls, exit_code=exit_code)
+    source = tmp_path / "mail.mbox"
+    source.write_bytes(
+        b"From sender@example.test Thu Jun 11 00:38:38 2020\n"
+        b"Subject: Synthetic\n\nHello\n"
+    )
+    output = tmp_path / "out"
+    [row] = list(convert_mbox(source, output=output, timeout_seconds=5, cpu_seconds=5))
+    assert not row.success and row.error["code"] == expected
+    assert kernel.state == windows._WAIT_TIMEOUT
+    assert kernel.closed == [HANDLE]
+    assert not list(output.rglob("*.md"))
+
+
+@pytest.mark.parametrize("failure", ["accounting", "accounting_length"])
+def test_failed_exit_accounting_query_failure_aborts(kernel, monkeypatch, tmp_path, failure):
+    kernel.failure = failure
+    fake_popen(monkeypatch, kernel.calls, exit_code=1)
+    with pytest.raises(isolation.MboxBudgetError, match="mbox_budget_apply_failed"):
+        isolation._run_worker(tmp_path / "request.json", 5, ARGS)
+    assert kernel.closed == [HANDLE]
 
 
 def test_close_without_terminate_never_queries_or_terminates(kernel):
@@ -588,7 +675,7 @@ def test_parent_drains_a_killed_workers_job_after_reaping_and_before_closing(
         ]
     else:
         assert isolation._run_worker(tmp_path / "request.json", 5, ARGS) == 0
-        assert kernel.calls == ["launch", "wait", "reap", "close"]
+        assert kernel.calls == ["launch", "wait", "active", "reap", "close"]
     assert kernel.closed == [HANDLE]
 
 

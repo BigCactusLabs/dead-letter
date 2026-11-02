@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows MBOX workers now verify job membership after a clean exit and use
+  job CPU accounting to identify CPU-limit failures when the process exits
+  before the job is signaled. Missing membership or failed accounting checks
+  abort the import with `mbox_budget_apply_failed` (#254, #255).
+
 ### Changed
 
 - Claude plugin 0.4.12 pins package 0.4.10 (`dead-letter==0.4.10`) and relocks

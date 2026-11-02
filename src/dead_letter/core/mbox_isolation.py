@@ -235,7 +235,9 @@ def _run_worker(
                     raise subprocess.TimeoutExpired(process.args, timeout) from None
         if job is not None:
             try:
-                exceeded = job.cpu_exceeded()
+                if returncode == 0:
+                    job.verify_joined()
+                exceeded = job.cpu_exceeded(failed=returncode != 0)
             except OSError as exc:
                 raise MboxBudgetError(
                     "mbox_budget_apply_failed", "could not read the message worker job; import aborted",
