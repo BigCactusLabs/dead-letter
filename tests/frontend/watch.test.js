@@ -402,3 +402,26 @@ test("poll() reports non-transient failure and stops polling", async () => {
   assert.equal(watch.pollHandle, null);
   assert.deepEqual(stores.job.opErrors, ["Failed to poll watch status."]);
 });
+
+test("watch jobs wait while an archive upload has no job id yet", async () => {
+  const { watch, stores } = await createWatchStore();
+  const job = stores.job;
+  let starts = 0;
+  Object.assign(job, {
+    kind: "mbox", isSubmitting: true, upload: { name: "mail.mbox", loaded: 4, total: 10, sent: false },
+    startPolling() { starts += 1; },
+  });
+
+  watch.applyStatus({ active: true, path: "/tmp/Inbox", latest_job_id: "watch-1", latest_job_status: "queued" });
+
+  assert.equal(job.id, "");
+  assert.equal(job.kind, "mbox");
+  assert.equal(job.pendingWatchJobId, "watch-1");
+  assert.equal(starts, 0);
+
+  job.upload = null;
+  job.isSubmitting = false;
+  watch.maybeSurfaceLatestWatchJob();
+  assert.equal(job.id, "watch-1");
+  assert.equal(starts, 1);
+});

@@ -513,6 +513,11 @@ body {
   font-size: var(--font-size-sm);
 }
 
+/* Keeps the footer layout while an upload has no counts to show. */
+.result-counts.is-hidden {
+  visibility: hidden;
+}
+
 .count-ok {
   color: var(--ok);
 }
@@ -1415,6 +1420,51 @@ input[type="checkbox"]:checked {
   font-size: var(--font-size-sm);
   line-height: 1.5;
   margin: var(--space-2) 0;
+}
+
+.mbox-source-toggle {
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+
+.mbox-file-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-3);
+  padding: var(--space-4) var(--space-3);
+  border: 1px dashed var(--line);
+  cursor: pointer;
+}
+
+.mbox-file-picker:hover,
+.mbox-file-picker.chosen {
+  border-color: var(--accent);
+}
+
+.mbox-file-picker:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mbox-file-action {
+  font-family: var(--mono);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.mbox-file-meta {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: var(--font-size-sm);
+  color: var(--ink);
+}
+
+.mbox-upload-notice {
+  color: var(--warn);
 }
 
 .mbox-launch {

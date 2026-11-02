@@ -16,7 +16,10 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
+from starlette.middleware.body_limit import RequestBodyLimitMiddleware
+from starlette.routing import Route
 
+from dead_letter.backend import mbox_jobs
 from dead_letter.backend.filesystem import FilesystemBrowser
 from dead_letter.backend.jobs import JobManager
 from dead_letter.backend.mbox_jobs import MboxArchiveTooLargeError, MboxBusyError
@@ -43,6 +46,15 @@ from dead_letter.backend.schemas import (
     WatchStatusResponse,
 )
 from dead_letter.backend.settings import WorkflowSettings
+from dead_letter.backend.uploads import (
+    MBOX_UPLOAD_BODY_HEADROOM_BYTES,
+    MBOX_UPLOAD_STAGING_DIRNAME,
+    CloseUnreadBodyMiddleware,
+    UploadRejected,
+    ensure_upload_space,
+    parse_mbox_upload_request,
+    stage_mbox_upload,
+)
 from dead_letter.backend.watch import WatchManager
 
 ERROR_RESPONSES = {
@@ -59,6 +71,11 @@ _IMPORT_STREAM_CHUNK_SIZE = 1024 * 1024
 _MAX_IMPORT_FILE_BYTES = 100 * 1024 * 1024
 _MAX_IMPORT_BATCH_FILES = 100
 _MAX_IMPORT_BATCH_BYTES = 100 * 1024 * 1024
+# App-wide request-body backstop. The largest legitimate body is a 100 MiB import
+# or batch plus multipart framing, which python-multipart bounds at a few KiB of
+# headers and boundary per part (at most 100 parts). The MBOX upload route raises
+# its own limit to the archive cap.
+_MAX_API_BODY_BYTES = 110 * 1024 * 1024
 _SAFE_API_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _CSRF_HEADER_NAME = "x-dead-letter-csrf"
 _TRUSTED_API_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
@@ -232,6 +249,8 @@ def create_app(
     app.state.settings = settings
     app.state.watch_manager = watcher
     app.state.csrf_token = secrets.token_urlsafe(32)
+    # Added first, so it runs inside the CSRF check and leaves its 403s intact.
+    app.add_middleware(RequestBodyLimitMiddleware, max_body_size=_MAX_API_BODY_BYTES)
 
     @app.middleware("http")
     async def csrf_middleware(request: Request, call_next):
@@ -252,6 +271,9 @@ def create_app(
                     return _csrf_error_response("missing or invalid CSRF token")
 
         return await call_next(request)
+
+    # Added last, so it is outermost and also sees the CSRF and backstop rejections.
+    app.add_middleware(CloseUnreadBodyMiddleware)
 
     def _current_settings() -> WorkflowSettings | None:
         return cast(WorkflowSettings | None, app.state.settings.load())
@@ -382,6 +404,78 @@ def create_app(
             return _error_response(400, code="invalid_request", message=str(exc), path=request.input_path)
         except Exception:  # pragma: no cover - defensive guard
             return _error_response(500, code="backend_error", message="Could not start MBOX job", stage="backend")
+
+    def _closing_error(
+        status_code: int, *, code: str, message: str, path: str | None = None, stage: ErrorStage = "validation",
+    ) -> JSONResponse:
+        response = _error_response(status_code, code=code, message=message, path=path, stage=stage)
+        response.headers["connection"] = "close"
+        return response
+
+    async def upload_mbox(request: Request) -> JSONResponse:
+        """Stage one raw ``.mbox`` body under the Inbox and start an archive job.
+
+        Every check that does not need the body runs before the first byte is read.
+        """
+        configured = _current_settings()
+        if configured is None:
+            return _closing_error(
+                409, code="invalid_request", message="workflow settings are not configured", path="settings",
+            )
+        try:
+            upload = parse_mbox_upload_request(request)
+        except UploadRejected as exc:
+            return _closing_error(exc.status_code, code=exc.code, message=exc.message, path=exc.path)
+        _sync_job_manager_roots(configured)
+        try:
+            reservation = await job_manager.reserve_mbox_slot()
+        except MboxBusyError as exc:
+            return _closing_error(409, code="mbox_busy", message=str(exc), path=upload.filename)
+        try:
+            staging_dir = configured.inbox_path / MBOX_UPLOAD_STAGING_DIRNAME
+            staging_dir.mkdir(parents=True, exist_ok=True)
+            staging_dir = staging_dir.resolve()
+            ensure_upload_space(staging_dir, upload.length)
+            staged = await stage_mbox_upload(
+                request, staging_dir=staging_dir, stem=upload.stem, length=upload.length,
+            )
+            try:
+                job = await job_manager.create_staged_mbox_job(
+                    MboxJobCreateRequest(input_path=str(staged), options=upload.options),
+                    staging_root=staging_dir,
+                    reservation=reservation,
+                )
+            except BaseException:
+                try:
+                    staged.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                raise
+        except UploadRejected as exc:
+            return _closing_error(exc.status_code, code=exc.code, message=exc.message, path=exc.path)
+        except MboxArchiveTooLargeError as exc:
+            return _closing_error(413, code="mbox_too_large", message=str(exc), path=upload.filename)
+        except MboxBusyError as exc:
+            return _closing_error(409, code="mbox_busy", message=str(exc), path=upload.filename)
+        except ValueError as exc:
+            return _closing_error(400, code="invalid_request", message=str(exc), path=upload.filename)
+        except Exception:
+            return _closing_error(
+                500, code="backend_error", message="Could not stage MBOX upload", stage="backend",
+            )
+        finally:
+            job_manager.release_mbox_slot(reservation)
+        return JSONResponse(status_code=202, content=job.model_dump(mode="json"))
+
+    # A plain Starlette route: FastAPI routes cannot raise the body-size backstop.
+    app.router.routes.append(
+        Route(
+            "/api/mbox/uploads",
+            upload_mbox,
+            methods=["POST"],
+            max_body_size=mbox_jobs.MAX_MBOX_ARCHIVE_BYTES + MBOX_UPLOAD_BODY_HEADROOM_BYTES,
+        )
+    )
 
     @app.post(
         "/api/jobs/{job_id}/retry",

@@ -47,7 +47,8 @@ export function registerWatchStore(Alpine) {
       if (!this.latestJobId || this.latestJobId === jobStore?.id) {
         return;
       }
-      if (jobStore?.id && !isTerminalStatus(jobStore.status)) {
+      // An archive upload has no job id yet but still owns the workspace.
+      if (jobStore?.upload || (jobStore?.id && !isTerminalStatus(jobStore.status))) {
         jobStore.pendingWatchJobId = this.latestJobId;
         jobStore.pendingWatchJobStatus = this.latestJobStatus;
         return;

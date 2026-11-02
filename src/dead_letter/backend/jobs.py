@@ -12,7 +12,14 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from dead_letter.backend.mbox_jobs import MboxBusyError, MboxJobOutcome, MboxJobRunner, admit_mbox_source
+from dead_letter.backend.mbox_jobs import (
+    MboxAdmission,
+    MboxBusyError,
+    MboxJobOutcome,
+    MboxJobRunner,
+    admit_mbox_source,
+    admit_staged_mbox_source,
+)
 from dead_letter.backend.schemas import (
     AggregateTotals,
     ErrorItem,
@@ -84,6 +91,17 @@ class _JobRecord:
     cancel_requested: bool = False
     mbox_runner: MboxJobRunner | None = None
     mbox_slot_held: bool = False
+
+
+@dataclass(slots=True)
+class MboxSlotReservation:
+    """An archive slot reserved before a job exists, such as during an upload.
+
+    Creating the job transfers the slot to it; otherwise the holder releases it
+    with ``JobManager.release_mbox_slot``, which is idempotent.
+    """
+
+    held: bool = True
 
 
 def bundle_result_to_error(result: BundleResult) -> ErrorItem:
@@ -190,6 +208,55 @@ class JobManager:
         admission = admit_mbox_source(
             request.input_path, source_root=Path(source_root), cabinet_root=cabinet_root,
         )
+        return await self._start_mbox_job(request, admission, cabinet_root=cabinet_root)
+
+    async def create_staged_mbox_job(
+        self,
+        request: MboxJobCreateRequest,
+        *,
+        staging_root: str | Path,
+        reservation: MboxSlotReservation,
+    ) -> JobCreateResponse:
+        """Start a job for a server-staged upload, holding its reserved slot.
+
+        On any exception the reservation stays with the caller to release.
+        """
+        cabinet_root = self._cabinet_root
+        admission = admit_staged_mbox_source(
+            Path(request.input_path), staging_root=Path(staging_root), cabinet_root=cabinet_root,
+        )
+        return await self._start_mbox_job(
+            request, admission, cabinet_root=cabinet_root, reservation=reservation, origin="upload",
+        )
+
+    async def reserve_mbox_slot(self) -> MboxSlotReservation:
+        """Reserve the archive slot that queued and running MBOX jobs share."""
+        async with self._lock:
+            self._reserve_mbox_slot_locked()
+        return MboxSlotReservation()
+
+    def release_mbox_slot(self, reservation: MboxSlotReservation) -> None:
+        """Release a reservation that no job took over; later calls do nothing."""
+        if reservation.held:
+            reservation.held = False
+            self._active_mbox_jobs -= 1
+
+    def _reserve_mbox_slot_locked(self) -> None:
+        if self._mbox_shutting_down:
+            raise MboxBusyError("MBOX jobs are unavailable while the server is shutting down")
+        if self._active_mbox_jobs >= self._max_mbox_jobs:
+            raise MboxBusyError("All MBOX job slots are in use; wait for an archive job to finish")
+        self._active_mbox_jobs += 1
+
+    async def _start_mbox_job(
+        self,
+        request: MboxJobCreateRequest,
+        admission: MboxAdmission,
+        *,
+        cabinet_root: Path,
+        reservation: MboxSlotReservation | None = None,
+        origin: str = "manual",
+    ) -> JobCreateResponse:
         job_id = uuid4().hex
         runner = MboxJobRunner(
             admission=admission, cabinet_root=cabinet_root, job_id=job_id, options=request.options,
@@ -199,15 +266,20 @@ class JobManager:
             output_location=OutputLocation(
                 strategy="cabinet", cabinet_path=str(cabinet_root), job_path=str(runner.output),
             ),
+            origin=origin,
             mbox_runner=runner,
         )
         async with self._lock:
-            if self._mbox_shutting_down:
+            if reservation is None:
+                # Reserve before the worker can create an output directory or spool.
+                self._reserve_mbox_slot_locked()
+            elif not reservation.held:
+                raise RuntimeError("MBOX slot reservation was already released")
+            elif self._mbox_shutting_down:
                 raise MboxBusyError("MBOX jobs are unavailable while the server is shutting down")
-            if self._active_mbox_jobs >= self._max_mbox_jobs:
-                raise MboxBusyError("All MBOX job slots are in use; wait for an archive job to finish")
-            # Reserve before the worker can create an output directory or spool.
-            self._active_mbox_jobs += 1
+            else:
+                # Transfer the caller's slot; no await separates these steps.
+                reservation.held = False
             record.mbox_slot_held = True
             self._jobs[job_id] = record
         task = asyncio.create_task(self._run_mbox_job(job_id))
