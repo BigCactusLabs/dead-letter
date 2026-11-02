@@ -45,6 +45,7 @@ class FakeKernel:
         self.active = [0]
         self.total_processes = 1
         self.user_time = 0
+        self.period_user_time = 0
         self.calls = []
         self.CreateJobObjectW = Function(self.create)
         self.SetInformationJobObject = Function(self.set_limits)
@@ -98,6 +99,7 @@ class FakeKernel:
         info = ctypes.cast(pointer, ctypes.POINTER(windows._BasicAccounting)).contents
         info.TotalProcesses = self.total_processes
         info.TotalUserTime = self.user_time
+        info.ThisPeriodTotalUserTime = self.period_user_time
         info.ActiveProcesses = active
         ctypes.cast(returned, ctypes.POINTER(ctypes.c_uint32)).contents.value = size
         if self.failure == "accounting_length":
@@ -264,6 +266,7 @@ def test_memory_only_job_does_not_claim_cpu_exhaustion(kernel):
     job = windows.WindowsJob({"memory_mib": 32}, NONCE)
     kernel.state = windows._WAIT_OBJECT_0
     kernel.user_time = 50_000_000
+    kernel.period_user_time = 50_000_000
     assert not job.cpu_exceeded() and kernel.waits == []
     assert not job.cpu_exceeded(failed=True) and kernel.waits == []
     assert kernel.calls == []
@@ -334,6 +337,7 @@ def test_parent_keeps_job_through_reaping_and_closes_on_all_exit_paths(
 ):
     events = []
     terminations = []
+    failed_flags = []
 
     class Job:
         def __init__(self, budgets, nonce):
@@ -345,6 +349,7 @@ def test_parent_keeps_job_through_reaping_and_closes_on_all_exit_paths(
 
         def cpu_exceeded(self, *, failed=False):
             events.append("query")
+            failed_flags.append(failed)
             if mode == "query":
                 raise OSError("private native details")
             return mode == "cpu"
@@ -416,6 +421,15 @@ def test_parent_keeps_job_through_reaping_and_closes_on_all_exit_paths(
         assert events[-2] == "reap"
     if mode in ("wait", "timeout", "cancel"):
         assert "kill" in events
+    if mode in ("ok", "cpu", "query", "close"):
+        assert events.index("membership") < events.index("query")
+        assert failed_flags == [False]
+    elif mode == "exit1816":
+        assert "membership" not in events
+        assert failed_flags == [True]
+    else:
+        assert "membership" not in events and "query" not in events
+        assert failed_flags == []
     # The job is terminated and drained exactly when the worker was killed.
     assert terminations == [mode in ("wait", "timeout", "cancel")]
 
@@ -483,6 +497,7 @@ def test_basic_accounting_layout_matches_winnt():
     # Four LARGE_INTEGERs then four DWORDs on both 32- and 64-bit Windows.
     assert ctypes.sizeof(windows._BasicAccounting) == 48
     assert windows._BasicAccounting.TotalUserTime.offset == 0
+    assert windows._BasicAccounting.ThisPeriodTotalUserTime.offset == 16
     assert windows._BasicAccounting.TotalProcesses.offset == 36
     assert windows._BasicAccounting.ActiveProcesses.offset == 40
 
@@ -519,6 +534,7 @@ def test_clean_exit_accepts_lifetime_members_after_they_exit(
     kernel.total_processes = total
     kernel.active = [0]
     kernel.user_time = user_time
+    kernel.period_user_time = user_time
     fake_popen(monkeypatch, kernel.calls)
     assert isolation._run_worker(tmp_path / "request.json", 5, ARGS) == 0
     assert kernel.calls == ["launch", "wait", "active", "reap", "close"]
@@ -526,17 +542,19 @@ def test_clean_exit_accepts_lifetime_members_after_they_exit(
 
 @pytest.mark.parametrize("exit_code", [1, 1816])
 @pytest.mark.parametrize(
-    "user_time, expected",
+    "user_time, period_user_time, expected",
     [
-        (49_999_999, "mbox_worker_crashed"),
-        (50_000_000, "mbox_message_resource_limit"),
-        (50_000_001, "mbox_message_resource_limit"),
+        (49_999_999, 49_999_999, "mbox_worker_crashed"),
+        (50_000_000, 50_000_000, "mbox_message_resource_limit"),
+        (50_000_001, 50_000_001, "mbox_message_resource_limit"),
+        (50_000_000, 49_999_999, "mbox_worker_crashed"),
     ],
 )
 def test_failed_exit_uses_cpu_accounting_before_job_signal(
-    kernel, monkeypatch, tmp_path, exit_code, user_time, expected
+    kernel, monkeypatch, tmp_path, exit_code, user_time, period_user_time, expected
 ):
     kernel.user_time = user_time
+    kernel.period_user_time = period_user_time
     fake_popen(monkeypatch, kernel.calls, exit_code=exit_code)
     source = tmp_path / "mail.mbox"
     source.write_bytes(

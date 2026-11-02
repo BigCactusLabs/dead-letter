@@ -227,8 +227,9 @@ cooperative MBOX cancellation (`MboxCancelled`, as a web job uses) already in
 progress is kept and carries the cleanup failure as an exception note.
 
 CPU exhaustion is established from the **signaled job object** after the worker
-exits, or, for a nonzero worker exit, from accounting `TotalUserTime` at or above
-the configured job CPU limit. Both values use 100-nanosecond ticks; accounting
+exits, or, for a nonzero worker exit, from accounting `ThisPeriodTotalUserTime`
+at or above the configured job CPU limit. This counts user time since the limit
+was set. Both values use 100-nanosecond ticks; accounting
 avoids depending on which handle Windows signals first. Windows exit code 1816
 alone is ambiguous and remains an ordinary crash without that job evidence.
 The committed-memory limit uses the same Python

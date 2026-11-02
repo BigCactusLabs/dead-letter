@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import signal
+import site
 import subprocess
 import sys
 from pathlib import Path
@@ -521,6 +522,49 @@ def test_windows_quota_exit_is_not_mistaken_for_cpu_limit(tmp_path, monkeypatch)
     rows = list(convert_mbox(source, output=root, timeout_seconds=30, cpu_seconds=30))
     assert [row.success for row in rows] == [True, False, True]
     assert rows[1].error["code"] == "mbox_worker_crashed"
+    assert not [name for name in outputs(root) if name.startswith("00000002-")]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows direct-interpreter CPU enforcement")
+def test_windows_cpu_limit_with_interpreter_as_direct_child(tmp_path, monkeypatch):
+    hooked_worker(monkeypatch, "spin")
+    hooked = isolation._worker_command
+    probe = tmp_path / "interpreter-pids.txt"
+
+    def command(request, *budget_args):
+        launch = hooked(request, *budget_args)
+        assert launch[1:4] == ["-I", "-B", "-c"]
+        launch[0] = sys._base_executable
+        # The base interpreter bypasses the venv launcher but still needs the
+        # installed package/dependencies, including editable-install .pth files.
+        launch[4] = (
+            "import os, site\n"
+            f"for path in {site.getsitepackages()!r}:\n"
+            "    site.addsitedir(path)\n"
+            f"with open({str(probe)!r}, 'a', encoding='utf-8') as out:\n"
+            "    out.write(str(os.getpid()) + '\\n')\n"
+        ) + launch[4]
+        return launch
+
+    monkeypatch.setattr(isolation, "_worker_command", command)
+    processes = []
+    original = subprocess.Popen
+
+    def tracked(*args, **kwargs):
+        process = original(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(isolation.subprocess, "Popen", tracked)
+    source = archive(tmp_path, MESSAGE, MESSAGE, MESSAGE)
+    root = tmp_path / "out"
+    rows = list(convert_mbox(source, output=root, timeout_seconds=60, cpu_seconds=1))
+    assert [row.success for row in rows] == [True, False, True]
+    assert rows[1].error["code"] == "mbox_message_resource_limit"
+    assert rows[1].error["message"] == isolation._RESOURCE_MESSAGES["cpu"]
+    assert [int(pid) for pid in probe.read_text(encoding="utf-8").splitlines()] == [p.pid for p in processes]
+    assert processes[1].returncode not in (None, 0)
+    assert all(p.returncode is not None for p in processes)
     assert not [name for name in outputs(root) if name.startswith("00000002-")]
 
 

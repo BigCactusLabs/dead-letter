@@ -206,9 +206,9 @@ class WindowsJob:
             raise OSError("Could not read worker job state")
         if state == _WAIT_OBJECT_0:
             return True
-        # The process handle can be signaled before the job. Both accounting
-        # and the configured limit use 100-ns ticks on this fresh job.
-        return failed and self._accounting(self._handle).TotalUserTime >= self._cpu_limit
+        # The process handle can be signaled before the job. Compare user time
+        # since the limit was set; both values use 100-ns ticks.
+        return failed and self._accounting(self._handle).ThisPeriodTotalUserTime >= self._cpu_limit
 
     def _accounting(self, handle: int) -> _BasicAccounting:
         info = _BasicAccounting()
