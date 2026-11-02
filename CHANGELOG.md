@@ -7,8 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in synthetic MBOX worker amplification benchmark
+  (`scripts/measure_mbox_amplification.py`) that records per-worker CPU time,
+  peak RSS, output bytes and a temporary-storage checkpoint for the timed
+  worker path, with dated macOS measurements in the worker guide (#140).
+- Real-stdio tests for MCP `convert_mbox` path errors, error privacy,
+  same-session recovery and client cancellation (#145).
+
 ### Changed
 
+- MCP `convert_mbox` contract states the observed cancellation behavior:
+  cancelling stops the client's wait, but conversion continues while the
+  session stays open and publishes a complete report; closing the session
+  stops it without a report. The source is unchanged (#145).
 - Claude plugin launcher uses the shipped `uv.lock` and Python 3.12 through frozen, isolated
   `uv run`, with dependency hash checks and no writes to the plugin directory.
   MCP Registry entries constrain transitive resolution with an absolute UTC
@@ -26,6 +39,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   job CPU accounting to identify CPU-limit failures when the process exits
   before the job is signaled. Missing membership or failed accounting checks
   abort the import with `mbox_budget_apply_failed` (#254, #255).
+- HTML reply-quote extraction keeps word boundaries when a quote sits inside
+  inline formatting, without adding breaks inside preformatted text or beside
+  existing breaks. Stripped HTML block elements (`center`, `details`,
+  `summary` and others) keep paragraph boundaries, including elements with
+  `title` or `lang` attributes, so attribution lines stay detectable (#241).
+- Plain-text Outlook history splits into separate messages at column-0
+  separator and header blocks in English, German, French, Spanish, Dutch,
+  Italian and Japanese. Separator lines are consumed, nested `On … wrote:`
+  replies inside a block still split, and indented examples stay in the body
+  (#193).
+- Plain-text reply parsing skips mail-parser-reply when a message's long
+  whitespace runs exceed a shared per-message budget, keeping the full text
+  instead of hanging on pathological input (#193).
+- Forwarded-header detection recognizes the Spanish `Enviado el`, Traditional
+  Chinese `寄件日期`/`收件者`/`至` and Korean `참조` labels (#193).
 
 ## [0.4.10] - 2026-10-29
 

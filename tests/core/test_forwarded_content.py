@@ -1130,3 +1130,35 @@ def test_output_that_must_not_change_is_byte_identical(key: str, tmp_path: Path)
     )
     assert result.success, result.error
     assert output.read_text(encoding="utf-8") == _GOLDEN[key]
+
+
+@pytest.mark.parametrize("date_label,to_label", [
+    ("Enviado el", "Para"),
+    ("寄件日期", "收件者"),
+    ("寄件日期", "至"),
+])
+@pytest.mark.parametrize("colon", [":", "："])
+def test_missing_forward_date_and_recipient_labels_continue_header_block(
+    date_label: str, to_label: str, colon: str,
+) -> None:
+    recipient = f"{to_label}{colon} Alice <alice@example.com>"
+    text = f"From: Bob\n{date_label}{colon} Wednesday\n{recipient}\nSubject: Plan\n\nBODY"
+    parsed = parse_forward_headers(text, markdown=False)
+    assert parsed is not None
+    fields, rest = parsed
+    assert fields == {"from": "Bob", "date": "Wednesday", "subject": "Plan"}
+    assert rest == f"{recipient}\n\nBODY"
+
+
+def test_korean_cc_label_continues_forward_header_block() -> None:
+    text = "From: Bob\n참조: Eve\nSubject: Plan\n\nBODY"
+    parsed = parse_forward_headers(text, markdown=False)
+    assert parsed == ({"from": "Bob", "subject": "Plan"}, "참조: Eve\n\nBODY")
+
+
+@pytest.mark.parametrize("line", ["至今仍保留正文", "至 Alice", "至今: ordinary prose"])
+def test_single_character_forward_label_requires_complete_header_label(line: str) -> None:
+    text = f"From: Bob\n{line}\nSubject: authored body text\n\nBODY"
+    parsed = parse_forward_headers(text, markdown=False)
+    assert parsed == ({"from": "Bob"}, f"{line}\nSubject: authored body text\n\nBODY")
+    assert parse_forward_headers(f"{line}\nSubject: text\n\nBODY", markdown=False) is None

@@ -348,6 +348,76 @@ you opt into the `--mbox-resume` journal (available from 0.4.6;
 see [resumable MBOX imports](mbox-resume.md)). See the
 [base Takeout contract](gmail-takeout.md) for immutable-source and dialect limits.
 
+### Measured synthetic amplification (2026-11-02)
+
+The opt-in [measurement script](../../scripts/measure_mbox_amplification.py)
+measures the actual `timeout_seconds=30` path (the Python equivalent of
+`--mbox-timeout 30`). It generates six deterministic, single-message archives
+and converts each once in flat and bundle modes. No resource budgets are set.
+From a development checkout with locked development dependencies installed:
+
+```bash
+uv run --locked --no-sync python scripts/measure_mbox_amplification.py
+```
+
+This command emits raw JSON to stdout. The run below used macOS 27.0.1, arm64,
+Python 3.14.5 (Clang 22.1.3), and an Apple M3 Max with 14 logical CPUs.
+The complete matrix took 6.34 seconds on this host.
+
+| Synthetic case | Mode | Input bytes | Output bytes | Temp checkpoint bytes | Child CPU s | Worker RSS MiB | Wall s |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| small-text | flat | 342 | 449 | 1,980 | 0.114 | 40.5 | 0.243 |
+| small-text | bundles | 342 | 710 | 2,240 | 0.122 | 40.6 | 0.193 |
+| base64-attachment | flat | 5,740,221 | 506 | 5,741,976 | 0.288 | 104.7 | 0.392 |
+| base64-attachment | bundles | 5,740,221 | 9,934,993 | 15,676,462 | 0.291 | 104.1 | 0.444 |
+| many-attachments | flat | 101,837 | 1,760 | 104,846 | 0.131 | 42.0 | 0.247 |
+| many-attachments | bundles | 101,837 | 171,112 | 274,197 | 0.158 | 42.8 | 0.279 |
+| nested-multipart | flat | 7,717 | 478 | 9,391 | 0.149 | 41.8 | 0.190 |
+| nested-multipart | bundles | 7,717 | 8,108 | 17,020 | 0.152 | 41.8 | 0.248 |
+| large-html | flat | 603,359 | 155,258 | 759,777 | 0.273 | 57.5 | 0.306 |
+| large-html | bundles | 603,359 | 758,536 | 1,363,054 | 0.278 | 59.0 | 0.356 |
+| quoted-printable | flat | 917,842 | 299,460 | 1,218,500 | 0.166 | 51.4 | 0.254 |
+| quoted-printable | bundles | 917,842 | 1,217,215 | 2,136,254 | 0.165 | 50.3 | 0.255 |
+
+The cases contain a small text body; one 4 MiB decoded base64 attachment;
+64 attachments of 1 KiB each; 64 nested multipart containers; HTML with 32
+nested divs, 512 table rows and repeated character references; and a
+quoted-printable body with 4,096 lines of `=é` repeated 24 times per line.
+Core has no explicit MIME nesting-depth limit: 64 is a bounded probe, not a
+claimed parser ceiling. HTML uses ordinary character references, not recursive
+XML entity definitions. Quoted-printable inflates the encoded wire size;
+decoding it shrinks bytes, so this is not a decompression-bomb measurement.
+
+**What this shows:** the benchmark observes the supervisor's real `waitpid`
+reap through `os.wait4`, returning the same PID/status to `Popen.wait()`.
+Each trial must observe exactly one reap or it fails. Child CPU is user plus
+system CPU over the whole worker lifetime, including interpreter startup and
+imports; the JSON also records the two CPU values separately. Worker RSS is
+that child's kernel-reported peak, with macOS `ru_maxrss` bytes and Linux KiB
+converted to bytes. It is neither importer RSS nor a simultaneous process-tree
+peak. Wall time covers parent framing through publication and the disk
+checkpoint, but excludes initial parent imports, corpus generation and the
+trial interpreter's startup. CPU and wall time are different measurements.
+
+Input includes the MBOX postmark. Output counts logical bytes in final Markdown,
+attachments and bundle `source.eml` copies; no conversion report is requested.
+Flat output writes no attachment files. JSON separates those byte totals and
+records file hashes. The temp checkpoint sums the staged EML and private
+worker files immediately after worker exit, before publication. It excludes
+the original archive and final output. The 4 MiB attachment bundle therefore
+wrote 1.73 times its input size as final output and had 2.73 times its input
+size at this temporary checkpoint.
+
+**What this does not show:** a true temporary-directory peak is not observable
+without a production hook and is `null` in JSON. Earlier transient files may
+be missed; private artifacts and final copies can coexist during publication.
+These are logical file sizes, not allocated filesystem blocks, write volume,
+cache writes outside the measured directories, or an aggregate disk quota.
+This is one run on one otherwise uncontrolled host, not an adversarial-input
+upper bound or a budget recommendation. Linux and Windows numbers were not
+measured locally; the script supports Linux/macOS `wait4`, not Windows Job
+Object accounting. No production monitoring or enforcement hook was added.
+
 ## Practitioner sources and design decisions
 
 Original worker precedents reviewed September 18, 2026; Windows/macOS budget

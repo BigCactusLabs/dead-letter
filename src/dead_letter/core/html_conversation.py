@@ -529,6 +529,67 @@ def _split_outlook_body_and_quote(
     return body_html or None, quoted_html or None
 
 
+def _empty_inline(node) -> bool:
+    for child in _iter_nodes_in_document_order(node):
+        if child.tag in _BLOCK_TAGS or child.tag in ("img", "br"):
+            return False
+        if child.tag == "-text" and _format_whitespace(child.text_content or "").strip():
+            return False
+    return True
+
+
+def _inline_neighbor(node, direction: str):
+    """Find adjacent content through inline ancestors, stopping at a block."""
+    while node is not None:
+        sibling = getattr(node, direction)
+        while sibling is not None and _empty_inline(sibling):
+            sibling = getattr(sibling, direction)
+        if sibling is not None:
+            return sibling
+        node = node.parent
+        if node is None or node.tag in _BLOCK_TAGS or node.tag in ("body", "html"):
+            return None
+    return None
+
+
+def _edge_has_break(node, direction: str) -> bool:
+    """Inspect the adjacent edge, ignoring whitespace and empty inline tags."""
+    root_id = node.mem_id
+    while node is not None:
+        if node.tag in _BLOCK_TAGS or node.tag == "br":
+            return True
+        if node.tag == "img" or (
+            node.tag == "-text" and _format_whitespace(node.text_content or "").strip()
+        ):
+            return False
+        child = node.last_child if direction == "prev" else node.child
+        if child is not None:
+            node = child
+            continue
+        while node.mem_id != root_id and getattr(node, direction) is None:
+            node = node.parent
+        if node.mem_id == root_id:
+            return False
+        node = getattr(node, direction)
+    return False
+
+
+def _needs_quote_boundary(node) -> bool:
+    """Separate inline content without changing block or preformatted layout."""
+    if node.tag not in _BLOCK_TAGS:
+        return False
+    for direction in ("prev", "next"):
+        sibling = _inline_neighbor(node, direction)
+        if sibling is None or _edge_has_break(sibling, direction):
+            return False
+    parent = node.parent
+    while parent is not None:
+        if parent.tag == "pre":
+            return False
+        parent = parent.parent
+    return True
+
+
 def _extract_quote_html(
     quote_node, *, include_following_siblings: bool = False
 ) -> str | None:
@@ -540,8 +601,13 @@ def _extract_quote_html(
             sibling = sibling.next
 
     fragments = [node.html or node.text(separator="\n", strip=True) for node in nodes]
+    boundary = parse_html("<br>").body.child
     for node in nodes:
-        node.decompose()
+        if _needs_quote_boundary(node):
+            # Keep the removed block's boundary between authored inline runs.
+            node.replace_with(boundary)
+        else:
+            node.decompose()
 
     quoted_content = "".join(fragment for fragment in fragments if fragment)
     return quoted_content or None

@@ -1,0 +1,27 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Synthetic locale control
+Date: Thu, 05 Mar 2026 12:15:00 +0000
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+AUTHORED_PAYLOAD
+
+-----Oorspronkelijk bericht-----
+Van: Bob <bob@example.com>
+Verzonden: zondag 26 oktober 2008 13:09
+Aan: Alice <alice@example.com>
+Cc: Eve <eve@example.com>
+Onderwerp: Plan
+
+OLD_REPLY_PAYLOAD
+
+-------- Doorgestuurd bericht --------
+Van: Bob <bob@example.com>
+Verzonden: zondag 26 oktober 2008 13:09
+Aan: Alice <alice@example.com>
+Cc: Eve <eve@example.com>
+Onderwerp: Plan
+
+NESTED_FORWARD_PAYLOAD
