@@ -201,7 +201,7 @@ Awesome already has an entry. When updating it, match the existing category
 and alphabetical conventions. Do not label the project unrestricted open
 source or claim native MBOX/PST/MSG support based on installation metadata.
 
-Smithery's [publishing guide](https://smithery.ai/docs/build/publish) supports
+Smithery's [publishing guide](https://web.archive.org/web/20260914022637/https://smithery.ai/docs/build/publish) (archived 2026-09-14; the live page now returns 404) supports
 local MCPB uploads:
 
 ```bash
@@ -286,7 +286,7 @@ mcpservers.org, PulseMCP, and Glama again on September 30, 2026:
 [Cline contribution rules](https://github.com/cline/marketplace/blob/main/CONTRIBUTING.md),
 [Awesome contribution rules](https://github.com/punkpeye/awesome-mcp-servers/blob/main/CONTRIBUTING.md),
 [Glama claiming](https://glama.ai/mcp/servers/BigCactusLabs/dead-letter/admin),
-[Smithery local publishing](https://smithery.ai/docs/build/publish),
+[Smithery local publishing (archived)](https://web.archive.org/web/20260914022637/https://smithery.ai/docs/build/publish),
 [Cursor Directory submission](https://cursor.directory/plugins/new),
 [Cursor plugins](https://cursor.com/docs/plugins),
 [GitHub MCP Registry onboarding](https://github.blog/ai-and-ml/generative-ai/how-to-find-install-and-manage-mcp-servers-with-the-github-mcp-registry/),
