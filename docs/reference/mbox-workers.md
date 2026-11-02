@@ -357,7 +357,7 @@ and converts each once in flat and bundle modes. No resource budgets are set.
 From a development checkout with locked development dependencies installed:
 
 ```bash
-uv run --locked --no-sync python scripts/measure_mbox_amplification.py --work-dir /private/tmp
+uv run --locked --no-sync python scripts/measure_mbox_amplification.py
 ```
 
 This command emits raw JSON to stdout. The run below used macOS 27.0.1, arm64,

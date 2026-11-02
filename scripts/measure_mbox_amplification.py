@@ -198,7 +198,7 @@ def machine() -> dict:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--work-dir", type=Path, default=Path("/tmp"))
+    parser.add_argument("--work-dir", type=Path, default=None)
     parser.add_argument("--case", choices=CASES, action="append", help="Default: all six cases")
     parser.add_argument("--trial", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--output", type=Path, help=argparse.SUPPRESS)
