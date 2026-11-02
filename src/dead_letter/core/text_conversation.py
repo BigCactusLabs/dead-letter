@@ -83,20 +83,30 @@ def parse_email_replies(text: str) -> list[EmailReply]:
     HTML callers retain this unbounded entry point. Plain-text callers use
     ``_parse_text_replies`` with the whitespace-run guard and the same reader.
     """
-    return _read_email_replies(text, bound_whitespace=False)
+    return _read_email_replies(text, budget=None)
 
 
-def _read_email_replies(text: str, *, bound_whitespace: bool) -> list[EmailReply]:
+class _WhitespaceBudget:
+    """Squared long-run whitespace work left for one message's parser calls."""
+
+    def __init__(self) -> None:
+        self.remaining = _REPLY_PARSER_WHITESPACE_BUDGET
+
+
+def _read_email_replies(
+    text: str, *, budget: _WhitespaceBudget | None,
+) -> list[EmailReply]:
     sentinel = _indentation_sentinel(text)
     protected_text = _protect_leading_indentation(text, sentinel=sentinel)
-    if bound_whitespace:
+    if budget is not None:
         whitespace_work = 0
         for match in _WHITESPACE_RUN_RE.finditer(protected_text):
             length = match.end() - match.start()
             if length > _REPLY_PARSER_WHITESPACE_FLOOR:
                 whitespace_work += length * length
-                if whitespace_work > _REPLY_PARSER_WHITESPACE_BUDGET:
+                if whitespace_work > budget.remaining:
                     return []
+        budget.remaining -= whitespace_work
     parser = EmailReplyParser()
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -112,13 +122,16 @@ def _read_email_replies(text: str, *, bound_whitespace: bool) -> list[EmailReply
     return replies
 
 
-def _parse_text_replies(text: str) -> list[EmailReply]:
+def _parse_text_replies(
+    text: str, budget: _WhitespaceBudget | None = None,
+) -> list[EmailReply]:
     """Bound the plain-text path, whose no-split fallback keeps the full body.
 
     Keep this policy separate from HTML's shared parser: its caller can try
     other splitters after no split, which need not retain an arbitrary prefix.
+    Pass one budget to every call for a message so slices cannot each spend it.
     """
-    return _read_email_replies(text, bound_whitespace=True)
+    return _read_email_replies(text, budget=budget or _WhitespaceBudget())
 
 
 def _outlook_block_ends_at(lines: list[str], last: int) -> bool:
@@ -384,16 +397,18 @@ def segment_text_conversation(
         (separator - leading, header - leading)
         for separator, header in _outlook_history_boundaries(normalized, column_zero=True)
     ]
+    authored = source[:boundaries[0][0]].strip() if boundaries else source
+    # The latest message spends the shared budget first; history slices that
+    # would exceed what remains stay raw QUOTED zones.
+    budget = _WhitespaceBudget()
+    replies = _parse_text_replies(authored, budget) if authored else []
     for index, (_separator_start, header_start) in enumerate(boundaries):
         end = boundaries[index + 1][0] if index + 1 < len(boundaries) else len(source)
         # Consume each structural separator, then retain existing reply
         # splitting within its block (On ... wrote: or bare header blocks).
         quoted = source[header_start:end]
-        history.extend(_parse_text_replies(quoted) or [EmailReply(content=quoted)])
-    if boundaries:
-        source = source[:boundaries[0][0]].strip()
-
-    replies = _parse_text_replies(source) if source else []
+        history.extend(_parse_text_replies(quoted, budget) or [EmailReply(content=quoted)])
+    source = authored
 
     zones: list[ConversationZone] = []
 

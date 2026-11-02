@@ -251,3 +251,28 @@ def test_outlook_history_slice_keeps_existing_nested_reply_splits(
     assert rendered.count(oldest) == 1
     markers = [oldest, "Mid."] if thread_order == "oldest-first" else ["Mid.", oldest]
     assert rendered.index(markers[0]) < rendered.index(markers[1])
+
+
+
+
+def test_outlook_history_slices_share_one_whitespace_budget() -> None:
+    separator = "-----Original Message-----\n"
+    blocks = [
+        f"From: a@example.test\nSent: Monday\nSubject: x\n\nhello{index}"
+        + "\n" * 1000 + f"bye{index}\n\nOn Thu someone wrote:\n> older{index}"
+        for index in range(3)
+    ]
+    text = "Top reply\n\n" + "".join(separator + block + "\n" for block in blocks)
+
+    zones = segment_text_conversation(text).zones
+
+    # The first slice's 1,000-character run fits the message budget, so its
+    # nested reply still splits. Later slices would exceed what remains and
+    # stay raw instead of each receiving a fresh budget.
+    assert [zone.kind for zone in zones] == [ZoneKind.BODY] + [ZoneKind.QUOTED] * 4
+    assert zones[0].content == "Top reply"
+    assert zones[1].content.startswith("From: a@example.test")
+    assert zones[1].content.endswith("bye0")
+    assert "older0" in zones[2].content
+    assert zones[3].content == blocks[1]
+    assert zones[4].content == blocks[2]

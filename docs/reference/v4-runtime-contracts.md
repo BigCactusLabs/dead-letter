@@ -147,8 +147,10 @@ the existing quote-only fallback in both modes, without separate thread headings
 Plain-text calls budget consecutive Unicode whitespace (`\s`) runs in the
 indentation-protected input: for runs longer than 64 Python characters, sum the
 squared lengths and skip mail-parser-reply when the total exceeds 1,048,576.
-Sentinels break runs across indented lines; ordinary short spacing and long
-prose/token lines still parse. The no-split fallback keeps all text. If the
+One budget covers a message: the latest message spends it first, then each
+Outlook history slice; a slice that would exceed what remains stays one raw
+QUOTED zone. Sentinels break runs across indented lines; ordinary short spacing
+and long prose/token lines still parse. The no-split fallback keeps all text. If the
 budget is exceeded before `On … wrote:`, that reply boundary can be missed and
 an enclosed forward can remain current forwarded content instead of history.
 Other dependency slow paths remain for separate follow-up, including long
