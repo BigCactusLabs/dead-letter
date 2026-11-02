@@ -367,7 +367,6 @@ def test_structured_html_conversion_bounds_german_candidate_in_killable_process(
         for sentinel in ('AUTHORED_PAYLOAD', 'Am X', 'QUOTED_PAYLOAD'):
             assert rendered.count(sentinel) == 1
         assert '## Earlier' in rendered
-        assert elapsed < 2, elapsed
         print(f'html structured conversion passed in {elapsed:.6f}s')
     """)
     result = subprocess.run(

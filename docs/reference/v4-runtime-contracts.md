@@ -130,8 +130,9 @@ offsets still refer to the original input. This bounds attribution regex work;
 it does not impose a deadline on the rest of email parsing or conversion.
 
 HTML sanitization preserves paragraph boundaries in stripped block elements,
-including `center`, `details` and `summary`, before classification. Extracted
-HTML history leaves a line break between surrounding authored text runs.
+including `center`, `details` and `summary`, before classification. History
+extraction adds a line break only between inline siblings outside `pre`;
+existing block and break boundaries remain intact.
 
 Forwarded messages are content, not reply history:
 

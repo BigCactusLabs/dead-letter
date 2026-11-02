@@ -82,3 +82,31 @@ def test_sanitize_html_does_not_rewrite_block_names_in_attributes_or_text() -> N
     assert 'title="&lt;center&gt;literal&lt;/center&gt;"' in cleaned
     assert "<div>&lt;details&gt;</div>" in cleaned
     assert sanitize_html(cleaned) == cleaned
+
+
+@pytest.mark.parametrize("namespace", ["svg", "math"])
+@pytest.mark.parametrize("tag", ["style", "script", "iframe", "xmp", "noembed", "noframes"])
+def test_sanitize_html_does_not_activate_foreign_raw_text(namespace, tag) -> None:
+    payload = (
+        '&lt;img src="https://tracker.example/p.gif?u=victim"&gt;'
+        '&lt;p&gt;&lt;a href="https://evil.example/login"&gt;Reset your password&lt;/a&gt;&lt;/p&gt;'
+    )
+    html = f'<p>Hello</p><!-- <center> --><{namespace}><{tag}>{payload}</{tag}></{namespace}>'
+
+    cleaned = sanitize_html(html)
+
+    assert cleaned == "<p>Hello</p>"
+    assert "<img" not in cleaned and "<a " not in cleaned
+
+
+def test_sanitize_html_plaintext_does_not_gain_document_closing_tags() -> None:
+    assert sanitize_html("<!-- <center> --><plaintext><b>p") == "&lt;b&gt;p"
+
+
+def test_sanitize_html_strips_form_attributes_before_normalization() -> None:
+    html = (
+        '<form id="divRplyFwdMsg" class="gmail_quote" action="https://evil.example/" '
+        'onsubmit="alert(1)">Text</form>'
+    )
+
+    assert sanitize_html(html) == "<div>Text</div>"

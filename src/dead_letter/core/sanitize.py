@@ -6,8 +6,6 @@ import re
 
 import nh3
 
-from dead_letter.core._html_parser import parse_html
-
 _ALLOWED_TAGS = {
     "a",
     "b",
@@ -63,7 +61,7 @@ _STRIPPED_BLOCK_TAGS = (
     "legend", "main", "menu", "nav", "section", "summary",
 )
 _STRIPPED_BLOCK_RE = re.compile(
-    r"</?(?:" + "|".join(_STRIPPED_BLOCK_TAGS) + r")(?=[\s/>])", re.IGNORECASE
+    r"<(/?)(" + "|".join(_STRIPPED_BLOCK_TAGS) + r")>"
 )
 
 
@@ -72,19 +70,14 @@ def sanitize_html(html: str) -> str:
     if not html:
         return ""
 
-    if _STRIPPED_BLOCK_RE.search(html):
-        tree = parse_html(html)
-        block = parse_html("<div></div>").body.child
-        for node in tree.css(",".join(_STRIPPED_BLOCK_TAGS)):
-            node.insert_before(block)
-            node.prev.insert_child(node, move=True)
-            node.unwrap()
-        html = tree.html or ""
-
-    return nh3.clean(
-        html,
-        tags=_ALLOWED_TAGS,
+    cleaner = nh3.Cleaner(
+        tags=_ALLOWED_TAGS | set(_STRIPPED_BLOCK_TAGS),
         attributes=_ALLOWED_ATTRIBUTES,
         url_schemes=_ALLOWED_URL_SCHEMES,
         strip_comments=True,
     )
+    cleaned = cleaner.clean(html)
+    # nh3 emits these tags attribute-free and escapes literal '<' characters.
+    normalized = _STRIPPED_BLOCK_RE.sub(r"<\1div>", cleaned)
+    # Renaming caption/form inside a table requires HTML foster parenting.
+    return cleaner.clean(normalized) if normalized != cleaned else cleaned

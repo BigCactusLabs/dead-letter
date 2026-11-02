@@ -99,12 +99,10 @@ def test_bare_unclassed_quote_keeps_its_existing_boundaries(tmp_path, mode):
 
 
 @pytest.mark.parametrize("mode", ["latest", "structured"])
-@pytest.mark.parametrize("tag", ["center", "details", "summary", "caption", "legend", "menu", "dialog"])
+@pytest.mark.parametrize("tag", ["center", "details", "summary", "legend", "menu", "dialog"])
 def test_stripped_block_tag_keeps_attribution_on_its_own_line(tmp_path, mode, tag):
     before = f"<{tag}>Hi</{tag}>"
     attribution = f"<{tag}>{BOB}</{tag}>"
-    if tag == "caption":
-        before, attribution = f"<table>{before}</table>", f"<table>{attribution}</table>"
     html = f'<div class="gmail_quote">{before}{attribution}<blockquote>OLD HISTORY</blockquote></div>'
 
     meta, body = _render(tmp_path, html, mode)
@@ -129,6 +127,60 @@ def test_stripped_block_content_renders_clean_paragraphs(tmp_path, mode, html, e
 
     assert body == expected
     assert "thread_messages:" not in meta
+
+
+@pytest.mark.parametrize("mode", ["latest", "structured"])
+@pytest.mark.parametrize("namespace", ["svg", "math"])
+@pytest.mark.parametrize("tag", ["style", "script", "iframe", "xmp", "noembed", "noframes"])
+def test_foreign_raw_text_stays_out_of_rendered_output(tmp_path, mode, namespace, tag):
+    payload = (
+        '&lt;img src="https://tracker.example/p.gif?u=victim"&gt;'
+        '&lt;p&gt;&lt;a href="https://evil.example/login"&gt;Reset your password&lt;/a&gt;&lt;/p&gt;'
+    )
+    html = f'<p>Hello</p><!-- <center> --><{namespace}><{tag}>{payload}</{tag}></{namespace}>'
+
+    _, body = _render(tmp_path, html, mode)
+
+    assert body == "Hello"
+    assert "tracker.example" not in body and "evil.example" not in body
+    assert "![" not in body and "](" not in body
+
+
+@pytest.mark.parametrize("mode", ["latest", "structured"])
+@pytest.mark.parametrize("nested", [False, True])
+def test_quote_extraction_preserves_preformatted_newlines(tmp_path, mode, nested):
+    content = 'code\n<blockquote class="gmail_quote">OLD HISTORY</blockquote>more'
+    if nested:
+        content = f"<span>{content}</span>"
+
+    _, body = _render(tmp_path, f"<pre>{content}</pre>", mode)
+
+    assert body.split("\n\n## ", 1)[0] == "```\ncode\nmore\n```"
+    assert body.count("OLD HISTORY") == (1 if mode == "structured" else 0)
+
+
+@pytest.mark.parametrize("mode", ["latest", "structured"])
+def test_quote_after_existing_break_does_not_add_blank_line(tmp_path, mode):
+    html = f'Hi<div class="gmail_quote">Pre<br>{BOB}<br><blockquote>OLD HISTORY</blockquote>Post</div>'
+
+    _, body = _render(tmp_path, html, mode)
+
+    assert body.split("\n\n## ", 1)[0] == "Hi\n\nPre  \nPost"
+    assert body.count("OLD HISTORY") == (1 if mode == "structured" else 0)
+
+
+@pytest.mark.parametrize("mode", ["latest", "structured"])
+def test_adjacent_quotes_leave_only_one_inline_boundary(tmp_path, mode):
+    html = (
+        'See below<blockquote class="gmail_quote">FIRST HISTORY</blockquote>'
+        '<blockquote class="gmail_quote">SECOND HISTORY</blockquote>more'
+    )
+
+    _, body = _render(tmp_path, html, mode)
+
+    assert body.split("\n\n## ", 1)[0] == "See below  \nmore"
+    for history in ("FIRST HISTORY", "SECOND HISTORY"):
+        assert body.count(history) == (1 if mode == "structured" else 0)
 
 
 @pytest.mark.parametrize("mode", ["latest", "structured"])

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from dead_letter.core.html_conversation import (
     _iter_nodes_in_document_order,
     segment_html_conversation,
@@ -9,6 +11,42 @@ from dead_letter.core.types import ZoneKind
 
 def _deeply_nested_html(depth: int, quote_html: str) -> str:
     return "<div>Latest response</div>" + "<div>" * depth + quote_html + "</div>" * depth
+
+
+@pytest.mark.parametrize("before, after, boundary", [
+    ("Pre", "Post", True),
+    ("<span>Pre</span>", "<em>Post</em>", True),
+    ("Pre<span></span> \n", " \n<em>Post</em>", True),
+    ("<p>Pre</p>", "Post", False),
+    ("Pre", "<p>Post</p>", False),
+    ("<p>Pre</p> \n", " \nPost", False),
+    ("Pre<br>", "Post", False),
+    ("Pre", "<br>Post", False),
+    ("", "Post", False),
+    ("Pre", "", False),
+    (" \n", "Post", False),
+    ("Pre", " \n", False),
+])
+def test_extraction_adds_boundary_only_between_inline_siblings(before, after, boundary):
+    html = f'<div>{before}<blockquote class="gmail_quote">OLD</blockquote>{after}</div>'
+
+    result = segment_html_conversation(html)
+
+    body = result.zones[0].content
+    assert body.count("<br>") == html.count("<br>") + int(boundary)
+    assert "OLD" not in body
+
+
+@pytest.mark.parametrize("html, expected", [
+    ('<blockquote class="gmail_quote">OLD</blockquote>', "<body></body>"),
+    ('<div><blockquote class="gmail_quote">OLD</blockquote></div>', "<body><div></div></body>"),
+    ('<div class="gmail_quote"><div class="gmail_attr">On Mon, Mar 2, 2026 at 9:00 AM Bob wrote:</div><blockquote class="gmail_quote">OLD</blockquote></div>', '<body><div class="gmail_quote"></div></body>'),
+])
+def test_quote_only_messages_leave_no_breaks_in_body_zone(html, expected):
+    result = segment_html_conversation(html)
+
+    assert result.zones[0].content == expected
+    assert "OLD" in result.zones[1].content
 
 
 def test_iter_nodes_in_document_order_short_circuits_over_wide_container() -> None:

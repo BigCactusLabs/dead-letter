@@ -529,6 +529,28 @@ def _split_outlook_body_and_quote(
     return body_html or None, quoted_html or None
 
 
+def _needs_quote_boundary(node) -> bool:
+    """Separate inline siblings without changing block or preformatted layout."""
+    if node.tag not in _BLOCK_TAGS:
+        return False
+    for direction in ("prev", "next"):
+        sibling = getattr(node, direction)
+        while (
+            sibling is not None
+            and sibling.tag == "-text"
+            and not _format_whitespace(sibling.text_content or "").strip()
+        ):
+            sibling = getattr(sibling, direction)
+        if sibling is None or sibling.tag in _BLOCK_TAGS or sibling.tag == "br":
+            return False
+    parent = node.parent
+    while parent is not None:
+        if parent.tag == "pre":
+            return False
+        parent = parent.parent
+    return True
+
+
 def _extract_quote_html(
     quote_node, *, include_following_siblings: bool = False
 ) -> str | None:
@@ -542,9 +564,7 @@ def _extract_quote_html(
     fragments = [node.html or node.text(separator="\n", strip=True) for node in nodes]
     boundary = parse_html("<br>").body.child
     for node in nodes:
-        if node.tag in _BLOCK_TAGS and (
-            node.prev is not None or node.next is not None or node.parent.tag != "body"
-        ):
+        if _needs_quote_boundary(node):
             # Keep the removed block's boundary between authored inline runs.
             node.replace_with(boundary)
         else:
