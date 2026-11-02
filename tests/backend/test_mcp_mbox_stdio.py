@@ -166,6 +166,10 @@ async def test_real_stdio_cancelled_call_finishes_with_complete_report(tmp_path)
                 assert scopes[0].cancelled_caught
                 assert returned == []
                 await assert_recovery(client, _recovery_archive(tmp_path), tmp_path / "recovered")
+                # The cancelled conversion keeps running alongside recovery.
+                # Closing the session stops the server, so wait while it is open.
+                while not list(out.glob(".dead-letter-report*")):
+                    await anyio.sleep(0.01)
 
     calls = [item for item in sent if item["method"] == "tools/call"]
     cancellations = [item for item in sent if item["method"] == "notifications/cancelled"]

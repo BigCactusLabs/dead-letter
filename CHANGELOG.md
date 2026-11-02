@@ -19,8 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - MCP `convert_mbox` contract states the observed cancellation behavior:
-  cancelling stops the client's wait, but conversion continues and publishes
-  a complete report; the source is unchanged (#145).
+  cancelling stops the client's wait, but conversion continues while the
+  session stays open and publishes a complete report; closing the session
+  stops it without a report. The source is unchanged (#145).
 - Claude plugin launcher uses the shipped `uv.lock` and Python 3.12 through frozen, isolated
   `uv run`, with dependency hash checks and no writes to the plugin directory.
   MCP Registry entries constrain transitive resolution with an absolute UTC

@@ -1080,9 +1080,12 @@ These differ from the CLI and the Python API:
     deleted.
   - MCP request cancellation is **not supported**. In real-stdio tests, the
     locked Python client sends `notifications/cancelled` when its waiting
-    scope is cancelled; conversion still completes and publishes a complete
-    report. The client stops waiting, the source stays unchanged, and the same
-    session accepts another conversion. Byte/message caps are not a wall-clock
+    scope is cancelled; conversion continues while the session stays open and
+    publishes a complete report. The client stops waiting, the source stays
+    unchanged, and the same session accepts another conversion, which can
+    finish first. Closing the session ends the server process: a conversion
+    still running stops, leaves the Markdown already written, and publishes
+    no report. Byte/message caps are not a wall-clock
     deadline; parsing and filesystem I/O have no MCP time limit.
   - Real-stdio tests cover missing paths, directories, other suffixes, and
     (on non-root POSIX) unreadable sources and unwritable output directories,
