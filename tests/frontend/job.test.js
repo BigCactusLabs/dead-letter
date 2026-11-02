@@ -1082,3 +1082,98 @@ test("uploadMbox() cannot replace an active job or run twice", async () => {
   assert.equal(requests.length, 0);
   assert.equal(FakeXHR.instances.length, 0);
 });
+
+async function waitForCalls(calls, count) {
+  for (let turn = 0; turn < 20 && calls.length < count; turn += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.equal(calls.length, count);
+}
+
+// Answer any request that was sent anyway, so a failing case ends instead of hanging.
+async function settleUpload(pending) {
+  for (let turn = 0; turn < 20; turn += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  for (const xhr of FakeXHR.instances) {
+    if (xhr.status === undefined && !xhr.aborted) xhr.respond(409, { errors: [{ code: "mbox_busy" }] });
+  }
+  return pending;
+}
+
+test("cancelUpload() while a CSRF token is pending sends nothing", async (t) => {
+  const csrfFailure = { errors: [{ code: "csrf_validation_failed", message: "missing or invalid CSRF token" }] };
+
+  await t.test("first token", async () => {
+    const { job } = await createUploadStore();
+    job.startPolling = () => assert.fail("A cancelled upload must not start polling");
+    const session = deferred();
+    const calls = [];
+    globalThis.fetch = (url) => { calls.push(url); return session.promise; };
+
+    const pending = job.uploadMbox(ARCHIVE_FILE, {});
+    await waitForCalls(calls, 1);
+    assert.equal(job.upload.sent, false, "the cancel button is enabled while the token loads");
+    job.cancelUpload();
+    session.resolve(makeResponse({ jsonData: { csrf_token: "fresh-token" } }));
+
+    assert.deepEqual(await settleUpload(pending), { ok: false, cancelled: true });
+    assert.equal(FakeXHR.instances.length, 0);
+    assert.equal(job.upload, null);
+    assert.equal(job.isSubmitting, false);
+  });
+
+  await t.test("refreshed token after a CSRF rejection", async () => {
+    const { job } = await createUploadStore();
+    job.startPolling = () => assert.fail("A cancelled upload must not start polling");
+    const refresh = deferred();
+    const calls = [];
+    globalThis.fetch = (url) => {
+      calls.push(url);
+      return calls.length === 1
+        ? Promise.resolve(makeResponse({ jsonData: { csrf_token: "first-token" } }))
+        : refresh.promise;
+    };
+
+    const pending = job.uploadMbox(ARCHIVE_FILE, {});
+    (await nextXhr(0)).respond(403, csrfFailure);
+    await waitForCalls(calls, 2);
+    job.cancelUpload();
+    refresh.resolve(makeResponse({ jsonData: { csrf_token: "second-token" } }));
+
+    assert.deepEqual(await settleUpload(pending), { ok: false, cancelled: true });
+    assert.equal(FakeXHR.instances.length, 1, "the retry must not be sent");
+  });
+
+  await t.test("a later upload starts without the old cancellation", async () => {
+    const { job } = await createUploadStore();
+    job.startPolling = () => {};
+    const session = deferred();
+    globalThis.fetch = () => session.promise;
+    const cancelled = job.uploadMbox(ARCHIVE_FILE, {});
+    job.cancelUpload();
+    session.resolve(makeResponse({ jsonData: { csrf_token: "fresh-token" } }));
+    assert.deepEqual(await settleUpload(cancelled), { ok: false, cancelled: true });
+
+    FakeXHR.instances = [];
+    const pending = job.uploadMbox(ARCHIVE_FILE, {});
+    (await nextXhr(0)).respond(202, mboxStatus({ status: "queued" }));
+    assert.deepEqual(await pending, { ok: true });
+  });
+});
+
+test("a connection lost after the whole archive was sent reports an unknown outcome", async () => {
+  const { job } = await createUploadStore();
+  job.startPolling = () => assert.fail("No job id is known, so nothing can be polled");
+  const pending = job.uploadMbox(ARCHIVE_FILE, {});
+  const xhr = await nextXhr();
+  xhr.upload.onload();
+  xhr.onerror();
+
+  const [message] = (await pending).formErrors;
+  assert.doesNotMatch(message, /Nothing was imported/);
+  assert.match(message, /may have started/);
+  assert.match(message, /Check History before uploading again/);
+  assert.equal(job.upload, null);
+  assert.equal(job.isSubmitting, false);
+});

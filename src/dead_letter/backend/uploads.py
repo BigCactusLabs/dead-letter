@@ -6,7 +6,8 @@ import asyncio
 import errno
 import os
 import shutil
-from contextlib import suppress
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from io import BufferedWriter
 from pathlib import Path
@@ -38,6 +39,9 @@ MBOX_UPLOAD_BODY_HEADROOM_BYTES = 1024 * 1024
 
 _WRITE_BATCH_BYTES = 1024 * 1024
 _SPACE_RECHECK_BYTES = 256 * 1024 * 1024
+# Longest length header accepted, checked before int(). 20 digits holds any
+# 64-bit byte count; longer values are malformed, not merely too large.
+_MAX_LENGTH_DIGITS = 20
 _MAX_FILENAME_HEADER_CHARS = 4096
 _MAX_STEM_BYTES = 200
 _MAX_COLLISION_INDEX = 10_000
@@ -97,7 +101,8 @@ def _parse_length(headers: Headers) -> int:
         raise UploadRejected(
             400,
             code="mbox_upload_length_mismatch",
-            message="Content-Length and X-Dead-Letter-Upload-Length must both be byte counts",
+            message="Content-Length and X-Dead-Letter-Upload-Length must both be byte counts "
+            f"of at most {_MAX_LENGTH_DIGITS} digits",
             path="X-Dead-Letter-Upload-Length",
         )
     length = int(content_length)
@@ -119,7 +124,7 @@ def _parse_length(headers: Headers) -> int:
 
 
 def _is_decimal(value: str) -> bool:
-    return value.isascii() and value.isdigit()
+    return value.isascii() and value.isdigit() and len(value) <= _MAX_LENGTH_DIGITS
 
 
 def _parse_filename(raw: str | None) -> tuple[str, str]:
@@ -173,6 +178,47 @@ def _parse_options(request: Request) -> MboxJobOptions:
         raise UploadRejected(400, code="invalid_request", message=str(exc), path="options") from exc
 
 
+def prepare_staging_dir(inbox_root: Path) -> Path:
+    """Create or reuse ``<Inbox>/mbox-uploads`` and confirm it stays in the Inbox.
+
+    A symlink, a non-directory, or a directory that resolves anywhere else is
+    rejected before any upload byte is written. Callers stage under the
+    returned path only and never resolve it again.
+    """
+    inbox = inbox_root.resolve()
+    staging = inbox / MBOX_UPLOAD_STAGING_DIRNAME
+    unsafe = UploadRejected(
+        403,
+        code="invalid_request",
+        message="The Inbox's mbox-uploads entry must be a real folder inside the Inbox",
+        path=MBOX_UPLOAD_STAGING_DIRNAME,
+    )
+    try:
+        with _storage_errors():
+            staging.mkdir(parents=True, exist_ok=True)
+    except FileExistsError as exc:
+        raise unsafe from exc
+    if staging.is_symlink() or staging.resolve() != staging:
+        raise unsafe
+    return staging
+
+
+@contextmanager
+def _storage_errors() -> Iterator[None]:
+    """Report a full disk or exhausted quota as 507 rather than a backend error."""
+    try:
+        yield
+    except OSError as exc:
+        if exc.errno in _NO_SPACE_ERRNOS:
+            raise UploadRejected(
+                507,
+                code="mbox_upload_insufficient_storage",
+                message="The Inbox ran out of space while staging this archive",
+                path=MBOX_UPLOAD_STAGING_DIRNAME,
+            ) from exc
+        raise
+
+
 def ensure_upload_space(staging_dir: Path, still_to_write: int) -> None:
     """Reject the upload unless the reserve stays free after the rest is written."""
     free = shutil.disk_usage(staging_dir).free
@@ -194,20 +240,13 @@ async def stage_mbox_upload(
     """
     part = staging_dir / f".upload-{uuid4().hex}.part"
     try:
-        with part.open("xb") as handle:
-            try:
+        # Creating the part file, writing, closing and publishing can each hit
+        # a full disk or quota (bytes or inodes).
+        with _storage_errors():
+            with part.open("xb") as handle:
                 await _receive_body(request, handle, staging_dir=staging_dir, length=length)
                 await asyncio.to_thread(_flush_and_sync, handle)
-            except OSError as exc:
-                if exc.errno in _NO_SPACE_ERRNOS:
-                    raise UploadRejected(
-                        507,
-                        code="mbox_upload_insufficient_storage",
-                        message="The Inbox ran out of space while staging this archive",
-                        path=MBOX_UPLOAD_STAGING_DIRNAME,
-                    ) from exc
-                raise
-        return _publish(part, staging_dir, stem)
+            return _publish(part, staging_dir, stem)
     except BaseException:
         with suppress(OSError):
             part.unlink(missing_ok=True)
@@ -282,7 +321,10 @@ def _flush_and_sync(handle: BufferedWriter) -> None:
 def _publish(part: Path, staging_dir: Path, stem: str) -> Path:
     """Rename the part file to the first free ``<stem>[-n].mbox`` name.
 
-    An exclusive placeholder claims the name first, so no existing file is replaced.
+    An exclusive placeholder claims the name first, so publication never replaces
+    a file that existed when the claim was made. The claim and the rename are two
+    steps: another local writer that replaces the claimed placeholder in between
+    would be overwritten. Such a concurrent writer is out of scope.
     """
     for index in range(1, _MAX_COLLISION_INDEX + 1):
         suffix = f"-{index}" if index > 1 else ""

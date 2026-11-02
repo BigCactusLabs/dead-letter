@@ -282,8 +282,24 @@ class JobManager:
                 reservation.held = False
             record.mbox_slot_held = True
             self._jobs[job_id] = record
-        task = asyncio.create_task(self._run_mbox_job(job_id))
-        self._track_task(task, job_id, mbox_record=record)
+        work = self._run_mbox_job(job_id)
+        task: asyncio.Task[None] | None = None
+        try:
+            task = asyncio.create_task(work)
+            self._track_task(task, job_id, mbox_record=record)
+        except BaseException:
+            # Without a tracked task nothing would settle this record, so undo
+            # the admission here; the slot flag makes the release exactly once.
+            if task is None:
+                work.close()
+            else:
+                task.cancel()
+                self._tasks.discard(task)
+                self._mbox_tasks.discard(task)
+            self._jobs.pop(job_id, None)
+            self._release_mbox_slot(record)
+            runner.close_unstarted()
+            raise
         return JobCreateResponse(
             id=job_id, status=record.status,
             output_location=record.output_location.model_copy(deep=True),

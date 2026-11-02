@@ -140,10 +140,14 @@ export function mboxUploadUrl(options) {
 
 // Status 0 means the connection closed without a response. The server answers
 // an early rejection and then closes, which some browsers report as a network error.
-export function mboxUploadErrorMessage(status, payload) {
+// Once every byte is sent (`sent`), the job may have started, so the outcome is unknown.
+export function mboxUploadErrorMessage(status, payload, { sent = false } = {}) {
   const code = normalizeErrors(payload)[0]?.code || "";
   switch (status) {
     case 0:
+      if (sent) {
+        return "The connection closed after the whole archive was sent, so the import may have started. Check History before uploading again; while that import runs, a new upload is refused as busy.";
+      }
       return "The connection closed before the server replied. The server may have refused the upload (another import running, or low disk space). Nothing was imported.";
     case 400:
       if (code === "mbox_upload_incomplete") return "The upload ended before the whole file arrived. Nothing was imported.";

@@ -5,16 +5,19 @@ from __future__ import annotations
 import asyncio
 import errno
 import json
+import os
 import socket
 import threading
 import time
 from collections import namedtuple
 from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import quote
 
 import pytest
 import uvicorn
 from httpx import ASGITransport, AsyncClient
+from starlette.datastructures import Headers
 
 from dead_letter.backend import api as api_mod
 from dead_letter.backend import mbox_jobs, uploads
@@ -22,6 +25,7 @@ from dead_letter.backend.api import create_app
 from dead_letter.backend.filesystem import FilesystemBrowser
 from dead_letter.backend.jobs import JobManager
 from dead_letter.backend.mbox_jobs import MboxBusyError
+from dead_letter.backend.schemas import MboxJobCreateRequest
 from dead_letter.core.mbox_import import convert_mbox
 
 from .helpers import csrf_headers
@@ -31,6 +35,7 @@ MESSAGE = b"From: alice@example.test\nSubject: Synthetic\n\nHello\n\n"
 ARCHIVE = POSTMARK + MESSAGE + POSTMARK + MESSAGE.replace(b"Hello", b"Second")
 BASE_URL = "http://127.0.0.1:8765"
 _DiskUsage = namedtuple("_DiskUsage", "total used free")
+_NO_SPACE_ERRNOS = [errno.ENOSPC, *([errno.EDQUOT] if hasattr(errno, "EDQUOT") else [])]
 
 
 def _app(root: Path, *, configured: bool = True):
@@ -228,6 +233,10 @@ async def test_upload_names_are_reduced_to_a_basename_in_the_staging_folder(
         ({"declared": 7}, "", 400, "mbox_upload_length_mismatch"),
         ({"declared": False}, "", 400, "mbox_upload_length_mismatch"),
         ({"declared": "1e3"}, "", 400, "mbox_upload_length_mismatch"),
+        # Past Python's int() digit limit, and longer than 20 digits but equal in value.
+        ({"declared": "9" * 4301}, "", 400, "mbox_upload_length_mismatch"),
+        ({"declared": str(len(ARCHIVE)).zfill(21)}, "", 400, "mbox_upload_length_mismatch"),
+        ({"raw_content_length": "9" * 4301, "declared": "9" * 4301}, "", 400, "mbox_upload_length_mismatch"),
         ({"name": None}, "", 400, "invalid_request"),
         ({"name": "archive.zip"}, "", 400, "invalid_request"),
         ({"name": "All mail.mbox.gz"}, "", 400, "invalid_request"),
@@ -257,6 +266,8 @@ async def test_rejections_before_the_body_read_nothing_and_close(
     )
     if "raw_name" in overrides:
         headers["x-dead-letter-filename"] = overrides["raw_name"]
+    if "raw_content_length" in overrides:
+        headers["content-length"] = overrides["raw_content_length"]
     if overrides.get("chunked"):
         del headers["content-length"]
         headers["transfer-encoding"] = "chunked"
@@ -386,6 +397,96 @@ async def test_write_failures_remove_the_part_file_and_release_the_slot(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("error_number", _NO_SPACE_ERRNOS)
+@pytest.mark.parametrize("step", ["staging-folder", "part-file", "name-claim", "rename"])
+async def test_storage_exhaustion_outside_the_writes_is_507_and_cleans_up(
+    tmp_path: Path, monkeypatch, step: str, error_number: int
+) -> None:
+    app = _app(tmp_path)
+    staging_name = uploads.MBOX_UPLOAD_STAGING_DIRNAME
+    real_mkdir, real_open, real_replace = Path.mkdir, Path.open, os.replace
+
+    def full() -> OSError:
+        return OSError(error_number, "synthetic storage exhaustion")
+
+    def mkdir(self, *args, **kwargs):
+        if step == "staging-folder" and self.name == staging_name:
+            raise full()
+        return real_mkdir(self, *args, **kwargs)
+
+    def open_(self, mode="r", *args, **kwargs):
+        if mode == "xb" and self.parent.name == staging_name:
+            if (step, self.suffix) in {("part-file", ".part"), ("name-claim", ".mbox")}:
+                raise full()
+        return real_open(self, mode, *args, **kwargs)
+
+    def replace(src, dst, *args, **kwargs):
+        if step == "rename" and Path(dst).suffix == ".mbox":
+            raise full()
+        return real_replace(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", mkdir)
+    monkeypatch.setattr(Path, "open", open_)
+    monkeypatch.setattr(uploads.os, "replace", replace)
+    body = _Body([ARCHIVE])
+
+    status, headers, payload = await _post(app, _headers(app, len(ARCHIVE)), body)
+
+    assert (status, payload["errors"][0]["code"]) == (507, "mbox_upload_insufficient_storage")
+    assert headers["connection"] == "close"
+    assert (body.calls == 0) == (step in {"staging-folder", "part-file"})
+    assert _staged(tmp_path) == []  # no part file and no claimed name left behind
+    await _assert_slot_free(app)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("entry", ["symlink-outside", "symlink-inside", "dangling-symlink", "file"])
+async def test_staging_entry_must_be_a_real_folder_inside_the_inbox(tmp_path: Path, entry: str) -> None:
+    app = _app(tmp_path)
+    inbox = tmp_path / "Inbox"
+    inbox.mkdir(exist_ok=True)
+    staging = inbox / uploads.MBOX_UPLOAD_STAGING_DIRNAME
+    outside = tmp_path / "elsewhere"
+    inside = inbox / "real-folder"
+    outside.mkdir()
+    inside.mkdir()
+    try:
+        if entry == "symlink-outside":
+            staging.symlink_to(outside, target_is_directory=True)
+        elif entry == "symlink-inside":
+            staging.symlink_to(inside, target_is_directory=True)
+        elif entry == "dangling-symlink":
+            staging.symlink_to(tmp_path / "missing", target_is_directory=True)
+        else:
+            staging.write_bytes(b"not a folder")
+    except OSError as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
+    body = _Body([ARCHIVE])
+
+    status, headers, payload = await _post(app, _headers(app, len(ARCHIVE)), body)
+
+    error = payload["errors"][0]
+    assert (status, error["code"], error["path"]) == (403, "invalid_request", uploads.MBOX_UPLOAD_STAGING_DIRNAME)
+    assert headers["connection"] == "close"
+    assert body.calls == 0
+    assert list(outside.iterdir()) == []
+    assert list(inside.iterdir()) == []
+    assert not (tmp_path / "missing").exists()
+    await _assert_slot_free(app)
+
+
+def test_length_headers_are_bounded_before_conversion() -> None:
+    padded = "0" * 19 + "5"
+    assert uploads._parse_length(Headers({"content-length": padded, "x-dead-letter-upload-length": "5"})) == 5
+    for too_long in ("0" * 20 + "5", "9" * 4301):
+        for header in ("content-length", "x-dead-letter-upload-length"):
+            fields = {"content-length": "5", "x-dead-letter-upload-length": "5", header: too_long}
+            with pytest.raises(uploads.UploadRejected) as rejected:
+                uploads._parse_length(Headers(fields))
+            assert (rejected.value.status_code, rejected.value.code) == (400, "mbox_upload_length_mismatch")
+
+
+@pytest.mark.anyio
 async def test_client_disconnect_mid_body_cleans_up(tmp_path: Path) -> None:
     app = _app(tmp_path)
     body = _Body([ARCHIVE[:10]], then="disconnect")
@@ -478,6 +579,76 @@ async def test_job_admission_failure_removes_the_staged_file(tmp_path: Path, mon
     assert (status, payload["errors"][0]["code"]) == (400, "invalid_request")
     assert headers["connection"] == "close"
     assert _staged(tmp_path) == []
+    await _assert_slot_free(app)
+
+
+def _close_and_refuse_task(coro):
+    coro.close()
+    raise RuntimeError("synthetic task creation failure")
+
+
+def _refuse_tracking(task, job_id, *, mbox_record=None):
+    raise RuntimeError("synthetic task tracking failure")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure", ["create_task", "track_task"])
+@pytest.mark.parametrize("flow", ["upload", "local-path"])
+async def test_job_start_failure_after_the_slot_transfer_releases_it_once(
+    tmp_path: Path, monkeypatch, flow: str, failure: str
+) -> None:
+    manager = JobManager(inbox_root=tmp_path / "Inbox", cabinet_root=tmp_path / "Cabinet")
+    staging = tmp_path / "Inbox" / uploads.MBOX_UPLOAD_STAGING_DIRNAME
+    staging.mkdir(parents=True)
+    (staging / "mail.mbox").write_bytes(ARCHIVE)
+    reservation = await manager.reserve_mbox_slot() if flow == "upload" else None
+    if failure == "track_task":
+        monkeypatch.setattr(manager, "_track_task", _refuse_tracking)
+
+    async def start():
+        if reservation is not None:
+            return await manager.create_staged_mbox_job(
+                MboxJobCreateRequest(input_path=str(staging / "mail.mbox")),
+                staging_root=staging,
+                reservation=reservation,
+            )
+        return await manager.create_mbox_job(
+            MboxJobCreateRequest(input_path=f"{uploads.MBOX_UPLOAD_STAGING_DIRNAME}/mail.mbox"),
+            source_root=tmp_path / "Inbox",
+        )
+
+    with pytest.raises(RuntimeError, match="synthetic task"):
+        if failure == "create_task":
+            with patch.object(asyncio, "create_task", _close_and_refuse_task):
+                await start()
+        else:
+            await start()
+
+    assert manager._jobs == {}
+    if reservation is not None:
+        assert reservation.held is False  # the job took the slot, then gave it back
+        manager.release_mbox_slot(reservation)  # frees nothing a second time
+    held = await manager.reserve_mbox_slot()
+    with pytest.raises(MboxBusyError):
+        await manager.reserve_mbox_slot()
+    manager.release_mbox_slot(held)
+    await asyncio.wait_for(manager.shutdown_mbox_jobs(), timeout=5)
+    assert manager._active_mbox_jobs == 0
+    assert not (tmp_path / "Cabinet").exists()
+
+
+@pytest.mark.anyio
+async def test_upload_whose_job_task_cannot_start_removes_the_staged_file(tmp_path: Path, monkeypatch) -> None:
+    app = _app(tmp_path)
+    manager = app.state.job_manager
+    monkeypatch.setattr(manager, "_track_task", _refuse_tracking)
+
+    status, headers, payload = await _post(app, _headers(app, len(ARCHIVE)), _Body([ARCHIVE]))
+
+    assert (status, payload["errors"][0]["code"]) == (500, "backend_error")
+    assert headers["connection"] == "close"
+    assert _staged(tmp_path) == []
+    assert manager._jobs == {}
     await _assert_slot_free(app)
 
 

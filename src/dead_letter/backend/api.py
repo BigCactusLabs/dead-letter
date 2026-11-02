@@ -48,11 +48,11 @@ from dead_letter.backend.schemas import (
 from dead_letter.backend.settings import WorkflowSettings
 from dead_letter.backend.uploads import (
     MBOX_UPLOAD_BODY_HEADROOM_BYTES,
-    MBOX_UPLOAD_STAGING_DIRNAME,
     CloseUnreadBodyMiddleware,
     UploadRejected,
     ensure_upload_space,
     parse_mbox_upload_request,
+    prepare_staging_dir,
     stage_mbox_upload,
 )
 from dead_letter.backend.watch import WatchManager
@@ -432,9 +432,7 @@ def create_app(
         except MboxBusyError as exc:
             return _closing_error(409, code="mbox_busy", message=str(exc), path=upload.filename)
         try:
-            staging_dir = configured.inbox_path / MBOX_UPLOAD_STAGING_DIRNAME
-            staging_dir.mkdir(parents=True, exist_ok=True)
-            staging_dir = staging_dir.resolve()
+            staging_dir = prepare_staging_dir(configured.inbox_path)
             ensure_upload_space(staging_dir, upload.length)
             staged = await stage_mbox_upload(
                 request, staging_dir=staging_dir, stem=upload.stem, length=upload.length,
