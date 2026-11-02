@@ -532,8 +532,12 @@ closes the connection; a client that sent `Expect: 100-continue` never receives
 1. `409 invalid_request` (path `settings`): Inbox/Cabinet are not configured.
 2. `411 mbox_upload_length_required`: no `Content-Length`, or a
    `Transfer-Encoding` header.
-3. `400 mbox_upload_length_mismatch`: the declared length is missing, is not
-   a decimal byte count, or differs from `Content-Length`.
+3. `400 mbox_upload_length_mismatch`: the declared length is missing, either
+   length header is not a decimal byte count of at most 20 digits, or the
+   declared length differs from `Content-Length`. Longer headers are refused
+   before they are converted to a number. A `Content-Length` whose value is
+   above 16 GiB + 1 MiB gets the body-limit backstop's plain `413` instead
+   (see [HTTP Status Mapping](#http-status-mapping)).
 4. `413 mbox_too_large`: the declared length is above 16 GiB.
 5. `400 invalid_request`: the file name or `options` is invalid.
 6. `415 mbox_upload_unsupported_media_type`: the content type is not
@@ -541,7 +545,10 @@ closes the connection; a client that sent `Expect: 100-continue` never receives
 7. `409 mbox_busy`: the archive slot is occupied. The upload reserves the same
    single slot as `POST /api/mbox/jobs` before it reads the body, and the
    accepted job keeps it, so a path import cannot start while bytes arrive.
-8. `507 mbox_upload_insufficient_storage`: the staging folder's free space,
+8. `403 invalid_request` (path `mbox-uploads`): `<Inbox>/mbox-uploads` is a
+   symlink, is not a folder, or resolves outside the Inbox. The server creates
+   the folder when it is missing and stages only under the checked path.
+9. `507 mbox_upload_insufficient_storage`: the staging folder's free space,
    less the declared length, is below 1 GiB. The 1 GiB margin leaves room for
    the job's report spool and first bundles and for the host itself. Free space
    cannot be reserved, so this is a check, not a quota.
@@ -554,13 +561,17 @@ bytes it actually receives:
 - fewer, because the body ended or the client disconnected:
   `400 mbox_upload_incomplete`;
 - no data for 60 seconds: `408 mbox_upload_timeout`;
-- free space rechecked every 256 MiB against the bytes still to come, and a
-  write failing with `ENOSPC`/`EDQUOT`: `507 mbox_upload_insufficient_storage`;
+- free space rechecked every 256 MiB against the bytes still to come, and
+  `ENOSPC`/`EDQUOT` while creating the staging folder or `.part` file, writing,
+  flushing or publishing: `507 mbox_upload_insufficient_storage`;
 - any other staging failure: `500 backend_error`.
 
 After the last byte the file is flushed to disk and renamed to `<stem>.mbox`,
-or `<stem>-2.mbox`, `<stem>-3.mbox`, and so on when the name is taken; an
-existing file is never replaced. The `.part` file is removed on every failure,
+or `<stem>-2.mbox`, `<stem>-3.mbox`, and so on when the name is taken. The
+server first claims the name by creating an empty file there exclusively, so
+publication never replaces a file that existed when the name was claimed. A
+concurrent local writer that replaces the claimed name before the rename is
+out of scope. The `.part` file is removed on every failure,
 and the staged archive is removed if job admission fails after staging. Every
 failure releases the archive slot.
 
@@ -1323,7 +1334,7 @@ pinned PyPI version.
 - `200`: settings get/put, filesystem list, watch get/start/stop, job snapshot, open Cabinet folder
 - `202`: job create accepted, import accepted, cancel accepted
 - `400`: request rejected (schema or semantic validation), or an MBOX upload whose declared lengths disagree or whose body ended early
-- `403`: untrusted API `Host`, CSRF validation failure, hostile browser-origin signal, or filesystem/watch path escaping the configured browser root
+- `403`: untrusted API `Host`, CSRF validation failure, hostile browser-origin signal, filesystem/watch path escaping the configured browser root, or an `<Inbox>/mbox-uploads` entry that is a symlink, not a folder, or outside the Inbox
 - `404`: unknown or evicted job id, or missing browse/watch target
 - `408`: an MBOX upload sent no data for 60 seconds (`mbox_upload_timeout`)
 - `409`: workflow settings missing, or invalid lifecycle/watch conflict, including an occupied archive slot (`mbox_busy`)
@@ -1332,4 +1343,4 @@ pinned PyPI version.
 - `415`: an MBOX upload that is not `application/octet-stream`
 - `422`: batch import contains non-`.eml` files (`POST /api/import-batch` rejects any upload whose filename does not end in `.eml`; clients are expected to filter or confirm-and-skip before upload)
 - `500`: unexpected backend failure
-- `507`: not enough free space to stage an MBOX upload and keep 1 GiB free (`mbox_upload_insufficient_storage`)
+- `507`: not enough free space to stage an MBOX upload and keep 1 GiB free, or the disk or quota filled while staging it (`mbox_upload_insufficient_storage`)

@@ -477,9 +477,11 @@ to the server, which saves a copy in `<Inbox>/mbox-uploads/` and then imports
 that copy exactly like a local-path archive. The copy stays there after the
 import as the job's source, so delete it yourself when you no longer need it.
 The Inbox needs room for the copy plus 1 GiB, and the Cabinet needs room for
-the bundles. An interrupted upload cannot be resumed; it starts again from the
-beginning. When the archive is already on the machine running dead-letter, the
-local path is faster and needs no second copy.
+the bundles. `mbox-uploads` must be a real folder inside the Inbox; the server
+refuses the upload when it is a symlink, for example to another disk. An
+interrupted upload cannot be resumed; it starts again from the beginning. When
+the archive is already on the machine running dead-letter, the local path is
+faster and needs no second copy.
 
 Script clients send the raw bytes to `POST /api/mbox/uploads`; see the
 [upload contract](v4-runtime-contracts.md#post-apimboxuploads-unreleased) for

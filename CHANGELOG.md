@@ -17,8 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same-session recovery and client cancellation (#145).
 - Web UI **Upload archive** option and `POST /api/mbox/uploads`: the browser
   sends one flat `.mbox` file (up to 16 GiB) as a raw body, which is staged in
-  `<Inbox>/mbox-uploads/`, kept there as the job's source, and imported like a
-  local-path archive. Length, name, options, archive slot and free space
+  `<Inbox>/mbox-uploads/` (a real folder inside the Inbox, not a symlink),
+  kept there as the job's source, and imported like a local-path archive.
+  Length, name, options, archive slot and free space
   (1 GiB must stay free) are checked before the body is read; actual bytes,
   idle time (60 seconds) and free space are checked while it arrives. The UI
   shows upload progress and can cancel before the last byte. There is no
