@@ -1046,9 +1046,18 @@ These differ from the CLI and the Python API:
     nothing and returns `report_path: null`.
   - The source archive is opened read-only and never modified, moved or
     deleted.
-  - MCP request cancellation is **not supported**: a cancelled call keeps
-    running until it finishes or reaches a bound. Byte/message caps are not
-    a wall-clock deadline; parsing and filesystem I/O have no MCP time limit.
+  - MCP request cancellation is **not supported**. In real-stdio tests, the
+    locked Python client sends `notifications/cancelled` when its waiting
+    scope is cancelled; conversion still completes and publishes a complete
+    report. The client stops waiting, the source stays unchanged, and the same
+    session accepts another conversion. Byte/message caps are not a wall-clock
+    deadline; parsing and filesystem I/O have no MCP time limit.
+  - Real-stdio tests cover missing paths, directories, other suffixes, and
+    (on non-root POSIX) unreadable sources and unwritable output directories,
+    with privacy checks and a successful call in the same session after each
+    error. An unwritable output directory can fail during message writes and
+    report publication rather than before conversion; no output is left in
+    that tested case.
 
 ### Directory success-JSON contract
 
