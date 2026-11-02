@@ -13,7 +13,7 @@ _LIST_ITEM_RE = re.compile(r"^( *)(?P<marker>[-+*]|\d+[.)])(?P<space> +)")
 # Leave ample room below the converter's hard 1024-element traversal limit.
 _MAX_HTML_ELEMENT_DEPTH = 512
 # Bound the size of repeated Markdown quote prefixes.
-_MAX_BLOCKQUOTE_DEPTH = 77
+_MAX_BLOCKQUOTE_DEPTH = 64
 _CONTENT_SKIPPING_WARNINGS = {
     "depth_limit_exceeded": "html_depth_limit",
     "truncated_input": "html_content_skipped",
