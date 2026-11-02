@@ -38,7 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Long `On …` lines, header lines with long runs of asterisks, repeated
   disclaimer keywords and long blank runs no longer make reply parsing take
   seconds during conversion. Conversion output is unchanged (#268).
-
+- HTML history extraction keeps words on separate lines inside preformatted
+  text and preserves paragraph boundaries when current-message quote wrappers
+  are removed. Deeply nested HTML keeps all text and reports
+  `html_depth_flattened` when its nesting is reduced. Blockquote nesting has a
+  separate limit to bound Markdown quote prefixes. If a renderer content
+  limit is reached, conversion keeps the text with reduced formatting and
+  reports a diagnostics warning (#268).
 - Windows MBOX workers now verify job membership after a clean exit and use
   job CPU accounting to identify CPU-limit failures when the process exits
   before the job is signaled. Missing membership or failed accounting checks

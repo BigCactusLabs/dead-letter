@@ -529,20 +529,22 @@ def _split_outlook_body_and_quote(
     return body_html or None, quoted_html or None
 
 
-def _empty_inline(node) -> bool:
+def _empty_inline(node, *, in_pre: bool = False) -> bool:
     for child in _iter_nodes_in_document_order(node):
         if child.tag in _BLOCK_TAGS or child.tag in ("img", "br"):
             return False
-        if child.tag == "-text" and _format_whitespace(child.text_content or "").strip():
+        if child.tag == "-text" and (
+            in_pre or _format_whitespace(child.text_content or "").strip()
+        ):
             return False
     return True
 
 
-def _inline_neighbor(node, direction: str):
+def _inline_neighbor(node, direction: str, *, in_pre: bool = False):
     """Find adjacent content through inline ancestors, stopping at a block."""
     while node is not None:
         sibling = getattr(node, direction)
-        while sibling is not None and _empty_inline(sibling):
+        while sibling is not None and _empty_inline(sibling, in_pre=in_pre):
             sibling = getattr(sibling, direction)
         if sibling is not None:
             return sibling
@@ -552,15 +554,26 @@ def _inline_neighbor(node, direction: str):
     return None
 
 
-def _edge_has_break(node, direction: str) -> bool:
-    """Inspect the adjacent edge, ignoring whitespace and empty inline tags."""
+def _edge_has_break(
+    node, direction: str, *, in_pre: bool = False, inside: bool = False
+) -> bool:
+    """Inspect one edge, counting preformatted newlines when requested."""
     root_id = node.mem_id
+    if inside:
+        node = node.last_child if direction == "prev" else node.child
     while node is not None:
         if node.tag in _BLOCK_TAGS or node.tag == "br":
             return True
-        if node.tag == "img" or (
-            node.tag == "-text" and _format_whitespace(node.text_content or "").strip()
-        ):
+        if node.tag == "-text":
+            text = node.text_content or ""
+            if in_pre:
+                edge = text.rstrip(" \t\r") if direction == "prev" else text.lstrip(" \t\r")
+                return not text.strip() or (
+                    edge.endswith("\n") if direction == "prev" else edge.startswith("\n")
+                )
+            if _format_whitespace(text).strip():
+                return False
+        if node.tag == "img":
             return False
         child = node.last_child if direction == "prev" else node.child
         if child is not None:
@@ -574,19 +587,56 @@ def _edge_has_break(node, direction: str) -> bool:
     return False
 
 
-def _needs_quote_boundary(node) -> bool:
-    """Separate inline content without changing block or preformatted layout."""
-    if node.tag not in _BLOCK_TAGS:
-        return False
-    for direction in ("prev", "next"):
-        sibling = _inline_neighbor(node, direction)
-        if sibling is None or _edge_has_break(sibling, direction):
-            return False
+def _inside_pre(node) -> bool:
     parent = node.parent
     while parent is not None:
         if parent.tag == "pre":
-            return False
+            return True
         parent = parent.parent
+    return False
+
+
+def _unwrap_preserving_boundaries(node, *, in_pre: bool | None = None) -> None:
+    """Unwrap outside-in, preserving each block edge in document order."""
+    if node.tag in _BLOCK_TAGS:
+        # Inspect inside first: deep chains retain a child's block edges and
+        # need no repeated neighbor search through accumulated whitespace.
+        edges = [
+            direction for direction in ("prev", "next")
+            if not _edge_has_break(
+                node, "next" if direction == "prev" else "prev", inside=True,
+            )
+        ]
+        if edges:
+            if in_pre is None:
+                in_pre = _inside_pre(node)
+            for direction in edges:
+                neighbor = _inline_neighbor(node, direction, in_pre=in_pre)
+                if (
+                    neighbor is not None
+                    and not _edge_has_break(neighbor, direction, in_pre=in_pre)
+                    and not _edge_has_break(
+                        node, "next" if direction == "prev" else "prev",
+                        in_pre=in_pre, inside=True,
+                    )
+                ):
+                    boundary = "\n" if in_pre else parse_html("<div></div>").body.child
+                    if direction == "prev":
+                        node.insert_before(boundary)
+                    else:
+                        node.insert_after(boundary)
+    node.unwrap()
+
+
+def _needs_quote_boundary(node) -> bool:
+    """Separate inline content without duplicating existing boundaries."""
+    if node.tag not in _BLOCK_TAGS:
+        return False
+    in_pre = _inside_pre(node)
+    for direction in ("prev", "next"):
+        sibling = _inline_neighbor(node, direction, in_pre=in_pre)
+        if sibling is None or _edge_has_break(sibling, direction, in_pre=in_pre):
+            return False
     return True
 
 
@@ -605,7 +655,7 @@ def _extract_quote_html(
     for node in nodes:
         if _needs_quote_boundary(node):
             # Keep the removed block's boundary between authored inline runs.
-            node.replace_with(boundary)
+            node.replace_with("\n" if _inside_pre(node) else boundary)
         else:
             node.decompose()
 
@@ -640,7 +690,7 @@ def segment_html_conversation(
     # Unwrap planned body containers before removing history. This keeps
     # references valid when a bare quote takes a preceding attribution unit.
     for node in body_wrappers:
-        node.unwrap()
+        _unwrap_preserving_boundaries(node)
 
     forwarded = []
     for wrapper in reversed(forwards):
