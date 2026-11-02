@@ -210,8 +210,11 @@ The other #193/#241 changes need paired representative fixtures: Outlook
 reply/forward ambiguity, localized Outlook history headers, Gmail Japanese and
 Apple Chinese evidence, unusual quoted-forward layouts, and wrapper/sanitizer
 ownership. The English Outlook history guard is distinct from the now-localized
-forward-header parser. Re-time #193's external `mail-parser-reply` colon-gated
-slow path separately; the old 46-second observation is not a current benchmark.
+forward-header parser. The #268 follow-up uses a bounded English header regex
+and skips unused signature/disclaimer searches in `mail-parser-reply`, preserving
+normalization and content/header output. The per-message whitespace budget stays
+as defense in depth; it is no longer the only reply-parser bound. The old
+46-second observation is not a current benchmark.
 
 ## Distribution and demo: reuse one synthetic inbox
 
@@ -260,7 +263,7 @@ Deployment and endpoint retrieval remain separate outstanding work.
 | [#161](https://github.com/BigCactusLabs/dead-letter/issues/161) | Produce capture/still from existing recipe fixtures and tested commands. |
 | [#166](https://github.com/BigCactusLabs/dead-letter/issues/166) | Review-artifact workflow implemented in follow-up; human review and held-out comparison remain. |
 | [#188](https://github.com/BigCactusLabs/dead-letter/issues/188) | Review existing Windows PR #204 and exact-head native evidence. |
-| [#193](https://github.com/BigCactusLabs/dead-letter/issues/193) | Narrow to residual Outlook/locale/ambiguity evidence and separate reply-parser retiming. 2026-11-02 batch: localized plain-text Outlook history and a per-message reply-parser whitespace budget; Chinese history labels and other dependency slow paths remain. |
+| [#193](https://github.com/BigCactusLabs/dead-letter/issues/193) | Narrow to residual Outlook/locale/ambiguity evidence and separate reply-parser retiming. 2026-11-02 batch: localized plain-text Outlook history and a per-message reply-parser whitespace budget; #268 also bounds English reply headers and skips unused signature/disclaimer searches. Chinese history labels remain. |
 | [#196](https://github.com/BigCactusLabs/dead-letter/issues/196) | Offline comparator prepared; independent repeat capture, variants and dev-only remapping remain. |
 | [#197](https://github.com/BigCactusLabs/dead-letter/issues/197) | Reuse evaluation-only variant support to add the combined arm; fit and assess the combiner against reviewed labels. |
 | [#220](https://github.com/BigCactusLabs/dead-letter/issues/220) | Keep deferred until observed macOS memory pressure justifies a soft watchdog. |
