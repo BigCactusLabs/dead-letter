@@ -11,14 +11,14 @@ from dead_letter.core.html_conversation import _BLOCK_TAGS, _unwrap_preserving_b
 
 _LIST_ITEM_RE = re.compile(r"^( *)(?P<marker>[-+*]|\d+[.)])(?P<space> +)")
 # Leave ample room below the converter's hard 1024-element traversal limit.
-_MAX_HTML_ELEMENT_DEPTH = 64
+_MAX_HTML_ELEMENT_DEPTH = 512
 _CONTENT_SKIPPING_WARNINGS = {
     "depth_limit_exceeded": "html_depth_limit",
     "truncated_input": "html_content_skipped",
 }
 
 
-def _flatten_deep_html(html: str) -> str:
+def _flatten_deep_html(html: str, *, warnings: list[dict[str, str]] | None = None) -> str:
     tree = parse_html(html)
     stack = [(tree.root, 0, False)]
     unwrap = []
@@ -38,6 +38,12 @@ def _flatten_deep_html(html: str) -> str:
     # Plan before mutating: unwrapping changes the last child's next pointer.
     for node, in_pre in unwrap:
         _unwrap_preserving_boundaries(node, in_pre=in_pre)
+    if unwrap and warnings is not None:
+        warnings.append({
+            "code": "html_depth_flattened",
+            "message": "Deeply nested HTML was flattened; text was preserved and formatting beyond the depth limit was reduced",
+            "severity": "warning",
+        })
     return tree.html if unwrap else html
 
 
@@ -139,7 +145,7 @@ def convert_html_to_markdown(
     html: str, *, warnings: list[dict[str, str]] | None = None
 ) -> str:
     """Convert sanitized HTML to Markdown using dead-letter's stable options."""
-    flattened = _flatten_deep_html(html)
+    flattened = _flatten_deep_html(html, warnings=warnings)
     result = convert(
         flattened,
         options=ConversionOptions(

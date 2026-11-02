@@ -137,9 +137,10 @@ adjacent edge already has a newline or is blank. Unwrapping current-body quote
 containers preserves each exposed paragraph edge; existing block and break
 boundaries remain intact.
 
-Before Markdown rendering, elements deeper than a safe nesting cap are unwrapped
-iteratively, preserving text and block boundaries. Formatting at that depth can
-be reduced. If the renderer still reports skipped content, conversion uses
+Before Markdown rendering, nesting is capped at 512 element levels by iterative
+unwrapping, preserving text and block boundaries. Any flattening adds a
+`html_depth_flattened` diagnostics warning because formatting beyond the nesting
+limit is reduced. If the renderer still reports skipped content, conversion uses
 block-separated text instead of the incomplete Markdown and adds a diagnostics
 warning: `html_depth_limit` for a traversal-depth limit, or `html_content_skipped`
 for truncated input. This applies to current content and rendered history zones.

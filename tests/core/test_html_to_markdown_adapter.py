@@ -106,8 +106,12 @@ def test_adapter_bounds_converter_input_depth(monkeypatch, tag) -> None:
         return real_convert(html, options=options)
 
     monkeypatch.setattr(html_to_markdown_adapter, "convert", checked_convert)
+    warnings = []
 
-    markdown = convert_html_to_markdown(f"<{tag}>" * 2000 + "PAYLOAD" + f"</{tag}>" * 2000)
+    markdown = convert_html_to_markdown(
+        f"<{tag}>" * 2000 + "PAYLOAD" + f"</{tag}>" * 2000, warnings=warnings
+    )
 
     assert "PAYLOAD" in markdown
     assert max_depth <= html_to_markdown_adapter._MAX_HTML_ELEMENT_DEPTH
+    assert [warning["code"] for warning in warnings] == ["html_depth_flattened"]
