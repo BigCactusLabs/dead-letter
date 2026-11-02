@@ -288,6 +288,7 @@ def _threaded_content_from_conversation(
     *,
     filtered_html_body: str | None = None,
     stripped_cids: set[str] | None = None,
+    html_warnings: list[dict[str, str]] | None = None,
 ) -> tuple[ThreadedContent | None, str | None, dict[str, str] | None]:
     html_body = filtered_html_body if filtered_html_body is not None else parsed.html_body
     if not html_body:
@@ -300,10 +301,13 @@ def _threaded_content_from_conversation(
     # Convert HTML zones to markdown text before cleanup so that
     # plaintext-based strip patterns (signatures, disclaimers, etc.) can match.
     text_zones: list[ConversationZone] = []
+    render_warnings: list[dict[str, str]] = []
     for zone in conversation.zones:
         content = zone.content
         if zone.source_kind == "html":
-            content = html_to_markdown(zone.content, include_raw_html=False).markdown
+            html_result = html_to_markdown(zone.content, include_raw_html=False)
+            content = html_result.markdown
+            render_warnings.extend(html_result.warnings)
             content = _rewrite_inline_image_refs(
                 content,
                 parsed,
@@ -375,6 +379,8 @@ def _threaded_content_from_conversation(
     if not zones:
         return None, None, None
 
+    if html_warnings is not None:
+        html_warnings.extend(render_warnings)
     raw_html = sanitize_html(html_body) if options.include_raw_html else None
     return (
         ThreadedContent(zones=zones),
@@ -629,11 +635,13 @@ def _build_pipeline_snapshot(
     threaded: ThreadedContent | None = None
     diagnostics: dict[str, Any] | None = None
     html_failure_message: str | None = None
+    html_warnings: list[dict[str, str]] = []
 
     if parsed.selected_body_kind == "html":
         try:
             threaded, raw_html, html_context = _threaded_content_from_conversation(
                 parsed, options, filtered_html_body=filtered_html_body, stripped_cids=stripped_cids,
+                html_warnings=html_warnings,
             )
         except RuntimeError as exc:
             html_context = None
@@ -644,6 +652,7 @@ def _build_pipeline_snapshot(
                 segmentation_path=html_context["segmentation_path"],
                 client_hint=html_context["client_hint"],
                 confidence=html_context["confidence"],
+                warnings=html_warnings,
             )
 
     if threaded is None:
@@ -694,6 +703,7 @@ def _build_pipeline_snapshot(
                 fallback_used = "html_failure_plain_text_fallback"
                 diagnostics_warnings.append(_html_failure_warning(html_failure_message))
             elif html_result is not None:
+                diagnostics_warnings.extend(html_result.warnings)
                 if html_result.markdown.strip():
                     text_for_threading = html_result.markdown
                     threading_source_kind = "html"

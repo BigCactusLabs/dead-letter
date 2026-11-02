@@ -131,8 +131,18 @@ it does not impose a deadline on the rest of email parsing or conversion.
 
 HTML sanitization preserves paragraph boundaries in stripped block elements,
 including `center`, `details` and `summary`, before classification. History
-extraction adds a line break only between adjacent inline content outside `pre`,
-looking through inline ancestors; existing block and break boundaries remain intact.
+extraction adds a line break between adjacent inline content, looking through
+inline ancestors. Inside `pre`, it inserts a text newline only when neither
+adjacent edge already has a newline or is blank. Unwrapping current-body quote
+containers preserves each exposed paragraph edge; existing block and break
+boundaries remain intact.
+
+Before Markdown rendering, elements deeper than a safe nesting cap are unwrapped
+iteratively, preserving text and block boundaries. Formatting at that depth can
+be reduced. If the renderer still reports skipped content, conversion uses
+block-separated text instead of the incomplete Markdown and adds a diagnostics
+warning: `html_depth_limit` for a traversal-depth limit, or `html_content_skipped`
+for truncated input. This applies to current content and rendered history zones.
 
 Plain-text Outlook history splits before mail-parser-reply, including English.
 Each separator plus contiguous sender and sent/date header block starts a

@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- HTML history extraction keeps words on separate lines inside preformatted
+  text and preserves paragraph boundaries when current-message quote wrappers
+  are removed. Deeply nested HTML keeps all text; if a renderer content limit
+  is reached, conversion keeps the text with reduced formatting and reports
+  a diagnostics warning (#268).
 - Windows MBOX workers now verify job membership after a clean exit and use
   job CPU accounting to identify CPU-limit failures when the process exits
   before the job is signaled. Missing membership or failed accounting checks

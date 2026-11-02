@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dead_letter.core._html_parser import parse_html
 from dead_letter.core.html_to_markdown_adapter import convert_html_to_markdown
@@ -15,6 +15,7 @@ class HtmlConversionResult:
     markdown: str
     quote_patterns: set[str]
     raw_html: str | None
+    warnings: list[dict[str, str]] = field(default_factory=list)
 
 
 def html_to_markdown(html: str, *, include_raw_html: bool = False) -> HtmlConversionResult:
@@ -23,13 +24,15 @@ def html_to_markdown(html: str, *, include_raw_html: bool = False) -> HtmlConver
     patterns = detect_quote_patterns(cleaned)
 
     markdown = ""
+    warnings: list[dict[str, str]] = []
     if cleaned:
-        markdown = convert_html_to_markdown(cleaned)
+        markdown = convert_html_to_markdown(cleaned, warnings=warnings)
 
     return HtmlConversionResult(
         markdown=markdown,
         quote_patterns=patterns,
         raw_html=cleaned if include_raw_html else None,
+        warnings=warnings,
     )
 
 
