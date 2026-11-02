@@ -337,6 +337,47 @@ def test_adversarial_attribution_candidates_finish_in_killable_process():
     assert "bounded candidates and annotation passed" in result.stdout
 
 
+def test_structured_html_conversion_bounds_german_candidate_in_killable_process(tmp_path):
+    script = textwrap.dedent("""\
+        from email.message import EmailMessage
+        from pathlib import Path
+        import sys
+        import time
+
+        from dead_letter.core import convert
+        from dead_letter.core.types import ConvertOptions, ThreadMode
+
+        directory = Path(sys.argv[1])
+        candidate = 'Am X' + ' ' * 128_000 + ':'
+        body = (
+            '<p>AUTHORED_PAYLOAD</p><blockquote class="gmail_quote">'
+            + candidate + '<br>QUOTED_PAYLOAD</blockquote>'
+        )
+        message = EmailMessage()
+        message['From'] = 'synthetic@example.test'
+        message['Subject'] = 'Bounded structured conversion'
+        message.set_content(body, subtype='html')
+        source, output = directory / 'synthetic.eml', directory / 'out.md'
+        source.write_bytes(bytes(message))
+        started = time.perf_counter()
+        result = convert(source, output=output, options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED))
+        elapsed = time.perf_counter() - started
+        assert result.success, result.error
+        rendered = output.read_text()
+        for sentinel in ('AUTHORED_PAYLOAD', 'Am X', 'QUOTED_PAYLOAD'):
+            assert rendered.count(sentinel) == 1
+        assert '## Earlier' in rendered
+        assert elapsed < 2, elapsed
+        print(f'html structured conversion passed in {elapsed:.6f}s')
+    """)
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path)], capture_output=True, text=True,
+        timeout=10, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "html structured conversion passed" in result.stdout
+
+
 from dead_letter.core.attribution import annotate_quoted_zones
 from dead_letter.core.types import ConversationZone, ConvertOptions, ThreadMode, ZoneKind
 

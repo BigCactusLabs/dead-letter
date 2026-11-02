@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from dead_letter.core.sanitize import sanitize_html
 
 
@@ -36,3 +38,47 @@ def test_sanitize_html_allows_cid_and_mailto_links() -> None:
 
     assert 'href="mailto:person@example.com"' in cleaned
     assert 'src="cid:image1"' in cleaned
+
+
+@pytest.mark.parametrize("tag", [
+    "address", "article", "aside", "center", "dd", "details", "dialog", "dl", "dt",
+    "fieldset", "figcaption", "figure", "footer", "form", "header", "legend",
+    "main", "menu", "nav", "section", "summary",
+])
+def test_sanitize_html_preserves_stripped_block_boundaries(tag) -> None:
+    html = f'Before<{tag} class="gmail_quote" onclick="alert(1)">Inside</{tag}>After'
+
+    assert sanitize_html(html) == "Before<div>Inside</div>After"
+
+
+def test_sanitize_html_preserves_caption_boundary() -> None:
+    assert sanitize_html("<table><caption>Caption</caption></table>") == "<div>Caption</div><table></table>"
+
+
+def test_sanitize_html_keeps_inline_tags_inline() -> None:
+    assert sanitize_html("Be<small>fore</small><wbr>After") == "BeforeAfter"
+
+
+def test_sanitize_html_cleans_unsafe_content_inside_stripped_blocks() -> None:
+    html = (
+        '<center id="divRplyFwdMsg" onclick="alert(1)">Safe'
+        '<details><summary>Summary</summary><script>alert(1)</script>'
+        '<a href="javascript:alert(1)">bad</a><img src="file:///etc/passwd">'
+        '</details></center>'
+    )
+
+    cleaned = sanitize_html(html)
+
+    assert "Safe<div><div>Summary</div>" in cleaned
+    for unsafe in ("divRplyFwdMsg", "onclick", "<script", "alert(1)", "javascript:", "file:///"):
+        assert unsafe not in cleaned
+
+
+def test_sanitize_html_does_not_rewrite_block_names_in_attributes_or_text() -> None:
+    html = '<a title="<center>literal</center>">Link</a><center>&lt;details&gt;</center>'
+
+    cleaned = sanitize_html(html)
+
+    assert 'title="&lt;center&gt;literal&lt;/center&gt;"' in cleaned
+    assert "<div>&lt;details&gt;</div>" in cleaned
+    assert sanitize_html(cleaned) == cleaned

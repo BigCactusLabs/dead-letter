@@ -540,8 +540,13 @@ def _extract_quote_html(
             sibling = sibling.next
 
     fragments = [node.html or node.text(separator="\n", strip=True) for node in nodes]
+    boundary = parse_html("<br>").body.child
     for node in nodes:
-        node.decompose()
+        if node.tag in _BLOCK_TAGS:
+            # Keep the removed block's boundary between authored inline runs.
+            node.replace_with(boundary)
+        else:
+            node.decompose()
 
     quoted_content = "".join(fragment for fragment in fragments if fragment)
     return quoted_content or None

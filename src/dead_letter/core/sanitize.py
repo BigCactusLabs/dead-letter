@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import re
+
 import nh3
+
+from dead_letter.core._html_parser import parse_html
 
 _ALLOWED_TAGS = {
     "a",
@@ -52,11 +56,30 @@ _ALLOWED_ATTRIBUTES = {
 
 _ALLOWED_URL_SCHEMES = {"http", "https", "mailto", "cid"}
 
+# These containers lose their tags, but must not join adjacent rendered lines.
+_STRIPPED_BLOCK_TAGS = (
+    "address", "article", "aside", "caption", "center", "dd", "details", "dialog",
+    "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form", "header",
+    "legend", "main", "menu", "nav", "section", "summary",
+)
+_STRIPPED_BLOCK_RE = re.compile(
+    r"</?(?:" + "|".join(_STRIPPED_BLOCK_TAGS) + r")(?=[\s/>])", re.IGNORECASE
+)
+
 
 def sanitize_html(html: str) -> str:
     """Sanitize incoming HTML while preserving quote-detection metadata."""
     if not html:
         return ""
+
+    if _STRIPPED_BLOCK_RE.search(html):
+        tree = parse_html(html)
+        block = parse_html("<div></div>").body.child
+        for node in tree.css(",".join(_STRIPPED_BLOCK_TAGS)):
+            node.insert_before(block)
+            node.prev.insert_child(node, move=True)
+            node.unwrap()
+        html = tree.html or ""
 
     return nh3.clean(
         html,
