@@ -131,8 +131,20 @@ it does not impose a deadline on the rest of email parsing or conversion.
 
 HTML sanitization preserves paragraph boundaries in stripped block elements,
 including `center`, `details` and `summary`, before classification. History
-extraction adds a line break only between adjacent inline content outside `pre`,
-looking through inline ancestors; existing block and break boundaries remain intact.
+extraction adds a line break between adjacent inline content, looking through
+inline ancestors. Inside `pre`, it inserts a text newline only when neither
+adjacent edge already has a newline or is blank. Unwrapping current-body quote
+containers preserves each exposed paragraph edge; existing block and break
+boundaries remain intact.
+
+Before Markdown rendering, nesting is capped at 512 element levels by iterative
+unwrapping, preserving text and block boundaries. Nested blockquotes are capped
+separately at 64 levels to bound the size of Markdown quote prefixes. Any
+flattening adds a `html_depth_flattened` diagnostics warning because formatting
+beyond the nesting limit is reduced. If the renderer still reports skipped content, conversion uses
+block-separated text instead of the incomplete Markdown and adds a diagnostics
+warning: `html_depth_limit` for a traversal-depth limit, or `html_content_skipped`
+for truncated input. This applies to current content and rendered history zones.
 
 Plain-text Outlook history splits before mail-parser-reply, including English.
 Each separator plus contiguous sender and sent/date header block starts a
@@ -257,6 +269,7 @@ Rules:
 - Browser requests with `Sec-Fetch-Site: cross-site` are rejected with `403`.
 - Requests with an `Origin` header that does not match the request origin are rejected with `403`.
 - CSRF failures use the standard error envelope with `code="csrf_validation_failed"`.
+- A response sent before the request body was read to the end (Host/CSRF rejections, body-limit `413`s, MBOX upload rejections) carries `Connection: close`, so the client stops sending and the server never drains the unread bytes.
 - No CORS support is provided; the same-origin local UI is the only browser client. Script clients must call `/api/session` and include the CSRF header before using mutating endpoints.
 
 ### Workflow Settings
@@ -399,6 +412,8 @@ Admission and output rules:
   file, case-insensitively. Absolute paths, root escapes, symlinks escaping
   the root, Cabinet sources, directories and compressed archives are rejected.
   The file must already be present on the server; this endpoint is not an upload.
+  To send an archive from the browser, use
+  [`POST /api/mbox/uploads`](#post-apimboxuploads-unreleased).
 - Archives larger than 16 GiB are rejected before staging. The admitted
   device/inode, size and modification/change timestamps are rechecked before
   work and at message boundaries, with the core reader's own handle checks.
@@ -491,6 +506,110 @@ job resume or automatic retry. There is no total output/temp-disk quota or
 worker-memory cap on this endpoint: reserve space for staging, bundles and the
 disk-backed report. Cancellation/timeouts cannot bound blocked OS I/O, and a
 hard process kill cannot guarantee a final report or cleanup.
+
+### `POST /api/mbox/uploads` (unreleased)
+
+Sends one flat `.mbox` archive from the browser, stages it under the Inbox and
+starts the same archive job as `POST /api/mbox/jobs`. Configure Inbox/Cabinet
+first; the loopback Host, same-origin and CSRF rules apply. For an archive that
+is already on the machine running dead-letter, the local-path route is faster
+and needs no second copy.
+
+The body is the raw archive bytes, not multipart form data:
+
+```http
+POST /api/mbox/uploads?options=%7B%22thread_mode%22%3A%22structured%22%7D
+Content-Type: application/octet-stream
+Content-Length: 1048576
+X-Dead-Letter-Upload-Length: 1048576
+X-Dead-Letter-Filename: All%20mail%20Including%20Spam%20and%20Trash.mbox
+X-Dead-Letter-CSRF: <csrf_token>
+```
+
+- `Content-Length` is required and chunked bodies are refused.
+  `X-Dead-Letter-Upload-Length` must repeat the same decimal byte count.
+- `X-Dead-Letter-Filename` is the percent-encoded UTF-8 file name. The server
+  keeps the part after the last `/` or `\`, requires a case-insensitive `.mbox`
+  suffix, replaces `<>:"|?*` with `_`, drops leading dots and spaces, caps the
+  stem at 200 UTF-8 bytes and uses `upload` for an empty stem. Invalid UTF-8
+  and control characters are rejected.
+- The optional `options` query parameter is one JSON object with the same
+  fields, defaults and validation as `options` on `POST /api/mbox/jobs`.
+
+Every check that does not need the body runs before the first body byte is
+read, in this order. Each rejection uses the error envelope, reads no body and
+closes the connection; a client that sent `Expect: 100-continue` never receives
+`100 Continue`.
+
+1. `409 invalid_request` (path `settings`): Inbox/Cabinet are not configured.
+2. `411 mbox_upload_length_required`: no `Content-Length`, or a
+   `Transfer-Encoding` header.
+3. `400 mbox_upload_length_mismatch`: the declared length is missing, either
+   length header is not a decimal byte count of at most 20 digits, or the
+   declared length differs from `Content-Length`. Longer headers are refused
+   before they are converted to a number. A `Content-Length` whose value is
+   above 16 GiB + 1 MiB gets the body-limit backstop's plain `413` instead
+   (see [HTTP Status Mapping](#http-status-mapping)).
+4. `413 mbox_too_large`: the declared length is above 16 GiB.
+5. `400 invalid_request`: the file name or `options` is invalid.
+6. `415 mbox_upload_unsupported_media_type`: the content type is not
+   `application/octet-stream`.
+7. `409 mbox_busy`: the archive slot is occupied. The upload reserves the same
+   single slot as `POST /api/mbox/jobs` before it reads the body, and the
+   accepted job keeps it, so a path import cannot start while bytes arrive.
+8. `403 invalid_request` (path `mbox-uploads`): `<Inbox>/mbox-uploads` is a
+   symlink, is not a folder, or resolves outside the Inbox. The server creates
+   the folder when it is missing and stages only under the checked path.
+9. `507 mbox_upload_insufficient_storage`: the staging folder's free space,
+   less the declared length, is below 1 GiB. The 1 GiB margin leaves room for
+   the job's report spool and first bundles and for the host itself. Free space
+   cannot be reserved, so this is a check, not a quota.
+
+The body is written to `<Inbox>/mbox-uploads/.upload-<random>.part`, created
+exclusively, in writes of about 1 MiB off the event loop. The server counts the
+bytes it actually receives:
+
+- more than the declared length: `413 mbox_upload_too_long`;
+- fewer, because the body ended or the client disconnected:
+  `400 mbox_upload_incomplete`;
+- no data for 60 seconds: `408 mbox_upload_timeout`;
+- free space rechecked every 256 MiB against the bytes still to come, and
+  `ENOSPC`/`EDQUOT` while creating the staging folder or `.part` file, writing,
+  flushing or publishing: `507 mbox_upload_insufficient_storage`;
+- any other staging failure: `500 backend_error`.
+
+After the last byte the file is flushed to disk and renamed to `<stem>.mbox`,
+or `<stem>-2.mbox`, `<stem>-3.mbox`, and so on when the name is taken. The
+server first claims the name by creating an empty file there exclusively, so
+publication never replaces a file that existed when the name was claimed. A
+concurrent local writer that replaces the claimed name before the rename is
+out of scope. The `.part` file is removed on every failure,
+and the staged archive is removed if job admission fails after staging. Every
+failure releases the archive slot.
+
+Success is `202` with the same body as `POST /api/mbox/jobs`. The job snapshot
+has `origin="upload"`, and `mbox.source_path` is the staged archive. That
+archive is the job's immutable source: it stays in `<Inbox>/mbox-uploads/`
+after the job succeeds, fails or is cancelled, and is not deleted for you. The
+Inbox watcher ignores it because it only picks up `.eml` files. Output follows
+the local-path rules: a new `<Cabinet>/mbox-<job-id>/` of copy-only bundles,
+each with its own `source.eml`.
+
+Limits: an interrupted upload cannot be resumed and starts again from byte
+zero. The 507 check covers staging only; the bundles need roughly the archive's
+size again in the Cabinet. There is no total output/temp-disk quota. Browsers
+can report an early rejection as a network error, because the server closes the
+connection while the browser is still sending.
+
+The app-wide request-body limit (see [HTTP Status Mapping](#http-status-mapping))
+is raised to 16 GiB + 1 MiB on this route, so the endpoint's own checks answer
+every request near the cap. A declared length above that limit gets the
+middleware's plain `413` instead of `mbox_too_large`.
+
+The archive form's **Upload archive** choice sends the chosen file to this
+route with upload progress and a cancel button, then shows the job's progress
+like a local-path import. Cancel is disabled once every byte is sent, because
+the server may already be creating the job.
 
 ### `GET /api/jobs/{id}`
 
@@ -1226,10 +1345,14 @@ pinned PyPI version.
 
 - `200`: settings get/put, filesystem list, watch get/start/stop, job snapshot, open Cabinet folder
 - `202`: job create accepted, import accepted, cancel accepted
-- `400`: request rejected (schema or semantic validation)
-- `403`: untrusted API `Host`, CSRF validation failure, hostile browser-origin signal, or filesystem/watch path escaping the configured browser root
+- `400`: request rejected (schema or semantic validation), or an MBOX upload whose declared lengths disagree or whose body ended early
+- `403`: untrusted API `Host`, CSRF validation failure, hostile browser-origin signal, filesystem/watch path escaping the configured browser root, or an `<Inbox>/mbox-uploads` entry that is a symlink, not a folder, or outside the Inbox
 - `404`: unknown or evicted job id, or missing browse/watch target
-- `409`: workflow settings missing, or invalid lifecycle/watch conflict
-- `413`: import payload exceeds the 100 MB per-file limit, the 100-file batch limit, or the 100 MB aggregate batch limit
+- `408`: an MBOX upload sent no data for 60 seconds (`mbox_upload_timeout`)
+- `409`: workflow settings missing, or invalid lifecycle/watch conflict, including an occupied archive slot (`mbox_busy`)
+- `411`: an MBOX upload without `Content-Length` or with a chunked body
+- `413`: import payload exceeds the 100 MB per-file limit, the 100-file batch limit, or the 100 MB aggregate batch limit; an MBOX archive or upload exceeds 16 GiB (`mbox_too_large`) or sends more than it declared (`mbox_upload_too_long`); or any API request body exceeds the app-wide 110 MiB backstop (16 GiB + 1 MiB on `POST /api/mbox/uploads`). The backstop answers before the route reads the rest of the body, with Starlette's plain `Content Too Large` (`{"detail": "Content Too Large"}` for a body without `Content-Length`) rather than the error envelope
+- `415`: an MBOX upload that is not `application/octet-stream`
 - `422`: batch import contains non-`.eml` files (`POST /api/import-batch` rejects any upload whose filename does not end in `.eml`; clients are expected to filter or confirm-and-skip before upload)
 - `500`: unexpected backend failure
+- `507`: not enough free space to stage an MBOX upload and keep 1 GiB free, or the disk or quota filled while staging it (`mbox_upload_insufficient_storage`)

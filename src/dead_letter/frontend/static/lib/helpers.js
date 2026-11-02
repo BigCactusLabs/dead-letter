@@ -89,14 +89,27 @@ const MBOX_OPTION_KEYS = [
   "thread_mode", "thread_order",
 ];
 
-export function buildMboxPayload(inputPath, options, timeoutSeconds = 30) {
+export const MBOX_UPLOAD_MAX_BYTES = 16 * 1024 ** 3;
+
+export function buildMboxOptions(options, timeoutSeconds = 30) {
   const selected = Object.fromEntries(
     MBOX_OPTION_KEYS.filter((key) => key in options).map((key) => [key, options[key]])
   );
+  return { ...selected, timeout_seconds: timeoutSeconds };
+}
+
+export function buildMboxPayload(inputPath, options, timeoutSeconds = 30) {
   return {
     input_path: inputPath.trim().replace(/\\/g, "/"),
-    options: { ...selected, timeout_seconds: timeoutSeconds },
+    options: buildMboxOptions(options, timeoutSeconds),
   };
+}
+
+function mboxTimeoutErrors(timeoutSeconds) {
+  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0 || timeoutSeconds > 300) {
+    return ["The per-message time limit must be greater than 0 and at most 300 seconds."];
+  }
+  return [];
 }
 
 export function validateMboxForm({ inputPath, timeoutSeconds = 30 }) {
@@ -107,19 +120,75 @@ export function validateMboxForm({ inputPath, timeoutSeconds = 30 }) {
   if (/^(\/|[a-z]:|~\/)/i.test(path) || path.split("/").includes("..")) {
     errors.push("Use a path within the file browser root, such as Downloads/Takeout.mbox.");
   }
-  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0 || timeoutSeconds > 300) {
-    errors.push("The per-message time limit must be greater than 0 and at most 300 seconds.");
-  }
-  return errors;
+  return [...errors, ...mboxTimeoutErrors(timeoutSeconds)];
 }
 
-function formatBytes(value) {
+export function validateMboxUpload({ file, timeoutSeconds = 30 }) {
+  const errors = [];
+  if (!file) errors.push("Choose a .mbox file to upload.");
+  else if (!String(file.name || "").toLowerCase().endsWith(".mbox")) {
+    errors.push("Choose a single uncompressed .mbox file.");
+  } else if (file.size > MBOX_UPLOAD_MAX_BYTES) {
+    errors.push("Archives larger than 16 GiB cannot be uploaded.");
+  }
+  return [...errors, ...mboxTimeoutErrors(timeoutSeconds)];
+}
+
+export function mboxUploadUrl(options) {
+  return "/api/mbox/uploads?options=" + encodeURIComponent(JSON.stringify(options));
+}
+
+// Status 0 means the connection closed without a response. The server answers
+// an early rejection and then closes, which some browsers report as a network error.
+// Once every byte is sent (`sent`), the job may have started, so the outcome is unknown.
+export function mboxUploadErrorMessage(status, payload, { sent = false } = {}) {
+  const code = normalizeErrors(payload)[0]?.code || "";
+  switch (status) {
+    case 0:
+      if (sent) {
+        return "The connection closed after the whole archive was sent, so the import may have started. Check History before uploading again; while that import runs, a new upload is refused as busy.";
+      }
+      return "The connection closed before the server replied. The server may have refused the upload (another import running, or low disk space). Nothing was imported.";
+    case 400:
+      if (code === "mbox_upload_incomplete") return "The upload ended before the whole file arrived. Nothing was imported.";
+      return firstErrorMessage(payload, "The server rejected this upload.");
+    case 408:
+      return "The upload stalled and the server stopped waiting. Nothing was imported.";
+    case 409:
+      if (code === "mbox_busy") return "Another archive import is running. Wait for it to finish, then upload again.";
+      return firstErrorMessage(payload, "The server cannot accept an upload right now.");
+    case 411:
+      return "The browser sent the file without a length. Import the archive by path instead.";
+    case 413:
+      if (code === "mbox_upload_too_long") return "The browser sent more data than the file size. Nothing was imported.";
+      return "Archives larger than 16 GiB cannot be uploaded.";
+    case 415:
+      return "The archive was not sent as raw bytes. Reload the page and try again.";
+    case 507:
+      return "Not enough free space in the Inbox for this archive; 1 GiB must stay free after the copy. Free some space or import the archive by path.";
+    default:
+      return firstErrorMessage(payload, "The server could not store this upload.");
+  }
+}
+
+export function formatBytes(value) {
   if (value < 1024) return value + " B";
   const unit = Math.min(3, Math.floor(Math.log(value) / Math.log(1024)));
   return (value / 1024 ** unit).toFixed(1) + " " + ["B", "KiB", "MiB", "GiB"][unit];
 }
 
 export function jobProgressView(job) {
+  if (job.upload) {
+    const total = Math.max(0, Number(job.upload.total || 0));
+    const value = Math.min(total, Math.max(0, Number(job.upload.loaded || 0)));
+    const fraction = total ? value / total : 0;
+    return {
+      value, max: total || 1, fraction,
+      label: Math.floor(fraction * 100) + "% uploaded",
+      detail: job.upload.sent ? "Upload complete. Waiting for the server to start the import."
+        : formatBytes(value) + " of " + formatBytes(total) + " sent",
+    };
+  }
   if (job.kind === "mbox") {
     const total = Math.max(0, Number(job.mbox?.bytes_total || 0));
     const value = Math.min(total, Math.max(0, Number(job.mbox?.bytes_processed || 0)));

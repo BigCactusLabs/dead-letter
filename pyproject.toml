@@ -48,7 +48,7 @@ classifiers = [
 dependencies = [
   "icalendar>=6.1.1",
   "mail-parser>=4.2.0",
-  "mail-parser-reply>=1.35",
+  "mail-parser-reply>=1.36,<1.37",
   "nh3>=0.2.20",
   "html-to-markdown>=3.1.0,<4.0",
   "selectolax>=1.0.0,<2",
@@ -65,6 +65,7 @@ ui = [
   "fastapi>=0.136.0",
   "httpx>=0.28.0",
   "python-multipart>=0.0.26",
+  "starlette>=1.6.0",
   "uvicorn[standard]>=0.45.0",
 ]
 benchmark = ["tiktoken>=0.8.0"]
