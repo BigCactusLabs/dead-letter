@@ -21,7 +21,7 @@ payment, or catalog edit was made. Issues: #148–#153, #160.
 
 ## Smithery CLI rejects uv bundles
 
-Smithery's [publishing guide](https://smithery.ai/docs/build/publish) accepts
+Smithery's [publishing guide](https://web.archive.org/web/20260914022637/https://smithery.ai/docs/build/publish) (archived; the live page was removed by 2026-11-02) accepts
 local MCPB bundles but does not mention uv. The published CLI
 (`@smithery/cli` 4.11.1, npm latest) picks a bundle runtime this way, quoted
 from `dist/index.js`:

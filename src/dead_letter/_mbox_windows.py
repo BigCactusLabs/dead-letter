@@ -148,7 +148,7 @@ class WindowsJob:
         name = job_name(nonce)
         self._api = _kernel32()
         self._handle = None
-        self._cpu = "cpu_seconds" in budgets
+        self._cpu_limit = requested.BasicLimitInformation.PerJobUserTimeLimit
         ctypes.set_last_error(0)
         self._handle = self._api.CreateJobObjectW(None, name)
         error = ctypes.get_last_error()
@@ -191,17 +191,26 @@ class WindowsJob:
             self.close()
             raise
 
-    def cpu_exceeded(self) -> bool:
-        if not self._cpu:
+    def verify_joined(self) -> None:
+        # Lifetime count includes a departed interpreter behind a venv launcher.
+        if not self._accounting(self._handle).TotalProcesses:
+            raise OSError("Worker did not join its job")
+
+    def cpu_exceeded(self, *, failed: bool = False) -> bool:
+        if not self._cpu_limit:
             return False
         # A job is signaled for end-of-job time, not an arbitrary process exit.
         # ERROR_NOT_ENOUGH_QUOTA (1816) alone could be an unrelated native exit.
         state = self._api.WaitForSingleObject(self._handle, 0)
         if state not in (_WAIT_OBJECT_0, _WAIT_TIMEOUT):
             raise OSError("Could not read worker job state")
-        return state == _WAIT_OBJECT_0
+        if state == _WAIT_OBJECT_0:
+            return True
+        # The process handle can be signaled before the job. Compare user time
+        # since the limit was set; both values use 100-ns ticks.
+        return failed and self._accounting(self._handle).ThisPeriodTotalUserTime >= self._cpu_limit
 
-    def _active_processes(self, handle: int) -> int:
+    def _accounting(self, handle: int) -> _BasicAccounting:
         info = _BasicAccounting()
         returned = _DWORD()
         if not self._api.QueryInformationJobObject(
@@ -212,18 +221,18 @@ class WindowsJob:
             ctypes.byref(returned),
         ) or returned.value != ctypes.sizeof(info):
             raise OSError("Could not read worker job processes")
-        return info.ActiveProcesses
+        return info
 
     def _drain(self, handle: int) -> None:
         # The reaped direct child can be a venv launcher; the interpreter in
         # this job may still be exiting with workspace files open.
-        if not self._active_processes(handle):
+        if not self._accounting(handle).ActiveProcesses:
             return
         # Like TerminateProcess, this starts termination and does not wait.
         if not self._api.TerminateJobObject(handle, 1):
             raise OSError("Could not terminate worker job")
         deadline = monotonic() + _DRAIN_SECONDS
-        while self._active_processes(handle) and monotonic() < deadline:
+        while self._accounting(handle).ActiveProcesses and monotonic() < deadline:
             sleep(_DRAIN_INTERVAL)
 
     def close(self, *, terminate: bool = False) -> None:

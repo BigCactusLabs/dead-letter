@@ -181,12 +181,21 @@ capped at 1 MiB and the smallest output budget is 1 MiB, so a valid receipt fits
 
 ### Windows Job Objects
 
+The clean-exit membership check and CPU accounting fallback described below
+are unreleased changes (#254, #255).
+
 The parent creates a fresh job named with the per-launch random nonce, sets
 its limits, then queries them back before starting a worker. It refuses an
 already-existing name instead of adopting or modifying another job. The worker
 opens this job with assignment rights only and joins before importing the
 package. Its temporary handle is closed immediately; only the parent keeps a
 job handle. No extra runtime dependency is added.
+
+Before accepting a clean worker exit, the parent also verifies that the job's
+lifetime `TotalProcesses` count is at least one. This includes terminated
+members, whether the interpreter is the direct child or runs behind a virtual
+environment launcher. An empty job or a failed accounting query aborts with
+`mbox_budget_apply_failed`.
 
 The job permits one active process and has kill-on-close enabled, with no
 breakaway flags. This also rejects ordinary child-process creation by the
@@ -218,8 +227,12 @@ cooperative MBOX cancellation (`MboxCancelled`, as a web job uses) already in
 progress is kept and carries the cleanup failure as an exception note.
 
 CPU exhaustion is established from the **signaled job object** after the worker
-exits. Windows exit code 1816 alone is ambiguous and remains an ordinary crash
-without that job signal. The committed-memory limit uses the same Python
+exits, or, for a nonzero worker exit, from accounting `ThisPeriodTotalUserTime`
+at or above the configured job CPU limit. This counts user time since the limit
+was set. Both values use 100-nanosecond ticks; accounting
+avoids depending on which handle Windows signals first. Windows exit code 1816
+alone is ambiguous and remains an ordinary crash without that job evidence.
+The committed-memory limit uses the same Python
 `MemoryError` monitoring and nonce-authenticated outcome path as Linux.
 
 ### macOS memory decision
@@ -249,7 +262,7 @@ real-corpus evidence (#138) shows it is needed.
 | --- | --- | --- |
 | `mbox_budget_unsupported` | Usage error, before conversion | The control is unavailable on this platform (message names the control, flag and platform). CLI exit code 1, no output or report. |
 | `mbox_budget_apply_failed` | Archive-fatal | A requested limit could not be configured or verified, or Windows job setup/join/state/cleanup failed. No unenforced retry; the import stops with an archive error entry. |
-| `mbox_message_resource_limit` | One record | The worker exceeded a budget. The message names the limit when determined: CPU time (`SIGXCPU` or Windows job signal), per-file output (`SIGXFSZ`), or memory (a `MemoryError` observed under a memory budget). |
+| `mbox_message_resource_limit` | One record | The worker exceeded a budget. The message names the limit when determined: CPU time (`SIGXCPU` or Windows job signal/accounting), per-file output (`SIGXFSZ`), or memory (a `MemoryError` observed under a memory budget). |
 
 An exceeded budget is handled like a timeout: the worker is reaped, its private
 workspace and any partial artifacts are discarded unpublished, and later

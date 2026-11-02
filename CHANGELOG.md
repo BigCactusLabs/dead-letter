@@ -9,12 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Claude plugin launcher uses the shipped `uv.lock` and Python 3.12 through frozen, isolated
+  `uv run`, with dependency hash checks and no writes to the plugin directory.
+  MCP Registry entries constrain transitive resolution with an absolute UTC
+  `--exclude-newer` cutoff set from PyPI upload times (#263).
 - Claude plugin 0.4.12 pins package 0.4.10 (`dead-letter==0.4.10`) and relocks
   `plugin/uv.lock`. Plugin users get the 0.4.10 bounded attribution parsing and
   the distinct MBOX storage-exhaustion outcome.
 - Claude plugin 0.4.13 keeps the 0.4.10 pin. Its README links synthetic
   sample mail for trying each command and lists the shell helpers that the
   `triage` and `mbox` commands ask Claude to run.
+
+### Fixed
+
+- Windows MBOX workers now verify job membership after a clean exit and use
+  job CPU accounting to identify CPU-limit failures when the process exits
+  before the job is signaled. Missing membership or failed accounting checks
+  abort the import with `mbox_budget_apply_failed` (#254, #255).
 
 ## [0.4.10] - 2026-10-29
 

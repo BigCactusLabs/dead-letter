@@ -340,9 +340,9 @@ Merge the entry rather than replacing existing client settings. VS Code and othe
 
 On Claude Code 2.1.275 or later, `/plugin install dead-letter --marketplace BigCactusLabs/bigcactuslabs-plugins` does both in one step.
 
-The plugin launches the MCP server via `uvx` and adds five slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`, `/dead-letter:mbox`. Local Claude Code needs `uv` on `PATH`; see [`plugin/`](https://github.com/BigCactusLabs/dead-letter/tree/main/plugin/) for runtime-specific setup and updates. Email content is treated as untrusted data, not instructions: embedded requests for tool use, credentials, or exfiltration are not followed.
+The plugin adds five slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`, `/dead-letter:mbox`. Local Claude Code needs `uv` on `PATH`; see [`plugin/`](https://github.com/BigCactusLabs/dead-letter/tree/main/plugin/) for runtime-specific setup and updates. Email content is treated as untrusted data, not instructions: embedded requests for tool use, credentials, or exfiltration are not followed.
 
-The marketplace pins the plugin tag and commit, and its launcher pins an exact published Python package. Claude Code and Cowork keep separate installed copies; update and verify each client. The plugin also ships a `uv.lock` with hashed dependency versions for hosts that launch from a lock; plain `uvx` resolves compatible transitive versions itself.
+The marketplace pins the plugin tag and commit, and the plugin pins an exact published Python package in its uv project and lock. Plugin releases after 0.4.13 launch with `uv run --frozen --isolated` from the shipped `uv.lock`, which fixes dependency versions and checks their hashes. Plugin 0.4.13 and earlier use `uvx`, which resolves compatible transitive versions itself. Claude Code and Cowork keep separate installed copies; update and verify each client.
 
 **Claude Code (manual MCP add — alternative):**
 
@@ -358,6 +358,12 @@ codex mcp list
 ```
 
 `mcp list` confirms registration, not a successful tool call. Connect through the target client, confirm the tools below, and convert a synthetic fixture before treating the installation as verified.
+
+### Troubleshooting
+
+**Why does uv's cache keep growing?** `uvx` and uv cached environments are not
+removed automatically. Close MCP clients, then run `uv cache prune` to remove
+unused cached data. See [uv cache management](https://docs.astral.sh/uv/concepts/cache/).
 
 ### Tools
 

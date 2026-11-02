@@ -258,13 +258,25 @@ jobs:
         run: |
           v="${GITHUB_REF_NAME#v}"
           url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${v}/${BUNDLE_ASSET}"
-          jq --arg v "$v" --arg sha "$BUNDLE_SHA" --arg url "$url" '
+          curl --connect-timeout 10 --max-time 120 --retry 5 --retry-all-errors --retry-delay 10 -fsSL \
+            "https://pypi.org/pypi/dead-letter/${v}/json" -o pypi-release.json
+          cutoff=$(python3 - <<'PY'
+          import json
+          import sys
+          sys.path.insert(0, "scripts")
+          from release import registry_cutoff
+          with open("pypi-release.json", encoding="utf-8") as source:
+              print(registry_cutoff(json.load(source)))
+          PY
+          )
+          jq --arg v "$v" --arg sha "$BUNDLE_SHA" --arg url "$url" --arg cutoff "$cutoff" '
             .version = $v
             | .packages |= map(
                 if .registryType == "pypi" then
                   .version = $v
                   | .runtimeArguments |= map(
-                      if .name == "--from" then .value = ("dead-letter[mcp]==" + $v) else . end
+                      if .name == "--from" then .value = ("dead-letter[mcp]==" + $v)
+                      elif .name == "--exclude-newer" then .value = $cutoff else . end
                     )
                 elif .registryType == "mcpb" then
                   .version = $v | .identifier = $url | .fileSha256 = $sha

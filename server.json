@@ -30,6 +30,12 @@
           "name": "--from",
           "value": "dead-letter[mcp]==0.4.10",
           "description": "Install the pinned package with the MCP server extra"
+        },
+        {
+          "type": "named",
+          "name": "--exclude-newer",
+          "value": "2026-10-29T21:00:00Z",
+          "description": "Freeze dependency resolution at the first UTC minute strictly after the release's final PyPI upload"
         }
       ],
       "packageArguments": [

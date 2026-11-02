@@ -114,7 +114,7 @@ def fixture(pin=VERSION, tap_version=VERSION, launcher="dead-letter"):
         "source": "git-subdir", "url": f"https://github.com/{e.REPO}.git", "path": "plugin", "ref": "plugin-v9.0.0", "sha": SHA}}]}
     client.add_file(e.MARKETPLACE, ".claude-plugin/marketplace.json", json.dumps(marketplace))
     client.add_file(e.REPO, "plugin/.claude-plugin/plugin.json", json.dumps({"version": "9.0.0"}))
-    client.add_file(e.REPO, "plugin/.mcp.json", json.dumps({"mcpServers": {"dead-letter": {"args": ["--from", f"{launcher}=={pin}"]}}}))
+    client.add_file(e.REPO, "plugin/.mcp.json", json.dumps({"mcpServers": {"dead-letter": {"command": "uvx", "args": ["--from", f"{launcher}=={pin}"]}}}))
     client.add_file(e.TAP, "Formula/dead-letter.rb", formula_text(tap_version))
     return client, checksums, image_digest
 
@@ -224,6 +224,34 @@ class StatusTests(unittest.TestCase):
     def test_pre_lock_extra_launcher_pin_is_still_recognized(self):
         self.client, _, _ = fixture(launcher="dead-letter[mcp]")
         self.assertEqual(self.report()["channels"]["plugin-marketplace"]["status"], "verified")
+
+    def test_locked_project_launcher_reads_the_published_project_pin(self):
+        self.client.add_file(e.REPO, "plugin/.mcp.json", json.dumps({"mcpServers": {"dead-letter": s.PLUGIN_LAUNCHER}}))
+        self.client.add_file(e.REPO, "plugin/pyproject.toml", f'[project]\ndependencies = ["dead-letter=={VERSION}"]\n')
+        row = self.report()["channels"]["plugin-marketplace"]
+        self.assertEqual(row["status"], "verified")
+        self.assertEqual(row["evidence"]["runtime_pin"], VERSION)
+
+    def test_locked_project_launcher_rejects_floating_pin(self):
+        self.client.add_file(e.REPO, "plugin/.mcp.json", json.dumps({"mcpServers": {"dead-letter": s.PLUGIN_LAUNCHER}}))
+        self.client.add_file(e.REPO, "plugin/pyproject.toml", '[project]\ndependencies = ["dead-letter>=1.0.0"]\n')
+        self.assertEqual(self.report()["channels"]["plugin-marketplace"]["status"], "conflicting")
+
+    def test_locked_project_fetch_failure_is_unable_to_verify(self):
+        self.client.add_file(e.REPO, "plugin/.mcp.json", json.dumps({"mcpServers": {"dead-letter": s.PLUGIN_LAUNCHER}}))
+        self.client.responses[f"{e.API}{e.REPO}/contents/plugin/pyproject.toml?ref={SHA}"] = e.Unavailable("HTTP 503")
+        row = self.report()["channels"]["plugin-marketplace"]
+        self.assertEqual(row["status"], "unable-to-verify")
+        self.assertEqual(row["evidence"]["error_type"], "Unavailable")
+        self.assertEqual(row["evidence"]["error"], "HTTP 503")
+
+    def test_locked_project_launcher_requires_isolation(self):
+        launcher = deepcopy(s.PLUGIN_LAUNCHER)
+        launcher["args"].remove("--isolated")
+        self.client.add_file(e.REPO, "plugin/.mcp.json", json.dumps({"mcpServers": {"dead-letter": launcher}}))
+        row = self.report()["channels"]["plugin-marketplace"]
+        self.assertEqual(row["status"], "conflicting")
+        self.assertEqual(row["detail"], "plugin launcher does not run the shipped lock in isolation")
 
     def test_different_existing_plugin_pin_and_tap_are_deferred(self):
         self.client, _, _ = fixture(pin="1.2.2", tap_version="1.2.1")

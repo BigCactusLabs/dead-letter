@@ -98,6 +98,8 @@ jobs:
         run: python scripts/verify.py full --suite plugin
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: Smoke test the shipped plugin launcher
+        run: python3 scripts/smoke_plugin_launcher.py
       # Plugin adoption may intentionally lag. The canonical metadata helper
       # reports that warning without turning independent versions into an error.
       - name: Plugin pin drift reminder (non-blocking)

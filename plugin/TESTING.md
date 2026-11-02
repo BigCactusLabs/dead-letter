@@ -7,6 +7,15 @@ Run this checklist before each plugin release. Most can run in Cowork; some requ
 - A fixture `.eml` file. Use one of the files under `tests/core/fixtures/` if running locally.
 - Plugin installed via `/plugin marketplace add BigCactusLabs/bigcactuslabs-plugins` → `/plugin install dead-letter`.
 
+## Automated launcher smoke
+
+Run `python3 scripts/smoke_plugin_launcher.py` from the repository root with
+`uv` on `PATH` and network access. It launches the exact `.mcp.json` command
+from a read-only temporary plugin copy with an empty uv cache, checks MCP
+`initialize`, Python 3.12, the pinned server version, and all five tools, then checks clean
+exit, an unchanged plugin copy, and no leftover temporary environment. Its JSON
+result is a stdio runtime check, not a fresh Claude Code or Cowork install test.
+
 ## Cowork session checks
 
 ### 1. Convert (single uploaded file)
@@ -84,6 +93,8 @@ Run this checklist before each plugin release. Most can run in Cowork; some requ
 
 - [ ] All checks above pass
 - [ ] No regressions vs. the previous release
+- [ ] Automated launcher smoke passes against the prepared lock
+- [ ] Complete the [Claude directory gate](../docs/reference/publishing.md#claude-directory-listing) before the next launcher-change tag
 - [ ] Tag dead-letter repo `plugin-v<X.Y.Z>` and push
 - [ ] Confirm the plugin release workflow merged a marketplace pull request
       with matching `version`, `ref: plugin-v<X.Y.Z>`, and tagged commit `sha`
