@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import runpy
+
+import nh3
 import pytest
 
+from dead_letter.core import sanitize as sanitize_module
 from dead_letter.core.sanitize import sanitize_html
 
 
@@ -141,3 +145,43 @@ def test_sanitize_html_keeps_generic_attributes_on_existing_allowed_tags() -> No
         '<p title="paragraph" lang="en">Text '
         '<a href="https://example.test/" title="link" rel="noopener noreferrer">Link</a></p>'
     )
+
+
+@pytest.mark.parametrize("html", [
+    '<P TITLE="a &amp; b" LANG="en" class="drop" id="drop">Text</P>',
+    '<a href="https://example.test/?x=1&amp;y=2" title="Link" lang="en" class="drop" onclick="alert(1)">Link</a>',
+    '<a href="mailto:a@example.test" title="Mail">Mail</a><a href="javascript:alert(1)">Bad</a>',
+    '<img src="cid:logo" alt="Logo &amp; text" title="Image" lang="en" id="drop" width="10">',
+    '<table title="T" lang="en"><thead><tr><th colspan="2" rowspan="1" title="H">Head</th></tr></thead><tbody><tr><td colspan="2" rowspan="3" lang="en">Cell</td></tr></tbody></table>',
+    '<div class="gmail_quote" id="quote" title="D" lang="en"><blockquote class="gmail_quote" id="q" type="cite" title="Q"><span id="s" title="S">Text</span></blockquote></div><hr style="border-top:1px solid #b5c4df" title="H">',
+    '<ol title="List" lang="en"><li title="Item">One<ul lang="en"><li>Two</li></ul></li></ol>',
+] + [
+    f'<{tag} title="Title" lang="en" class="class" id="id" href="https://example.test/" src="cid:x" alt="Alt" colspan="2" rowspan="3" type="cite" style="border-top:1px solid #b5c4df" dir="rtl" data-x="drop">Text</{tag}>'
+    for tag in sorted(sanitize_module._ALLOWED_TAGS)
+])
+def test_sanitize_html_matches_base_policy_without_transient_tags(html) -> None:
+    expected = nh3.clean(
+        html,
+        tags=sanitize_module._ALLOWED_TAGS,
+        attributes=sanitize_module._ALLOWED_ATTRIBUTES,
+        url_schemes=sanitize_module._ALLOWED_URL_SCHEMES,
+        strip_comments=True,
+    )
+
+    assert sanitize_html(html) == expected
+
+
+def test_sanitizer_cleaner_is_constructed_without_attribute_filter(monkeypatch) -> None:
+    cleaner = nh3.Cleaner
+    calls = []
+
+    def checked_cleaner(**kwargs):
+        assert "attribute_filter" not in kwargs
+        calls.append(kwargs)
+        return cleaner(**kwargs)
+
+    monkeypatch.setattr(nh3, "Cleaner", checked_cleaner)
+
+    runpy.run_path(sanitize_module.__file__)
+
+    assert len(calls) == 1

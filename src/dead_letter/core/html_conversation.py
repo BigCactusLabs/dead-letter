@@ -529,15 +529,20 @@ def _split_outlook_body_and_quote(
     return body_html or None, quoted_html or None
 
 
+def _empty_inline(node) -> bool:
+    for child in _iter_nodes_in_document_order(node):
+        if child.tag in _BLOCK_TAGS or child.tag in ("img", "br"):
+            return False
+        if child.tag == "-text" and _format_whitespace(child.text_content or "").strip():
+            return False
+    return True
+
+
 def _inline_neighbor(node, direction: str):
     """Find adjacent content through inline ancestors, stopping at a block."""
     while node is not None:
         sibling = getattr(node, direction)
-        while (
-            sibling is not None
-            and sibling.tag == "-text"
-            and not _format_whitespace(sibling.text_content or "").strip()
-        ):
+        while sibling is not None and _empty_inline(sibling):
             sibling = getattr(sibling, direction)
         if sibling is not None:
             return sibling

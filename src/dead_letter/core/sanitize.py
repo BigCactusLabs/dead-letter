@@ -65,14 +65,13 @@ _STRIPPED_BLOCK_RE = re.compile(
 )
 
 
-def _filter_attribute(tag: str, _attribute: str, value: str) -> str | None:
-    return None if tag in _STRIPPED_BLOCK_TAGS else value
-
-
+# Preserve nh3 0.3.7's generic attributes per existing tag without Python callbacks.
 _CLEANER = nh3.Cleaner(
     tags=_ALLOWED_TAGS | set(_STRIPPED_BLOCK_TAGS),
-    attributes=_ALLOWED_ATTRIBUTES,
-    attribute_filter=_filter_attribute,
+    attributes={
+        "*": set(),
+        **{tag: _ALLOWED_ATTRIBUTES.get(tag, set()) | {"title", "lang"} for tag in _ALLOWED_TAGS},
+    },
     url_schemes=_ALLOWED_URL_SCHEMES,
     strip_comments=True,
 )
@@ -84,7 +83,7 @@ def sanitize_html(html: str) -> str:
         return ""
 
     cleaned = _CLEANER.clean(html)
-    # The filter leaves transient tags bare; nh3 escapes literal '<' characters.
+    # The explicit attribute policy leaves transient tags bare; nh3 escapes '<'.
     normalized = _STRIPPED_BLOCK_RE.sub(r"<\1div>", cleaned)
     # Renaming caption/form inside a table requires HTML foster parenting.
     return _CLEANER.clean(normalized) if normalized != cleaned else cleaned

@@ -231,6 +231,20 @@ def test_inline_neighbor_edge_break_does_not_add_blank_line(tmp_path, mode, befo
 
 
 @pytest.mark.parametrize("mode", ["latest", "structured"])
+@pytest.mark.parametrize("before, after", [
+    ("See<br><span></span>", "more"),
+    ("See", "<span></span><br>more"),
+])
+def test_empty_inline_sibling_does_not_hide_existing_break(tmp_path, mode, before, after):
+    html = f'{before}<blockquote class="gmail_quote">OLD HISTORY</blockquote>{after}'
+
+    _, body = _render(tmp_path, html, mode)
+
+    assert body.split("\n\n## ", 1)[0] == "See  \nmore"
+    assert body.count("OLD HISTORY") == (1 if mode == "structured" else 0)
+
+
+@pytest.mark.parametrize("mode", ["latest", "structured"])
 def test_r1_f1_body_wrapper_note_before_nested_forward(tmp_path, mode):
     html = (
         '<div>Hi</div><div class="gmail_quote"><div>KEEP THIS NOTE.</div>'
