@@ -38,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTML history extraction keeps words on separate lines inside preformatted
   text and preserves paragraph boundaries when current-message quote wrappers
   are removed. Deeply nested HTML keeps all text and reports
-  `html_depth_flattened` when its nesting is reduced. If a renderer content
+  `html_depth_flattened` when its nesting is reduced. Blockquote nesting has a
+  separate limit to bound Markdown quote prefixes. If a renderer content
   limit is reached, conversion keeps the text with reduced formatting and
   reports a diagnostics warning (#268).
 - Windows MBOX workers now verify job membership after a clean exit and use

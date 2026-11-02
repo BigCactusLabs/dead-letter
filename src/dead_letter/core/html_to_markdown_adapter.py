@@ -12,6 +12,8 @@ from dead_letter.core.html_conversation import _BLOCK_TAGS, _unwrap_preserving_b
 _LIST_ITEM_RE = re.compile(r"^( *)(?P<marker>[-+*]|\d+[.)])(?P<space> +)")
 # Leave ample room below the converter's hard 1024-element traversal limit.
 _MAX_HTML_ELEMENT_DEPTH = 512
+# Bound the size of repeated Markdown quote prefixes.
+_MAX_BLOCKQUOTE_DEPTH = 78
 _CONTENT_SKIPPING_WARNINGS = {
     "depth_limit_exceeded": "html_depth_limit",
     "truncated_input": "html_content_skipped",
@@ -20,21 +22,25 @@ _CONTENT_SKIPPING_WARNINGS = {
 
 def _flatten_deep_html(html: str, *, warnings: list[dict[str, str]] | None = None) -> str:
     tree = parse_html(html)
-    stack = [(tree.root, 0, False)]
+    stack = [(tree.root, 0, False, 0)]
     unwrap = []
     while stack:
-        node, parent_depth, in_pre = stack.pop()
+        node, parent_depth, in_pre, parent_quote_depth = stack.pop()
         if node.next is not None:
-            stack.append((node.next, parent_depth, in_pre))
+            stack.append((node.next, parent_depth, in_pre, parent_quote_depth))
         child = node.child
         depth = parent_depth + (not node.tag.startswith("-"))
+        quote_depth = parent_quote_depth + (node.tag == "blockquote")
         child_in_pre = in_pre or node.tag == "pre"
         # Reserve one level for block-boundary markers inserted by unwrapping.
-        if depth >= _MAX_HTML_ELEMENT_DEPTH and not node.tag.startswith("-"):
+        if not node.tag.startswith("-") and (
+            depth >= _MAX_HTML_ELEMENT_DEPTH or quote_depth > _MAX_BLOCKQUOTE_DEPTH
+        ):
             unwrap.append((node, in_pre))
             depth = parent_depth
+            quote_depth = parent_quote_depth
         if child is not None:
-            stack.append((child, depth, child_in_pre))
+            stack.append((child, depth, child_in_pre, quote_depth))
     # Plan before mutating: unwrapping changes the last child's next pointer.
     for node, in_pre in unwrap:
         _unwrap_preserving_boundaries(node, in_pre=in_pre)

@@ -138,7 +138,9 @@ containers preserves each exposed paragraph edge; existing block and break
 boundaries remain intact.
 
 Before Markdown rendering, nesting is capped at 512 element levels by iterative
-unwrapping, preserving text and block boundaries. Any flattening adds a
+unwrapping, preserving text and block boundaries. Nested blockquotes are capped
+separately at 78 levels to bound the size of Markdown quote prefixes. Any
+flattening adds a
 `html_depth_flattened` diagnostics warning because formatting beyond the nesting
 limit is reduced. If the renderer still reports skipped content, conversion uses
 block-separated text instead of the incomplete Markdown and adds a diagnostics

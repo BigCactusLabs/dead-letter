@@ -115,3 +115,27 @@ def test_adapter_bounds_converter_input_depth(monkeypatch, tag) -> None:
     assert "PAYLOAD" in markdown
     assert max_depth <= html_to_markdown_adapter._MAX_HTML_ELEMENT_DEPTH
     assert [warning["code"] for warning in warnings] == ["html_depth_flattened"]
+
+
+def test_adapter_caps_quote_prefixes_before_element_depth_limit() -> None:
+    limit = html_to_markdown_adapter._MAX_BLOCKQUOTE_DEPTH
+    warnings = []
+
+    markdown = convert_html_to_markdown(
+        "<blockquote>" * (limit + 1) + "PAYLOAD" + "</blockquote>" * (limit + 1),
+        warnings=warnings,
+    )
+
+    assert markdown == "> " * limit + "PAYLOAD"
+    assert [warning["code"] for warning in warnings] == ["html_depth_flattened"]
+
+
+def test_adapter_counts_quote_ancestors_separately_in_sibling_chains() -> None:
+    chain = "<blockquote><div>" * 60 + "PAYLOAD" + "</div></blockquote>" * 60
+    warnings = []
+
+    markdown = convert_html_to_markdown(chain + chain, warnings=warnings)
+
+    assert markdown.count("PAYLOAD") == 2
+    assert max(line.count(">") for line in markdown.splitlines()) == 60
+    assert warnings == []

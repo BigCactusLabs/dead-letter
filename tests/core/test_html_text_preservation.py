@@ -124,6 +124,28 @@ def test_forty_level_gmail_chain_matches_base_without_depth_warning(tmp_path):
     assert not any(w["code"].startswith("html_depth_") for w in diagnostics["warnings"])
 
 
+def test_sixty_level_gmail_chain_matches_base_without_depth_warning(tmp_path):
+    html = "<p>CURRENT</p>" + "".join(
+        '<blockquote class="gmail_quote"><div dir="ltr"><div class="gmail_quote">'
+        f"<p><strong>Reply level {i:02d}</strong></p>" for i in range(60)
+    ) + "PAYLOAD" + "</div></div></blockquote>" * 60
+
+    result, _, _ = _render(tmp_path, html, "structured")
+
+    # Captured from public convert at 66a534dd89f7d73299571bbd26204af8b84fce61.
+    expected = (
+        "---\nsource: synthetic.eml\nsubject: HTML text preservation\n"
+        "sender: sender@example.com\ndate: null\nattachments: []\n"
+        "thread_messages: 1\n---\n\nCURRENT\n\n## Earlier message\n\n"
+        + "\n".join(f"**Reply level {i:02d}**" for i in range(60)) + "\nPAYLOAD\n"
+    ).encode()
+    assert result.output.read_bytes() == expected
+    _, _, _, diagnostics = _build_rendered_markdown(
+        result.source, ConvertOptions(thread_mode="structured")
+    )
+    assert not any(w["code"].startswith("html_depth_") for w in diagnostics["warnings"])
+
+
 @pytest.mark.parametrize("mode", ["latest", "structured"])
 @pytest.mark.parametrize("with_quote", [False, True])
 @pytest.mark.parametrize("tag", ["div", "section", "span", "blockquote"])
