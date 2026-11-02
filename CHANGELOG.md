@@ -38,6 +38,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   job CPU accounting to identify CPU-limit failures when the process exits
   before the job is signaled. Missing membership or failed accounting checks
   abort the import with `mbox_budget_apply_failed` (#254, #255).
+- HTML reply-quote extraction keeps word boundaries when a quote sits inside
+  inline formatting, without adding breaks inside preformatted text or beside
+  existing breaks. Stripped HTML block elements (`center`, `details`,
+  `summary` and others) keep paragraph boundaries, including elements with
+  `title` or `lang` attributes, so attribution lines stay detectable (#241).
+- Plain-text Outlook history splits into separate messages at column-0
+  separator and header blocks in English, German, French, Spanish, Dutch,
+  Italian and Japanese. Separator lines are consumed, nested `On … wrote:`
+  replies inside a block still split, and indented examples stay in the body
+  (#193).
+- Plain-text reply parsing skips mail-parser-reply when a message's long
+  whitespace runs exceed a shared per-message budget, keeping the full text
+  instead of hanging on pathological input (#193).
+- Forwarded-header detection recognizes the Spanish `Enviado el`, Traditional
+  Chinese `寄件日期`/`收件者`/`至` and Korean `참조` labels (#193).
 
 ## [0.4.10] - 2026-10-29
 
