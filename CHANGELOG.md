@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Claude plugin launcher uses the shipped `uv.lock` through frozen, isolated
+  `uv run`, with dependency hash checks and no writes to the plugin directory.
+  MCP Registry entries constrain transitive resolution with an absolute UTC
+  `--exclude-newer` cutoff set from PyPI upload times (#263).
+
 - Claude plugin 0.4.12 pins package 0.4.10 (`dead-letter==0.4.10`) and relocks
   `plugin/uv.lock`. Plugin users get the 0.4.10 bounded attribution parsing and
   the distinct MBOX storage-exhaustion outcome.

@@ -1,6 +1,6 @@
 # Locked runtime for the plugin's MCP server launcher (plugin/.mcp.json).
 # Not published; the plugin version lives in .claude-plugin/plugin.json.
-# After changing the pin, run: uv lock --directory plugin
+# After changing the pin, run: uv lock --upgrade --directory plugin
 [project]
 name = "dead-letter-plugin"
 version = "0.0.0"

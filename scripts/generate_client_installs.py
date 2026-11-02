@@ -34,7 +34,7 @@ def public_launcher(server: dict) -> dict:
     ):
         raise ValueError("unsupported server identity or local launch contract")
     runtime = package["runtimeArguments"]
-    if [a.get("name") for a in runtime] != ["--python", "--from"]:
+    if [a.get("name") for a in runtime] not in (["--python", "--from"], ["--python", "--from", "--exclude-newer"]):
         raise ValueError("review changes to the canonical runtime arguments")
     if any(a.get("type") != "named" or a.get("variables") for a in runtime):
         raise ValueError("runtime arguments must have fixed named values")
@@ -49,6 +49,8 @@ def public_launcher(server: dict) -> dict:
     binary = package["packageArguments"]
     if len(binary) != 1 or binary[0].get("type") != "positional" or binary[0].get("value") != "dead-letter-mcp":
         raise ValueError("unexpected MCP entrypoint")
+    # Public launchers follow published releases; a cutoff would freeze the
+    # deliberately unpinned package forever. Keep it only in the registry.
     return {
         "command": package["runtimeHint"],
         "args": ["--python", runtime[0]["value"], "--from", pinned.split("==", 1)[0], binary[0]["value"]],

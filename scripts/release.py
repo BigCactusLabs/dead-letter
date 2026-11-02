@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+from datetime import datetime, timedelta
 import difflib
 import hashlib
 import json
@@ -33,6 +34,10 @@ FILES = (
 )
 SERVER = "io.github.BigCactusLabs/dead-letter"
 ASSET_ROOT = "https://github.com/BigCactusLabs/dead-letter/releases/download"
+PLUGIN_LAUNCHER = {
+    "command": "uv",
+    "args": ["run", "--frozen", "--isolated", "--project", "${CLAUDE_PLUGIN_ROOT}", "dead-letter-mcp"],
+}
 
 
 def stable(value: str) -> str:
@@ -57,17 +62,31 @@ def one(items: list, label: str):
 
 
 def launcher_pin(data: dict) -> str:
-    args = data["mcpServers"]["dead-letter"]["args"]
-    position = one([i for i, value in enumerate(args) if value == "--from"], "--from")
-    if position + 1 >= len(args):
-        raise ValueError("plugin launcher has no --from value")
-    pin = args[position + 1]
-    # Claude's locked launch refuses extras on the uvx command line; the MCP
-    # SDK is a core dependency from 0.4.7.
+    """Read the exact runtime pin from the plugin's uv project."""
+    pin = one(data["project"]["dependencies"], "plugin runtime dependency")
     prefix = "dead-letter=="
     if not isinstance(pin, str) or not pin.startswith(prefix):
-        raise ValueError("plugin launcher must use an exact dead-letter==X.Y.Z pin without extras")
+        raise ValueError("plugin/pyproject.toml must use an exact dead-letter==X.Y.Z pin without extras")
     return stable(pin[len(prefix):])
+
+
+def utc_timestamp(value: str) -> datetime:
+    """Require an absolute RFC 3339 UTC timestamp, not a local date or duration."""
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z", value):
+        raise ValueError("registry --exclude-newer must be an RFC 3339 Z timestamp")
+    return datetime.fromisoformat(value)
+
+
+def registry_cutoff(release: dict) -> str:
+    """Round the last PyPI artifact upload up to a UTC minute for publication."""
+    files = release["urls"]
+    if not files:
+        raise ValueError("PyPI release has no files for the registry cutoff")
+    latest = max(utc_timestamp(item["upload_time_iso_8601"]) for item in files)
+    cutoff = latest.replace(second=0, microsecond=0)
+    if cutoff < latest:
+        cutoff += timedelta(minutes=1)
+    return cutoff.strftime("%Y-%m-%dT%H:%M:00Z")
 
 
 def plugin_lock(sources: dict[str, str], pin: str, *, locked: bool = True) -> None:
@@ -85,7 +104,7 @@ def plugin_lock(sources: dict[str, str], pin: str, *, locked: bool = True) -> No
         raise ValueError("plugin/uv.lock must contain the virtual dead-letter-plugin root")
     locked_package = one([p for p in packages if p["name"] == "dead-letter"], "plugin lock dead-letter entry")
     if locked_package.get("source") != {"registry": "https://pypi.org/simple"} or locked_package["version"] != pin:
-        raise ValueError(f"plugin/uv.lock must lock PyPI dead-letter {pin}; run uv lock --directory plugin")
+        raise ValueError(f"plugin/uv.lock must lock PyPI dead-letter {pin}; run uv lock --upgrade --directory plugin")
 
 
 def check(sources: dict[str, str], *, locked: bool = True) -> dict[str, str]:
@@ -115,6 +134,10 @@ def check(sources: dict[str, str], *, locked: bool = True) -> dict[str, str]:
             runtime = one([a for a in package["runtimeArguments"] if a.get("name") == "--from"], "registry --from")
             if runtime["value"] != f"dead-letter[mcp]=={version}":
                 raise ValueError("server.json PyPI runtime pin does not match package")
+            cutoff = one([a for a in package["runtimeArguments"] if a.get("name") == "--exclude-newer"], "registry --exclude-newer")
+            if cutoff.get("type") != "named":
+                raise ValueError("registry --exclude-newer must be a named argument")
+            utc_timestamp(cutoff.get("value"))
         else:
             expected = f"{ASSET_ROOT}/v{version}/dead-letter-mcp-{version}.mcpb"
             if package["identifier"] != expected:
@@ -137,7 +160,10 @@ def check(sources: dict[str, str], *, locked: bool = True) -> dict[str, str]:
     if errors:
         raise ValueError("release metadata drift:\n" + "\n".join(errors))
     plugin = stable(json.loads(sources["plugin/.claude-plugin/plugin.json"])["version"])
-    pin = launcher_pin(json.loads(sources["plugin/.mcp.json"]))
+    launcher = json.loads(sources["plugin/.mcp.json"])["mcpServers"]["dead-letter"]
+    if launcher.get("command") != PLUGIN_LAUNCHER["command"] or launcher.get("args") != PLUGIN_LAUNCHER["args"]:
+        raise ValueError("plugin/.mcp.json must launch uv run --frozen --isolated --project ${CLAUDE_PLUGIN_ROOT} dead-letter-mcp")
+    pin = launcher_pin(tomllib.loads(sources["plugin/pyproject.toml"]))
     plugin_lock(sources, pin, locked=locked)
     return {"package": version, "plugin": plugin, "plugin_pin": pin}
 
@@ -218,10 +244,6 @@ def prepare_plugin(sources: dict[str, str], plugin_version: str, pin: str | None
     plugin = json.loads(sources["plugin/.claude-plugin/plugin.json"])
     plugin["version"] = plugin_version
     result["plugin/.claude-plugin/plugin.json"] = encode(plugin)
-    launcher = json.loads(sources["plugin/.mcp.json"])
-    args = launcher["mcpServers"]["dead-letter"]["args"]
-    args[args.index("--from") + 1] = f"dead-letter=={pin}"
-    result["plugin/.mcp.json"] = encode(launcher)
     result["plugin/pyproject.toml"] = replace_once(
         sources["plugin/pyproject.toml"], r'^dependencies = \["dead-letter==[^"\n]+"\]$', f'dependencies = ["dead-letter=={pin}"]')
     check(result, locked=False)
@@ -361,8 +383,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "prepare-plugin":
             proposed = prepare_plugin(sources, args.version, args.pin)
             print(patch(sources, proposed), end="")
-            print("Review/apply this patch, run uv lock --directory plugin (the pin must be on PyPI), "
-                  "then release.py check --plugin-tag.", file=sys.stderr)
+            print("Review/apply this patch, run uv lock --upgrade --directory plugin (the pin must be on PyPI), "
+                  "then smoke_plugin_launcher.py and release.py check --plugin-tag.", file=sys.stderr)
             return 0
         if args.tag or args.plugin_tag:
             check_tag(versions, args.tag or args.plugin_tag, plugin=bool(args.plugin_tag))

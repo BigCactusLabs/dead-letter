@@ -78,8 +78,11 @@ A full commit pin is also supported. The pin attaches to the **skill name**.
 See the [official CLI manual](https://cli.github.com/manual/gh_skill_install).
 
 An exact `dead-letter[mcp]==X.Y.Z` pin freezes the top-level package, not all
-transitive dependencies. Use an inspected lockfile or artifact digest when
-that distinction matters. A checksum identifies downloaded bytes; it does
+transitive dependencies. For a pinned stdio launcher, use the absolute UTC
+`--exclude-newer` cutoff in the [agent install guide](../../llms-install.md#mcp-server)
+to keep later uploads out of resolution. For exact dependency versions and
+hashes, use an inspected lockfile or artifact digest. Plugin launcher and
+registry cutoff preparation are covered in [Publishing](publishing.md). A checksum identifies downloaded bytes; it does
 not prove publisher trust or that every client/platform has been tested.
 
 ## Privacy and source safety

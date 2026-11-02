@@ -211,8 +211,11 @@ without designing its authorization and event chain.
 ## MCP Registry Publish (Automatic)
 
 The registry job waits for successful PyPI readiness, MCPB, and OCI jobs. It
-stamps the bundle's actual SHA-256 and URL, adds the tested OCI index digest,
-archives `dead-letter-server-X.Y.Z.json` plus its checksum, then publishes
+stamps the bundle's actual SHA-256 and URL, sets the PyPI launcher's
+`--exclude-newer` from the maximum artifact `upload_time_iso_8601` in that
+version's PyPI JSON (rounded up to a whole UTC minute as `YYYY-MM-DDTHH:MM:00Z`),
+and adds the tested OCI index digest. It archives
+`dead-letter-server-X.Y.Z.json` plus its checksum, then publishes
 using GitHub OIDC. The archived manifest is the exact input to the publisher,
 not proof that registry publication succeeded; verify the registry's exact version.
 
@@ -343,21 +346,25 @@ A plugin-only instruction/command update can keep the prior exact package
 pin. Both cases require a new plugin asset version and reviewed main commit.
 
 Adopt a package in a PR after it is on PyPI. `prepare-plugin` prints a patch
-for the plugin version, the `.mcp.json` pin (`dead-letter==X.Y.Z`, no extras:
-Claude's locked launch refuses them), and the `plugin/pyproject.toml`
-dependency. Then regenerate the lock, which needs network access:
+for the plugin version and the exact `plugin/pyproject.toml` dependency
+(`dead-letter==X.Y.Z`). The `.mcp.json` launcher runs the shipped lock through
+`uv run --frozen --isolated --project ${CLAUDE_PLUGIN_ROOT}`. Then regenerate
+the lock with `--upgrade` to select a fresh transitive set, which needs network
+access, and smoke-test that set:
 
 ```bash
 python scripts/release.py wait-pypi "$PACKAGE_VERSION"
 python scripts/release.py prepare-plugin "$PLUGIN_VERSION" --pin "$PACKAGE_VERSION" > /tmp/plugin.patch
 git apply /tmp/plugin.patch
-uv lock --directory plugin
+uv lock --upgrade --directory plugin
+python3 scripts/smoke_plugin_launcher.py
 python scripts/release.py check
 ```
 
 `check` fails until `plugin/uv.lock` locks the same PyPI version as the
-launcher and project. For a plugin-only release, run
-`prepare-plugin` with the current pin; the lock is unchanged.
+project and the launcher uses the exact frozen, isolated form. For a plugin-only
+release, run `prepare-plugin` with the current pin, then relock with `--upgrade`
+and smoke-test the selected dependencies as above.
 
 ```bash
 PLUGIN_VERSION=A.B.C
@@ -365,7 +372,7 @@ PLUGIN_SHA=FULL_40_CHARACTER_REVIEWED_MAIN_COMMIT
 
 git switch --detach "$PLUGIN_SHA"
 python scripts/release.py check --plugin-tag "plugin-v$PLUGIN_VERSION"
-# Check the exact package version in plugin/.mcp.json before tagging:
+# Check the exact package version in plugin/pyproject.toml before tagging:
 MCP_VERSION=$(python scripts/release.py check | python -c 'import json,sys; print(json.load(sys.stdin)["plugin_pin"])')
 python scripts/release.py wait-pypi "$MCP_VERSION"
 git tag -a "plugin-v$PLUGIN_VERSION" "$PLUGIN_SHA" -m "dead-letter plugin $PLUGIN_VERSION"
@@ -399,10 +406,15 @@ matching client caches or successful runtime resolution.
 The Claude directory (claude.ai/directory/manage) tracks the `release`
 branch, plugin path `plugin`. Each `plugin-vX.Y.Z` that moves `release`
 becomes a new directory version, and every version is held for a human
-reviewer because the server runs a pinned `uvx` package. The README and
+reviewer because the server launches a registry package. The README and
 `plugin.json` on `release` are what the listing shows, so listing copy ships
 only with a plugin release.
 
+- Before the next plugin tag after the launcher change in #263, wait for the
+  open directory review to finish. Re-validate the release candidate in the
+  Claude directory portal and require `LAUNCHER_LOCKED` (or no new Blocks)
+  **before tagging**. The scanner's locked-launch grammar is unpublished;
+  the local stdio smoke does not satisfy this gate.
 - Re-run **Validate** in the portal on the exact `release` commit before
   submitting; results are per commit.
 - Do not move `release` while a version is with a reviewer. The tracked
@@ -426,8 +438,8 @@ submissions.
 | --- | --- | --- |
 | `pyproject.toml` / `vX.Y.Z` | Python package release | All package, MCPB, and ARD sync points match |
 | `plugin/.claude-plugin/plugin.json` / `plugin-vA.B.C` | Plugin assets and instructions | Independent, increasing sequence |
-| `plugin/.mcp.json` | Exact package the plugin launches | Must be published; may deliberately lag |
-| `plugin/pyproject.toml`, `plugin/uv.lock` | Locked runtime for that pin | Same exact pin; lock regenerated with `uv lock --directory plugin` |
+| `plugin/.mcp.json` | Frozen, isolated launcher for the shipped lock | Exact command/args checked; no package pin in the launcher |
+| `plugin/pyproject.toml`, `plugin/uv.lock` | Exact published package pin and locked runtime | Same exact pin; may deliberately lag; relock with `uv lock --upgrade --directory plugin` |
 | Marketplace `version`, `source.ref`, `source.sha` | What plugin clients resolve | Same plugin release and peeled commit |
 | Community catalog source SHA | Third-party accepted snapshot | Separate review and update policy |
 

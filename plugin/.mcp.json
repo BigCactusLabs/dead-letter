@@ -1,12 +1,13 @@
 {
   "mcpServers": {
     "dead-letter": {
-      "command": "uvx",
+      "command": "uv",
       "args": [
-        "--python",
-        "3.12",
-        "--from",
-        "dead-letter==0.4.10",
+        "run",
+        "--frozen",
+        "--isolated",
+        "--project",
+        "${CLAUDE_PLUGIN_ROOT}",
         "dead-letter-mcp"
       ]
     }

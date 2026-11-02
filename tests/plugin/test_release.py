@@ -22,22 +22,22 @@ def sources() -> dict[str, str]:
         "uv.lock": 'version = 1\n\n[[package]]\nname = "dead-letter"\nversion = "0.3.1"\nsource = { editable = "." }\n\n[[package]]\nname = "dependency"\nversion = "0.3.1"\nsource = { registry = "https://pypi.org/simple" }\n',
         "src/dead_letter/__init__.py": 'from unavailable_module import never_import_this\n__version__ = "0.3.1"\n',
         "server.json": release.encode({"name": release.SERVER, "version": version, "packages": [
-            {"registryType": "pypi", "version": version, "runtimeArguments": [{"name": "--from", "value": f"dead-letter[mcp]=={version}"}]},
+            {"registryType": "pypi", "version": version, "runtimeArguments": [{"name": "--from", "value": f"dead-letter[mcp]=={version}"}, {"type": "named", "name": "--exclude-newer", "value": "2026-10-29T21:00:00Z"}]},
             {"registryType": "mcpb", "version": version, "identifier": f"{release.ASSET_ROOT}/v{version}/dead-letter-mcp-{version}.mcpb", "fileSha256": "0" * 64}]}),
         "mcpb/manifest.json": release.encode({"version": version, "tools": [{"name": "convert_eml"}]}),
         "mcpb/pyproject.toml": '[project]\nname = "dead-letter-mcpb"\nversion = "0.3.1"\ndependencies = ["dead-letter[mcp]==0.3.1"]\n\n[tool.uv]\npackage = false\n',
         ".well-known/ard.json": release.encode({"entries": [{"version": version, "type": "mcp"}, {"version": version, "type": "skill"}]}),
         "plugin/.claude-plugin/plugin.json": release.encode({"name": "dead-letter", "version": version}),
-        "plugin/.mcp.json": release.encode({"mcpServers": {"dead-letter": {"command": "uvx", "args": ["--python", "3.12", "--from", f"dead-letter=={version}", "dead-letter-mcp"]}}}),
+        "plugin/.mcp.json": release.encode({"mcpServers": {"dead-letter": {"command": "uv", "args": ["run", "--frozen", "--isolated", "--project", "${CLAUDE_PLUGIN_ROOT}", "dead-letter-mcp"]}}}),
         "plugin/pyproject.toml": '[project]\nname = "dead-letter-plugin"\nversion = "0.0.0"\ndependencies = ["dead-letter==0.3.1"]\n\n[tool.uv]\npackage = false\n',
         "plugin/uv.lock": 'version = 1\n\n[[package]]\nname = "dead-letter"\nversion = "0.3.1"\nsource = { registry = "https://pypi.org/simple" }\n\n[[package]]\nname = "dead-letter-plugin"\nversion = "0.0.0"\nsource = { virtual = "." }\n',
     }
 
 
 def with_pin(data: dict[str, str], pin: str) -> dict[str, str]:
-    """Move the launcher, plugin project, and plugin lock to one pin together."""
+    """Move the plugin project and plugin lock to one pin together."""
     data = dict(data)
-    for name in ("plugin/.mcp.json", "plugin/pyproject.toml", "plugin/uv.lock"):
+    for name in ("plugin/pyproject.toml", "plugin/uv.lock"):
         data[name] = data[name].replace("0.3.1", pin)
     return data
 
@@ -67,11 +67,11 @@ class ReleaseMetadataTests(unittest.TestCase):
                     "dead-letter[mcp]==0.3.1"):
             with self.subTest(pin=pin):
                 data = sources()
-                data["plugin/.mcp.json"] = data["plugin/.mcp.json"].replace("dead-letter==0.3.1", pin)
+                data["plugin/pyproject.toml"] = data["plugin/pyproject.toml"].replace("dead-letter==0.3.1", pin)
                 with self.assertRaises(ValueError):
                     release.check(data)
 
-    def test_plugin_project_and_lock_must_match_launcher(self):
+    def test_plugin_project_and_lock_must_match(self):
         for name, old, new in (
             ("plugin/pyproject.toml", "dead-letter==0.3.1", "dead-letter==0.3.0"),
             ("plugin/pyproject.toml", '"dead-letter==0.3.1"', '"dead-letter[mcp]==0.3.1"'),
@@ -85,6 +85,42 @@ class ReleaseMetadataTests(unittest.TestCase):
                 data[name] = data[name].replace(old, new)
                 with self.assertRaises(ValueError):
                     release.check(data)
+
+    def test_plugin_launcher_must_use_exact_locked_form(self):
+        for launcher in (
+            {"command": "uvx", "args": ["--from", "dead-letter==0.3.1", "dead-letter-mcp"]},
+            {"command": "uvx", "args": ["run", "--frozen", "--isolated", "--project", "${CLAUDE_PLUGIN_ROOT}", "dead-letter-mcp"]},
+            {"command": "uv", "args": ["run", "--frozen", "--project", "${CLAUDE_PLUGIN_ROOT}", "dead-letter-mcp"]},
+            {"command": "uv", "args": ["run", "--isolated", "--project", "${CLAUDE_PLUGIN_ROOT}", "dead-letter-mcp"]},
+            {"command": "uv", "args": ["run", "--frozen", "--isolated", "--project", ".", "dead-letter-mcp"]},
+        ):
+            with self.subTest(launcher=launcher):
+                data = sources()
+                data["plugin/.mcp.json"] = release.encode({"mcpServers": {"dead-letter": launcher}})
+                with self.assertRaisesRegex(ValueError, "plugin/.mcp.json must launch"):
+                    release.check(data)
+
+    def test_registry_cutoff_must_exist_once_and_be_a_utc_timestamp(self):
+        for value in (None, "2026-10-29", "7 days", "2026-10-29T21:00:00+00:00",
+                      "2026-13-29T21:00:00Z", "2026-10-29T25:00:00Z", "2026-10-29T21:00:00Z\n"):
+            with self.subTest(value=value):
+                data = sources()
+                server = json.loads(data["server.json"])
+                runtime = server["packages"][0]["runtimeArguments"]
+                if value is None:
+                    runtime.pop()
+                else:
+                    runtime[-1]["value"] = value
+                data["server.json"] = release.encode(server)
+                with self.assertRaises(ValueError):
+                    release.check(data)
+        data = sources()
+        server = json.loads(data["server.json"])
+        runtime = server["packages"][0]["runtimeArguments"]
+        runtime.append(dict(runtime[-1]))
+        data["server.json"] = release.encode(server)
+        with self.assertRaisesRegex(ValueError, "exactly one registry --exclude-newer"):
+            release.check(data)
 
     def test_tag_namespaces_and_prereleases_cannot_cross_publish(self):
         values = release.check(sources())
@@ -130,6 +166,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertEqual(release.check(after, locked=False), {"package": "0.4.0", "plugin": "0.3.2", "plugin_pin": "0.4.0"})
         self.assertIn('dependencies = ["dead-letter==0.4.0"]', after["plugin/pyproject.toml"])
         self.assertEqual(after["plugin/uv.lock"], before["plugin/uv.lock"])
+        self.assertEqual(after["plugin/.mcp.json"], before["plugin/.mcp.json"])
         with self.assertRaises(ValueError):
             release.check(after)
         relocked = dict(after, **{"plugin/uv.lock": after["plugin/uv.lock"].replace('version = "0.3.1"', 'version = "0.4.0"')})
@@ -172,6 +209,25 @@ class ReleaseMetadataTests(unittest.TestCase):
                 self.assertEqual(release.main(["--root", directory, "check", "--tag", "v0.3.1"]), 1)
                 (root / "CHANGELOG.md").write_text("## [0.3.1] - 2026-09-19\n", encoding="utf-8")
                 self.assertEqual(release.main(["--root", directory, "check", "--tag", "v0.3.1"]), 0)
+
+
+class RegistryCutoffTests(unittest.TestCase):
+    def test_latest_upload_is_rounded_up_to_utc_minute(self):
+        data = {"urls": [{"upload_time_iso_8601": value} for value in (
+            "2026-10-29T20:59:18.795Z", "2026-10-29T20:59:16.936Z")]}
+        self.assertEqual(release.registry_cutoff(data), "2026-10-29T21:00:00Z")
+
+    def test_minute_boundary_and_day_rollover(self):
+        for upload, expected in (("2026-10-29T21:00:00Z", "2026-10-29T21:00:00Z"),
+                                 ("2026-12-31T23:59:59.999Z", "2027-01-01T00:00:00Z")):
+            with self.subTest(upload=upload):
+                self.assertEqual(release.registry_cutoff({"urls": [{"upload_time_iso_8601": upload}]}), expected)
+
+    def test_missing_or_unparsable_uploads_fail_closed(self):
+        for data in ({}, {"urls": []}, {"urls": [{}]}, {"urls": [{"upload_time_iso_8601": "2026-10-29"}]},
+                     {"urls": [{"upload_time_iso_8601": "2026-10-29T21:00:00Z"}, {"upload_time_iso_8601": "bad"}]}):
+            with self.subTest(data=data), self.assertRaises((ValueError, KeyError)):
+                release.registry_cutoff(data)
 
 
 class PyPIReadinessTests(unittest.TestCase):

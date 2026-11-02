@@ -71,9 +71,9 @@ You can try every command without an account or real mail. The repository's [syn
 
 The plugin launches the `dead-letter-mcp` MCP server (Python, distributed on PyPI as `dead-letter`). The slash commands call into this server, which handles `.eml` parsing, sanitization, and Markdown rendering.
 
-The plugin is pinned to a specific dead-letter PyPI release (see `.mcp.json`) so a future package release cannot silently break installs.
+The plugin is pinned to a specific dead-letter PyPI release in `pyproject.toml`, with every dependency locked in `uv.lock`, so a future package or dependency release cannot silently change installs.
 
-The server is launched as a pinned PyPI package rather than shipped inside the plugin because it depends on compiled Python packages (HTML sanitizing and parsing) built per platform. `plugin/uv.lock` records hashed versions of every dependency, and each plugin release moves the pin only after that package version is published and tested.
+The server depends on compiled Python packages (HTML sanitizing and parsing) built per platform. The launcher runs `uv run --frozen --isolated --project ${CLAUDE_PLUGIN_ROOT} dead-letter-mcp` against the shipped `uv.lock`, with dependency hash checks. Nothing is written to the plugin directory. Each plugin release moves the pin only after that package version is published and tested.
 
 ## Where it works
 
@@ -87,7 +87,7 @@ Without the MCP tools, the commands can explain the workflow but cannot convert 
 
 ## What it runs and sends
 
-- On first launch, `uvx` downloads the pinned `dead-letter` package and its dependencies from PyPI and caches them. Later launches reuse the cache. The plugin also ships a `uv.lock` with hashed dependency versions for hosts that launch from a lock; plain `uvx` resolves compatible dependency versions itself.
+- On first launch, `uv` downloads the locked `dead-letter` package and dependencies from PyPI, checks their hashes, and caches them. Each launch uses an isolated temporary environment built from that cache; a clean exit removes the environment.
 - The `dead-letter-mcp` server then runs locally over stdio. It makes no network requests.
 - Text a tool returns to Claude enters the conversation and is sent to the model provider with it; see [Privacy](#privacy).
 - The tools read only the `.eml`, `.mbox`, or folder paths you give them. They write only to the output paths you give them, under new collision-safe names, and never modify, move, or delete your source files.
