@@ -29,7 +29,7 @@ did not repeat third-party submissions, desktop installs or live inference.
 | First slice | Existing foundation | Status / next boundary |
 | --- | --- | --- |
 | #241: bound attribution parsing | `core/attribution.py`, existing fallback and locale tests | Regex bound implemented in follow-up; remaining wrapper changes need representative paired fixtures. |
-| #146: local-path MBOX jobs | `core/mbox_import.py`, `StreamingReport`, job IDs/status/polling | Local API and UI implemented in follow-up, with bounded status, timed workers and partial/cancelled reports. Upload, compressed web input and web-job resume remain. |
+| #146: local-path MBOX jobs | `core/mbox_import.py`, `StreamingReport`, job IDs/status/polling | Local API and UI implemented in follow-up, with bounded status, timed workers and partial/cancelled reports. Bounded browser upload implemented in a later follow-up. Total output/temp-disk quotas, compressed web input and web-job resume remain. |
 | #166: reviewed annotation import | 192-case corpus, frozen split, baseline and scorer | Review artifacts and scorer coverage checks implemented in follow-up; human review and held-out comparison remain. |
 | #196: compare independent repeats | New offline comparator | Read already captured, separately executed runs and publish matched-denominator results. New provider calls are separate from this offline slice. |
 | #161: visual demo | Five tested recipes and their two-message synthetic inbox | A reproducible 20–30 second silent-readable capture plus still, showing actual released outputs. |
@@ -81,12 +81,23 @@ bounded retained errors, confinement/source mutation, admission limits,
 worker cancellation/reaping and report-publication failures. Frontend tests
 cover the separate request payload and keeping an active archive accessible.
 
-**Next: bounded upload.** `_stream_upload_to_file` already uses bounded chunks,
-but multipart parsing precedes the handler. Increasing its 100 MiB constant
-alone does not bound a multi-GB request. Select a streaming request path or
-verified multipart limits, enforce actual bytes and staging-disk limits, and
-test disconnect, oversize, disk-full and chunked/misdeclared bodies through the
-endpoint. Total output/temp-disk quotas, compressed web input and durable
+**Bounded upload (implemented, unreleased).** `POST /api/mbox/uploads` reads a
+raw `application/octet-stream` body with `request.stream()` instead of
+multipart parsing. Length headers, name, options, the archive slot and a
+staging-disk preflight (1 GiB must stay free) are checked before the first body
+byte; actual bytes, a 60-second idle timeout and free space are enforced while
+it arrives. The body is staged as an exclusive `.part` file under
+`<Inbox>/mbox-uploads/`, then fsynced and renamed without overwriting, and the
+staged archive is kept as the job's immutable source. A Starlette
+`RequestBodyLimitMiddleware` backstop (110 MiB app-wide, cap + 1 MiB on the
+upload route) and `Connection: close` on unread bodies cover the other routes.
+Synthetic tests run through the real ASGI app for disconnect, oversize, lying
+`Content-Length`, disk-full, chunked/misdeclared bodies and stalls, plus one
+real-uvicorn `Expect: 100-continue` wire check. The
+[runtime contract](../reference/v4-runtime-contracts.md#post-apimboxuploads-unreleased)
+is the source of truth.
+
+**Next.** Total output/temp-disk quotas, compressed web input and durable
 web-job resume remain explicit later work. These local synthetic checks do not
 replace #138's real-export acceptance or #140's resource measurements.
 
@@ -251,7 +262,7 @@ Deployment and endpoint retrieval remain separate outstanding work.
 | [#138](https://github.com/BigCactusLabs/dead-letter/issues/138) | Run existing full-import audit on an authorized real export with an independent baseline. |
 | [#140](https://github.com/BigCactusLabs/dead-letter/issues/140) | Measure remaining child CPU/expansion/disk behavior; resource controls already exist. 2026-11-02 batch: synthetic amplification benchmark and macOS table added; issue closed as complete. Real-export evidence stays with #138. |
 | [#145](https://github.com/BigCactusLabs/dead-letter/issues/145) | Existing bounded MCP implementation; finish transport/permission evidence with explicit cancellation limits. 2026-11-02 batch: real-stdio path, privacy, recovery and cancellation tests added; contract states cancellation behavior. |
-| [#146](https://github.com/BigCactusLabs/dead-letter/issues/146) | Local-path streaming jobs and UI implemented in follow-up; bounded upload/staging limits, compressed web input and web-job resume remain. |
+| [#146](https://github.com/BigCactusLabs/dead-letter/issues/146) | Local-path streaming jobs, UI and bounded browser upload implemented in follow-ups; total output/temp-disk quotas, compressed web input and web-job resume remain. |
 | [#150](https://github.com/BigCactusLabs/dead-letter/issues/150) | Refresh complete curated-catalog/duplicate-request lookup; direct install is separate #156 evidence. |
 | [#151](https://github.com/BigCactusLabs/dead-letter/issues/151) | Corrected generated candidate; README-only autonomous install and current submission-contract validation remain. |
 | [#152](https://github.com/BigCactusLabs/dead-letter/issues/152) | Reproduce Smithery's recorded `server.type: uv` rejection against current released manifest before new packaging. |

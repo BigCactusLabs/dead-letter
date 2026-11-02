@@ -201,12 +201,12 @@
              :aria-hidden="(workspaceState !== 'converting').toString()">
           <div class="converting-header">
             <div class="title-chip-row">
-              <span class="converting-title" x-text="$store.job.kind === 'mbox' ? 'Importing archive' : 'Converting'"></span>
+              <span class="converting-title" x-text="$store.job.upload ? 'Uploading archive' : $store.job.kind === 'mbox' ? 'Importing archive' : 'Converting'"></span>
             </div>
             <span class="counter-badge" x-text="progressCountLabel"></span>
           </div>
           <div class="progress-track" role="progressbar"
-               aria-label="Conversion progress"
+               :aria-label="$store.job.upload ? 'Upload progress' : 'Conversion progress'"
                :aria-valuenow="progressView.value" :aria-valuetext="progressCountLabel + '. ' + progressView.detail"
                :aria-valuemin="0" :aria-valuemax="progressView.max">
             <div class="progress-fill"
@@ -219,12 +219,14 @@
           <p class="mbox-note" x-show="$store.job.kind === 'mbox'" x-text="progressView.detail" x-cloak></p>
           <p class="mbox-note" x-show="mboxNotice" x-text="mboxNotice" x-cloak></p>
           <div class="converting-footer">
-            <div class="result-counts">
+            <div class="result-counts" :class="{ 'is-hidden': $store.job.upload }">
               <span class="count-ok" x-text="`${$store.job.summary.written} written`"></span>
               <span class="count-skip" x-text="`${$store.job.summary.skipped} skip`"></span>
               <span class="count-err" x-text="`${$store.job.summary.errors} err`"></span>
             </div>
-            <button class="btn-cancel" @click="$store.job.cancel()"
+            <button class="btn-cancel" x-show="$store.job.upload" @click="$store.job.cancelUpload()"
+                    :disabled="$store.job.upload?.sent" x-cloak>Cancel upload</button>
+            <button class="btn-cancel" x-show="!$store.job.upload" @click="$store.job.cancel()"
                     :disabled="!$store.job.id || $store.job.isSubmitting || $store.job.cancelInFlight || $store.job.cancelRequested || isTerminalStatus($store.job.status)">Cancel</button>
           </div>
         </div>
@@ -506,7 +508,7 @@
               <!-- Manual Job Section -->
               <div class="manual-job-section">
                 <p class="settings-section-title settings-section-title--spaced">Manual Job</p>
-                <div class="field">
+                <div class="field" x-show="mode !== 'mbox' || mboxSource === 'path'">
                   <label class="field-label" for="settings-manual-path">Input Path</label>
                   <input id="settings-manual-path" type="text" x-model="inputPath"
                          :placeholder="mode === 'mbox' ? 'Downloads/Takeout.mbox' : '/path/to/file.eml or /path/to/folder'"
@@ -521,10 +523,35 @@
                           @click="mode = 'mbox'">MBOX</button>
                 </div>
                 <div x-show="mode === 'mbox'" x-cloak>
-                  <p id="mbox-path-help" class="mbox-note">
+                  <div class="mode-toggle mbox-source-toggle" role="group" aria-label="Archive source">
+                    <button type="button" class="mode-btn" :class="{ active: mboxSource === 'path' }"
+                            :aria-pressed="(mboxSource === 'path').toString()"
+                            @click="mboxSource = 'path'; formErrors = []; mboxUploadNotice = ''">Path on this machine</button>
+                    <button type="button" class="mode-btn" :class="{ active: mboxSource === 'upload' }"
+                            :aria-pressed="(mboxSource === 'upload').toString()"
+                            @click="mboxSource = 'upload'; formErrors = []; mboxUploadNotice = ''">Upload archive</button>
+                  </div>
+                  <p id="mbox-path-help" class="mbox-note" x-show="mboxSource === 'path'">
                     Use one uncompressed .mbox file already on the machine running dead-letter (up to 16 GiB).
                     Enter a path relative to the file browser root, your home folder by default.
+                    This is the faster choice for an archive that is already here.
                   </p>
+                  <div x-show="mboxSource === 'upload'" x-cloak>
+                    <label class="mbox-file-picker" :class="{ chosen: mboxFile }">
+                      <input id="mbox-upload-file" type="file" class="visually-hidden" accept=".mbox"
+                             aria-describedby="mbox-upload-help"
+                             @change="chooseMboxFile($event)"
+                             :disabled="$store.job.isSubmitting" />
+                      <span class="mbox-file-action" x-text="mboxFile ? 'Choose a different file' : 'Choose a .mbox file'"></span>
+                      <span class="mbox-file-meta" x-show="mboxFile" x-text="mboxFileLabel" x-cloak></span>
+                    </label>
+                    <p id="mbox-upload-help" class="mbox-note">
+                      Sends one uncompressed .mbox file (up to 16 GiB) from this browser. The copy is saved in the
+                      Inbox's mbox-uploads folder and kept there after the import. The Inbox needs room for the copy
+                      plus 1 GiB. An interrupted upload cannot be resumed.
+                    </p>
+                  </div>
+                  <p class="mbox-note mbox-upload-notice" x-show="mboxUploadNotice" x-text="mboxUploadNotice" role="status" x-cloak></p>
                   <p class="mbox-note">
                     This import writes message bundles and a report into a new Cabinet folder. The source archive stays in place.
                     Allow space for converted messages and attachments. One archive can run at a time.
@@ -536,9 +563,9 @@
                 </div>
                 <div class="field--spaced">
                   <button class="btn-primary" @click="submitJob()"
-                          :disabled="!$store.settings.configured || $store.settings.loading || $store.job.isSubmitting || ((mode === 'mbox' || $store.job.kind === 'mbox') && $store.job.id && !isTerminalStatus($store.job.status))"
+                          :disabled="!$store.settings.configured || $store.settings.loading || $store.job.isSubmitting || ((mode === 'mbox' || $store.job.kind === 'mbox') && !!$store.job.id && !isTerminalStatus($store.job.status))"
                           :title="!$store.settings.configured ? 'Configure inbox & cabinet to enable imports' : ''"
-                          x-text="mode === 'mbox' ? 'Import archive' : 'Start Manual Job'">
+                          x-text="mode !== 'mbox' ? 'Start Manual Job' : mboxSource === 'upload' ? 'Upload and import' : 'Import archive'">
                   </button>
                 </div>
               </div>

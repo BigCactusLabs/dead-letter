@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   worker path, with dated macOS measurements in the worker guide (#140).
 - Real-stdio tests for MCP `convert_mbox` path errors, error privacy,
   same-session recovery and client cancellation (#145).
+- Web UI **Upload archive** option and `POST /api/mbox/uploads`: the browser
+  sends one flat `.mbox` file (up to 16 GiB) as a raw body, which is staged in
+  `<Inbox>/mbox-uploads/` (a real folder inside the Inbox, not a symlink),
+  kept there as the job's source, and imported like a local-path archive.
+  Length, name, options, archive slot and free space
+  (1 GiB must stay free) are checked before the body is read; actual bytes,
+  idle time (60 seconds) and free space are checked while it arrives. The UI
+  shows upload progress and can cancel before the last byte. There is no
+  resume (#146).
+- App-wide request-body limit (110 MiB; 16 GiB + 1 MiB for MBOX uploads), and
+  `Connection: close` on responses sent before the request body was read.
+  `starlette>=1.6.0` is now a declared `ui` dependency (#146).
 
 ### Changed
 
@@ -45,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   separate limit to bound Markdown quote prefixes. If a renderer content
   limit is reached, conversion keeps the text with reduced formatting and
   reports a diagnostics warning (#268).
+- The web UI's **Import archive** button is no longer disabled when the MBOX
+  form is opened before any job has run in the page.
 - Windows MBOX workers now verify job membership after a clean exit and use
   job CPU accounting to identify CPU-limit failures when the process exits
   before the job is signaled. Missing membership or failed accounting checks

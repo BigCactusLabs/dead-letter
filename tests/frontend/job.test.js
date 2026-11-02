@@ -883,3 +883,297 @@ test("an EML start after a terminal archive clears archive metadata and report",
   assert.equal(job.mbox, null);
   assert.equal(job.reportPath, null);
 });
+
+class FakeXHR {
+  static instances = [];
+
+  constructor() {
+    this.headers = {};
+    this.upload = {};
+    this.aborted = false;
+    FakeXHR.instances.push(this);
+  }
+
+  open(method, url) {
+    this.method = method;
+    this.url = url;
+  }
+
+  setRequestHeader(name, value) {
+    this.headers[name] = value;
+  }
+
+  send(body) {
+    this.body = body;
+  }
+
+  abort() {
+    this.aborted = true;
+    this.onabort?.();
+  }
+
+  respond(status, payload) {
+    this.status = status;
+    this.responseText = typeof payload === "string" ? payload : JSON.stringify(payload);
+    this.onload?.();
+  }
+}
+
+async function createUploadStore(fetchImpl, requestLog = null) {
+  FakeXHR.instances = [];
+  globalThis.XMLHttpRequest = FakeXHR;
+  return createJobStore(fetchImpl, requestLog);
+}
+
+async function nextXhr(index = FakeXHR.instances.length) {
+  for (let turn = 0; turn < 20 && FakeXHR.instances.length <= index; turn += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.ok(FakeXHR.instances[index], "upload request was not sent");
+  return FakeXHR.instances[index];
+}
+
+const ARCHIVE_FILE = { name: "Takeout Mail ü.mbox", size: 10 };
+
+test("uploadMbox() sends the raw file with its declared length and hands off to job polling", async () => {
+  const requests = [];
+  const { job } = await createUploadStore(null, requests);
+  let polls = 0;
+  job.startPolling = () => { polls += 1; };
+  const options = { thread_mode: "structured", timeout_seconds: 45 };
+
+  const pending = job.uploadMbox(ARCHIVE_FILE, options);
+  const xhr = await nextXhr();
+
+  assert.deepEqual(requests.map(({ url }) => url), ["/api/session"]);
+  assert.equal(xhr.method, "POST");
+  const url = new URL(xhr.url, "http://127.0.0.1");
+  assert.equal(url.pathname, "/api/mbox/uploads");
+  assert.deepEqual(JSON.parse(url.searchParams.get("options")), options);
+  assert.equal(xhr.body, ARCHIVE_FILE);
+  assert.deepEqual(xhr.headers, {
+    "Content-Type": "application/octet-stream",
+    "X-Dead-Letter-CSRF": "csrf-test-token",
+    "X-Dead-Letter-Filename": encodeURIComponent(ARCHIVE_FILE.name),
+    "X-Dead-Letter-Upload-Length": "10",
+  });
+  assert.equal(job.isSubmitting, true);
+  assert.equal(job.kind, "mbox");
+  assert.equal(job.id, "");
+  assert.deepEqual(toPlain(job.upload), { name: ARCHIVE_FILE.name, loaded: 0, total: 10, sent: false });
+
+  xhr.upload.onprogress({ loaded: 4, total: 10, lengthComputable: true });
+  assert.equal(job.upload.loaded, 4);
+  xhr.upload.onload();
+  assert.equal(job.upload.sent, true);
+  assert.equal(job.upload.loaded, 10);
+  job.cancelUpload();
+  assert.equal(xhr.aborted, false, "a fully sent upload may already be a job, so it cannot be cancelled");
+
+  xhr.respond(202, mboxStatus({ status: "queued" }));
+  assert.deepEqual(await pending, { ok: true });
+  assert.equal(job.id, "archive-1");
+  assert.equal(job.kind, "mbox");
+  assert.equal(job.origin, "upload");
+  assert.equal(job.outputLocation.job_path, "/tmp/Cabinet/mbox-archive-1");
+  assert.equal(job.upload, null);
+  assert.equal(job.activeUpload, null);
+  assert.equal(job.isSubmitting, false);
+  assert.equal(polls, 1);
+});
+
+test("uploadMbox() turns each rejection into a form error without starting a job", async (t) => {
+  const cases = [
+    [409, "mbox_busy", "server text", /Another archive import is running/],
+    [409, "invalid_request", "workflow settings are not configured", /workflow settings are not configured/],
+    [507, "mbox_upload_insufficient_storage", "server text", /Not enough free space/],
+    [411, "mbox_upload_length_required", "server text", /without a length/],
+    [413, "mbox_too_large", "server text", /larger than 16 GiB/],
+    [413, "mbox_upload_too_long", "server text", /more data than the file size/],
+    [408, "mbox_upload_timeout", "server text", /stalled/],
+    [400, "mbox_upload_incomplete", "server text", /ended before the whole file arrived/],
+    [400, "invalid_request", "bad name", /bad name/],
+    [415, "mbox_upload_unsupported_media_type", "server text", /raw bytes/],
+    [500, "backend_error", "Could not stage MBOX upload", /Could not stage MBOX upload/],
+  ];
+  for (const [status, code, message, expected] of cases) {
+    await t.test(`${status} ${code}`, async () => {
+      const { job } = await createUploadStore();
+      job.startPolling = () => assert.fail("A rejected upload must not start polling");
+      const pending = job.uploadMbox(ARCHIVE_FILE, {});
+      (await nextXhr()).respond(status, { errors: [{ path: null, code, message, stage: "validation" }] });
+      const result = await pending;
+      assert.equal(result.ok, false);
+      assert.match(result.formErrors[0], expected);
+      assert.equal(job.id, "");
+      assert.equal(job.upload, null);
+      assert.equal(job.isSubmitting, false);
+    });
+  }
+
+  await t.test("plain-text 413 from the body backstop", async () => {
+    const { job } = await createUploadStore();
+    const pending = job.uploadMbox(ARCHIVE_FILE, {});
+    (await nextXhr()).respond(413, "Content Too Large");
+    assert.match((await pending).formErrors[0], /larger than 16 GiB/);
+  });
+
+  await t.test("connection closed without a response", async () => {
+    const { job } = await createUploadStore();
+    const pending = job.uploadMbox(ARCHIVE_FILE, {});
+    (await nextXhr()).onerror();
+    assert.match((await pending).formErrors[0], /connection closed before the server replied/);
+    assert.equal(job.isSubmitting, false);
+  });
+});
+
+test("cancelUpload() aborts an upload in flight and reports the cancellation", async () => {
+  const { job } = await createUploadStore();
+  job.startPolling = () => assert.fail("A cancelled upload must not start polling");
+  const pending = job.uploadMbox(ARCHIVE_FILE, {});
+  const xhr = await nextXhr();
+  xhr.upload.onprogress({ loaded: 3, total: 10, lengthComputable: true });
+
+  job.cancelUpload();
+
+  assert.equal(xhr.aborted, true);
+  assert.deepEqual(await pending, { ok: false, cancelled: true });
+  assert.equal(job.id, "");
+  assert.equal(job.upload, null);
+  assert.equal(job.activeUpload, null);
+  assert.equal(job.isSubmitting, false);
+});
+
+test("uploadMbox() refreshes a rotated CSRF token once and resends the file", async () => {
+  const { job } = await createUploadStore();
+  job.startPolling = () => {};
+  const tokens = ["first-token", "second-token"];
+  globalThis.fetch = (url) => {
+    assert.equal(url, "/api/session");
+    return Promise.resolve(makeResponse({ jsonData: { csrf_token: tokens.shift() } }));
+  };
+
+  const pending = job.uploadMbox(ARCHIVE_FILE, {});
+  const first = await nextXhr(0);
+  first.upload.onprogress({ loaded: 10, total: 10, lengthComputable: true });
+  first.respond(403, { errors: [{ code: "csrf_validation_failed", message: "missing or invalid CSRF token" }] });
+  const second = await nextXhr(1);
+  assert.equal(first.headers["X-Dead-Letter-CSRF"], "first-token");
+  assert.equal(second.headers["X-Dead-Letter-CSRF"], "second-token");
+  assert.equal(second.body, ARCHIVE_FILE);
+  assert.equal(job.upload.loaded, 0);
+  second.respond(202, mboxStatus({ status: "queued" }));
+
+  assert.deepEqual(await pending, { ok: true });
+  assert.equal(FakeXHR.instances.length, 2);
+});
+
+test("uploadMbox() cannot replace an active job or run twice", async () => {
+  const requests = [];
+  const { job } = await createUploadStore(null, requests);
+  Object.assign(job, { id: "eml-1", status: "running" });
+  assert.deepEqual(await job.uploadMbox(ARCHIVE_FILE, {}), { ok: false });
+  assert.match(job.opErrors[0], /current job to finish/);
+  Object.assign(job, { id: "archive-1", kind: "mbox", status: "running" });
+  assert.deepEqual(await job.uploadMbox(ARCHIVE_FILE, {}), { ok: false });
+  assert.match(job.opErrors[0], /archive import to finish/);
+  Object.assign(job, { id: "", kind: "eml", status: "", isSubmitting: true });
+  assert.deepEqual(await job.uploadMbox(ARCHIVE_FILE, {}), { ok: false });
+  assert.equal(requests.length, 0);
+  assert.equal(FakeXHR.instances.length, 0);
+});
+
+async function waitForCalls(calls, count) {
+  for (let turn = 0; turn < 20 && calls.length < count; turn += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.equal(calls.length, count);
+}
+
+// Answer any request that was sent anyway, so a failing case ends instead of hanging.
+async function settleUpload(pending) {
+  for (let turn = 0; turn < 20; turn += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  for (const xhr of FakeXHR.instances) {
+    if (xhr.status === undefined && !xhr.aborted) xhr.respond(409, { errors: [{ code: "mbox_busy" }] });
+  }
+  return pending;
+}
+
+test("cancelUpload() while a CSRF token is pending sends nothing", async (t) => {
+  const csrfFailure = { errors: [{ code: "csrf_validation_failed", message: "missing or invalid CSRF token" }] };
+
+  await t.test("first token", async () => {
+    const { job } = await createUploadStore();
+    job.startPolling = () => assert.fail("A cancelled upload must not start polling");
+    const session = deferred();
+    const calls = [];
+    globalThis.fetch = (url) => { calls.push(url); return session.promise; };
+
+    const pending = job.uploadMbox(ARCHIVE_FILE, {});
+    await waitForCalls(calls, 1);
+    assert.equal(job.upload.sent, false, "the cancel button is enabled while the token loads");
+    job.cancelUpload();
+    session.resolve(makeResponse({ jsonData: { csrf_token: "fresh-token" } }));
+
+    assert.deepEqual(await settleUpload(pending), { ok: false, cancelled: true });
+    assert.equal(FakeXHR.instances.length, 0);
+    assert.equal(job.upload, null);
+    assert.equal(job.isSubmitting, false);
+  });
+
+  await t.test("refreshed token after a CSRF rejection", async () => {
+    const { job } = await createUploadStore();
+    job.startPolling = () => assert.fail("A cancelled upload must not start polling");
+    const refresh = deferred();
+    const calls = [];
+    globalThis.fetch = (url) => {
+      calls.push(url);
+      return calls.length === 1
+        ? Promise.resolve(makeResponse({ jsonData: { csrf_token: "first-token" } }))
+        : refresh.promise;
+    };
+
+    const pending = job.uploadMbox(ARCHIVE_FILE, {});
+    (await nextXhr(0)).respond(403, csrfFailure);
+    await waitForCalls(calls, 2);
+    job.cancelUpload();
+    refresh.resolve(makeResponse({ jsonData: { csrf_token: "second-token" } }));
+
+    assert.deepEqual(await settleUpload(pending), { ok: false, cancelled: true });
+    assert.equal(FakeXHR.instances.length, 1, "the retry must not be sent");
+  });
+
+  await t.test("a later upload starts without the old cancellation", async () => {
+    const { job } = await createUploadStore();
+    job.startPolling = () => {};
+    const session = deferred();
+    globalThis.fetch = () => session.promise;
+    const cancelled = job.uploadMbox(ARCHIVE_FILE, {});
+    job.cancelUpload();
+    session.resolve(makeResponse({ jsonData: { csrf_token: "fresh-token" } }));
+    assert.deepEqual(await settleUpload(cancelled), { ok: false, cancelled: true });
+
+    FakeXHR.instances = [];
+    const pending = job.uploadMbox(ARCHIVE_FILE, {});
+    (await nextXhr(0)).respond(202, mboxStatus({ status: "queued" }));
+    assert.deepEqual(await pending, { ok: true });
+  });
+});
+
+test("a connection lost after the whole archive was sent reports an unknown outcome", async () => {
+  const { job } = await createUploadStore();
+  job.startPolling = () => assert.fail("No job id is known, so nothing can be polled");
+  const pending = job.uploadMbox(ARCHIVE_FILE, {});
+  const xhr = await nextXhr();
+  xhr.upload.onload();
+  xhr.onerror();
+
+  const [message] = (await pending).formErrors;
+  assert.doesNotMatch(message, /Nothing was imported/);
+  assert.match(message, /may have started/);
+  assert.match(message, /Check History before uploading again/);
+  assert.equal(job.upload, null);
+  assert.equal(job.isSubmitting, false);
+});

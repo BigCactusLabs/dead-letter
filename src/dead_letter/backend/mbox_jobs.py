@@ -69,6 +69,26 @@ def admit_mbox_source(
     """Resolve one browser-relative regular file without reading its contents."""
     browser = FilesystemBrowser(root=source_root)
     source = browser.resolve_relative(input_path)
+    return _admit_resolved(source, source_root=browser.root, cabinet_root=cabinet_root)
+
+
+def admit_staged_mbox_source(
+    source: Path, *, staging_root: Path, cabinet_root: Path
+) -> MboxAdmission:
+    """Admit a server-staged upload by absolute path inside its staging folder.
+
+    The browser-root check does not apply; every other admission check does.
+    """
+    root = staging_root.resolve()
+    resolved = source.resolve()
+    if not resolved.is_relative_to(root):
+        raise ValueError("Staged MBOX upload is outside the upload staging folder")
+    return _admit_resolved(resolved, source_root=root, cabinet_root=cabinet_root)
+
+
+def _admit_resolved(
+    source: Path, *, source_root: Path, cabinet_root: Path
+) -> MboxAdmission:
     if source.is_relative_to(cabinet_root):
         raise ValueError("Cabinet sources are not allowed")
     if source.suffix.lower() != ".mbox":
@@ -86,7 +106,7 @@ def admit_mbox_source(
     if admitted.st_size > MAX_MBOX_ARCHIVE_BYTES:
         raise MboxArchiveTooLargeError("MBOX web jobs accept archives up to 16 GiB")
     return MboxAdmission(
-        source, browser.root, _source_identity(admitted), admitted.st_size
+        source, source_root, _source_identity(admitted), admitted.st_size
     )
 
 

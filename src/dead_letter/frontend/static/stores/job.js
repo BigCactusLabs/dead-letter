@@ -1,7 +1,9 @@
-import { apiFetch } from "../lib/api.js";
+import { CSRF_HEADER_NAME, apiFetch, clearCachedCsrfToken, getCsrfToken, isCsrfFailurePayload } from "../lib/api.js";
 import {
   firstErrorMessage,
   isTerminalStatus,
+  mboxUploadErrorMessage,
+  mboxUploadUrl,
   normalizeDiagnostics,
   normalizeErrors,
   normalizeRecoveryActions,
@@ -43,6 +45,11 @@ export function registerJobStore(Alpine) {
     opInfo: [],
     pendingWatchJobId: "",
     pendingWatchJobStatus: "",
+    // An archive upload in flight: { name, loaded, total, sent }. No job exists until the server accepts it.
+    upload: null,
+    activeUpload: null,
+    // Set by cancelUpload() for the whole upload, including the CSRF token fetches before any request exists.
+    uploadCancelled: false,
 
     applyOutputLocation(outputLocation) {
       if (
@@ -110,7 +117,7 @@ export function registerJobStore(Alpine) {
 
       this.id = payload.id;
       this.origin = origin;
-      this.kind = payload.kind === "mbox" || origin === "mbox" ? "mbox" : "eml";
+      this.kind = payload.kind === "mbox" || origin === "mbox" || origin === "upload" ? "mbox" : "eml";
       this.mbox = payload.mbox || null;
       this.status = payload.status;
       this.applyOutputLocation(payload.output_location);
@@ -173,6 +180,89 @@ export function registerJobStore(Alpine) {
         return { ok: false };
       }
       return this.start(payload, "mbox");
+    },
+
+    async uploadMbox(file, options) {
+      if (this.keepActiveArchive() || this.isSubmitting || !file) return { ok: false };
+      if (this.id && !isTerminalStatus(this.status)) {
+        this.setOpError("Wait for the current job to finish, or cancel it, before starting an archive import.");
+        return { ok: false };
+      }
+
+      this.clearOpMessages();
+      this.stopPolling();
+      this.resetState();
+      this.isSubmitting = true;
+      this.kind = "mbox";
+      this.upload = { name: file.name, loaded: 0, total: file.size, sent: false };
+      this.uploadCancelled = false;
+
+      try {
+        const token = await getCsrfToken();
+        if (this.uploadCancelled) return { ok: false, cancelled: true };
+        let result = await this.sendUpload(file, options, token);
+        if (result.status === 403 && isCsrfFailurePayload(result.payload)) {
+          // Token likely rotated (e.g., backend restarted). Refresh once and retry.
+          clearCachedCsrfToken();
+          const refreshed = await getCsrfToken();
+          if (this.uploadCancelled) return { ok: false, cancelled: true };
+          if (refreshed !== token) {
+            this.upload = { ...this.upload, loaded: 0, sent: false };
+            result = await this.sendUpload(file, options, refreshed);
+          }
+        }
+        if (result.aborted) return { ok: false, cancelled: true };
+        if (result.status === 202) {
+          return { ok: this.applyStarted(result.payload, "Backend returned an invalid upload response.", "upload") };
+        }
+        return { ok: false, formErrors: [mboxUploadErrorMessage(result.status, result.payload, { sent: result.sent })] };
+      } catch (_err) {
+        return { ok: false, formErrors: ["Could not reach the local server to start the upload."] };
+      } finally {
+        this.upload = null;
+        this.activeUpload = null;
+        this.uploadCancelled = false;
+        this.isSubmitting = false;
+      }
+    },
+
+    sendUpload(file, options, token) {
+      return new Promise((resolve) => {
+        const xhr = new XMLHttpRequest();
+        this.activeUpload = xhr;
+        xhr.open("POST", mboxUploadUrl(options));
+        xhr.setRequestHeader("Content-Type", "application/octet-stream");
+        xhr.setRequestHeader(CSRF_HEADER_NAME, token);
+        xhr.setRequestHeader("X-Dead-Letter-Filename", encodeURIComponent(file.name));
+        xhr.setRequestHeader("X-Dead-Letter-Upload-Length", String(file.size));
+        xhr.upload.onprogress = (event) => {
+          if (!this.upload) return;
+          this.upload = { ...this.upload, loaded: event.loaded, total: event.lengthComputable ? event.total : file.size };
+        };
+        xhr.upload.onload = () => {
+          // Every byte is sent; from here the server may already be starting the job.
+          if (this.upload) this.upload = { ...this.upload, loaded: this.upload.total, sent: true };
+        };
+        xhr.onload = () => {
+          let payload = null;
+          try {
+            payload = JSON.parse(xhr.responseText);
+          } catch {
+            payload = null;
+          }
+          resolve({ status: xhr.status, payload });
+        };
+        // After the last byte, a lost connection says nothing about whether the server started the job.
+        xhr.onerror = () => resolve({ status: 0, payload: null, sent: Boolean(this.upload?.sent) });
+        xhr.onabort = () => resolve({ status: 0, payload: null, aborted: true });
+        xhr.send(file);
+      });
+    },
+
+    cancelUpload() {
+      if (!this.upload || this.upload.sent) return;
+      this.uploadCancelled = true;
+      this.activeUpload?.abort();
     },
 
     keepActiveArchive() {

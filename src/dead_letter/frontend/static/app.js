@@ -1,6 +1,6 @@
 import Alpine from "/static/vendor/alpine.esm.js";
 import { apiFetch } from "/static/lib/api.js";
-import { applyStoredOptions, buildPayload, buildMboxPayload, computeGrade, firstErrorMessage, isTerminalStatus, jobDisplayName, jobProgressView, jobStatusColor, relativeTime, validateForm, validateMboxForm } from "/static/lib/helpers.js";
+import { applyStoredOptions, buildPayload, buildMboxOptions, buildMboxPayload, computeGrade, firstErrorMessage, formatBytes, isTerminalStatus, jobDisplayName, jobProgressView, jobStatusColor, relativeTime, validateForm, validateMboxForm, validateMboxUpload } from "/static/lib/helpers.js";
 import { registerJobStore } from "/static/stores/job.js";
 import { registerSettingsStore } from "/static/stores/settings.js";
 import { registerWatchStore } from "/static/stores/watch.js";
@@ -17,6 +17,9 @@ Alpine.data("deadLetterApp", () => ({
   mode: "file",
   inputPath: "",
   mboxTimeout: 30,
+  mboxSource: "path",
+  mboxFile: null,
+  mboxUploadNotice: "",
   options: {
     strip_signatures: false,
     strip_disclaimers: false,
@@ -56,7 +59,8 @@ Alpine.data("deadLetterApp", () => ({
     this.$watch("workspaceState", (state) => {
       const job = this.$store.job;
       if (state === "converting") {
-        this.liveAnnouncement = job.kind === "mbox" ? "Starting archive import" : `Converting 0 of ${job.progress.total || 0}`;
+        this.liveAnnouncement = job.upload ? "Uploading archive"
+          : job.kind === "mbox" ? "Starting archive import" : `Converting 0 of ${job.progress.total || 0}`;
         this.errorsExpanded = false;
         job.diagnosticsOpen = false;
       } else if (state === "done") {
@@ -88,6 +92,13 @@ Alpine.data("deadLetterApp", () => ({
       if (this.workspaceState === "converting" && this.$store.job.kind === "mbox") {
         this.liveAnnouncement = this.progressCountLabel + ". " + this.progressView.detail;
       }
+    });
+    // Upload progress fires many times a second; announce it in tenths.
+    this.$watch("$store.job.upload", (upload) => {
+      if (!upload || this.workspaceState !== "converting") return;
+      const msg = upload.sent ? this.progressView.detail
+        : `${Math.floor(this.progressPercent * 10) * 10}% uploaded`;
+      if (msg !== this.liveAnnouncement) this.liveAnnouncement = msg;
     });
   },
 
@@ -127,6 +138,7 @@ Alpine.data("deadLetterApp", () => ({
   get mboxNotice() {
     const job = this.$store.job;
     if (job.kind !== "mbox") return "";
+    if (job.upload) return "Keep this page open until the upload finishes. The copy is saved in the Inbox, then imported.";
     if (job.cancelRequested && !isTerminalStatus(job.status)) {
       return "Stopping the message worker and finishing the partial report. Completed bundles are kept.";
     }
@@ -428,13 +440,25 @@ Alpine.data("deadLetterApp", () => ({
     return true;
   },
 
+  get mboxFileLabel() {
+    const file = this.mboxFile;
+    return file ? `${file.name} · ${formatBytes(file.size || 0)}` : "";
+  },
+
+  chooseMboxFile(event) {
+    this.mboxFile = event?.target?.files?.[0] || null;
+    this.mboxUploadNotice = "";
+    this.formErrors = [];
+  },
+
   openMboxImport() {
     if (!this.ensureSettingsConfigured("Save Inbox and Cabinet before importing an archive.")) return;
     if (this.mode !== "mbox") this.inputPath = "";
     this.mode = "mbox";
     this.formErrors = [];
     this.settingsOpen = true;
-    this.$nextTick(() => document.getElementById("settings-manual-path")?.focus());
+    const target = this.mboxSource === "upload" ? "mbox-upload-file" : "settings-manual-path";
+    this.$nextTick(() => document.getElementById(target)?.focus());
   },
 
   async submitJob(overrides = null) {
@@ -444,6 +468,10 @@ Alpine.data("deadLetterApp", () => ({
     const isMbox = this.mode === "mbox";
     if ((isMbox || this.$store.job.kind === "mbox") && this.$store.job.id && !isTerminalStatus(this.$store.job.status)) {
       this.formErrors = ["Wait for the current job to finish, or cancel it, before starting another job."];
+      return;
+    }
+    if (isMbox && this.mboxSource === "upload") {
+      await this.submitMboxUpload();
       return;
     }
     const errors = isMbox
@@ -462,6 +490,25 @@ Alpine.data("deadLetterApp", () => ({
     const result = await (isMbox ? this.$store.job.startMbox(payload) : this.$store.job.start(payload));
     if (result?.formErrors) {
       this.formErrors = result.formErrors;
+      this.settingsOpen = true;
+    }
+  },
+
+  async submitMboxUpload() {
+    this.mboxUploadNotice = "";
+    const errors = validateMboxUpload({ file: this.mboxFile, timeoutSeconds: this.mboxTimeout });
+    if (errors.length) {
+      this.formErrors = errors;
+      return;
+    }
+    this.applyDryRunSafety();
+    this._saveOptions();
+    this.settingsOpen = false;
+    const result = await this.$store.job.uploadMbox(this.mboxFile, buildMboxOptions(this.options, this.mboxTimeout));
+    if (result?.formErrors || result?.cancelled) {
+      // Reopen the form with the chosen file so the user can retry or switch to a path.
+      this.formErrors = result.formErrors || [];
+      this.mboxUploadNotice = result.cancelled ? "Upload cancelled. Nothing was imported." : "";
       this.settingsOpen = true;
     }
   },
