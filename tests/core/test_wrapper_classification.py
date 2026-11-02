@@ -184,6 +184,53 @@ def test_adjacent_quotes_leave_only_one_inline_boundary(tmp_path, mode):
 
 
 @pytest.mark.parametrize("mode", ["latest", "structured"])
+@pytest.mark.parametrize("attributes", ['title="t"', 'lang="en"', 'title="t" lang="en"', "title lang"])
+def test_center_with_generic_attributes_keeps_paragraph_boundaries(tmp_path, mode, attributes):
+    html = f"Before<center {attributes}>Centered</center>After"
+
+    _, body = _render(tmp_path, html, mode)
+
+    assert body == "Before\n\nCentered\n\nAfter"
+
+
+@pytest.mark.parametrize("mode", ["latest", "structured"])
+@pytest.mark.parametrize("before, after", [
+    ("Pre<b>", "</b>Post"),
+    ("<span>Pre</span><span>", "</span><span>Post</span>"),
+    ("Pre<b><span>", "</span></b>Post"),
+    ("Pre<b> \n<span> \n", " \n</span> \n</b>Post"),
+])
+def test_quote_inside_inline_ancestors_keeps_outer_words_separate(tmp_path, mode, before, after):
+    html = f'{before}<blockquote class="gmail_quote">OLD HISTORY</blockquote>{after}'
+
+    _, body = _render(tmp_path, html, mode)
+
+    authored = body.split("\n\n## ", 1)[0]
+    assert authored.split() == ["Pre", "Post"]
+    assert len(authored.splitlines()) == 2
+    assert body.count("Pre") == body.count("Post") == 1
+    assert body.count("OLD HISTORY") == (1 if mode == "structured" else 0)
+
+
+@pytest.mark.parametrize("mode", ["latest", "structured"])
+@pytest.mark.parametrize("before, after", [
+    ("<span>Pre<br></span>", "Post"),
+    ("Pre", "<span><br>Post</span>"),
+    ("<span>Pre<em><br></em></span>", "Post"),
+    ("Pre", "<span><em><br></em>Post</span>"),
+    ("<span>Pre<br> \n<em></em></span>", "Post"),
+    ("Pre", "<span><em></em> \n<br>Post</span>"),
+])
+def test_inline_neighbor_edge_break_does_not_add_blank_line(tmp_path, mode, before, after):
+    html = f'{before}<blockquote class="gmail_quote">OLD HISTORY</blockquote>{after}'
+
+    _, body = _render(tmp_path, html, mode)
+
+    assert body.split("\n\n## ", 1)[0] == "Pre  \nPost"
+    assert body.count("OLD HISTORY") == (1 if mode == "structured" else 0)
+
+
+@pytest.mark.parametrize("mode", ["latest", "structured"])
 def test_r1_f1_body_wrapper_note_before_nested_forward(tmp_path, mode):
     html = (
         '<div>Hi</div><div class="gmail_quote"><div>KEEP THIS NOTE.</div>'

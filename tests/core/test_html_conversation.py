@@ -49,6 +49,20 @@ def test_quote_only_messages_leave_no_breaks_in_body_zone(html, expected):
     assert "OLD" in result.zones[1].content
 
 
+@pytest.mark.parametrize("html", [
+    '<div>Pre<span><blockquote class="gmail_quote">OLD</blockquote></span></div>Post',
+    'Pre<div><span><blockquote class="gmail_quote">OLD</blockquote></span>Post</div>',
+    '<span><blockquote class="gmail_quote">OLD</blockquote></span>',
+    '<pre>Pre<span><blockquote class="gmail_quote">OLD</blockquote></span>Post</pre>',
+])
+def test_inline_neighbor_search_stops_at_block_ancestors(html):
+    result = segment_html_conversation(html)
+
+    assert "<br>" not in result.zones[0].content
+    assert "OLD" not in result.zones[0].content
+    assert "OLD" in result.zones[1].content
+
+
 def test_iter_nodes_in_document_order_short_circuits_over_wide_container() -> None:
     """An early match must not force-walk a wide container's siblings.
 

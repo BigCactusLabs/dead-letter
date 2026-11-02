@@ -110,3 +110,34 @@ def test_sanitize_html_strips_form_attributes_before_normalization() -> None:
     )
 
     assert sanitize_html(html) == "<div>Text</div>"
+
+
+@pytest.mark.parametrize("tag", [
+    "address", "article", "aside", "caption", "center", "dd", "details", "dialog",
+    "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form", "header",
+    "legend", "main", "menu", "nav", "section", "summary",
+])
+@pytest.mark.parametrize("attributes", [
+    'title="t"', 'lang="en"', 'title="t" lang="en"', "title lang",
+])
+def test_sanitize_html_removes_generic_attributes_from_stripped_blocks(tag, attributes) -> None:
+    block = f"<{tag} {attributes}>Inside</{tag}>"
+    if tag == "caption":
+        block = f"<table>{block}</table>"
+
+    cleaned = sanitize_html(f"Before{block}After")
+
+    assert f"<{tag}" not in cleaned and f"</{tag}>" not in cleaned
+    assert "title=" not in cleaned and "lang=" not in cleaned
+    expected = "Before<div>Inside</div>" + ("<table></table>" if tag == "caption" else "") + "After"
+    assert cleaned == expected
+    assert sanitize_html(cleaned) == cleaned
+
+
+def test_sanitize_html_keeps_generic_attributes_on_existing_allowed_tags() -> None:
+    html = '<p title="paragraph" lang="en">Text <a href="https://example.test/" title="link">Link</a></p>'
+
+    assert sanitize_html(html) == (
+        '<p title="paragraph" lang="en">Text '
+        '<a href="https://example.test/" title="link" rel="noopener noreferrer">Link</a></p>'
+    )

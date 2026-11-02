@@ -65,19 +65,26 @@ _STRIPPED_BLOCK_RE = re.compile(
 )
 
 
+def _filter_attribute(tag: str, _attribute: str, value: str) -> str | None:
+    return None if tag in _STRIPPED_BLOCK_TAGS else value
+
+
+_CLEANER = nh3.Cleaner(
+    tags=_ALLOWED_TAGS | set(_STRIPPED_BLOCK_TAGS),
+    attributes=_ALLOWED_ATTRIBUTES,
+    attribute_filter=_filter_attribute,
+    url_schemes=_ALLOWED_URL_SCHEMES,
+    strip_comments=True,
+)
+
+
 def sanitize_html(html: str) -> str:
     """Sanitize incoming HTML while preserving quote-detection metadata."""
     if not html:
         return ""
 
-    cleaner = nh3.Cleaner(
-        tags=_ALLOWED_TAGS | set(_STRIPPED_BLOCK_TAGS),
-        attributes=_ALLOWED_ATTRIBUTES,
-        url_schemes=_ALLOWED_URL_SCHEMES,
-        strip_comments=True,
-    )
-    cleaned = cleaner.clean(html)
-    # nh3 emits these tags attribute-free and escapes literal '<' characters.
+    cleaned = _CLEANER.clean(html)
+    # The filter leaves transient tags bare; nh3 escapes literal '<' characters.
     normalized = _STRIPPED_BLOCK_RE.sub(r"<\1div>", cleaned)
     # Renaming caption/form inside a table requires HTML foster parenting.
-    return cleaner.clean(normalized) if normalized != cleaned else cleaned
+    return _CLEANER.clean(normalized) if normalized != cleaned else cleaned

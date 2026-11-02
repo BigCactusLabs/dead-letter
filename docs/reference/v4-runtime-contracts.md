@@ -131,8 +131,8 @@ it does not impose a deadline on the rest of email parsing or conversion.
 
 HTML sanitization preserves paragraph boundaries in stripped block elements,
 including `center`, `details` and `summary`, before classification. History
-extraction adds a line break only between inline siblings outside `pre`;
-existing block and break boundaries remain intact.
+extraction adds a line break only between adjacent inline content outside `pre`,
+looking through inline ancestors; existing block and break boundaries remain intact.
 
 Forwarded messages are content, not reply history:
 

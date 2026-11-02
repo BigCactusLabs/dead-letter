@@ -529,11 +529,9 @@ def _split_outlook_body_and_quote(
     return body_html or None, quoted_html or None
 
 
-def _needs_quote_boundary(node) -> bool:
-    """Separate inline siblings without changing block or preformatted layout."""
-    if node.tag not in _BLOCK_TAGS:
-        return False
-    for direction in ("prev", "next"):
+def _inline_neighbor(node, direction: str):
+    """Find adjacent content through inline ancestors, stopping at a block."""
+    while node is not None:
         sibling = getattr(node, direction)
         while (
             sibling is not None
@@ -541,7 +539,43 @@ def _needs_quote_boundary(node) -> bool:
             and not _format_whitespace(sibling.text_content or "").strip()
         ):
             sibling = getattr(sibling, direction)
-        if sibling is None or sibling.tag in _BLOCK_TAGS or sibling.tag == "br":
+        if sibling is not None:
+            return sibling
+        node = node.parent
+        if node is None or node.tag in _BLOCK_TAGS or node.tag in ("body", "html"):
+            return None
+    return None
+
+
+def _edge_has_break(node, direction: str) -> bool:
+    """Inspect the adjacent edge, ignoring whitespace and empty inline tags."""
+    root_id = node.mem_id
+    while node is not None:
+        if node.tag in _BLOCK_TAGS or node.tag == "br":
+            return True
+        if node.tag == "img" or (
+            node.tag == "-text" and _format_whitespace(node.text_content or "").strip()
+        ):
+            return False
+        child = node.last_child if direction == "prev" else node.child
+        if child is not None:
+            node = child
+            continue
+        while node.mem_id != root_id and getattr(node, direction) is None:
+            node = node.parent
+        if node.mem_id == root_id:
+            return False
+        node = getattr(node, direction)
+    return False
+
+
+def _needs_quote_boundary(node) -> bool:
+    """Separate inline content without changing block or preformatted layout."""
+    if node.tag not in _BLOCK_TAGS:
+        return False
+    for direction in ("prev", "next"):
+        sibling = _inline_neighbor(node, direction)
+        if sibling is None or _edge_has_break(sibling, direction):
             return False
     parent = node.parent
     while parent is not None:
