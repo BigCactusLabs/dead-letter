@@ -542,7 +542,9 @@ def _extract_quote_html(
     fragments = [node.html or node.text(separator="\n", strip=True) for node in nodes]
     boundary = parse_html("<br>").body.child
     for node in nodes:
-        if node.tag in _BLOCK_TAGS:
+        if node.tag in _BLOCK_TAGS and (
+            node.prev is not None or node.next is not None or node.parent.tag != "body"
+        ):
             # Keep the removed block's boundary between authored inline runs.
             node.replace_with(boundary)
         else:
