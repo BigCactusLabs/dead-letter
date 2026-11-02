@@ -10,6 +10,7 @@ from mailparser_reply import EmailReply, EmailReplyParser
 from dead_letter.core.conversation import ConversationResult
 from dead_letter.core.forwarding import (
     FORWARD_MARKER_RE,
+    OUTLOOK_HEADER_LABELS,
     followed_by_header_line,
     normalize_marker_text,
 )
@@ -17,12 +18,26 @@ from dead_letter.core.types import ConversationZone, ZoneKind
 
 # Outlook-style reply separator line, which opens a From/Sent header block.
 _OUTLOOK_SEPARATOR_RE = re.compile(
-    r"^[ \t]*(?:_{20,}|-{3,}[ \t]*Original Message[ \t]*-{3,})[ \t\r]*$", re.IGNORECASE
-)
-_OUTLOOK_HEADER_RE = re.compile(
-    r"^[ \t]*\*{0,2}(?P<label>From|Sent|Date|To|Cc|Bcc|Subject|Reply-To):\*{0,2}",
+    r"^[ \t]*(?:_{20,}|-{3,}[ \t]*(?:Original Message|Ursprüngliche Nachricht|"
+    r"Message d'origine|Mensaje original|Oorspronkelijk bericht)[ \t]*-{3,})[ \t\r]*$",
     re.IGNORECASE,
 )
+_OUTLOOK_HEADER_FIELDS = {
+    label.casefold(): field
+    for field, labels in OUTLOOK_HEADER_LABELS.items()
+    for label in labels
+}
+_OUTLOOK_HEADER_RE = re.compile(
+    r"^[ \t]*\*{0,2}(?P<label>"
+    + "|".join(re.escape(label) for label in sorted(_OUTLOOK_HEADER_FIELDS, key=len, reverse=True))
+    + r")\*{0,2}[ \t\u00a0]?[:：]\*{0,2}",
+    re.IGNORECASE,
+)
+# mail-parser-reply 1.36 searches an unanchored signature alternative with
+# ``\s*^``. A long whitespace run takes quadratic time even without a header.
+# At 4k spaces conversion took ~0.08 s, at 16k ~1.3 s, and at 64k >10 s.
+# Skip the dependency, never truncate its input, above this physical-line cap.
+_MAX_REPLY_PARSER_LINE_CHARS = 4096
 # One ``>`` quote level, removed from the body of a quoted forward.
 _QUOTE_LEVEL_RE = re.compile(r"(?m)^[ \t]*>[ \t]?")
 # Upper bound on plain-text forward sections, matching the HTML segmenter.
@@ -78,6 +93,17 @@ def parse_email_replies(text: str) -> list[EmailReply]:
     return replies
 
 
+def _parse_text_replies(text: str) -> list[EmailReply]:
+    """Bound the plain-text path, whose no-split fallback keeps the full body.
+
+    Keep this policy separate from HTML's shared parser: its caller can try
+    other splitters after no split, which need not retain an arbitrary prefix.
+    """
+    if any(len(line) > _MAX_REPLY_PARSER_LINE_CHARS for line in text.split("\n")):
+        return []
+    return parse_email_replies(text)
+
+
 def _outlook_block_ends_at(lines: list[str], last: int) -> bool:
     """True when ``lines[last]`` closes a separator + From/Sent header block."""
     first = last
@@ -86,13 +112,35 @@ def _outlook_block_ends_at(lines: list[str], last: int) -> bool:
         match = _OUTLOOK_HEADER_RE.match(lines[first])
         if match is None:
             break
-        labels.add(match.group("label").lower())
+        field = _OUTLOOK_HEADER_FIELDS.get(match.group("label").casefold())
+        if field is None:
+            return False
+        labels.add(field)
         first -= 1
-    if "from" not in labels or not labels & {"sent", "date"}:
+    if not {"from", "date"} <= labels:
         return False
     while first >= 0 and not lines[first].strip():
         first -= 1
     return first >= 0 and _OUTLOOK_SEPARATOR_RE.match(lines[first]) is not None
+
+
+def _outlook_history_start(source: str) -> tuple[int, int] | None:
+    """Offsets of a separator and its evidence-qualified From/Date block."""
+    lines = source.split("\n")
+    offset = 0
+    for index, line in enumerate(lines):
+        if _OUTLOOK_SEPARATOR_RE.match(line):
+            block_start = index + 1
+            while block_start < len(lines) and not lines[block_start].strip():
+                block_start += 1
+            block_end = block_start
+            while block_end < len(lines) and _OUTLOOK_HEADER_RE.match(lines[block_end]):
+                block_end += 1
+            if block_end > block_start and _outlook_block_ends_at(lines, block_end - 1):
+                header_offset = offset + sum(len(part) + 1 for part in lines[index:block_start])
+                return offset, header_offset
+        offset += len(line) + 1
+    return None
 
 
 def _separator_in_reply_history(prefix: str) -> bool:
@@ -114,21 +162,14 @@ def _separator_in_reply_history(prefix: str) -> bool:
         return False
     # Outlook history is unquoted, so everything after its separator +
     # From/Sent block is reply history.
-    for index, line in enumerate(lines):
-        if _OUTLOOK_SEPARATOR_RE.match(line):
-            block_end = index + 1
-            while block_end < len(lines) and not lines[block_end].strip():
-                block_end += 1
-            while block_end < len(lines) and _OUTLOOK_HEADER_RE.match(lines[block_end]):
-                block_end += 1
-            if block_end > index + 1 and _outlook_block_ends_at(lines, block_end - 1):
-                return True
+    if _outlook_history_start(prefix) is not None:
+        return True
     if _OUTLOOK_HEADER_RE.match(lines[last]):
         return _outlook_block_ends_at(lines, last)
     tail = lines[last].strip()
     if not tail.endswith((":", "：")):
         return False
-    for reply in parse_email_replies(prefix)[1:]:
+    for reply in _parse_text_replies(prefix)[1:]:
         header_lines = [line.strip() for line in str(reply.headers or "").splitlines() if line.strip()]
         if (
             header_lines
@@ -303,7 +344,19 @@ def segment_text_conversation(
     if forwarded is not None:
         return forwarded
 
-    replies = parse_email_replies(source)
+    history: list[EmailReply] = []
+    boundary = _outlook_history_start(source)
+    if boundary is not None:
+        separator_start, header_start = boundary
+        # The dependency defaults to English. The confirmed separator +
+        # From/Date structure identifies history independently of its locale.
+        # Consume the structural separator with its block, never as a reply
+        # section of its own; keep the full header and message text in QUOTED.
+        quoted = source[header_start:]
+        history = _parse_text_replies(quoted) or [EmailReply(content=quoted)]
+        source = source[:separator_start].strip()
+
+    replies = _parse_text_replies(source) if source else []
 
     zones: list[ConversationZone] = []
 
@@ -330,7 +383,7 @@ def segment_text_conversation(
                         confidence=0.8,
                     )
                 )
-    else:
+    elif source:
         zones.append(
             ConversationZone(
                 kind=ZoneKind.BODY,
@@ -339,6 +392,18 @@ def segment_text_conversation(
                 confidence=0.7,
             )
         )
+
+    for reply in history:
+        quoted = str(reply.content or "").strip()
+        if quoted:
+            zones.append(
+                ConversationZone(
+                    kind=ZoneKind.QUOTED,
+                    content=quoted,
+                    source_kind="plain",
+                    confidence=0.8,
+                )
+            )
 
     return ConversationResult(
         zones=zones,

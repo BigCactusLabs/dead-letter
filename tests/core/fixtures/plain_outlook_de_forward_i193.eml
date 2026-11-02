@@ -1,0 +1,18 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Synthetic locale control
+Date: Thu, 05 Mar 2026 12:15:00 +0000
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+AUTHORED_PAYLOAD
+
+-------- Weitergeleitete Nachricht --------
+Von: Bob <bob@example.com>
+Gesendet: Mittwoch
+An: Alice <alice@example.com>
+Cc: Eve <eve@example.com>
+Betreff: Plan
+
+FORWARDED_PAYLOAD
