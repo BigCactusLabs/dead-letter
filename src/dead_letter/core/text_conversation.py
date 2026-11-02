@@ -37,10 +37,13 @@ _OUTLOOK_HEADER_RE = re.compile(
 # mail-parser-reply 1.36 searches an unanchored signature alternative with
 # ``\s*^``. A long whitespace run takes quadratic time even without a header.
 # Its unanchored ``\n{2,} ?[_-]{32,}`` alternative also retries newline runs.
-# A 1k whitespace run took <=0.05 s; at 4k newlines ~0.68 s, at 32k >8 s.
+# Work accumulates across runs: 100 newline runs of length 1k took ~4.26 s,
+# versus ~0.045 s for one. Budget squared lengths, not just the longest run.
+# Runs up to 64 characters are cheap ordinary spacing (300 x 64 LF ~0.07 s).
 # Check the indentation-protected input: sentinel-separated blank indented
 # lines are fast, as are long prose lines with short runs between words.
-_MAX_REPLY_PARSER_WHITESPACE_RUN = 1024
+_REPLY_PARSER_WHITESPACE_FLOOR = 64
+_REPLY_PARSER_WHITESPACE_BUDGET = 1024 * 1024
 _WHITESPACE_RUN_RE = re.compile(r"\s+")
 # One ``>`` quote level, removed from the body of a quoted forward.
 _QUOTE_LEVEL_RE = re.compile(r"(?m)^[ \t]*>[ \t]?")
@@ -86,11 +89,14 @@ def parse_email_replies(text: str) -> list[EmailReply]:
 def _read_email_replies(text: str, *, bound_whitespace: bool) -> list[EmailReply]:
     sentinel = _indentation_sentinel(text)
     protected_text = _protect_leading_indentation(text, sentinel=sentinel)
-    if bound_whitespace and any(
-        match.end() - match.start() > _MAX_REPLY_PARSER_WHITESPACE_RUN
-        for match in _WHITESPACE_RUN_RE.finditer(protected_text)
-    ):
-        return []
+    if bound_whitespace:
+        whitespace_work = 0
+        for match in _WHITESPACE_RUN_RE.finditer(protected_text):
+            length = match.end() - match.start()
+            if length > _REPLY_PARSER_WHITESPACE_FLOOR:
+                whitespace_work += length * length
+                if whitespace_work > _REPLY_PARSER_WHITESPACE_BUDGET:
+                    return []
     parser = EmailReplyParser()
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -380,9 +386,10 @@ def segment_text_conversation(
     ]
     for index, (_separator_start, header_start) in enumerate(boundaries):
         end = boundaries[index + 1][0] if index + 1 < len(boundaries) else len(source)
-        # One quoted message per qualified block, in every supported locale.
-        # Consume each structural separator, never emit it as its own reply.
-        history.append(EmailReply(content=source[header_start:end]))
+        # Consume each structural separator, then retain existing reply
+        # splitting within its block (On ... wrote: or bare header blocks).
+        quoted = source[header_start:end]
+        history.extend(_parse_text_replies(quoted) or [EmailReply(content=quoted)])
     if boundaries:
         source = source[:boundaries[0][0]].strip()
 

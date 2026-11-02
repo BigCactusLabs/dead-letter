@@ -215,3 +215,39 @@ def test_french_typographic_apostrophe_separator_is_history() -> None:
     assert [zone.kind for zone in zones] == [ZoneKind.BODY, ZoneKind.QUOTED]
     assert zones[0].content == "AUTHORED"
     assert zones[1].content == "De : Marie\nEnvoyé : lundi\n\nOLD"
+
+
+@pytest.mark.parametrize("layout", ["onwrote", "bare_headers"])
+@pytest.mark.parametrize("thread_order", ["oldest-first", "latest-first"])
+def test_outlook_history_slice_keeps_existing_nested_reply_splits(
+    layout: str, thread_order: str, tmp_path: Path,
+) -> None:
+    from email.message import EmailMessage
+
+    first = "From: Bob\nSent: Sun\nSubject: Hi\n\nMid."
+    second = (
+        "On Sat, Carol wrote:\n> oldest"
+        if layout == "onwrote" else "From: Carol\nSent: Sat\nSubject: Hi\n\nOldest."
+    )
+    text = f"New.\n\n{'_' * 32}\n{first}\n\n{second}\n"
+    zones = segment_text_conversation(text, split_forwards=True).zones
+    assert zones[0].kind is ZoneKind.BODY
+    assert zones[0].content == "New."
+    assert [zone.content for zone in zones if zone.kind is ZoneKind.QUOTED] == [first, second]
+    message = EmailMessage()
+    message["Subject"] = "Synthetic mixed Outlook history"
+    message.set_content(text)
+    source, output = tmp_path / "mixed.eml", tmp_path / "mixed.md"
+    source.write_bytes(bytes(message))
+    result = convert(source, output=output, options=ConvertOptions(
+        thread_mode="structured", thread_order=thread_order,
+    ))
+    assert result.success, result.error
+    rendered = output.read_text()
+    assert "thread_messages: 2" in rendered
+    assert rendered.count("\n## ") == 2
+    oldest = "oldest" if layout == "onwrote" else "Oldest."
+    assert rendered.count("Mid.") == 1
+    assert rendered.count(oldest) == 1
+    markers = [oldest, "Mid."] if thread_order == "oldest-first" else ["Mid.", oldest]
+    assert rendered.index(markers[0]) < rendered.index(markers[1])

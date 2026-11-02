@@ -130,9 +130,11 @@ offsets still refer to the original input. This bounds attribution regex work;
 it does not impose a deadline on the rest of email parsing or conversion.
 
 Plain-text Outlook history splits before mail-parser-reply, including English.
-Each separator plus contiguous sender and sent/date header block starts one
-QUOTED zone; the separator is consumed. Structural splitting requires the
-separator and header lines at column 0; indented examples stay body. Supported
+Each separator plus contiguous sender and sent/date header block starts a
+history slice; the separator is consumed. Each slice uses the reply parser
+for further message splits, or stays one raw QUOTED zone when parsing is skipped.
+Structural splitting requires separator and header lines at column 0;
+indented examples stay body. Supported
 labels are English, German, French, Spanish (`Enviado el` included), Dutch,
 Italian desktop and Japanese, with ASCII/full-width colons and an optional
 space, tab or NBSP before the colon. Dashed separators include `Original Message`,
@@ -142,12 +144,15 @@ across these locales. Chinese history labels and other localized dashed
 separators remain unconfirmed. A message containing only Outlook history uses
 the existing quote-only fallback in both modes, without separate thread headings.
 
-Plain-text calls skip mail-parser-reply when its indentation-protected input
-contains a consecutive Unicode whitespace (`\s`) run longer than 1,024 Python
-characters. Sentinels break runs across indented lines; long prose/token lines
-with short whitespace runs still parse. The no-split fallback keeps all text,
-so uncertain history can remain in BODY. This bounds the known whitespace-run
-slow path, not total conversion time; HTML's shared parser is unchanged.
+Plain-text calls budget consecutive Unicode whitespace (`\s`) runs in the
+indentation-protected input: for runs longer than 64 Python characters, sum the
+squared lengths and skip mail-parser-reply when the total exceeds 1,048,576.
+Sentinels break runs across indented lines; ordinary short spacing and long
+prose/token lines still parse. The no-split fallback keeps all text. If the
+budget is exceeded before `On … wrote:`, that reply boundary can be missed and
+an enclosed forward can remain current forwarded content instead of history.
+Other dependency slow paths remain for separate follow-up, including long
+`On ` lines and HTML Outlook `<pre>` blank lines; this is not a conversion deadline.
 
 Forwarded messages are content, not reply history:
 

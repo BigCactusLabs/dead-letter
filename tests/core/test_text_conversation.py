@@ -214,3 +214,72 @@ def test_indented_blank_lines_do_not_disable_ordinary_reply_splitting() -> None:
     assert zones[0].content.startswith("x\n")
     assert zones[0].content.endswith("y")
     assert any(zone.kind is ZoneKind.QUOTED and "OLDER_PAYLOAD" in zone.content for zone in zones)
+
+
+@pytest.mark.parametrize("thread_mode", ["latest", "structured"])
+@pytest.mark.parametrize("kind", ["lf", "spaces"])
+def test_aggregate_whitespace_work_preserves_full_text_in_killable_process(
+    kind: str, thread_mode: str,
+) -> None:
+    script = textwrap.dedent(r'''
+        import sys, tempfile
+        from email.message import EmailMessage
+        from pathlib import Path
+        from dead_letter.core import convert
+        from dead_letter.core.text_conversation import segment_text_conversation
+        from dead_letter.core.types import ConvertOptions, ZoneKind
+
+        kind, mode = sys.argv[1:]
+        run = '\n' * 1000 if kind == 'lf' else ' ' * 1000
+        original = 'AUTHORED\nx' + (run + 'x') * 300 + '\nENDING\n\nOn Thu someone wrote:\n> OLDER_PAYLOAD'
+        zones = segment_text_conversation(original, split_forwards=mode == 'structured').zones
+        assert len(zones) == 1
+        assert zones[0].kind is ZoneKind.BODY
+        assert zones[0].content == original
+        with tempfile.TemporaryDirectory() as directory:
+            source, output = Path(directory)/'input.eml', Path(directory)/'output.md'
+            message = EmailMessage()
+            message['Subject'] = 'Synthetic repeated whitespace runs'
+            message.set_content(original)
+            source.write_bytes(bytes(message))
+            result = convert(source, output=output, options=ConvertOptions(thread_mode=mode))
+            assert result.success, result.error
+            assert original.replace('>', '&gt;') in output.read_text()
+        print('aggregate full text preserved')
+    ''')
+    result = subprocess.run(
+        [sys.executable, "-c", script, kind, thread_mode],
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "aggregate full text preserved" in result.stdout
+
+
+@pytest.mark.parametrize("count", [4, 5])
+def test_aggregate_whitespace_budget_applies_across_separate_runs(count: int) -> None:
+    authored = "x" + (" " * 512 + "x") * count
+    text = authored + "\n\nOn Thu someone wrote:\n> OLDER_PAYLOAD"
+    zones = segment_text_conversation(text).zones
+    if count == 4:
+        assert zones[0].kind is ZoneKind.BODY
+        assert zones[0].content == authored
+        assert any(zone.kind is ZoneKind.QUOTED and "OLDER_PAYLOAD" in zone.content for zone in zones)
+    else:
+        assert len(zones) == 1
+        assert zones[0].kind is ZoneKind.BODY
+        assert zones[0].content == text
+
+
+@pytest.mark.parametrize("run_length", [64, 65])
+def test_short_whitespace_runs_do_not_spend_the_long_run_budget(run_length: int) -> None:
+    authored = "x" + ("\n" * run_length + "x") * 300
+    text = authored + "\n\nOn Thu someone wrote:\n> OLDER_PAYLOAD"
+    zones = segment_text_conversation(text).zones
+    if run_length == 64:
+        assert zones[0].kind is ZoneKind.BODY
+        assert zones[0].content == authored
+        assert any(zone.kind is ZoneKind.QUOTED and "OLDER_PAYLOAD" in zone.content for zone in zones)
+    else:
+        assert len(zones) == 1
+        assert zones[0].kind is ZoneKind.BODY
+        assert zones[0].content == text
