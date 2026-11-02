@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 import re
 import warnings
 
@@ -19,7 +20,7 @@ from dead_letter.core.types import ConversationZone, ZoneKind
 # Outlook-style reply separator line, which opens a From/Sent header block.
 _OUTLOOK_SEPARATOR_RE = re.compile(
     r"^[ \t]*(?:_{20,}|-{3,}[ \t]*(?:Original Message|Ursprüngliche Nachricht|"
-    r"Message d'origine|Mensaje original|Oorspronkelijk bericht)[ \t]*-{3,})[ \t\r]*$",
+    r"Message d['’]origine|Mensaje original|Oorspronkelijk bericht)[ \t]*-{3,})[ \t\r]*$",
     re.IGNORECASE,
 )
 _OUTLOOK_HEADER_FIELDS = {
@@ -35,9 +36,12 @@ _OUTLOOK_HEADER_RE = re.compile(
 )
 # mail-parser-reply 1.36 searches an unanchored signature alternative with
 # ``\s*^``. A long whitespace run takes quadratic time even without a header.
-# At 4k spaces conversion took ~0.08 s, at 16k ~1.3 s, and at 64k >10 s.
-# Skip the dependency, never truncate its input, above this physical-line cap.
-_MAX_REPLY_PARSER_LINE_CHARS = 4096
+# Its unanchored ``\n{2,} ?[_-]{32,}`` alternative also retries newline runs.
+# A 1k whitespace run took <=0.05 s; at 4k newlines ~0.68 s, at 32k >8 s.
+# Check the indentation-protected input: sentinel-separated blank indented
+# lines are fast, as are long prose lines with short runs between words.
+_MAX_REPLY_PARSER_WHITESPACE_RUN = 1024
+_WHITESPACE_RUN_RE = re.compile(r"\s+")
 # One ``>`` quote level, removed from the body of a quoted forward.
 _QUOTE_LEVEL_RE = re.compile(r"(?m)^[ \t]*>[ \t]?")
 # Upper bound on plain-text forward sections, matching the HTML segmenter.
@@ -73,12 +77,21 @@ def parse_email_replies(text: str) -> list[EmailReply]:
     """Run ``mailparser_reply.EmailReplyParser`` with the upstream deprecation
     filter applied. Returns the parsed ``replies`` list.
 
-    Shared by Path A (``segment_text_conversation``) and Path B
-    (``_pipeline._threaded_content_from_conversation``).
+    HTML callers retain this unbounded entry point. Plain-text callers use
+    ``_parse_text_replies`` with the whitespace-run guard and the same reader.
     """
-    parser = EmailReplyParser()
+    return _read_email_replies(text, bound_whitespace=False)
+
+
+def _read_email_replies(text: str, *, bound_whitespace: bool) -> list[EmailReply]:
     sentinel = _indentation_sentinel(text)
     protected_text = _protect_leading_indentation(text, sentinel=sentinel)
+    if bound_whitespace and any(
+        match.end() - match.start() > _MAX_REPLY_PARSER_WHITESPACE_RUN
+        for match in _WHITESPACE_RUN_RE.finditer(protected_text)
+    ):
+        return []
+    parser = EmailReplyParser()
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
@@ -99,9 +112,7 @@ def _parse_text_replies(text: str) -> list[EmailReply]:
     Keep this policy separate from HTML's shared parser: its caller can try
     other splitters after no split, which need not retain an arbitrary prefix.
     """
-    if any(len(line) > _MAX_REPLY_PARSER_LINE_CHARS for line in text.split("\n")):
-        return []
-    return parse_email_replies(text)
+    return _read_email_replies(text, bound_whitespace=True)
 
 
 def _outlook_block_ends_at(lines: list[str], last: int) -> bool:
@@ -124,23 +135,37 @@ def _outlook_block_ends_at(lines: list[str], last: int) -> bool:
     return first >= 0 and _OUTLOOK_SEPARATOR_RE.match(lines[first]) is not None
 
 
-def _outlook_history_start(source: str) -> tuple[int, int] | None:
-    """Offsets of a separator and its evidence-qualified From/Date block."""
+def _outlook_history_boundaries(
+    source: str, *, column_zero: bool = False
+) -> Iterator[tuple[int, int]]:
+    """Offsets of each separator and qualified From/Date block.
+
+    Structural splitting requires column zero; the older forward-history
+    guard retains its existing indentation tolerance.
+    """
     lines = source.split("\n")
     offset = 0
     for index, line in enumerate(lines):
-        if _OUTLOOK_SEPARATOR_RE.match(line):
+        if _OUTLOOK_SEPARATOR_RE.match(line) and not (
+            column_zero and line.startswith((" ", "\t"))
+        ):
             block_start = index + 1
             while block_start < len(lines) and not lines[block_start].strip():
                 block_start += 1
             block_end = block_start
             while block_end < len(lines) and _OUTLOOK_HEADER_RE.match(lines[block_end]):
                 block_end += 1
-            if block_end > block_start and _outlook_block_ends_at(lines, block_end - 1):
+            if (
+                block_end > block_start
+                and _outlook_block_ends_at(lines, block_end - 1)
+                and not (
+                    column_zero
+                    and any(part.startswith((" ", "\t")) for part in lines[block_start:block_end])
+                )
+            ):
                 header_offset = offset + sum(len(part) + 1 for part in lines[index:block_start])
-                return offset, header_offset
+                yield offset, header_offset
         offset += len(line) + 1
-    return None
 
 
 def _separator_in_reply_history(prefix: str) -> bool:
@@ -162,7 +187,7 @@ def _separator_in_reply_history(prefix: str) -> bool:
         return False
     # Outlook history is unquoted, so everything after its separator +
     # From/Sent block is reply history.
-    if _outlook_history_start(prefix) is not None:
+    if next(_outlook_history_boundaries(prefix), None) is not None:
         return True
     if _OUTLOOK_HEADER_RE.match(lines[last]):
         return _outlook_block_ends_at(lines, last)
@@ -334,7 +359,8 @@ def segment_text_conversation(
     opens a quote block when ``split_forwards`` is off.
     """
     # Normalize before either forward segmentation or reply parsing sees the body.
-    source = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    normalized = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    source = normalized.strip()
     if not source:
         return ConversationResult(zones=[])
 
@@ -345,16 +371,20 @@ def segment_text_conversation(
         return forwarded
 
     history: list[EmailReply] = []
-    boundary = _outlook_history_start(source)
-    if boundary is not None:
-        separator_start, header_start = boundary
-        # The dependency defaults to English. The confirmed separator +
-        # From/Date structure identifies history independently of its locale.
-        # Consume the structural separator with its block, never as a reply
-        # section of its own; keep the full header and message text in QUOTED.
-        quoted = source[header_start:]
-        history = _parse_text_replies(quoted) or [EmailReply(content=quoted)]
-        source = source[:separator_start].strip()
+    # Check columns before outer whitespace trimming can erase indentation
+    # from a separator at the very beginning of the message.
+    leading = len(normalized) - len(normalized.lstrip())
+    boundaries = [
+        (separator - leading, header - leading)
+        for separator, header in _outlook_history_boundaries(normalized, column_zero=True)
+    ]
+    for index, (_separator_start, header_start) in enumerate(boundaries):
+        end = boundaries[index + 1][0] if index + 1 < len(boundaries) else len(source)
+        # One quoted message per qualified block, in every supported locale.
+        # Consume each structural separator, never emit it as its own reply.
+        history.append(EmailReply(content=source[header_start:end]))
+    if boundaries:
+        source = source[:boundaries[0][0]].strip()
 
     replies = _parse_text_replies(source) if source else []
 

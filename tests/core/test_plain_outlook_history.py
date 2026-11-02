@@ -120,3 +120,98 @@ def test_true_forward_with_localized_header_punctuation_stays_forward(
         assert zones[0].content == "AUTHORED_PAYLOAD"
         assert any(zone.kind is ZoneKind.FORWARDED_BODY and "FORWARDED_PAYLOAD" in zone.content for zone in zones)
         assert not any(zone.kind is ZoneKind.QUOTED for zone in zones)
+
+
+@pytest.mark.parametrize("thread_mode", ["latest", "structured"])
+@pytest.mark.parametrize("indent", ["    ", "\t"])
+def test_indented_outlook_example_and_following_authored_text_stay_body(
+    tmp_path: Path, thread_mode: str, indent: str,
+) -> None:
+    from email.message import EmailMessage
+
+    text = (
+        "Here is how Outlook formats a reply, for the parser docs:\n\n"
+        f"{indent}{'_' * 32}\n{indent}From: Bob\n{indent}Sent: Wed\n\n"
+        f"{indent}Example body.\n\nAfter the example: please review by Friday."
+    )
+    zones = segment_text_conversation(text, split_forwards=thread_mode == "structured").zones
+    assert len(zones) == 1
+    assert zones[0].kind is ZoneKind.BODY
+    assert zones[0].content == text
+    message = EmailMessage()
+    message["Subject"] = "Synthetic authored example"
+    message.set_content(text)
+    source, output = tmp_path / "example.eml", tmp_path / "example.md"
+    source.write_bytes(bytes(message))
+    result = convert(source, output=output, options=ConvertOptions(thread_mode=thread_mode))
+    assert result.success, result.error
+    rendered = output.read_text()
+    assert text in rendered
+    assert "thread_messages:" not in rendered
+
+
+@pytest.mark.parametrize("indented", ["separator", "headers", "both"])
+def test_localized_structural_split_requires_column_zero(indented: str) -> None:
+    separator_indent = "\t" if indented in {"separator", "both"} else ""
+    header_indent = " " if indented in {"headers", "both"} else ""
+    text = (
+        f"AUTHORED\n\n{separator_indent}-----Ursprüngliche Nachricht-----\n"
+        f"{header_indent}Von: Bob\n{header_indent}Gesendet: Mittwoch\n\nEXAMPLE\n\nAFTER"
+    )
+    for structured in (False, True):
+        zones = segment_text_conversation(text, split_forwards=structured).zones
+        assert len(zones) == 1
+        assert zones[0].kind is ZoneKind.BODY
+        assert zones[0].content == text
+
+
+@pytest.mark.parametrize("locale", ["de", "en"])
+@pytest.mark.parametrize("thread_order", ["oldest-first", "latest-first"])
+def test_three_outlook_blocks_have_separate_zones_and_sections(
+    locale: str, thread_order: str, tmp_path: Path,
+) -> None:
+    from email.message import EmailMessage
+
+    separator, sender, date, recipient, subject = (
+        ("-----Ursprüngliche Nachricht-----", "Von", "Gesendet", "An", "Betreff")
+        if locale == "de" else ("-----Original Message-----", "From", "Sent", "To", "Subject")
+    )
+    blocks = [
+        f"{sender}: Sender{i} <s{i}@example.com>\n{date}: Wednesday\n"
+        f"{recipient}: Alice\n{subject}: Topic{i}\n\nBLOCK_{i}"
+        for i in (1, 2, 3)
+    ]
+    text = "AUTHORED\n\n" + "\n\n".join(f"{separator}\n{block}" for block in blocks)
+    zones = segment_text_conversation(text, split_forwards=True).zones
+    assert zones[0].kind is ZoneKind.BODY
+    assert zones[0].content == "AUTHORED"
+    quoted = [zone.content for zone in zones if zone.kind is ZoneKind.QUOTED]
+    assert quoted == blocks
+    assert all(separator not in block for block in quoted)
+    message = EmailMessage()
+    message["Subject"] = "Synthetic three-block Outlook chain"
+    message.set_content(text)
+    source, output = tmp_path / "chain.eml", tmp_path / "chain.md"
+    source.write_bytes(bytes(message))
+    result = convert(source, output=output, options=ConvertOptions(
+        thread_mode="structured", thread_order=thread_order,
+    ))
+    assert result.success, result.error
+    rendered = output.read_text()
+    assert "thread_messages: 3" in rendered
+    assert separator not in rendered
+    assert rendered.count("\n## ") == 3
+    sequence = (3, 2, 1) if thread_order == "oldest-first" else (1, 2, 3)
+    offsets = [rendered.index(f"BLOCK_{i}") for i in sequence]
+    assert offsets == sorted(offsets)
+    if locale == "en":
+        for i in sequence:
+            assert f"## From Sender{i} <s{i}@example.com> (Wednesday) — Topic{i}" in rendered
+
+
+def test_french_typographic_apostrophe_separator_is_history() -> None:
+    text = "AUTHORED\n\n-----Message d’origine-----\nDe : Marie\nEnvoyé : lundi\n\nOLD"
+    zones = segment_text_conversation(text).zones
+    assert [zone.kind for zone in zones] == [ZoneKind.BODY, ZoneKind.QUOTED]
+    assert zones[0].content == "AUTHORED"
+    assert zones[1].content == "De : Marie\nEnvoyé : lundi\n\nOLD"

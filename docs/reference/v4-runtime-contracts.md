@@ -129,21 +129,25 @@ unrecognized candidate keeps its text through the existing fallback, and match
 offsets still refer to the original input. This bounds attribution regex work;
 it does not impose a deadline on the rest of email parsing or conversion.
 
-The plain-text Outlook history guard requires a separator followed by a contiguous header
-block with both sender and sent/date fields. The shared label table supports
-English, German, French, Spanish (including `Enviado el`), Dutch, Italian desktop,
-and Japanese; ASCII/full-width colons and a space or no-break space before the
-colon are accepted. Dashed separators also recognize `Ursprüngliche Nachricht`,
-`Message d'origine`, `Mensaje original`, and `Oorspronkelijk bericht`; underscore
-separators work across these locales. Chinese history labels and other localized
-Outlook dashed separators remain unconfirmed. A localized label in ordinary prose
-alone does not start history.
+Plain-text Outlook history splits before mail-parser-reply, including English.
+Each separator plus contiguous sender and sent/date header block starts one
+QUOTED zone; the separator is consumed. Structural splitting requires the
+separator and header lines at column 0; indented examples stay body. Supported
+labels are English, German, French, Spanish (`Enviado el` included), Dutch,
+Italian desktop and Japanese, with ASCII/full-width colons and an optional
+space, tab or NBSP before the colon. Dashed separators include `Original Message`,
+`Ursprüngliche Nachricht`, `Message d'origine`/`Message d’origine`,
+`Mensaje original` and `Oorspronkelijk bericht`; underscore separators work
+across these locales. Chinese history labels and other localized dashed
+separators remain unconfirmed. A message containing only Outlook history uses
+the existing quote-only fallback in both modes, without separate thread headings.
 
-Plain-text calls to mail-parser-reply skip inputs with a physical line longer than 4,096
-Python characters, avoiding its slow signature regex. The existing no-split
-fallback keeps the text unchanged; an overlong line can therefore leave reply
-history in the body. Confirmed forward markers and Outlook boundaries retain
-their separate handling. This is a per-line guard, not a conversion deadline.
+Plain-text calls skip mail-parser-reply when its indentation-protected input
+contains a consecutive Unicode whitespace (`\s`) run longer than 1,024 Python
+characters. Sentinels break runs across indented lines; long prose/token lines
+with short whitespace runs still parse. The no-split fallback keeps all text,
+so uncertain history can remain in BODY. This bounds the known whitespace-run
+slow path, not total conversion time; HTML's shared parser is unchanged.
 
 Forwarded messages are content, not reply history:
 
