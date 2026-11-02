@@ -246,8 +246,8 @@ Deployment and endpoint retrieval remain separate outstanding work.
 | [#109](https://github.com/BigCactusLabs/dead-letter/issues/109) | Parent: skill publication/install and Codex evidence exist; remaining hosts, owned-domain ARD and Finder outcome remain. |
 | [#110](https://github.com/BigCactusLabs/dead-letter/issues/110) | Parent: directory execution #165 shipped; reviewed evaluation remains, with optional ideas kept separate. |
 | [#138](https://github.com/BigCactusLabs/dead-letter/issues/138) | Run existing full-import audit on an authorized real export with an independent baseline. |
-| [#140](https://github.com/BigCactusLabs/dead-letter/issues/140) | Measure remaining child CPU/expansion/disk behavior; resource controls already exist. |
-| [#145](https://github.com/BigCactusLabs/dead-letter/issues/145) | Existing bounded MCP implementation; finish transport/permission evidence with explicit cancellation limits. |
+| [#140](https://github.com/BigCactusLabs/dead-letter/issues/140) | Measure remaining child CPU/expansion/disk behavior; resource controls already exist. 2026-11-02 batch: synthetic amplification benchmark and macOS table added; real-export measurements remain. |
+| [#145](https://github.com/BigCactusLabs/dead-letter/issues/145) | Existing bounded MCP implementation; finish transport/permission evidence with explicit cancellation limits. 2026-11-02 batch: real-stdio path, privacy, recovery and cancellation tests added; contract states cancellation behavior. |
 | [#146](https://github.com/BigCactusLabs/dead-letter/issues/146) | Local-path streaming jobs and UI implemented in follow-up; bounded upload/staging limits, compressed web input and web-job resume remain. |
 | [#150](https://github.com/BigCactusLabs/dead-letter/issues/150) | Refresh complete curated-catalog/duplicate-request lookup; direct install is separate #156 evidence. |
 | [#151](https://github.com/BigCactusLabs/dead-letter/issues/151) | Corrected generated candidate; README-only autonomous install and current submission-contract validation remain. |
@@ -260,11 +260,11 @@ Deployment and endpoint retrieval remain separate outstanding work.
 | [#161](https://github.com/BigCactusLabs/dead-letter/issues/161) | Produce capture/still from existing recipe fixtures and tested commands. |
 | [#166](https://github.com/BigCactusLabs/dead-letter/issues/166) | Review-artifact workflow implemented in follow-up; human review and held-out comparison remain. |
 | [#188](https://github.com/BigCactusLabs/dead-letter/issues/188) | Review existing Windows PR #204 and exact-head native evidence. |
-| [#193](https://github.com/BigCactusLabs/dead-letter/issues/193) | Narrow to residual Outlook/locale/ambiguity evidence and separate reply-parser retiming. |
+| [#193](https://github.com/BigCactusLabs/dead-letter/issues/193) | Narrow to residual Outlook/locale/ambiguity evidence and separate reply-parser retiming. 2026-11-02 batch: localized plain-text Outlook history and a per-message reply-parser whitespace budget; Chinese history labels and other dependency slow paths remain. |
 | [#196](https://github.com/BigCactusLabs/dead-letter/issues/196) | Offline comparator prepared; independent repeat capture, variants and dev-only remapping remain. |
 | [#197](https://github.com/BigCactusLabs/dead-letter/issues/197) | Reuse evaluation-only variant support to add the combined arm; fit and assess the combiner against reviewed labels. |
 | [#220](https://github.com/BigCactusLabs/dead-letter/issues/220) | Keep deferred until observed macOS memory pressure justifies a soft watchdog. |
-| [#241](https://github.com/BigCactusLabs/dead-letter/issues/241) | Attribution regex bound implemented in follow-up; keep remaining wrapper semantics fixture-led. |
+| [#241](https://github.com/BigCactusLabs/dead-letter/issues/241) | Attribution regex bound implemented in follow-up; keep remaining wrapper semantics fixture-led. 2026-11-02 batch: quote-extraction word boundaries and stripped-block paragraph boundaries fixed; `<pre>` and no-evidence wrapper fusion remain. |
 
 ## Focused verification
 
