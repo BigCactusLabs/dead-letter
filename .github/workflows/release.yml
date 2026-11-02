@@ -258,7 +258,7 @@ jobs:
         run: |
           v="${GITHUB_REF_NAME#v}"
           url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${v}/${BUNDLE_ASSET}"
-          curl --connect-timeout 10 --max-time 120 -fsSL \
+          curl --connect-timeout 10 --max-time 120 --retry 5 --retry-all-errors --retry-delay 10 -fsSL \
             "https://pypi.org/pypi/dead-letter/${v}/json" -o pypi-release.json
           cutoff=$(python3 - <<'PY'
           import json

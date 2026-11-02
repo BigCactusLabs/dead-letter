@@ -342,7 +342,7 @@ On Claude Code 2.1.275 or later, `/plugin install dead-letter --marketplace BigC
 
 The plugin adds five slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`, `/dead-letter:mbox`. Local Claude Code needs `uv` on `PATH`; see [`plugin/`](https://github.com/BigCactusLabs/dead-letter/tree/main/plugin/) for runtime-specific setup and updates. Email content is treated as untrusted data, not instructions: embedded requests for tool use, credentials, or exfiltration are not followed.
 
-The marketplace pins the plugin tag and commit, and its launcher pins an exact published Python package. Plugin releases after 0.4.13 launch with `uv run --frozen --isolated` from the shipped `uv.lock`, which fixes dependency versions and checks their hashes. Plugin 0.4.13 and earlier use `uvx`, which resolves compatible transitive versions itself. Claude Code and Cowork keep separate installed copies; update and verify each client.
+The marketplace pins the plugin tag and commit, and the plugin pins an exact published Python package in its uv project and lock. Plugin releases after 0.4.13 launch with `uv run --frozen --isolated` from the shipped `uv.lock`, which fixes dependency versions and checks their hashes. Plugin 0.4.13 and earlier use `uvx`, which resolves compatible transitive versions itself. Claude Code and Cowork keep separate installed copies; update and verify each client.
 
 **Claude Code (manual MCP add — alternative):**
 

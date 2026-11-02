@@ -29,6 +29,7 @@ def sources() -> dict[str, str]:
         ".well-known/ard.json": release.encode({"entries": [{"version": version, "type": "mcp"}, {"version": version, "type": "skill"}]}),
         "plugin/.claude-plugin/plugin.json": release.encode({"name": "dead-letter", "version": version}),
         "plugin/.mcp.json": release.encode({"mcpServers": {"dead-letter": {"command": "uv", "args": ["run", "--frozen", "--isolated", "--project", "${CLAUDE_PLUGIN_ROOT}", "dead-letter-mcp"]}}}),
+        "plugin/.python-version": "3.12\n",
         "plugin/pyproject.toml": '[project]\nname = "dead-letter-plugin"\nversion = "0.0.0"\ndependencies = ["dead-letter==0.3.1"]\n\n[tool.uv]\npackage = false\n',
         "plugin/uv.lock": 'version = 1\n\n[[package]]\nname = "dead-letter"\nversion = "0.3.1"\nsource = { registry = "https://pypi.org/simple" }\n\n[[package]]\nname = "dead-letter-plugin"\nversion = "0.0.0"\nsource = { virtual = "." }\n',
     }
@@ -99,6 +100,20 @@ class ReleaseMetadataTests(unittest.TestCase):
                 data["plugin/.mcp.json"] = release.encode({"mcpServers": {"dead-letter": launcher}})
                 with self.assertRaisesRegex(ValueError, "plugin/.mcp.json must launch"):
                     release.check(data)
+
+    def test_plugin_interpreter_pin_is_required_and_exact(self):
+        for value in (None, "", "3.14\n", ">=3.12\n", "3.12.13\n"):
+            with self.subTest(value=value):
+                data = sources()
+                if value is None:
+                    data.pop("plugin/.python-version")
+                else:
+                    data["plugin/.python-version"] = value
+                with self.assertRaisesRegex(ValueError, "must pin Python 3.12"):
+                    release.check(data)
+        data = sources()
+        data["plugin/.python-version"] = " 3.12\n"
+        self.assertEqual(release.check(data)["plugin_pin"], "0.3.1")
 
     def test_registry_cutoff_must_exist_once_and_be_a_utc_timestamp(self):
         for value in (None, "2026-10-29", "7 days", "2026-10-29T21:00:00+00:00",
@@ -218,7 +233,7 @@ class RegistryCutoffTests(unittest.TestCase):
         self.assertEqual(release.registry_cutoff(data), "2026-10-29T21:00:00Z")
 
     def test_minute_boundary_and_day_rollover(self):
-        for upload, expected in (("2026-10-29T21:00:00Z", "2026-10-29T21:00:00Z"),
+        for upload, expected in (("2026-10-29T21:00:00Z", "2026-10-29T21:01:00Z"),
                                  ("2026-12-31T23:59:59.999Z", "2027-01-01T00:00:00Z")):
             with self.subTest(upload=upload):
                 self.assertEqual(release.registry_cutoff({"urls": [{"upload_time_iso_8601": upload}]}), expected)

@@ -61,7 +61,7 @@ uvx --python 3.12 --from 'dead-letter[mcp]==X.Y.Z' --exclude-newer '<RFC3339-UTC
 
 `X.Y.Z` is a placeholder, not an executable installation example. Do not infer
 publication from `main`'s manifest, an open PR, or a plugin asset version.
-Set the cutoff to an RFC 3339 UTC timestamp at or after the last artifact upload
+Set the cutoff to an RFC 3339 UTC timestamp after the last artifact upload
 for that release; it prevents later dependency releases from changing the
 resolution. Use a `Z` timestamp, not a local date or moving duration. For exact dependency versions
 and hashes, use a resolved lock/artifact and recorded interpreter. Do not

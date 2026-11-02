@@ -41,6 +41,7 @@ def test_mcp_json_runs_shipped_lock_in_isolation():
 def test_plugin_project_requires_python_at_least_312():
     project = tomllib.loads((PLUGIN_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     assert project["requires-python"] == ">=3.12"
+    assert (PLUGIN_ROOT / ".python-version").read_text(encoding="utf-8").strip() == "3.12"
 
 
 def test_plugin_project_pins_exact_dead_letter_version():

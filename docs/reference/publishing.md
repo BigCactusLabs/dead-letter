@@ -213,13 +213,16 @@ without designing its authorization and event chain.
 The registry job waits for successful PyPI readiness, MCPB, and OCI jobs. It
 stamps the bundle's actual SHA-256 and URL, sets the PyPI launcher's
 `--exclude-newer` from the maximum artifact `upload_time_iso_8601` in that
-version's PyPI JSON (rounded up to a whole UTC minute as `YYYY-MM-DDTHH:MM:00Z`),
+version's PyPI JSON (the first whole UTC minute strictly after the last upload,
+formatted as `YYYY-MM-DDTHH:MM:00Z`),
 and adds the tested OCI index digest. It archives
 `dead-letter-server-X.Y.Z.json` plus its checksum, then publishes
 using GitHub OIDC. The archived manifest is the exact input to the publisher,
 not proof that registry publication succeeded; verify the registry's exact version.
 
-The committed `server.json` is a source template. **Never manually publish it
+The committed `server.json` is a source template. Its `--exclude-newer` value is
+a template for the current release; `prepare` leaves it unchanged and the release
+workflow overwrites it at publish. **Never manually publish it
 with a zero bundle hash or invent an OCI digest.** The resolved manifest
 assets are produced only by releases using this refreshed workflow; do not
 expect them on older releases such as `0.3.1`.

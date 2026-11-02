@@ -44,6 +44,27 @@ def snapshot(root: Path) -> dict:
     }
 
 
+def temporary_environments(cache: Path) -> list[Path]:
+    builds = cache / "builds-v0"
+    if not builds.is_dir():
+        raise SmokeFailure("uv cache has no builds-v0 directory; cannot verify temporary environments")
+    return list(builds.iterdir())
+
+
+def running_python_version(cache: Path) -> str:
+    """Inspect the sole active environment after the launched server initializes."""
+    configs = [path / "pyvenv.cfg" for path in temporary_environments(cache)
+               if (path / "pyvenv.cfg").is_file()]
+    if len(configs) != 1:
+        raise SmokeFailure(f"expected one active uv environment, found {len(configs)}")
+    fields = dict(line.split("=", 1) for line in configs[0].read_text(encoding="utf-8").splitlines() if "=" in line)
+    fields = {key.strip(): value.strip() for key, value in fields.items()}
+    version = fields.get("version_info", "")
+    if not version.startswith("3.12."):
+        raise SmokeFailure(f"launched server environment uses Python {version!r}, expected 3.12")
+    return version
+
+
 def check(plugin_dir: Path, cache: Path) -> dict:
     project = tomllib.loads((plugin_dir / "pyproject.toml").read_text(encoding="utf-8"))
     pin = launcher_pin(project)
@@ -66,6 +87,7 @@ def check(plugin_dir: Path, cache: Path) -> dict:
         version = initialized.get("serverInfo", {}).get("version")
         if version != pin:
             raise SmokeFailure(f"serverInfo version {version!r} does not match plugin pin {pin}")
+        python_version = running_python_version(cache)
         client.notify("notifications/initialized")
         tools = {tool["name"] for tool in client.request("tools/list").get("tools", [])}
         if tools != PUBLISHED_TOOLS:
@@ -79,10 +101,10 @@ def check(plugin_dir: Path, cache: Path) -> dict:
             raise SmokeFailure(f"launcher exited with status {code}")
         if snapshot(plugin_dir) != before:
             raise SmokeFailure("launcher changed the read-only plugin copy")
-        leftovers = list((cache / "builds-v0").iterdir()) if (cache / "builds-v0").exists() else []
+        leftovers = temporary_environments(cache)
         if leftovers:
             raise SmokeFailure(f"launcher left temporary environments: {[path.name for path in leftovers]}")
-        return {"plugin_pin": pin, "server_version": version, "tools": sorted(tools),
+        return {"plugin_pin": pin, "server_version": version, "python_version": python_version, "tools": sorted(tools),
                 "exit_code": code, "plugin_unchanged": True, "temporary_environments": []}
     finally:
         if process.stdin is not None and not process.stdin.closed:

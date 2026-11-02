@@ -73,7 +73,7 @@ The plugin launches the `dead-letter-mcp` MCP server (Python, distributed on PyP
 
 The plugin is pinned to a specific dead-letter PyPI release in `pyproject.toml`, with every dependency locked in `uv.lock`, so a future package or dependency release cannot silently change installs.
 
-The server depends on compiled Python packages (HTML sanitizing and parsing) built per platform. The launcher runs `uv run --frozen --isolated --project ${CLAUDE_PLUGIN_ROOT} dead-letter-mcp` against the shipped `uv.lock`, with dependency hash checks. Nothing is written to the plugin directory. Each plugin release moves the pin only after that package version is published and tested.
+The server depends on compiled Python packages (HTML sanitizing and parsing) built per platform. The launcher runs `uv run --frozen --isolated --project ${CLAUDE_PLUGIN_ROOT} dead-letter-mcp` against the shipped `uv.lock`, with dependency hash checks and Python 3.12 selected by `.python-version`. Nothing is written to the plugin directory. Each plugin release moves the pin only after that package version is published and tested.
 
 ## Where it works
 

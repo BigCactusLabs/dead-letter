@@ -30,7 +30,7 @@ FILES = (
     "pyproject.toml", "uv.lock", "src/dead_letter/__init__.py", "server.json",
     "mcpb/manifest.json", "mcpb/pyproject.toml", ".well-known/ard.json",
     "plugin/.claude-plugin/plugin.json", "plugin/.mcp.json",
-    "plugin/pyproject.toml", "plugin/uv.lock",
+    "plugin/pyproject.toml", "plugin/uv.lock", "plugin/.python-version",
 )
 SERVER = "io.github.BigCactusLabs/dead-letter"
 ASSET_ROOT = "https://github.com/BigCactusLabs/dead-letter/releases/download"
@@ -78,14 +78,12 @@ def utc_timestamp(value: str) -> datetime:
 
 
 def registry_cutoff(release: dict) -> str:
-    """Round the last PyPI artifact upload up to a UTC minute for publication."""
+    """Select the first UTC minute strictly after the last PyPI artifact upload."""
     files = release["urls"]
     if not files:
         raise ValueError("PyPI release has no files for the registry cutoff")
     latest = max(utc_timestamp(item["upload_time_iso_8601"]) for item in files)
-    cutoff = latest.replace(second=0, microsecond=0)
-    if cutoff < latest:
-        cutoff += timedelta(minutes=1)
+    cutoff = latest.replace(second=0, microsecond=0) + timedelta(minutes=1)
     return cutoff.strftime("%Y-%m-%dT%H:%M:00Z")
 
 
@@ -163,6 +161,8 @@ def check(sources: dict[str, str], *, locked: bool = True) -> dict[str, str]:
     launcher = json.loads(sources["plugin/.mcp.json"])["mcpServers"]["dead-letter"]
     if launcher.get("command") != PLUGIN_LAUNCHER["command"] or launcher.get("args") != PLUGIN_LAUNCHER["args"]:
         raise ValueError("plugin/.mcp.json must launch uv run --frozen --isolated --project ${CLAUDE_PLUGIN_ROOT} dead-letter-mcp")
+    if sources.get("plugin/.python-version", "").strip() != "3.12":
+        raise ValueError("plugin/.python-version must pin Python 3.12")
     pin = launcher_pin(tomllib.loads(sources["plugin/pyproject.toml"]))
     plugin_lock(sources, pin, locked=locked)
     return {"package": version, "plugin": plugin, "plugin_pin": pin}

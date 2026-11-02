@@ -12,7 +12,7 @@ Run this checklist before each plugin release. Most can run in Cowork; some requ
 Run `python3 scripts/smoke_plugin_launcher.py` from the repository root with
 `uv` on `PATH` and network access. It launches the exact `.mcp.json` command
 from a read-only temporary plugin copy with an empty uv cache, checks MCP
-`initialize`, the pinned server version, and all five tools, then checks clean
+`initialize`, Python 3.12, the pinned server version, and all five tools, then checks clean
 exit, an unchanged plugin copy, and no leftover temporary environment. Its JSON
 result is a stdio runtime check, not a fresh Claude Code or Cowork install test.
 

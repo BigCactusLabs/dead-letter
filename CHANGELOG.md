@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Claude plugin launcher uses the shipped `uv.lock` through frozen, isolated
+- Claude plugin launcher uses the shipped `uv.lock` and Python 3.12 through frozen, isolated
   `uv run`, with dependency hash checks and no writes to the plugin directory.
   MCP Registry entries constrain transitive resolution with an absolute UTC
   `--exclude-newer` cutoff set from PyPI upload times (#263).

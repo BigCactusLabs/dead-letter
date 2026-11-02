@@ -35,7 +35,7 @@
           "type": "named",
           "name": "--exclude-newer",
           "value": "2026-10-29T21:00:00Z",
-          "description": "Freeze dependency resolution at the release's final PyPI upload, rounded up to a UTC minute"
+          "description": "Freeze dependency resolution at the first UTC minute strictly after the release's final PyPI upload"
         }
       ],
       "packageArguments": [

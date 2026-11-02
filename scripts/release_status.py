@@ -225,6 +225,8 @@ def plugin(client: Client, version: str) -> dict:
             if runtime.get("command") != "uvx" or not prefixes:
                 raise Conflict("plugin runtime is not exactly pinned")
             pin = stable(pins[0].removeprefix(prefixes[0]))
+    except (Conflict, Unavailable):
+        raise
     except (ValueError, KeyError, TypeError):
         raise Conflict("plugin runtime is not a supported exact stable pin") from None
     try:
