@@ -1,0 +1,27 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Synthetic locale control
+Date: Thu, 05 Mar 2026 12:15:00 +0000
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+AUTHORED_PAYLOAD
+
+-----Mensaje original-----
+De: Bob <bob@example.com>
+Enviado el: martes, 07 de septiembre de 2010 18:31
+Para: Alice <alice@example.com>
+Cc: Eve <eve@example.com>
+Asunto: Plan
+
+OLD_REPLY_PAYLOAD
+
+-------- Mensaje reenviado --------
+De: Bob <bob@example.com>
+Enviado el: martes, 07 de septiembre de 2010 18:31
+Para: Alice <alice@example.com>
+Cc: Eve <eve@example.com>
+Asunto: Plan
+
+NESTED_FORWARD_PAYLOAD

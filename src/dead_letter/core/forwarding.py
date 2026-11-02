@@ -103,6 +103,23 @@ _QUOTE_PREFIX_RE = re.compile(r"^(?:>[ \t]?)+")
 # Trailing Markdown hard-break syntax that html_to_markdown emits for ``<br>``.
 _HARD_BREAK_RE = re.compile(r"(?:\s|\\)+$")
 
+# Outlook desktop/OWA labels supported by the Exchange MessageHeaders.xml
+# resource and independent mail artifacts/reports: en, de, fr, es, nl, it, ja.
+# Exclude the erroneous it(OWA) Inizio/Fine row and single-origin zh rows.
+# Reply-history recognition and forward parsing share these field labels.
+OUTLOOK_HEADER_LABELS: dict[str, tuple[str, ...]] = {
+    "from": ("From", "Von", "De", "Van", "Da", "差出人"),
+    "date": (
+        "Sent", "Date", "Gesendet", "Envoyé", "Enviado", "Enviado el",
+        "Verzonden", "Inviato", "送信日時",
+    ),
+    "subject": ("Subject", "Betreff", "Objet", "Asunto", "Onderwerp", "Oggetto", "件名"),
+    "to": ("To", "An", "À", "Para", "Aan", "A", "宛先"),
+    "cc": ("Cc",),
+    "bcc": ("Bcc",),
+    "reply-to": ("Reply-To",),
+}
+
 # Forwarded-header labels per field, across clients and locales. Sources and
 # confidence: docs/reference/v4-runtime-contracts.md under forwarded content
 # (crisp-oss/email-forward-parser fixtures, Thunderbird l10n, Proton
@@ -111,23 +128,22 @@ _HARD_BREAK_RE = re.compile(r"(?:\s|\\)+$")
 # forward separator. Add a label by appending it to its field.
 _FORWARD_HEADER_LABELS: dict[str, tuple[str, ...]] = {
     "from": (
-        "From", "De", "Von", "Da", "Mittente", "Van",
-        "差出人", "送信者", "送信元", "发件人", "寄件者", "從",
+        *OUTLOOK_HEADER_LABELS["from"], "Mittente",
+        "送信者", "送信元", "发件人", "寄件者", "從",
     ),
     "date": (
-        "Date", "Sent", "Envoyé", "Datum", "Gesendet", "Fecha", "Enviado", "Data",
-        "Inviato", "Verzonden", "送信日時", "日時", "日付", "发送时间", "日期",
+        *OUTLOOK_HEADER_LABELS["date"], "Datum", "Fecha", "Data",
+        "日時", "日付", "发送时间", "日期", "寄件日期",
     ),
     "subject": (
-        "Subject", "Objet", "Sujet", "Betreff", "Asunto", "Oggetto", "Assunto",
-        "Onderwerp", "件名", "主题", "主旨",
+        *OUTLOOK_HEADER_LABELS["subject"], "Sujet", "Assunto", "主题", "主旨",
     ),
     "to": (
-        "To", "À", "Pour", "An", "Para", "A", "Aan", "宛先", "送信先", "收件人", "到",
+        *OUTLOOK_HEADER_LABELS["to"], "Pour", "送信先", "收件人", "到", "收件者", "至",
     ),
-    "cc": ("Cc", "Copie à", "Kopie", "Kopie (CC)", "抄送", "副本"),
-    "bcc": ("Bcc",),
-    "reply-to": ("Reply-To",),
+    "cc": (*OUTLOOK_HEADER_LABELS["cc"], "Copie à", "Kopie", "Kopie (CC)", "抄送", "副本", "참조"),
+    "bcc": OUTLOOK_HEADER_LABELS["bcc"],
+    "reply-to": OUTLOOK_HEADER_LABELS["reply-to"],
 }
 _LABEL_FIELDS = {
     label.casefold(): field
