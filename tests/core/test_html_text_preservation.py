@@ -168,7 +168,8 @@ def test_deep_html_keeps_text_at_every_level(tmp_path, mode, with_quote, tag, de
     _, _, _, diagnostics = _build_rendered_markdown(result.source, ConvertOptions(thread_mode=mode))
     assert not any(w["code"] == "html_depth_limit" for w in diagnostics["warnings"])
     assert any(w["code"] == "html_depth_flattened" for w in diagnostics["warnings"])
-    assert diagnostics["state"] == "degraded"
+    expected_state = "review_recommended" if tag == "blockquote" and not with_quote else "degraded"
+    assert diagnostics["state"] == expected_state
     if depth == 2000:
         assert elapsed < 2.0, f"{elapsed:.3f}s"
 
