@@ -157,16 +157,16 @@ def convert_mbox(
     ``resume=True`` opts into a source/options-bound journal for Markdown or
     bundles. Reuse verifies every output hash; conflicts stop without overwriting.
     Flat publication needs hard links; bundles need exclusive directory rename.
-    Dry runs and compressed input are unsupported. Results include ``recovery``.
+    Dry runs are unsupported. Results include ``recovery``.
     See docs/reference/mbox-resume.md for filesystem and durability limits.
 
-    For non-resumed flat imports, ``cancel_requested`` accepts a thread-safe
-    callback such as ``threading.Event.is_set``. Cancellation raises
-    ``core.mbox.MboxCancelled``, not a failed message or archive result. The
-    framer checks between bounded reads; timed workers are polled every 100 ms
-    and killed/reaped before cancellation returns. Already yielded results stay
-    valid. Direct MIME conversion and filesystem calls are not preempted; use
-    worker mode for cancellable parsing. Resume does not support this callback.
+    ``cancel_requested`` accepts a thread-safe callback such as
+    ``threading.Event.is_set``. Cancellation raises ``core.mbox.MboxCancelled``,
+    not a failed message or archive result. The framer checks between bounded
+    reads; timed workers are polled every 100 ms and killed/reaped before
+    cancellation returns. Already yielded results stay valid; with resume, the
+    record in progress is retried by the next run. Direct MIME conversion and
+    filesystem calls are not preempted; use worker mode for cancellable parsing.
     """
     yield from _convert_mbox(
         path, output=output, options=options, limits=limits, unescape=unescape,
@@ -206,13 +206,11 @@ def _convert_mbox(
     archive: dict[str, Any] | None = None,
     resume: bool = False,
     cancel_requested: Callable[[], bool] | None = None,
+    container: Path | None = None,
 ) -> Iterator[MboxConversion]:
     # Both public importers use this pipeline; only the provenance differs.
-    if cancel_requested is not None:
-        if not callable(cancel_requested):
-            raise ValueError("MBOX cancel_requested must be callable")
-        if resume:
-            raise ValueError("MBOX cooperative cancellation requires non-resumed input")
+    if cancel_requested is not None and not callable(cancel_requested):
+        raise ValueError("MBOX cancel_requested must be callable")
     _raise_if_cancelled(cancel_requested)
     budgets = _worker_budgets(timeout_seconds, memory_limit_mib, cpu_seconds, max_output_mib)
     if budgets is not None:
@@ -234,14 +232,15 @@ def _convert_mbox(
     if resume:
         if type(bundles) is not bool:
             raise ValueError("MBOX resume bundles must be a boolean")
-        if opts.dry_run or archive is not None:
-            raise ValueError("MBOX resume does not support dry runs or compressed input")
+        if opts.dry_run:
+            raise ValueError("MBOX resume does not support dry runs")
         if source.suffix.lower() != ".mbox" or not source.is_file():
             raise ValueError("MBOX resume requires an existing flat .mbox file")
         from dead_letter.core.mbox_resume import convert_mbox_resumable
         yield from convert_mbox_resumable(
             source, root, opts, limits or MboxLimits(), unescape=unescape,
             timeout_seconds=timeout_seconds, budgets=budgets, bundles=bundles,
+            archive=archive, container=container, cancel_requested=cancel_requested,
         )
         return
     try:

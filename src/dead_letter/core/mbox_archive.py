@@ -198,6 +198,7 @@ def convert_mbox_archive(
     max_output_mib: int | None = None,
     cancel_requested: Callable[[], bool] | None = None,
     staging_check: Callable[[Path, int], None] | None = None,
+    resume: bool = False,
 ) -> Iterator[MboxConversion]:
     """Fully stage one ZIP/TGZ mailbox, then use the ordinary MBOX pipeline.
 
@@ -211,13 +212,16 @@ def convert_mbox_archive(
     declared-member-size check.
     Worker ``timeout_seconds`` and resource budgets behave as in ``convert_mbox``
     and are validated before the archive is read.
+    ``resume=True`` uses the ``convert_mbox`` resume journal. Each run stages the
+    member again; the journal binds the resolved archive path, the selected
+    member's metadata and the staged member's SHA-256, not the staging path.
     """
     yield from _convert_mbox_archive(
         path, member=member, staging_dir=staging_dir, archive_limits=archive_limits,
         output=output, options=options, limits=limits, unescape=unescape,
         bundles=bundles, timeout_seconds=timeout_seconds, memory_limit_mib=memory_limit_mib,
         cpu_seconds=cpu_seconds, max_output_mib=max_output_mib,
-        cancel_requested=cancel_requested, staging_check=staging_check,
+        cancel_requested=cancel_requested, staging_check=staging_check, resume=resume,
     )
 
 
@@ -236,6 +240,8 @@ def _convert_mbox_archive(
     if cancel_requested is not None:
         conversion_options["cancel_requested"] = cancel_requested
     source = Path(path).expanduser().resolve()
+    if conversion_options.get("resume"):
+        conversion_options["container"] = source
     # Reject invalid or unsupported worker budgets before staging any bytes.
     _worker_budgets(*(conversion_options.get(name) for name in (
         "timeout_seconds", "memory_limit_mib", "cpu_seconds", "max_output_mib",

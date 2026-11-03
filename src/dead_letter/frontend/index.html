@@ -192,6 +192,27 @@
                   :disabled="!$store.settings.configured || $store.settings.loading || $store.job.isSubmitting">
             Import a local MBOX archive
           </button>
+          <section class="mbox-resume-list" x-show="otherResumableImports.length"
+                   aria-labelledby="mbox-resume-heading-idle" x-cloak>
+            <h2 class="mbox-resume-heading" id="mbox-resume-heading-idle">Stopped archive imports</h2>
+            <ul>
+              <template x-for="item in otherResumableImports" :key="item.id">
+                <li class="mbox-resume-row">
+                  <div class="mbox-resume-text">
+                    <span class="mbox-resume-name" x-text="resumableView(item).name" :title="item.job_path"></span>
+                    <span class="mbox-resume-meta" x-text="resumableView(item).meta"></span>
+                  </div>
+                  <button type="button" class="btn-ghost mbox-resume-button"
+                          @click="$store.job.resumeMbox(item.id)"
+                          :disabled="!$store.settings.configured || $store.settings.loading || $store.job.isSubmitting"
+                          :aria-label="'Resume ' + resumableView(item).name">Resume</button>
+                </li>
+              </template>
+            </ul>
+            <p class="mbox-resume-error" role="alert"
+               x-show="$store.job.resumeError && $store.job.resumeErrorId !== $store.job.id"
+               x-text="$store.job.resumeError"></p>
+          </section>
         </div>
 
         <!-- State: Converting -->
@@ -293,6 +314,18 @@
               </div>
             </template>
           </div>
+
+          <div class="recovery-actions" x-show="$store.job.kind === 'mbox' && $store.job.resumable" x-cloak>
+            <div class="recovery-action">
+              <p class="recovery-message">Resume continues in the same job folder. Completed bundles are checked and kept, and the new report is saved beside the earlier one.</p>
+              <button type="button" class="btn-primary recovery-button"
+                      @click="$store.job.resumeMbox($store.job.id)"
+                      :disabled="$store.job.isSubmitting">Resume import</button>
+            </div>
+          </div>
+          <p class="mbox-resume-error" role="alert"
+             x-show="$store.job.resumeError && $store.job.resumeErrorId === $store.job.id"
+             x-text="$store.job.resumeError" x-cloak></p>
 
           <!-- Error Detail (inline expansion) -->
           <div class="error-detail"
@@ -459,6 +492,27 @@
                   :disabled="!$store.settings.configured || $store.settings.loading || $store.job.isSubmitting">
             Import a local MBOX archive
           </button>
+          <section class="mbox-resume-list" x-show="otherResumableImports.length"
+                   aria-labelledby="mbox-resume-heading-done" x-cloak>
+            <h2 class="mbox-resume-heading" id="mbox-resume-heading-done">Stopped archive imports</h2>
+            <ul>
+              <template x-for="item in otherResumableImports" :key="item.id">
+                <li class="mbox-resume-row">
+                  <div class="mbox-resume-text">
+                    <span class="mbox-resume-name" x-text="resumableView(item).name" :title="item.job_path"></span>
+                    <span class="mbox-resume-meta" x-text="resumableView(item).meta"></span>
+                  </div>
+                  <button type="button" class="btn-ghost mbox-resume-button"
+                          @click="$store.job.resumeMbox(item.id)"
+                          :disabled="!$store.settings.configured || $store.settings.loading || $store.job.isSubmitting"
+                          :aria-label="'Resume ' + resumableView(item).name">Resume</button>
+                </li>
+              </template>
+            </ul>
+            <p class="mbox-resume-error" role="alert"
+               x-show="$store.job.resumeError && $store.job.resumeErrorId !== $store.job.id"
+               x-text="$store.job.resumeError"></p>
+          </section>
         </div>
 
         <!-- State: Settings (Workspace Takeover) -->

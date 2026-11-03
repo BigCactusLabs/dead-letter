@@ -722,7 +722,8 @@ test("archive polling preserves partial counts, errors, report and job folder th
   assert.equal(historyLoads, 0);
 
   await job.poll();
-  assert.deepEqual(requests.map(({ url }) => url), ["/api/jobs/archive-1", "/api/jobs/archive-1"]);
+  // A finished archive job refreshes the list of stopped imports it may have joined.
+  assert.deepEqual(requests.map(({ url }) => url), ["/api/jobs/archive-1", "/api/jobs/archive-1", "/api/mbox/resumable"]);
   assert.equal(job.status, "failed");
   assert.deepEqual(job.errors, finished.errors);
   assert.deepEqual(job.summary, running.summary);
@@ -1176,4 +1177,120 @@ test("a connection lost after the whole archive was sent reports an unknown outc
   assert.match(message, /Check History before uploading again/);
   assert.equal(job.upload, null);
   assert.equal(job.isSubmitting, false);
+});
+
+const STOPPED_ID = "c".repeat(32);
+
+function stoppedImport(overrides = {}) {
+  return {
+    id: STOPPED_ID, origin: "upload", source_name: "mail.mbox", member: null, reason: "cancelled",
+    records_processed: 2, updated_at: "2026-11-03T10:00:00Z", job_path: `/tmp/Cabinet/mbox-${STOPPED_ID}`,
+    ...overrides,
+  };
+}
+
+test("poll() records whether a finished archive job can be resumed and refreshes the stopped list", async () => {
+  const listed = [stoppedImport({ id: "archive-1" })];
+  const { job } = await createJobStore((url) => Promise.resolve(makeResponse({
+    jsonData: url === "/api/mbox/resumable" ? { jobs: listed } : mboxStatus({ status: "cancelled", resumable: true }),
+  })));
+  job.id = "archive-1";
+  await job.poll();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(job.resumable, true);
+  assert.deepEqual(toPlain(job.resumableImports), listed);
+});
+
+test("resumeMbox() posts to the resume route and keeps the job id, folder and origin", async () => {
+  const requests = [];
+  const { job } = await createJobStore((url) => Promise.resolve(makeResponse({
+    status: 202,
+    jsonData: { id: STOPPED_ID, status: "queued", output_location: mboxStatus().output_location },
+  })), requests);
+  let polls = 0;
+  job.startPolling = () => { polls += 1; };
+  job.resumableImports = [stoppedImport(), stoppedImport({ id: "d".repeat(32) })];
+
+  assert.deepEqual(await job.resumeMbox(STOPPED_ID), { ok: true });
+
+  assert.deepEqual(requests.map(({ url }) => url), ["/api/session", `/api/mbox/jobs/${STOPPED_ID}/resume`]);
+  assert.equal(requests[1].options.method, "POST");
+  assert.equal(headerValue(requests[1].options.headers, "X-Dead-Letter-CSRF"), "csrf-test-token");
+  assert.equal(job.id, STOPPED_ID);
+  assert.equal(job.kind, "mbox");
+  assert.equal(job.origin, "upload");
+  assert.equal(job.resumedRun, true);
+  assert.equal(job.resumable, false);
+  assert.deepEqual(job.resumableImports.map((item) => item.id), ["d".repeat(32)]);
+  assert.equal(polls, 1);
+  assert.equal(job.isSubmitting, false);
+});
+
+test("resumeMbox() explains a refusal beside the job it was for and refreshes the list", async (t) => {
+  for (const [status, code, expected] of [
+    [409, "mbox_source_changed", /changed, moved or was removed/],
+    [409, "mbox_busy", /Another archive import is running/],
+    [409, "mbox_resume_unavailable", /^This archive import cannot be resumed/],
+    [404, "invalid_request", /no longer in the Cabinet/],
+    [507, "mbox_disk_reserve", /1 GiB must stay free/],
+  ]) {
+    await t.test(`${status} ${code}`, async () => {
+      const requests = [];
+      const { job } = await createJobStore((url) => Promise.resolve(url === "/api/mbox/resumable"
+        ? makeResponse({ jsonData: { jobs: [] } })
+        : makeResponse({
+          ok: false, status,
+          jsonData: { errors: [{ code, path: STOPPED_ID, message: "This archive import cannot be resumed; start a new import instead" }] },
+        })), requests);
+      job.startPolling = () => assert.fail("A refused resume must not start polling");
+      job.id = STOPPED_ID;
+      job.kind = "mbox";
+      job.status = "cancelled";
+      job.resumable = true;
+      job.resumableImports = [stoppedImport()];
+
+      assert.deepEqual(await job.resumeMbox(STOPPED_ID), { ok: false });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      assert.match(job.resumeError, expected);
+      assert.doesNotMatch(job.resumeError, new RegExp(STOPPED_ID));
+      assert.equal(job.resumeErrorId, STOPPED_ID);
+      assert.equal(job.status, "cancelled");
+      const refreshed = status === 404 || status === 409;
+      assert.equal(job.resumable, !refreshed);
+      assert.equal(requests.some(({ url }) => url === "/api/mbox/resumable"), refreshed);
+      if (refreshed) assert.deepEqual(toPlain(job.resumableImports), []);
+    });
+  }
+});
+
+test("resumeMbox() cannot replace an active job or run twice", async () => {
+  const requests = [];
+  const { job } = await createJobStore(() => Promise.resolve(makeResponse()), requests);
+  job.id = "running-eml";
+  job.status = "running";
+  assert.deepEqual(await job.resumeMbox(STOPPED_ID), { ok: false });
+  assert.match(job.resumeError, /Wait for the current job/);
+
+  job.id = "archive-1";
+  job.kind = "mbox";
+  assert.deepEqual(await job.resumeMbox(STOPPED_ID), { ok: false });
+  assert.match(job.opErrors[0], /Wait for the archive import/);
+
+  job.status = "cancelled";
+  job.isSubmitting = true;
+  assert.deepEqual(await job.resumeMbox(STOPPED_ID), { ok: false });
+  assert.deepEqual(requests, []);
+});
+
+test("loadResumable() keeps the previous list when the refresh fails", async () => {
+  let fail = false;
+  const { job } = await createJobStore(() => (fail
+    ? Promise.reject(new Error("offline"))
+    : Promise.resolve(makeResponse({ jsonData: { jobs: [stoppedImport(), { id: 7 }] } }))));
+  await job.loadResumable();
+  assert.deepEqual(job.resumableImports.map((item) => item.id), [STOPPED_ID]);
+  fail = true;
+  await job.loadResumable();
+  assert.equal(job.resumableImports.length, 1);
 });

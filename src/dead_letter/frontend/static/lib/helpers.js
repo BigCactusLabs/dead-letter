@@ -175,6 +175,38 @@ export function mboxUploadErrorMessage(status, payload, { sent = false } = {}) {
   }
 }
 
+// Resume refusals name the job id as their path, which means nothing to the reader.
+export function mboxResumeErrorMessage(status, payload) {
+  const first = normalizeErrors(payload)[0];
+  const code = first?.code || "";
+  if (status === 404) return "This stopped import is no longer in the Cabinet. Start a new import.";
+  if (code === "mbox_source_changed") {
+    return "The source archive changed, moved or was removed after this import started, so it cannot be resumed. Start a new import.";
+  }
+  if (code === "mbox_busy") return "Another archive import is running. Wait for it to finish, then resume.";
+  if (status === 507) return "Not enough free space to resume; 1 GiB must stay free. Free some space, then resume.";
+  return first?.message || "The server could not resume this import.";
+}
+
+const MBOX_RESUME_REASONS = Object.freeze({
+  cancelled: "Cancelled",
+  disk_space: "Stopped for disk space",
+  interrupted: "Interrupted by a server stop",
+});
+
+export function mboxResumableView(item) {
+  const records = item?.records_processed;
+  const name = String(item?.source_name || "archive");
+  return {
+    name: item?.member ? name + " \u203a " + item.member : name,
+    meta: [
+      MBOX_RESUME_REASONS[item?.reason] || "Stopped",
+      Number.isInteger(records) ? records + (records === 1 ? " message processed" : " messages processed") : "",
+      relativeTime(item?.updated_at),
+    ].filter(Boolean).join(" \u00b7 "),
+  };
+}
+
 export function formatBytes(value) {
   if (value < 1024) return value + " B";
   const unit = Math.min(3, Math.floor(Math.log(value) / Math.log(1024)));
@@ -197,11 +229,13 @@ export function jobProgressView(job) {
     const total = Math.max(0, Number(job.mbox?.bytes_total || 0));
     const value = Math.min(total, Math.max(0, Number(job.mbox?.bytes_processed || 0)));
     const records = Number(job.mbox?.records_processed || 0);
+    const reused = Number(job.mbox?.records_reused || 0);
+    const bytes = formatBytes(value) + " of " + formatBytes(total) + " archive bytes processed";
     return {
       value, max: total || 1, fraction: total ? value / total : 0,
       label: records + (records === 1 ? " message processed" : " messages processed"),
-      detail: job.mbox ? formatBytes(value) + " of " + formatBytes(total) + " archive bytes processed"
-        : "Waiting for archive metadata",
+      detail: !job.mbox ? "Waiting for archive metadata"
+        : reused ? bytes + ", " + reused + " kept from the earlier run" : bytes,
     };
   }
   const progress = job.progress || {};
