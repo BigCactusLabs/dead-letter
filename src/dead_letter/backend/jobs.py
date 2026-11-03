@@ -15,11 +15,19 @@ from uuid import uuid4
 from dead_letter.backend.mbox_jobs import (
     MboxAdmission,
     MboxBusyError,
+    MboxJobDescriptor,
     MboxJobOutcome,
     MboxJobRunner,
     MboxMemberError,
+    MboxResumeSourceChangedError,
+    MboxResumeUnavailableError,
     admit_mbox_source,
     admit_staged_mbox_source,
+    job_owner_active,
+    mbox_job_folder,
+    read_job_descriptor,
+    resume_identity,
+    scan_resumable_jobs,
 )
 from dead_letter.backend.schemas import (
     AggregateTotals,
@@ -30,6 +38,7 @@ from dead_letter.backend.schemas import (
     JobStatus,
     JobStatusResponse,
     MboxJobCreateRequest,
+    MboxResumableJob,
     OutputLocation,
     Progress,
     QualityDiagnostics,
@@ -164,6 +173,9 @@ class JobManager:
         self._max_retained_terminal_jobs = max(1, int(max_retained_terminal_jobs))
         self._max_mbox_jobs = max(1, int(max_mbox_jobs))
         self._active_mbox_jobs = 0
+        # Jobs whose final descriptor write failed; kept apart from the pruned
+        # job history so their stale "running" state is never offered.
+        self._unrecorded_mbox_jobs: set[str] = set()
         self._mbox_shutting_down = False
         self._inbox_root = Path(inbox_root or (Path.home() / "Inbox")).expanduser().resolve()
         self._cabinet_root = Path(cabinet_root or (Path.home() / "Cabinet")).expanduser().resolve()
@@ -230,6 +242,80 @@ class JobManager:
             request, admission, cabinet_root=cabinet_root, reservation=reservation, origin="upload",
         )
 
+    async def resume_mbox_job(self, job_id: str, *, source_root: str | Path) -> JobCreateResponse:
+        """Continue a stopped job in its original folder through the core resume journal.
+
+        The source is admitted again with the checks a new job gets, then must
+        still have the device, inode, size and mtime recorded when it started.
+        """
+        cabinet_root = self._cabinet_root
+        folder = mbox_job_folder(cabinet_root, job_id)
+        async with self._lock:
+            self._refuse_active_mbox_job_locked(job_id)
+        descriptor = await asyncio.to_thread(read_job_descriptor, folder)
+        if descriptor is None:
+            # No folder, or one this server did not start as a resumable web job.
+            raise KeyError(job_id)
+        if descriptor.state == "running" and await asyncio.to_thread(job_owner_active, folder):
+            raise MboxResumeUnavailableError("This archive import is still running")
+        if descriptor.resume_reason() is None:
+            raise MboxResumeUnavailableError(
+                "This archive import cannot be resumed; start a new import instead"
+            )
+        admission = self._readmit_mbox_source(descriptor, source_root=Path(source_root), cabinet_root=cabinet_root)
+        request = MboxJobCreateRequest(input_path=descriptor.input_path, options=descriptor.options)
+        return await self._start_mbox_job(
+            request, admission, cabinet_root=cabinet_root, origin=descriptor.origin, resume_of=descriptor,
+        )
+
+    def _readmit_mbox_source(
+        self, descriptor: MboxJobDescriptor, *, source_root: Path, cabinet_root: Path,
+    ) -> MboxAdmission:
+        try:
+            if descriptor.origin == "upload":
+                from dead_letter.backend.uploads import prepare_staging_dir
+
+                admission = admit_staged_mbox_source(
+                    Path(descriptor.source),
+                    staging_root=prepare_staging_dir(self._inbox_root),
+                    cabinet_root=cabinet_root,
+                )
+            else:
+                admission = admit_mbox_source(
+                    descriptor.input_path, source_root=source_root, cabinet_root=cabinet_root,
+                )
+        except (OSError, ValueError) as exc:
+            raise MboxResumeSourceChangedError(
+                "The original MBOX source is missing or no longer allowed; start a new import"
+            ) from exc
+        if (
+            str(admission.source) != descriptor.source
+            or resume_identity(admission.identity) != descriptor.identity
+        ):
+            raise MboxResumeSourceChangedError(
+                "The original MBOX source changed after this import started; start a new import"
+            )
+        return admission
+
+    def _refuse_active_mbox_job_locked(self, job_id: str) -> None:
+        existing = self._jobs.get(job_id)
+        if existing is not None and existing.status not in TERMINAL_STATUSES:
+            raise MboxResumeUnavailableError("This archive import is still running")
+        if job_id in self._unrecorded_mbox_jobs:
+            raise MboxResumeUnavailableError(
+                "This archive import's stop could not be recorded; start a new import instead"
+            )
+
+    async def list_resumable_mbox_jobs(self) -> list[MboxResumableJob]:
+        """Stopped jobs in the current Cabinet, including ones from an earlier server process."""
+        async with self._lock:
+            # Running jobs, and stopped ones whose final state never reached disk.
+            active = {
+                job_id for job_id, record in self._jobs.items()
+                if record.mbox_runner is not None and record.status not in TERMINAL_STATUSES
+            } | self._unrecorded_mbox_jobs
+        return await asyncio.to_thread(scan_resumable_jobs, self._cabinet_root, active=active)
+
     async def reserve_mbox_slot(self) -> MboxSlotReservation:
         """Reserve the archive slot that queued and running MBOX jobs share."""
         async with self._lock:
@@ -256,7 +342,8 @@ class JobManager:
         *,
         cabinet_root: Path,
         reservation: MboxSlotReservation | None = None,
-        origin: str = "manual",
+        origin: Literal["manual", "upload"] = "manual",
+        resume_of: MboxJobDescriptor | None = None,
     ) -> JobCreateResponse:
         if request.options.member is not None and admission.source.suffix.lower() == ".mbox":
             raise MboxMemberError("member is only supported for compressed MBOX archives")
@@ -264,10 +351,11 @@ class JobManager:
             from dead_letter.backend.uploads import prepare_staging_dir
 
             prepare_staging_dir(self._inbox_root)
-        job_id = uuid4().hex
+        # A resumed job keeps its id, so it keeps its Cabinet/mbox-<id> folder.
+        job_id = resume_of.job_id if resume_of is not None else uuid4().hex
         runner = MboxJobRunner(
             admission=admission, cabinet_root=cabinet_root, job_id=job_id, options=request.options,
-            inbox_root=self._inbox_root,
+            inbox_root=self._inbox_root, origin=origin, input_path=request.input_path, resume_of=resume_of,
         )
         record = _JobRecord(
             id=job_id, request=request.model_copy(deep=True), files=[], cabinet_root=cabinet_root,
@@ -277,7 +365,17 @@ class JobManager:
             origin=origin,
             mbox_runner=runner,
         )
+        previous: _JobRecord | None = None
         async with self._lock:
+            if resume_of is not None:
+                self._refuse_active_mbox_job_locked(job_id)
+                # A concurrent resume may have run since this request read the
+                # descriptor; act only on the stop it saw.
+                if await asyncio.to_thread(read_job_descriptor, runner.output) != resume_of:
+                    raise MboxResumeUnavailableError(
+                        "This archive import changed while resuming; reload and try again"
+                    )
+                previous = self._jobs.get(job_id)
             if reservation is None:
                 # Reserve before the worker can create an output directory or spool.
                 self._reserve_mbox_slot_locked()
@@ -304,7 +402,10 @@ class JobManager:
                 task.cancel()
                 self._tasks.discard(task)
                 self._mbox_tasks.discard(task)
-            self._jobs.pop(job_id, None)
+            if previous is None:
+                self._jobs.pop(job_id, None)
+            else:
+                self._jobs[job_id] = previous
             self._release_mbox_slot(record)
             runner.close_unstarted()
             raise
@@ -556,8 +657,10 @@ class JobManager:
         mbox = None
         summary = record.summary.model_copy(deep=True)
         errors = [item.model_copy(deep=True) for item in record.errors]
+        resumable = False
         if record.mbox_runner is not None:
             mbox, summary, errors = record.mbox_runner.snapshot()
+            resumable = record.status in TERMINAL_STATUSES and record.mbox_runner.resumable
         return JobStatusResponse(
             id=record.id,
             status=record.status,
@@ -567,6 +670,7 @@ class JobManager:
             cancel_requested=record.cancel_requested,
             progress=record.progress.model_copy(deep=True),
             mbox=mbox,
+            resumable=resumable,
             summary=summary,
             errors=errors,
             recovery_actions=[dict(item) for item in record.recovery_actions],
@@ -621,6 +725,8 @@ class JobManager:
         async with locked():
             _, record.summary, _ = runner.snapshot()
             record.report_path = outcome.report_path
+            if runner.descriptor_unrecorded:
+                self._unrecorded_mbox_jobs.add(job_id)
             self._release_mbox_slot(record)
             self._transition(record, outcome.status)
 

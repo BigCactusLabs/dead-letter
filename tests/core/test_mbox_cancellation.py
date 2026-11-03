@@ -208,13 +208,13 @@ def test_closing_callback_enabled_iterator_removes_staged_message(tmp_path):
     assert not record.path.exists()
 
 
-@pytest.mark.parametrize("kwargs", [{"resume": True, "cancel_requested": lambda: False},
+@pytest.mark.parametrize("kwargs", [{"resume": True, "cancel_requested": True},
                                   {"cancel_requested": True}])
 def test_unsupported_callback_configuration_is_rejected_before_output(tmp_path, kwargs):
     source = tmp_path / "archive.mbox"
     source.write_bytes(POSTMARK + MESSAGE)
     out = tmp_path / "out"
-    with pytest.raises(ValueError, match="cancellation requires|must be callable"):
+    with pytest.raises(ValueError, match="must be callable"):
         next(convert_mbox(source, output=out, **kwargs))
     assert not out.exists()
 

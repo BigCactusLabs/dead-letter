@@ -126,7 +126,10 @@ async def test_api_streams_real_bundles_with_core_parity_and_shared_history(
         "bytes_processed": len(data),
         "failures_omitted": 0,
         "phase": "finished",
+        "resumed": False,
+        "records_reused": 0,
     }
+    assert response["resumable"] is False
     assert response["summary"] == {"written": 2, "skipped": 0, "errors": 1}
     assert response["diagnostics"] is None
     assert response["recovery_actions"] == []
@@ -535,9 +538,9 @@ async def test_cancellation_during_report_publication_stays_nonterminal(
         assert not (
             Path(created.output_location.job_path) / ".dead-letter-report.json"
         ).exists()
-        assert not (
-            Path(created.output_location.job_path) / ".dead-letter-report.pending.json"
-        ).exists()
+        assert not list(
+            Path(created.output_location.job_path).glob(".dead-letter-report*.pending.json")
+        )
     else:
         assert terminal.status == "cancelled"
         assert statuses == ["succeeded", "cancelled"]

@@ -2,6 +2,7 @@ import { CSRF_HEADER_NAME, apiFetch, clearCachedCsrfToken, getCsrfToken, isCsrfF
 import {
   firstErrorMessage,
   isTerminalStatus,
+  mboxResumeErrorMessage,
   mboxUploadErrorMessage,
   mboxUploadUrl,
   normalizeDiagnostics,
@@ -29,6 +30,14 @@ export function registerJobStore(Alpine) {
     diagnosticsOpen: false,
     reportPath: null,
     cancelRequested: false,
+    // The current archive job stopped in a way the server can continue in its original folder.
+    resumable: false,
+    // Stopped archive imports in the Cabinet, including ones from an earlier server process.
+    resumableImports: [],
+    resumeError: "",
+    resumeErrorId: "",
+    // Set when this page resumed the job, before the first poll reports mbox.resumed.
+    resumedRun: false,
     progress: { total: 0, completed: 0, failed: 0, current: null },
     summary: { written: 0, skipped: 0, errors: 0 },
     errors: [],
@@ -101,6 +110,10 @@ export function registerJobStore(Alpine) {
       this.diagnosticsOpen = false;
       this.reportPath = null;
       this.cancelRequested = false;
+      this.resumable = false;
+      this.resumeError = "";
+      this.resumeErrorId = "";
+      this.resumedRun = false;
       this.progress = { total: 0, completed: 0, failed: 0, current: null };
       this.summary = { written: 0, skipped: 0, errors: 0 };
       this.errors = [];
@@ -372,6 +385,7 @@ export function registerJobStore(Alpine) {
         this.kind = payload.kind === "mbox" ? "mbox" : "eml";
         this.mbox = this.kind === "mbox" && payload.mbox ? payload.mbox : null;
         this.cancelRequested = Boolean(payload.cancel_requested);
+        this.resumable = this.kind === "mbox" && Boolean(payload.resumable);
         this.applyOutputLocation(payload.output_location);
         this.progress = {
           total: Number(payload.progress.total || 0),
@@ -400,6 +414,7 @@ export function registerJobStore(Alpine) {
         if (isTerminalStatus(this.status)) {
           this.stopPolling();
           Alpine.store("history")?.load?.();
+          if (this.kind === "mbox") this.loadResumable();
           if (this.pendingWatchJobId && this.pendingWatchJobId !== this.id) {
             Alpine.store("watch")?.adoptWatchJob?.(this.pendingWatchJobId, this.pendingWatchJobStatus);
           }
@@ -549,6 +564,64 @@ export function registerJobStore(Alpine) {
       } finally {
         this.isSubmitting = false;
       }
+    },
+
+    async loadResumable() {
+      try {
+        const response = await fetch("/api/mbox/resumable");
+        if (!response.ok) return;
+        const payload = await response.json();
+        this.resumableImports = Array.isArray(payload?.jobs)
+          ? payload.jobs.filter((item) => item && typeof item.id === "string")
+          : [];
+      } catch (_err) {
+        // The list is advisory; a failed refresh keeps the previous one.
+      }
+    },
+
+    // Continue a stopped archive import under the same job id and folder.
+    async resumeMbox(jobId) {
+      if (!jobId || this.isSubmitting || this.keepActiveArchive()) return { ok: false };
+      if (this.id && !isTerminalStatus(this.status)) {
+        this.setResumeError(jobId, "Wait for the current job to finish, or cancel it, before resuming an archive import.");
+        return { ok: false };
+      }
+      const listed = this.resumableImports.find((item) => item.id === jobId);
+      const origin = listed?.origin === "upload" || (!listed && this.id === jobId && this.origin === "upload")
+        ? "upload" : "mbox";
+
+      this.clearOpMessages();
+      this.setResumeError("", "");
+      this.isSubmitting = true;
+      try {
+        const response = await apiFetch(`/api/mbox/jobs/${encodeURIComponent(jobId)}/resume`, { method: "POST" });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          this.setResumeError(jobId, mboxResumeErrorMessage(response.status, payload));
+          if (response.status === 404 || response.status === 409) {
+            if (this.id === jobId) this.resumable = false;
+            this.loadResumable();
+          }
+          return { ok: false };
+        }
+        const payload = await response.json();
+        this.stopPolling();
+        this.resetState();
+        if (!this.applyStarted(payload, "Backend returned an invalid resume response.", origin)) return { ok: false };
+        this.resumedRun = true;
+        this.resumableImports = this.resumableImports.filter((item) => item.id !== jobId);
+        return { ok: true };
+      } catch (_err) {
+        this.setResumeError(jobId, "Network error while resuming the archive import.");
+        return { ok: false };
+      } finally {
+        this.isSubmitting = false;
+      }
+    },
+
+    setResumeError(jobId, message) {
+      this.resumeErrorId = jobId;
+      this.resumeError = message;
     },
 
     async cancel() {

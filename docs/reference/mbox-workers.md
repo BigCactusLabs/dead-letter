@@ -117,8 +117,9 @@ any completed output. Close the iterator on every early exit.
 This does not preempt blocked OS calls or an in-process MIME conversion.
 Without a callback, existing CLI/Python callers keep their behavior. The web
 runner always supplies timed workers and the callback; the MCP tool does not
-gain cancellation implicitly. Resume and compressed input do not expose this
-callback. See the [core runtime contract](v4-runtime-contracts.md#streaming-mbox-conversion).
+gain cancellation implicitly. In 0.4.10, resume and compressed input do not
+expose this callback; unreleased source accepts it for both, and a resume run
+retries the record that was in progress. See the [core runtime contract](v4-runtime-contracts.md#streaming-mbox-conversion).
 
 ## Optional resource budgets
 

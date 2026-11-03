@@ -43,6 +43,8 @@ function createApp(jobOverrides = {}) {
       id: "", kind: "eml", status: "", isSubmitting: false, cancelRequested: false,
       mbox: null, diagnostics: null, errors: [], opErrors: [], opInfo: [],
       progress: { total: 0, completed: 0, failed: 0 }, summary: { written: 0, skipped: 0, errors: 0 },
+      resumable: false, resumableImports: [], resumedRun: false,
+      loadResumable() {},
       clearOpMessages() { this.opErrors = []; this.opInfo = []; },
       setOpError(message) { this.opErrors = [message]; },
       async start(payload) { calls.push({ kind: "eml", payload }); return { ok: true }; },
@@ -489,4 +491,72 @@ test("archive failures show plain core and reserve messages", () => {
     app.$store.job.errors = [{ code, message }];
     assert.equal(app.mboxNotice, message + " Completed bundles are kept.");
   }
+});
+
+test("resumable archive notices say what Resume keeps and when it cannot continue", () => {
+  const { app, job } = createApp({
+    id: "archive-1", kind: "mbox", status: "running", resumedRun: true,
+    mbox: { records_processed: 4, records_reused: 0, bytes_total: 100, bytes_processed: 10 },
+  });
+  assert.match(app.mboxNotice, /^Resuming in the original job folder/);
+  job.resumedRun = false;
+  job.mbox.resumed = true;
+  job.mbox.records_reused = 3;
+  assert.match(app.mboxNotice, /only unfinished messages are converted/);
+  assert.match(app.progressView.detail, /3 kept from the earlier run$/);
+
+  // The done panel's Resume block explains itself; the notice does not repeat it.
+  job.status = "cancelled";
+  job.resumable = true;
+  assert.equal(app.mboxNotice, "The import stopped. Completed bundles stay in this job's output folder.");
+
+  job.status = "failed";
+  job.resumable = true;
+  job.errors = [{ code: "mbox_disk_reserve", message: "Less than 1 GiB is free" }];
+  assert.equal(app.mboxNotice, "Less than 1 GiB is free Completed bundles are kept. Free some space, then resume.");
+  job.resumable = false;
+  job.errors = [{ code: "mbox_resume_mismatch", message: "contract differs" }];
+  assert.match(app.mboxNotice, /dead-letter version differ/);
+  job.errors = [{ code: "mbox_resume_conflict", message: "unexpected file" }];
+  assert.match(app.mboxNotice, /does not account for/);
+});
+
+test("the stopped-imports list leaves out the job the done panel already offers", () => {
+  const imports = [
+    { id: "a".repeat(32), origin: "manual", source_name: "Takeout.zip", member: "Takeout/Mail/All mail.mbox",
+      reason: "interrupted", records_processed: null, updated_at: null, job_path: "/tmp/Cabinet/mbox-a" },
+    { id: "b".repeat(32), origin: "upload", source_name: "mail.mbox", member: null,
+      reason: "disk_space", records_processed: 12, updated_at: null, job_path: "/tmp/Cabinet/mbox-b" },
+  ];
+  const { app, job } = createApp({ resumableImports: imports });
+  assert.equal(app.otherResumableImports.length, 2);
+  assert.deepEqual(app.resumableView(imports[0]), {
+    name: "Takeout.zip \u203a Takeout/Mail/All mail.mbox",
+    meta: "Interrupted by a server stop",
+  });
+  assert.equal(app.resumableView({ ...imports[1], records_processed: 1 }).meta, "Stopped for disk space \u00b7 1 message processed");
+  assert.equal(app.resumableView(imports[1]).meta, "Stopped for disk space \u00b7 12 messages processed");
+  job.id = imports[1].id;
+  job.resumable = true;
+  assert.deepEqual(app.otherResumableImports.map((item) => item.id), [imports[0].id]);
+});
+
+test("init loads stopped imports and reloads them once settings are configured", () => {
+  let loads = 0;
+  const { app, watchers } = createApp({ loadResumable() { loads += 1; } });
+  app.init();
+  assert.equal(loads, 1);
+  watchers.get("$store.settings.configured")(false);
+  assert.equal(loads, 1);
+  watchers.get("$store.settings.configured")(true);
+  assert.equal(loads, 2);
+});
+
+test("resume controls are buttons in the done and idle panels with a polite error line", () => {
+  const html = readHtml();
+  assert.match(html, /@click="\$store\.job\.resumeMbox\(\$store\.job\.id\)"[\s\S]*?>Resume import<\/button>/);
+  assert.equal((html.match(/class="mbox-resume-list"/g) || []).length, 2);
+  assert.equal((html.match(/@click="\$store\.job\.resumeMbox\(item\.id\)"/g) || []).length, 2);
+  assert.match(html, /x-show="\$store\.job\.kind === 'mbox' && \$store\.job\.resumable"/);
+  assert.equal((html.match(/class="mbox-resume-error" role="alert"/g) || []).length, 3);
 });

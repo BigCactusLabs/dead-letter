@@ -9,13 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Web MBOX imports can resume. Jobs record the core resume journal and a job
+  descriptor in their `Cabinet/mbox-<job-id>` folder from the first run. A job
+  that was cancelled, stopped by the free-space reserve, or cut off by a server
+  stop or crash continues in the same folder with **Resume import** or
+  `POST /api/mbox/jobs/{id}/resume`, after its source passes admission again
+  and still has the recorded device, inode, size and modification time.
+  Completed bundles are verified and kept, never duplicated or overwritten, and
+  each run writes a new collision-safe report. `GET /api/mbox/resumable` and the
+  UI list stopped imports, including ones from an earlier server run. Job
+  snapshots add `resumable`, and MBOX progress adds `resumed` and
+  `records_reused`. Cabinets without no-replace bundle publication run jobs
+  without resume (#272).
+- Python MBOX resume accepts `cancel_requested`, and `convert_mbox_archive()`
+  accepts `resume=True` for compressed Takeout input, binding the journal to the
+  archive and member instead of the temporary staging path. The CLI's
+  `--mbox-resume` still takes a flat `.mbox` only (#272).
 - Web MBOX jobs and browser uploads accept Takeout `.zip`, `.tgz` and
   `.tar.gz` archives with optional exact member selection (up to 1024
   characters, without control characters). Staging folders are validated at
   admission, and private member staging is cleaned up after every terminal
   outcome. Jobs enforce a 1 GiB free-space reserve on staging and Cabinet
-  volumes, retaining completed bundles and a partial report on a reserve stop.
-  Web-job resume remains unsupported (#146).
+  volumes, retaining completed bundles and a partial report on a reserve stop
+  (#146).
 - Opt-in synthetic MBOX worker amplification benchmark
   (`scripts/measure_mbox_amplification.py`) that records per-worker CPU time,
   peak RSS, output bytes and a temporary-storage checkpoint for the timed
@@ -29,8 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Length, name, options, archive slot and free space
   (1 GiB must stay free) are checked before the body is read; actual bytes,
   idle time (60 seconds) and free space are checked while it arrives. The UI
-  shows upload progress and can cancel before the last byte. There is no
-  resume (#146).
+  shows upload progress and can cancel before the last byte. An interrupted
+  upload starts again from the beginning (#146).
 - App-wide request-body limit (110 MiB; 16 GiB + 1 MiB for MBOX uploads), and
   `Connection: close` on responses sent before the request body was read.
   `starlette>=1.6.0` is now a declared `ui` dependency (#146).

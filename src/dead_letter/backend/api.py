@@ -22,7 +22,13 @@ from starlette.routing import Route
 from dead_letter.backend import mbox_jobs
 from dead_letter.backend.filesystem import FilesystemBrowser
 from dead_letter.backend.jobs import JobManager
-from dead_letter.backend.mbox_jobs import MboxArchiveTooLargeError, MboxBusyError, MboxMemberError
+from dead_letter.backend.mbox_jobs import (
+    MboxArchiveTooLargeError,
+    MboxBusyError,
+    MboxMemberError,
+    MboxResumeSourceChangedError,
+    MboxResumeUnavailableError,
+)
 from dead_letter.backend.settings import SettingsStore
 from dead_letter.backend.schemas import (
     BatchImportStartResponse,
@@ -39,6 +45,7 @@ from dead_letter.backend.schemas import (
     JobRetryRequest,
     JobStatusResponse,
     MboxJobCreateRequest,
+    MboxResumableJobsResponse,
     OpenFolderResponse,
     SettingsResponse,
     SettingsUpdateRequest,
@@ -409,6 +416,46 @@ def create_app(
             return _error_response(400, code="invalid_request", message=str(exc), path=request.input_path)
         except Exception:  # pragma: no cover - defensive guard
             return _error_response(500, code="backend_error", message="Could not start MBOX job", stage="backend")
+
+    @app.post(
+        "/api/mbox/jobs/{job_id}/resume",
+        response_model=JobCreateResponse,
+        status_code=202,
+        responses={code: ERROR_RESPONSES[code] for code in (403, 404, 409, 500)},
+    )
+    async def resume_mbox_job(job_id: str) -> JobCreateResponse | JSONResponse:
+        """Continue a stopped archive job in its original Cabinet folder."""
+        configured = _current_settings()
+        if configured is None:
+            return _error_response(
+                409, code="invalid_request", message="workflow settings are not configured", path="settings",
+            )
+        _sync_job_manager_roots(configured)
+        if not mbox_jobs.valid_job_id(job_id):
+            return _error_response(404, code="invalid_request", message="unknown job", path=job_id)
+        try:
+            return await job_manager.resume_mbox_job(job_id, source_root=fs_browser.root)
+        except KeyError:
+            return _error_response(404, code="invalid_request", message="unknown job", path=job_id)
+        except UploadRejected as exc:
+            return _error_response(exc.status_code, code=exc.code, message=exc.message, path=exc.path)
+        except MboxResumeUnavailableError as exc:
+            return _error_response(409, code="mbox_resume_unavailable", message=str(exc), path=job_id)
+        except MboxResumeSourceChangedError as exc:
+            return _error_response(409, code="mbox_source_changed", message=str(exc), path=job_id)
+        except MboxBusyError as exc:
+            return _error_response(409, code="mbox_busy", message=str(exc), path=job_id)
+        except Exception:  # pragma: no cover - defensive guard
+            return _error_response(500, code="backend_error", message="Could not resume MBOX job", stage="backend")
+
+    @app.get("/api/mbox/resumable", response_model=MboxResumableJobsResponse)
+    async def list_resumable_mbox_jobs() -> MboxResumableJobsResponse:
+        """Stopped archive jobs whose source is unchanged, newest first."""
+        configured = _current_settings()
+        if configured is None:
+            return MboxResumableJobsResponse(jobs=[])
+        _sync_job_manager_roots(configured)
+        return MboxResumableJobsResponse(jobs=await job_manager.list_resumable_mbox_jobs())
 
     def _closing_error(
         status_code: int, *, code: str, message: str, path: str | None = None, stage: ErrorStage = "validation",

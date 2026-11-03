@@ -170,6 +170,26 @@ class MboxProgress(BaseModel):
     bytes_processed: int = Field(default=0, ge=0)
     failures_omitted: int = Field(default=0, ge=0)
     phase: Literal["queued", "converting", "publishing", "finished"] = "queued"
+    # A resumed job re-verifies completed bundles; those count as reused.
+    resumed: bool = False
+    records_reused: int = Field(default=0, ge=0)
+
+
+class MboxResumableJob(BaseModel):
+    """A stopped web MBOX job whose source still has its admitted identity."""
+
+    id: str
+    origin: Literal["manual", "upload"]
+    source_name: str
+    member: str | None = None
+    reason: Literal["cancelled", "disk_space", "interrupted"]
+    records_processed: int | None = None
+    updated_at: datetime
+    job_path: str
+
+
+class MboxResumableJobsResponse(BaseModel):
+    jobs: list[MboxResumableJob]
 
 
 class OutputLocation(BaseModel):
@@ -200,6 +220,7 @@ class JobStatusResponse(BaseModel):
     cancel_requested: bool
     progress: Progress
     mbox: MboxProgress | None = None
+    resumable: bool = False
     summary: Summary
     errors: list[ErrorItem]
     recovery_actions: list[dict[str, str]] = Field(default_factory=list)

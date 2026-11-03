@@ -431,13 +431,15 @@ CI also validates plugin/skill schemas, frontend syntax, maintained Markdown lin
   Takeout downloads; see the [Takeout guide](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/gmail-takeout.md). The web UI
   imports `.eml` files and, from 0.4.10, one flat `.mbox` by local path.
   Unreleased source adds `.zip`, `.tgz` and `.tar.gz` input by path or browser
-  upload, with a 1 GiB staging/output free-space reserve; web jobs cannot resume.
+  upload, with a 1 GiB staging/output free-space reserve, and resumes stopped
+  web imports in their job folder.
   Its watch and file-import flows stay EML-only. From 0.4.5 the MCP server adds a bounded `convert_mbox` tool for
   one flat `.mbox`. PST, MSG and live-mailbox connections are unsupported.
-  An opt-in resumable MBOX import (`--mbox-resume`, CLI/Python only) is
+  An opt-in resumable MBOX import (`--mbox-resume`, CLI/Python) is
   available from 0.4.6; see the [resume contract](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/mbox-resume.md).
 - Local-only, single-user, single-machine; no remote server or authentication service. An MCP host may send results to its model provider.
-- In-memory job registry: state resets on restart. Retained binary attachments need a separate parser for text indexing.
+- In-memory job registry: state resets on restart. Unreleased source keeps a
+  stopped archive import resumable across restarts. Retained binary attachments need a separate parser for text indexing.
 
 ## License
 
