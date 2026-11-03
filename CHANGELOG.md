@@ -68,6 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   existing breaks. Stripped HTML block elements (`center`, `details`,
   `summary` and others) keep paragraph boundaries, including elements with
   `title` or `lang` attributes, so attribution lines stay detectable (#241).
+- HTML reply history: an Outlook `divRplyFwdMsg` boundary nested inside a
+  Gmail, Proton or Yahoo wrapper now ends with that wrapper, so text after it
+  stays in the current message and the history carries no `<body>` markup.
+  Outlook ids with OWA `x_` prefixes (`x_divRplyFwdMsg`) are recognized.
+  Second and later plain blockquotes in a reply wrapper move to history while
+  text between them stays. Proton's `------- Original Message -------` label
+  moves with its attribution, also when it sits in its own `<div>`; other
+  dashed lines before an attribution stay in the current message (#241).
 - Plain-text Outlook history splits into separate messages at column-0
   separator and header blocks in English, German, French, Spanish, Dutch,
   Italian and Japanese. Separator lines are consumed, nested `On … wrote:`
