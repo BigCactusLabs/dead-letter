@@ -238,7 +238,7 @@ async def test_upload_names_are_reduced_to_a_basename_in_the_staging_folder(
         ({"declared": str(len(ARCHIVE)).zfill(21)}, "", 400, "mbox_upload_length_mismatch"),
         ({"raw_content_length": "9" * 4301, "declared": "9" * 4301}, "", 400, "mbox_upload_length_mismatch"),
         ({"name": None}, "", 400, "invalid_request"),
-        ({"name": "archive.zip"}, "", 400, "invalid_request"),
+        ({"name": "archive.rar"}, "", 400, "invalid_request"),
         ({"name": "All mail.mbox.gz"}, "", 400, "invalid_request"),
         ({"raw_name": "%FF%FE.mbox"}, "", 400, "invalid_request"),
         ({"raw_name": "line%0Abreak.mbox"}, "", 400, "invalid_request"),

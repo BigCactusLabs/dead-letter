@@ -532,21 +532,21 @@
                             @click="mboxSource = 'upload'; formErrors = []; mboxUploadNotice = ''">Upload archive</button>
                   </div>
                   <p id="mbox-path-help" class="mbox-note" x-show="mboxSource === 'path'">
-                    Use one uncompressed .mbox file already on the machine running dead-letter (up to 16 GiB).
+                    Use one .mbox, .zip, .tgz or .tar.gz file already on the machine running dead-letter (up to 16 GiB).
                     Enter a path relative to the file browser root, your home folder by default.
                     This is the faster choice for an archive that is already here.
                   </p>
                   <div x-show="mboxSource === 'upload'" x-cloak>
                     <label class="mbox-file-picker" :class="{ chosen: mboxFile }">
-                      <input id="mbox-upload-file" type="file" class="visually-hidden" accept=".mbox"
+                      <input id="mbox-upload-file" type="file" class="visually-hidden" accept=".mbox,.zip,.tgz,.tar.gz"
                              aria-describedby="mbox-upload-help"
                              @change="chooseMboxFile($event)"
                              :disabled="$store.job.isSubmitting" />
-                      <span class="mbox-file-action" x-text="mboxFile ? 'Choose a different file' : 'Choose a .mbox file'"></span>
+                      <span class="mbox-file-action" x-text="mboxFile ? 'Choose a different file' : 'Choose an archive'"></span>
                       <span class="mbox-file-meta" x-show="mboxFile" x-text="mboxFileLabel" x-cloak></span>
                     </label>
                     <p id="mbox-upload-help" class="mbox-note">
-                      Sends one uncompressed .mbox file (up to 16 GiB) from this browser. The copy is saved in the
+                      Sends one .mbox, .zip, .tgz or .tar.gz file (up to 16 GiB) from this browser. The copy is saved in the
                       Inbox's mbox-uploads folder and kept there after the import. The Inbox needs room for the copy
                       plus 1 GiB. An interrupted upload cannot be resumed.
                     </p>
@@ -554,8 +554,13 @@
                   <p class="mbox-note mbox-upload-notice" x-show="mboxUploadNotice" x-text="mboxUploadNotice" role="status" x-cloak></p>
                   <p class="mbox-note">
                     This import writes message bundles and a report into a new Cabinet folder. The source archive stays in place.
-                    Allow space for converted messages and attachments. One archive can run at a time.
+                    Staging and Cabinet volumes must keep 1 GiB free. One archive can run at a time. Web imports cannot resume.
                   </p>
+                  <div class="field" x-show="mboxIsCompressed" x-cloak>
+                    <label class="field-label" for="mbox-member">Archive member (optional)</label>
+                    <input id="mbox-member" type="text" x-model="mboxMember" aria-describedby="mbox-member-help" />
+                    <p id="mbox-member-help" class="mbox-note">Exact .mbox member name. Required if the archive contains more than one mailbox.</p>
+                  </div>
                   <div class="field">
                     <label class="field-label" for="mbox-timeout">Per-message time limit (seconds)</label>
                     <input id="mbox-timeout" type="number" min="0.1" max="300" step="0.1" x-model.number="mboxTimeout" />

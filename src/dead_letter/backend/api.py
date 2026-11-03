@@ -22,7 +22,7 @@ from starlette.routing import Route
 from dead_letter.backend import mbox_jobs
 from dead_letter.backend.filesystem import FilesystemBrowser
 from dead_letter.backend.jobs import JobManager
-from dead_letter.backend.mbox_jobs import MboxArchiveTooLargeError, MboxBusyError
+from dead_letter.backend.mbox_jobs import MboxArchiveTooLargeError, MboxBusyError, MboxMemberError
 from dead_letter.backend.settings import SettingsStore
 from dead_letter.backend.schemas import (
     BatchImportStartResponse,
@@ -337,7 +337,8 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(_request, exc: RequestValidationError):
-        return JSONResponse(status_code=400, content=_validation_error_payload(exc))
+        status = 422 if any(error["type"] in {"mbox_member_requires_archive", "mbox_invalid_member"} for error in exc.errors()) else 400
+        return JSONResponse(status_code=status, content=_validation_error_payload(exc))
 
     @app.get("/api/session", status_code=200)
     async def get_session() -> dict[str, str]:
@@ -394,8 +395,12 @@ def create_app(
         _sync_job_manager_roots(configured)
         try:
             return await job_manager.create_mbox_job(request, source_root=fs_browser.root)
+        except UploadRejected as exc:
+            return _error_response(exc.status_code, code=exc.code, message=exc.message, path=exc.path)
         except PermissionError as exc:
             return _error_response(403, code="invalid_request", message=str(exc), path=request.input_path)
+        except MboxMemberError as exc:
+            return _error_response(422, code="invalid_request", message=str(exc), path="options.member")
         except MboxArchiveTooLargeError as exc:
             return _error_response(413, code="mbox_too_large", message=str(exc), path=request.input_path)
         except MboxBusyError as exc:
@@ -413,7 +418,7 @@ def create_app(
         return response
 
     async def upload_mbox(request: Request) -> JSONResponse:
-        """Stage one raw ``.mbox`` body under the Inbox and start an archive job.
+        """Stage one raw MBOX or compressed archive body under the Inbox and start an archive job.
 
         Every check that does not need the body runs before the first byte is read.
         """
@@ -428,14 +433,21 @@ def create_app(
             return _closing_error(exc.status_code, code=exc.code, message=exc.message, path=exc.path)
         _sync_job_manager_roots(configured)
         try:
+            staging_dir = prepare_staging_dir(configured.inbox_path) if upload.suffix.lower() != ".mbox" else None
             reservation = await job_manager.reserve_mbox_slot()
+        except UploadRejected as exc:
+            return _closing_error(exc.status_code, code=exc.code, message=exc.message, path=exc.path)
         except MboxBusyError as exc:
             return _closing_error(409, code="mbox_busy", message=str(exc), path=upload.filename)
+        except Exception:
+            return _closing_error(
+                500, code="backend_error", message="Could not stage MBOX upload", stage="backend",
+            )
         try:
-            staging_dir = prepare_staging_dir(configured.inbox_path)
+            staging_dir = staging_dir or prepare_staging_dir(configured.inbox_path)
             ensure_upload_space(staging_dir, upload.length)
             staged = await stage_mbox_upload(
-                request, staging_dir=staging_dir, stem=upload.stem, length=upload.length,
+                request, staging_dir=staging_dir, stem=upload.stem, length=upload.length, suffix=upload.suffix,
             )
             try:
                 job = await job_manager.create_staged_mbox_job(
@@ -451,6 +463,8 @@ def create_app(
                 raise
         except UploadRejected as exc:
             return _closing_error(exc.status_code, code=exc.code, message=exc.message, path=exc.path)
+        except MboxMemberError as exc:
+            return _closing_error(422, code="invalid_request", message=str(exc), path="options.member")
         except MboxArchiveTooLargeError as exc:
             return _closing_error(413, code="mbox_too_large", message=str(exc), path=upload.filename)
         except MboxBusyError as exc:

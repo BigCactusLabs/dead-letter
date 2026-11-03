@@ -73,8 +73,9 @@ limits. The rest of this guide describes default conversion unless noted.
 ## Compressed input
 
 Available in 0.4.5 and later; 0.4.0 and earlier do not read ZIP/TGZ input.
-This first #144 slice adds CLI and Python input only. MCP and web/API ingestion
-are unchanged and do not accept compressed containers.
+Compressed input shipped first for CLI and Python. Unreleased web/API source
+also accepts these containers by local path or browser upload; MCP still
+requires a flat `.mbox`.
 
 ```bash
 dead-letter convert takeout.zip --output markdown/ --report
@@ -447,8 +448,13 @@ In 0.4.10 and later, configure
 Inbox/Cabinet, choose **Import a local MBOX archive**, and enter the archive's
 path relative to the server's filesystem-browser root (your home directory by
 default), for example `Downloads/Takeout/Mail/All mail.mbox`. The file must be
-on that server already. The form accepts one flat archive up to 16 GiB and a
-per-message timeout (30 seconds by default, at most 300 seconds).
+on that server already. Unreleased source also accepts the Takeout `.zip`,
+`.tgz` or `.tar.gz` directly; extraction is not needed. The 16 GiB cap applies
+to the selected file, including a compressed container. Use **Archive member**
+only to select an exact `.mbox` member name; it is required when more than one
+mailbox is present. Web member names are limited to 1024 characters, with no
+NUL or control characters; invalid names return HTTP 422. The form also accepts
+a per-message timeout (30 seconds by default, at most 300 seconds).
 
 Each job preserves the export and creates its own `mbox-<job-id>` folder in
 Cabinet, with one bundle per completed message and a streaming JSON report.
@@ -457,11 +463,21 @@ the total message count. Cancelling waits for the active worker to stop and
 the partial report to finish; completed bundles stay available. The default
 server allows one queued/running archive job at a time.
 
-Reserve disk space for temporary data, output bundles and the report. The
-16 GiB source limit and bounded status summary do not impose a total disk or
-process-memory quota. ZIP/TGZ web input and resumable web jobs remain
-separate work; use the CLI routes above when those capabilities are needed.
-Browser upload is unreleased; see the next section.
+Allow disk space for temporary data, output bundles and the report. Unreleased
+web jobs enforce a 1 GiB free-space reserve on Cabinet and, for compressed
+input, the staging volume. Checks run before conversion, during staging at
+least every 64 MiB, and after each message result. A low reading or a failed
+measurement stops the job with `mbox_disk_reserve`; completed bundles and a
+partial report are kept. A cancel requested before the reserve failure is
+detected wins; a later cancel leaves the job failed. A report error always
+makes the job fail, even if cancellation was requested. This is a free-space
+reserve, not a total byte quota or process-memory limit. Compressed member staging is private under
+`<Inbox>/mbox-uploads/` and removed on completion, failure or cancellation.
+Admission creates that parent folder, including the Inbox if missing, and
+validates it before reserving a slot or creating Cabinet output. A symlink or
+non-folder is refused with a clear request error. Tasks cancelled before
+starting create no private member-staging directory. Web-job resume is not
+supported. Browser upload is unreleased; see the next section.
 The EML file upload and watch flows still accept only EML.
 
 For script clients, use `POST /api/mbox/jobs` with a root-relative `input_path`
@@ -472,12 +488,15 @@ for option validation, path confinement, limits, partial reports and failures.
 ## Web: browser upload (unreleased)
 
 Unreleased source adds **Upload archive** beside the path field in the same
-form. Choose one uncompressed `.mbox` file of up to 16 GiB; the browser sends it
+form. Choose one `.mbox`, `.zip`, `.tgz` or `.tar.gz` file of up to 16 GiB;
+Takeout archives can be uploaded directly. The browser sends it
 to the server, which saves a copy in `<Inbox>/mbox-uploads/` and then imports
 that copy exactly like a local-path archive. The copy stays there after the
 import as the job's source, so delete it yourself when you no longer need it.
 The Inbox needs room for the copy plus 1 GiB, and the Cabinet needs room for
-the bundles. `mbox-uploads` must be a real folder inside the Inbox; the server
+the bundles plus the same 1 GiB reserve. Compressed jobs also need space for
+the decompressed member; only this temporary member staging is removed after
+the job. `mbox-uploads` must be a real folder inside the Inbox; the server
 refuses the upload when it is a symlink, for example to another disk. An
 interrupted upload cannot be resumed; it starts again from the beginning. When
 the archive is already on the machine running dead-letter, the local path is
@@ -538,5 +557,6 @@ must be integers, not floats or booleans.
 checks between bounded reads; use `timeout_seconds` to also stop/reap an active
 parser worker. Already completed results remain valid. Cancellation cannot
 preempt blocked filesystem I/O or an in-process parser, and is not supported
-with `resume=True` or compressed input. See the
+with `resume=True`. Unreleased `convert_mbox_archive()` supports the same
+callback during staging and conversion. See the
 [core contract](v4-runtime-contracts.md#streaming-mbox-conversion).
