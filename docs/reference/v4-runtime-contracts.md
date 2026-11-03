@@ -90,8 +90,10 @@ and its result is yielded before the next cancellation check, so callers can
 account for completed output. Already yielded results remain valid.
 
 The callback cannot preempt an in-process MIME parser or a blocked filesystem
-call; use timed workers for cancellable parsing. Combining the callback with
-`resume=True` is rejected. Unreleased `convert_mbox_archive()` also accepts
+call; use timed workers for cancellable parsing. In 0.4.10, combining the
+callback with `resume=True` is rejected; unreleased source accepts it and
+[resume](mbox-resume.md#cancellation-and-compressed-input-unreleased) retries the
+record in progress on the next run. Unreleased `convert_mbox_archive()` also accepts
 `cancel_requested` for staging and conversion and an optional
 `staging_check(path, bytes_written)` callback, called before each 64 KiB copy
 chunk and at the end. The callback owns staging free-space policy when supplied;
@@ -434,7 +436,10 @@ Admission and output rules:
   always preserved; each completed message becomes a bundle with Markdown,
   retained attachments and `source.eml`. The create response uses the usual
   `id`/`status` fields and adds `output_location.job_path`; `bundle_path` is null.
-  Completed bundles survive cancellation and later failures.
+  Completed bundles survive cancellation and later failures. In unreleased
+  source the job also writes the core resume journal and a job descriptor
+  there, so a stopped job can continue in the same folder
+  ([MBOX job resume](#mbox-job-resume-unreleased)).
 - Options accept the conversion flags `strip_signatures`, `strip_disclaimers`,
   `strip_quoted_headers`, `strip_signature_images`, `strip_tracking_pixels`,
   `embed_inline_images`, `include_all_headers`, `include_raw_html`,
@@ -519,7 +524,9 @@ The [worker contract](mbox-workers.md#errors-and-reports) explains the reserved
 storage-exhaustion outcome, including failure to write a receipt.
 
 The runner spools report rows to disk and publishes
-`<job_path>/.dead-letter-report.json`. Its schema remains 1, with MBOX provenance,
+`<job_path>/.dead-letter-report.json`. A resumed run (unreleased) publishes
+the next free name, `.dead-letter-report-2.json` and so on, and never replaces
+an earlier report. Its schema remains 1, with MBOX provenance,
 `mbox_options` and terminal status. After the first compressed message result,
 `archive` also includes the core container/member provenance and container size.
 `archive.observed_summary` records the actual observed counts; `report.summary` counts committed report rows.
@@ -545,8 +552,10 @@ new archive admission, signals active jobs and waits for this same cleanup.
 The UI's **Import a local MBOX archive** action opens this path/timeout form
 and displays byte progress, processed messages, cancellation state, retained
 output and omitted errors. Its EML drag-and-drop/upload flow remains separate.
-Archive jobs use the existing bounded, in-memory history. They have no durable
-job resume or automatic retry. The free-space reserve is not a total
+Archive jobs use the existing bounded, in-memory history and have no automatic
+retry. In unreleased source a stopped job offers **Resume import**, and the idle
+and done panels list stopped imports from the Cabinet, including ones from an
+earlier server process ([MBOX job resume](#mbox-job-resume-unreleased)). The free-space reserve is not a total
 output/temp-disk byte quota or worker-memory cap: allow space for staging,
 bundles and the disk-backed report. Cancellation/timeouts cannot bound
 blocked OS I/O, and a hard process kill cannot guarantee a final report or cleanup.
@@ -646,7 +655,9 @@ per-job member staging under the same upload area, with the cleanup and
 1 GiB staging/Cabinet reserve rules described above.
 
 Limits: an interrupted upload cannot be resumed and starts again from byte
-zero; web-job resume is also unsupported. The upload's 507 check covers the
+zero. Once the upload has started its job, that job can be resumed like a
+local-path job (unreleased); resume reuses the kept copy in `mbox-uploads/` and
+is refused if that copy was changed or removed. The upload's 507 check covers the
 source copy only; the job then enforces its own staging and output reserve
 with `mbox_disk_reserve`. Allow space for the decompressed member and bundles.
 The reserve is not a total output/temp-disk byte quota. Browsers
@@ -663,6 +674,89 @@ route with upload progress and a cancel button, then shows the job's progress
 like a local-path import. Cancel is disabled once every byte is sent, because
 the server may already be creating the job.
 
+### MBOX job resume (unreleased)
+
+Web archive jobs (#272) run through the [core resume journal](mbox-resume.md)
+from their first run. Before conversion the runner probes the Cabinet for
+no-replace bundle publication; where it is unavailable, the job runs without
+resume, as before, and can never be resumed.
+
+Each job folder holds a private `.dead-letter-web-job.json` descriptor, written
+atomically (temporary file, flush, rename) when a run starts and again when it
+ends. It records the job id, origin (`manual` or `upload`), the request's
+`input_path`, the resolved source, the source's device, inode, size and
+modification time at admission, the validated options, the last state and stop
+code, whether the job can be resumed, the count of processed records and the
+number of runs. The server reads it only from a real file (not a link) of at most
+64 KiB whose job id matches its folder. Do not edit it; a descriptor that fails
+these checks makes the job unknown to resume.
+
+| Outcome of the last run | Can be resumed |
+| --- | --- |
+| Cancelled, with no other fatal error | Yes (`reason: "cancelled"`) |
+| Failed with only `mbox_disk_reserve` or `mbox_storage_error` | Yes (`reason: "disk_space"`) |
+| Descriptor still `running` and no job with that id is active in this server | Yes (`reason: "interrupted"`; server stop or crash) |
+| Succeeded or completed with errors | No |
+| Source changed, report error, `mbox_resume_conflict`, `mbox_resume_mismatch`, `mbox_resume_io_error`, archive format errors | No |
+| `mbox_resume_busy` (another writer held the journal) | Descriptor unchanged |
+
+`GET /api/mbox/resumable` returns up to 20 resumable jobs in the current
+Cabinet, newest first, whose source still has its recorded identity. It returns
+an empty list before settings are configured.
+
+```json
+{
+  "jobs": [{
+    "id": "32 hex characters",
+    "origin": "manual|upload",
+    "source_name": "Takeout.zip",
+    "member": "Takeout/Mail/All mail.mbox|null",
+    "reason": "cancelled|disk_space|interrupted",
+    "records_processed": 120,
+    "updated_at": "ISO-8601 string",
+    "job_path": "absolute MBOX job directory"
+  }]
+}
+```
+
+`records_processed` is null for an interrupted job, because the killed run never
+wrote its final count.
+
+`POST /api/mbox/jobs/{id}/resume` takes no body and applies the loopback Host,
+same-origin and CSRF rules of other mutating routes. It re-admits the source
+with the checks a new job gets: local-path jobs through the browser-root path
+rules, upload jobs through the kept copy in `<Inbox>/mbox-uploads/`. The
+resolved path and the device, inode, size and modification time must equal the
+recorded ones. The resumed job reserves the same archive slot, enforces the
+same 1 GiB reserve and, for compressed input, stages the recorded member again
+in new private staging. It keeps the original job id and `job_path`, replaces
+any retained in-memory snapshot of that id, and returns `202` with the usual
+create response. Completed bundles are verified and reused, never written twice
+or replaced; the record in progress when the job stopped is converted again.
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `404` | `invalid_request` | Not a job id, no such job folder, or no valid descriptor |
+| `409` | `mbox_resume_unavailable` | The job is still running, or its last run cannot be resumed |
+| `409` | `mbox_source_changed` | The source is missing, no longer admissible, or changed since the job started |
+| `409` | `mbox_busy` | Another archive job holds the slot |
+| `409` | `invalid_request` | Settings are not configured |
+
+Admission errors from the upload area keep their own status and code.
+
+While a job runs, the `mbox` object adds `resumed` (true for a resumed run) and
+`records_reused` (completed records verified and reused). `GET /api/jobs/{id}`
+adds top-level `resumable`, true for a terminal archive job that can be resumed.
+`summary.written` counts reused bundles too, as in the core resume report, and
+the report's `mbox_options` add `resume: true` and `recovery_counts`.
+
+A resumed run fails with `mbox_resume_mismatch` when the converter changed
+between runs, for example after a dead-letter upgrade, because the journal binds
+the dependency versions and source fingerprint; start a new import then. A
+server killed during compressed staging leaves that run's private
+`mbox-job-*` staging directory under `<Inbox>/mbox-uploads/`; remove it only
+when no import is running.
+
 ### `GET /api/jobs/{id}`
 
 Returns job snapshot.
@@ -676,6 +770,7 @@ Response (`200`):
   "kind": "eml|mbox",
   "origin": "manual|import|watch",
   "cancel_requested": true,
+  "resumable": false,
   "output_location": {
     "strategy": "cabinet",
     "cabinet_path": "absolute Cabinet path string",
@@ -798,8 +893,9 @@ Notes:
 - `retry_with_html_fallback` forces `allow_fallback_on_html_error=true` for the new job only.
 - Does not mutate the original job snapshot or saved UI options.
 - Returns `409` when the retry action is not currently available for the referenced job.
-- MBOX jobs do not expose retry actions; restarting an archive creates a new job
-  and output directory rather than resuming its prior results.
+- MBOX jobs do not expose retry actions; starting an archive again creates a new
+  job and output directory. A stopped archive job can instead be resumed in its
+  folder ([MBOX job resume](#mbox-job-resume-unreleased), unreleased).
 
 ### `GET /api/jobs/history`
 

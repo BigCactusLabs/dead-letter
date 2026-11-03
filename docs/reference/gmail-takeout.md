@@ -62,10 +62,12 @@ files or bundles, retries missing/failed records, and refuses modified/conflicti
 outputs. Reports distinguish `new`, `reused`, `recovered` and `retried` records
 and use collision-safe filenames. Python uses `convert_mbox(..., resume=True)`;
 add `bundles=True` for Cabinet output.
-Timed workers and bundles are supported; compressed input, dry runs, MCP and
-web/UI resume are not. Bundle reuse verifies Markdown, source bytes and every
+Timed workers and bundles are supported; dry runs and MCP resume are not. The
+CLI resumes a flat `.mbox` only. Unreleased source adds Python resume for
+compressed Takeout archives (`convert_mbox_archive(..., resume=True)`) and
+resumable web jobs ([below](#web-resume-a-stopped-import-unreleased)). Bundle reuse verifies Markdown, source bytes and every
 retained attachment together; edited or missing individual members are conflicts.
-Extract the actual `.mbox` before choosing this mode. Keep the same converter,
+For the CLI, extract the actual `.mbox` before choosing this mode. Keep the same converter,
 options and output layout across runs. See the [resume contract](mbox-resume.md)
 for source binding, no-replace filesystem requirements, locking and durability
 limits. The rest of this guide describes default conversion unless noted.
@@ -152,7 +154,10 @@ dead-letter convert takeout.tar.gz --mbox-member "Takeout/Mail/All mail.mbox" \
   on failure, normal completion, Ctrl-C or explicit iterator close. Hard kills
   cannot guarantee cleanup. `--dry-run` still stages and validates the whole member.
 
-Python exposes the ordinary conversion keywords of `convert_mbox`, but not `resume`:
+Python exposes the ordinary conversion keywords of `convert_mbox`; unreleased
+source also accepts `resume=True`, which binds the journal to the archive and
+member rather than the temporary staging path (see the
+[resume contract](mbox-resume.md#cancellation-and-compressed-input-unreleased)):
 
 ```python
 from contextlib import closing
@@ -476,8 +481,9 @@ reserve, not a total byte quota or process-memory limit. Compressed member stagi
 Admission creates that parent folder, including the Inbox if missing, and
 validates it before reserving a slot or creating Cabinet output. A symlink or
 non-folder is refused with a clear request error. Tasks cancelled before
-starting create no private member-staging directory. Web-job resume is not
-supported. Browser upload is unreleased; see the next section.
+starting create no private member-staging directory. Unreleased source can
+resume a stopped job; see [Web: resume a stopped import](#web-resume-a-stopped-import-unreleased).
+Browser upload is unreleased; see the next section.
 The EML file upload and watch flows still accept only EML.
 
 For script clients, use `POST /api/mbox/jobs` with a root-relative `input_path`
@@ -505,6 +511,29 @@ faster and needs no second copy.
 Script clients send the raw bytes to `POST /api/mbox/uploads`; see the
 [upload contract](v4-runtime-contracts.md#post-apimboxuploads-unreleased) for
 headers, limits and error codes.
+
+## Web: resume a stopped import (unreleased)
+
+Unreleased source lets an archive import continue where it stopped, in the same
+`<Cabinet>/mbox-<job-id>/` folder. This works when the import was cancelled,
+stopped by the 1 GiB free-space reserve, or cut off because the server stopped
+or crashed. The done panel then shows **Resume import**, and the idle and done
+panels list stopped imports from the Cabinet, including ones from an earlier
+server run. Free some space first after a disk-space stop.
+
+Resume checks completed bundles and keeps them; nothing is converted twice or
+overwritten. The message that was in progress is converted again, and the run
+writes a new report beside the earlier ones (`.dead-letter-report-2.json` and
+so on). The source must be unchanged: the same file at the same path, with the
+same size and modification time. For an upload, that is the copy kept in
+`mbox-uploads/`. If the source was changed, moved or removed, or dead-letter
+was upgraded between runs, resume is refused; start a new import, which uses a
+new job folder. A completed import, or one that failed for another reason, such
+as a damaged archive or a report error, cannot be resumed.
+
+Script clients use `GET /api/mbox/resumable` and
+`POST /api/mbox/jobs/{id}/resume`; see the
+[job resume contract](v4-runtime-contracts.md#mbox-job-resume-unreleased).
 
 ## MCP: bounded `convert_mbox`
 
@@ -556,7 +585,8 @@ must be integers, not floats or booleans.
 `dead_letter.core.mbox.MboxCancelled` outside the `closing` context. Framing
 checks between bounded reads; use `timeout_seconds` to also stop/reap an active
 parser worker. Already completed results remain valid. Cancellation cannot
-preempt blocked filesystem I/O or an in-process parser, and is not supported
-with `resume=True`. Unreleased `convert_mbox_archive()` supports the same
-callback during staging and conversion. See the
+preempt blocked filesystem I/O or an in-process parser. In 0.4.10 it is not
+supported with `resume=True`; unreleased source supports it, and the next resume
+run retries the record that was in progress. Unreleased `convert_mbox_archive()`
+supports the same callback during staging and conversion. See the
 [core contract](v4-runtime-contracts.md#streaming-mbox-conversion).

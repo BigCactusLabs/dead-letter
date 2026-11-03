@@ -242,6 +242,14 @@ Terminal statuses:
 4. Preserve the current `$store.job.origin` when the replacement job starts so watched failures stay labeled as watch-origin.
 5. Replacement job polling uses the normal create-job flow and clears the prior snapshot state.
 
+### Resume Stopped Archive Import (unreleased)
+
+1. `$store.job.loadResumable()` reads `GET /api/mbox/resumable` on app init, when settings become configured, and when an archive job reaches terminal. It fills `$store.job.resumableImports`; a failed refresh keeps the previous list.
+2. Polling sets `$store.job.resumable` from the snapshot's `resumable` flag for archive jobs. The done panel shows **Resume import** only while it is true; the idle and done panels list `resumableImports`, leaving out the job the done panel already offers.
+3. `$store.job.resumeMbox(jobId)` refuses while any job is active or a request is in flight, then sends `POST /api/mbox/jobs/{id}/resume`.
+4. On `202` it resets the snapshot, starts polling the same job id with origin `upload` or `mbox`, and sets `resumedRun` so the converting panel explains reuse before the first poll reports `mbox.resumed`.
+5. On failure it sets `resumeError` and `resumeErrorId` (shown beside the matching control, without the job id). A `404` or `409` clears the current job's `resumable` flag and reloads the list.
+
 ## UI Messaging Rules by Workspace State
 
 - Persistent readout below workspace:
