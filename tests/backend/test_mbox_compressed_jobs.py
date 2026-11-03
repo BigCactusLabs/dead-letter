@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import os
 import tarfile
 import threading
 import zipfile
@@ -234,7 +235,8 @@ async def test_compressed_cancellation_cleans_staging_and_releases_slot(tmp_path
         original = mbox_jobs.MboxJobRunner._check_staging
         def hold(self, path, written):
             assert path.is_relative_to(tmp_path / "Inbox" / "mbox-uploads")
-            assert path.parent.stat().st_mode & 0o077 == 0
+            if os.name != "nt":  # Windows reports ACL-backed dirs as 0o777
+                assert path.parent.stat().st_mode & 0o077 == 0
             entered.set()
             assert release.wait(5)
             original(self, path, written)
