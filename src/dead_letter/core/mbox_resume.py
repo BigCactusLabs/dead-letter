@@ -67,7 +67,9 @@ def _sync_directory(path: Path) -> None:
             os.close(fd)
 
 
-def _digest(path: Path, *, sync: bool = False) -> tuple[int, str]:
+def _digest(
+    path: Path, *, sync: bool = False, check: Callable[[], None] | None = None,
+) -> tuple[int, str]:
     flags = (os.O_RDWR if sync else os.O_RDONLY) | getattr(os, "O_NOFOLLOW", 0)
     flags |= getattr(os, "O_NONBLOCK", 0)
     before = path.lstat()
@@ -78,7 +80,15 @@ def _digest(path: Path, *, sync: bool = False) -> tuple[int, str]:
         opened = os.fstat(stream.fileno())
         if not stat.S_ISREG(opened.st_mode) or not os.path.samestat(before, opened):
             raise _conflict("Resume artifact changed while opening")
-        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        if check is None:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        else:
+            # A whole-archive pass can take minutes; stop between chunks.
+            hasher = hashlib.sha256()
+            while chunk := stream.read(1 << 20):
+                check()
+                hasher.update(chunk)
+            digest = hasher.hexdigest()
         if sync:
             os.fsync(stream.fileno())
         if _signature(opened) != _signature(os.fstat(stream.fileno())):
@@ -642,7 +652,7 @@ def convert_mbox_resumable(
     try:
         _raise_if_cancelled(cancel_requested)
         before = _signature(source.stat())
-        size, digest = _digest(source)
+        size, digest = _digest(source, check=lambda: _raise_if_cancelled(cancel_requested))
         if _signature(source.stat()) != before:
             raise _conflict("MBOX changed while fingerprinting")
         conversion = asdict(options)

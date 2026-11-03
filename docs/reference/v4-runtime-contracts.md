@@ -683,22 +683,33 @@ resume, as before, and can never be resumed.
 
 Each job folder holds a private `.dead-letter-web-job.json` descriptor, written
 atomically (temporary file, flush, rename) when a run starts and again when it
-ends. It records the job id, origin (`manual` or `upload`), the request's
+ends. A run holds the folder's `.dead-letter-web-job.lock` (an OS file lock,
+released when the process exits or dies) from before it writes `running` until
+after its final write, so only one server process at a time owns a job's
+descriptor. A run that cannot take that lock, or finds the descriptor changed
+since its resume request read it, fails with `mbox_resume_busy` and writes
+nothing. It records the job id, origin (`manual` or `upload`), the request's
 `input_path`, the resolved source, the source's device, inode, size and
 modification time at admission, the validated options, the last state and stop
 code, whether the job can be resumed, the count of processed records and the
 number of runs. The server reads it only from a real file (not a link) of at most
-64 KiB whose job id matches its folder. Do not edit it; a descriptor that fails
+64 KiB whose job id matches its folder, checked with `lstat` and a same-file
+check so links are refused even where the platform has no `O_NOFOLLOW`. Do not edit it; a descriptor that fails
 these checks makes the job unknown to resume.
 
 | Outcome of the last run | Can be resumed |
 | --- | --- |
 | Cancelled, with no other fatal error | Yes (`reason: "cancelled"`) |
 | Failed with only `mbox_disk_reserve` or `mbox_storage_error` | Yes (`reason: "disk_space"`) |
-| Descriptor still `running` and no job with that id is active in this server | Yes (`reason: "interrupted"`; server stop or crash) |
+| Descriptor still `running` and no process holds the job lock | Yes (`reason: "interrupted"`; server stop or crash) |
 | Succeeded or completed with errors | No |
 | Source changed, report error, `mbox_resume_conflict`, `mbox_resume_mismatch`, `mbox_resume_io_error`, archive format errors | No |
-| `mbox_resume_busy` (another writer held the journal) | Descriptor unchanged |
+| `mbox_resume_busy` (another server held the job, or another writer such as a CLI resume held the journal) | The earlier stop stays recorded; no report is written |
+
+If the final descriptor write fails, the folder still says `running`. This
+server process then neither lists nor resumes that job, even after it leaves
+the retained job history. After a restart it is listed as interrupted; resuming it is safe, because completed bundles are reused and a
+journal conflict stops the run again.
 
 `GET /api/mbox/resumable` returns up to 20 resumable jobs in the current
 Cabinet, newest first, whose source still has its recorded identity. It returns
@@ -737,7 +748,7 @@ or replaced; the record in progress when the job stopped is converted again.
 | Status | Code | Meaning |
 | --- | --- | --- |
 | `404` | `invalid_request` | Not a job id, no such job folder, or no valid descriptor |
-| `409` | `mbox_resume_unavailable` | The job is still running, or its last run cannot be resumed |
+| `409` | `mbox_resume_unavailable` | The job is still running (here or in another server process), its last run cannot be resumed, its stop was not recorded, or another resume changed its descriptor after this request read it |
 | `409` | `mbox_source_changed` | The source is missing, no longer admissible, or changed since the job started |
 | `409` | `mbox_busy` | Another archive job holds the slot |
 | `409` | `invalid_request` | Settings are not configured |

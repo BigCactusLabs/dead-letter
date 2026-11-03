@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import os
 import re
+import secrets
 import shutil
 import stat
 import tempfile
@@ -31,7 +31,8 @@ from dead_letter.backend.schemas import (
 from dead_letter.core.mbox import MboxCancelled, MboxLimits
 from dead_letter.core.mbox_archive import ArchiveLimits, convert_mbox_archive
 from dead_letter.core.mbox_import import MboxConversion, convert_mbox
-from dead_letter.core.mbox_resume import supports_bundle_resume
+from dead_letter.core.mbox_resume import MboxResumeError, supports_bundle_resume
+from dead_letter.core.mbox_resume import _lock as _exclusive_lock
 from dead_letter.core.stream_report import StreamingReport
 from dead_letter.core.types import ConvertOptions
 
@@ -42,6 +43,9 @@ _STAGING_SPACE_RECHECK_BYTES = 64 * 1024 * 1024
 _FATAL_RESULT_CODES = frozenset({"mbox_publish_failed", "mbox_storage_error", "mbox_disk_reserve"})
 # Local, private job state beside the core resume journal in Cabinet/mbox-<id>.
 MBOX_JOB_DESCRIPTOR = ".dead-letter-web-job.json"
+# Held by the runner, in any server process, from run start to the final
+# descriptor write; the OS releases it when that process dies.
+MBOX_JOB_LOCK = ".dead-letter-web-job.lock"
 _MAX_DESCRIPTOR_BYTES = 64 * 1024
 _JOB_ID = re.compile(r"[0-9a-f]{32}\Z")
 _RECOVERY_STATUSES = ("new", "reused", "recovered", "retried")
@@ -76,6 +80,10 @@ class MboxResumeSourceChangedError(RuntimeError):
 
 class _SourceChangedError(RuntimeError):
     pass
+
+
+class _JobOwnedError(RuntimeError):
+    """Another runner owns this job folder; this run must not touch it."""
 
 
 class _DiskReserveError(RuntimeError):
@@ -210,10 +218,15 @@ def read_job_descriptor(folder: Path) -> MboxJobDescriptor | None:
         if not stat.S_ISDIR(folder.lstat().st_mode) or folder.is_junction():
             return None
         path = folder / MBOX_JOB_DESCRIPTOR
+        # lstat plus a same-file check rejects links where O_NOFOLLOW is missing (Windows).
+        before = path.lstat()
+        if not stat.S_ISREG(before.st_mode) or path.is_junction():
+            return None
         flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
         fd = os.open(path, flags)
         with os.fdopen(fd, "rb") as stream:
-            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            opened = os.fstat(stream.fileno())
+            if not stat.S_ISREG(opened.st_mode) or not os.path.samestat(before, opened):
                 return None
             raw = stream.read(_MAX_DESCRIPTOR_BYTES + 1)
         if len(raw) > _MAX_DESCRIPTOR_BYTES:
@@ -237,6 +250,19 @@ def write_job_descriptor(folder: Path, descriptor: MboxJobDescriptor) -> None:
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise
+
+
+def job_owner_active(folder: Path) -> bool:
+    """Whether a runner in any process holds this job; probing never creates the lock."""
+    path = folder / MBOX_JOB_LOCK
+    try:
+        if not path.exists() and not path.is_symlink():
+            return False
+        with _exclusive_lock(path):
+            return False
+    except (MboxResumeError, OSError):
+        # Held, or not a plain lock file: never offer it as interrupted.
+        return True
 
 
 def _source_matches(descriptor: MboxJobDescriptor) -> bool:
@@ -267,6 +293,8 @@ def scan_resumable_jobs(
         if descriptor is None:
             continue
         reason = descriptor.resume_reason()
+        if reason == "interrupted" and job_owner_active(cabinet_root / name):
+            continue
         if reason is not None and _source_matches(descriptor):
             found.append((descriptor, reason))
     found.sort(key=lambda item: item[0].updated_at, reverse=True)
@@ -320,10 +348,14 @@ class MboxJobRunner:
         self.origin = origin
         self.input_path = input_path or str(admission.source)
         self.resumed = resume_of is not None
+        self._resume_of = resume_of
         self._runs = 1 if resume_of is None else resume_of.runs + 1
         # Decided once the output folder exists; a resumed job already proved it.
         self._resume_supported: bool | None = True if self.resumed else None
         self.resumable = False
+        # Set when the final descriptor write failed: the folder may still say
+        # "running", so this process must not offer it as interrupted.
+        self.descriptor_unrecorded = False
         self.cancel_event = threading.Event()
         self._lock = threading.Lock()
         self._cancel_open = True
@@ -619,7 +651,13 @@ class MboxJobRunner:
 
         with self._lock:
             self._progress.phase = "publishing"
-        pending = self.output / ".dead-letter-report.pending.json"
+            busy = "mbox_resume_busy" in self._fatal_codes
+        if busy:
+            # Another process owns this folder; its report names stay untouched.
+            with self._lock:
+                self._cancel_open = False
+            return MboxJobOutcome("failed", None)
+        pending = self.output / f".dead-letter-report.{secrets.token_hex(8)}.pending.json"
         # A resumed job keeps every earlier report: the next free name is
         # reserved as an empty file and replaced only by this job's report.
         try:
@@ -738,20 +776,24 @@ class MboxJobRunner:
         """Record whether this stop can resume; failures only lose resumability."""
         with self._lock:
             codes = set(self._fatal_codes)
-        if "mbox_resume_busy" in codes:
-            # Another process owns this folder's journal and its descriptor.
-            return
-        resumable = bool(self._resume_supported) and (
-            status == "cancelled" and codes <= _RESUMABLE_STOP_CODES
-            or status == "failed" and bool(codes) and codes <= _RESUMABLE_STOP_CODES
-        )
-        descriptor = self._descriptor(status).model_copy(update={
-            "resumable": resumable,
-            "stop_code": min(codes & _RESUMABLE_STOP_CODES, default=None) if resumable else None,
-        })
+        if "mbox_resume_busy" in codes and self._resume_of is not None:
+            # Another writer (such as a CLI resume) holds the journal; this run
+            # changed nothing, so the stop it started from stays recorded.
+            descriptor = self._resume_of
+            resumable = descriptor.resume_reason() is not None
+        else:
+            resumable = bool(self._resume_supported) and (
+                status == "cancelled" and codes <= _RESUMABLE_STOP_CODES
+                or status == "failed" and bool(codes) and codes <= _RESUMABLE_STOP_CODES
+            )
+            descriptor = self._descriptor(status).model_copy(update={
+                "resumable": resumable,
+                "stop_code": min(codes & _RESUMABLE_STOP_CODES, default=None) if resumable else None,
+            })
         try:
             write_job_descriptor(self.output, descriptor)
         except OSError:
+            self.descriptor_unrecorded = True
             return
         self.resumable = resumable
 
@@ -760,6 +802,7 @@ class MboxJobRunner:
         options = ConvertOptions(**self.options.model_dump(exclude={"timeout_seconds", "member"}))
         outcome = MboxJobOutcome("failed", None)
         described = False
+        owner = ExitStack()
         try:
             self._check_source()
             if self.cabinet_root.resolve() != self.cabinet_root:
@@ -772,6 +815,13 @@ class MboxJobRunner:
             else:
                 self.output.mkdir(exist_ok=False)
                 self._resume_supported = supports_bundle_resume(self.output)
+            try:
+                owner.enter_context(_exclusive_lock(self.output / MBOX_JOB_LOCK))
+            except MboxResumeError as exc:
+                raise _JobOwnedError("Another server is running this archive import") from exc
+            if self.resumed and read_job_descriptor(self.output) != self._resume_of:
+                # Another server resumed this job after the request read its stop.
+                raise _JobOwnedError("This archive import changed while resuming")
             write_job_descriptor(self.output, self._descriptor("running"))
             described = True
             with self._lock:
@@ -782,6 +832,8 @@ class MboxJobRunner:
         except Exception as exc:
             if isinstance(exc, _SourceChangedError):
                 self._failure("mbox_source_changed", str(exc))
+            elif isinstance(exc, _JobOwnedError):
+                self._failure("mbox_resume_busy", str(exc))
             else:
                 self._failure(
                     "mbox_job_error",
@@ -791,6 +843,7 @@ class MboxJobRunner:
         finally:
             if described:
                 self._finish_descriptor(outcome.status)
+            owner.close()
             with self._lock:
                 self._cancel_open = False
                 self._progress.phase = "finished"

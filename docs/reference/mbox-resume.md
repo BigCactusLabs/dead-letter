@@ -55,8 +55,9 @@ remain per-record failures; a later resume retries failed records.
 ### Cancellation and compressed input (unreleased)
 
 `convert_mbox(..., resume=True, cancel_requested=callable)` checks the callable
-before the source is fingerprinted and between records, then raises
-`MboxCancelled`. A cancel before fingerprinting leaves no output or journal.
+before the source is fingerprinted, after each 1 MiB of fingerprinting and
+between records, then raises `MboxCancelled`. A cancel before or during
+fingerprinting leaves no output or journal.
 Completed records keep their receipts; the record in progress is retried by the
 next run.
 

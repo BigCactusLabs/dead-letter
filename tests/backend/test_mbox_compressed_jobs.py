@@ -81,7 +81,8 @@ async def test_local_compressed_job_has_flat_bundle_parity(tmp_path, suffix):
     baseline = {p.relative_to(expected): p for p in expected.rglob("*") if p.is_file()}
     output = {
         p.relative_to(actual): p for p in actual.rglob("*")
-        if p.is_file() and p.name not in {".dead-letter-report.json", ".dead-letter-web-job.json"}
+        if p.is_file()
+        and p.name not in {".dead-letter-report.json", ".dead-letter-web-job.json", ".dead-letter-web-job.lock"}
         and ".dead-letter-resume" not in p.relative_to(actual).parts
     }
     assert baseline.keys() == output.keys()

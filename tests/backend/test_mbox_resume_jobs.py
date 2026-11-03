@@ -15,8 +15,9 @@ from types import SimpleNamespace
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from dead_letter.backend import mbox_jobs
+from dead_letter.backend import jobs, mbox_jobs
 from dead_letter.backend.schemas import MboxJobCreateRequest, MboxJobOptions
+from dead_letter.core import mbox_resume
 from dead_letter.core.mbox_import import convert_mbox
 from dead_letter.core.stream_report import StreamingReport
 
@@ -222,7 +223,7 @@ _CRASH_SCRIPT = textwrap.dedent(
     import asyncio, os, sys
     from pathlib import Path
 
-    from dead_letter.backend import mbox_jobs
+    from dead_letter.backend import jobs, mbox_jobs
     from dead_letter.backend.jobs import JobManager
     from dead_letter.backend.schemas import MboxJobCreateRequest
 
@@ -404,6 +405,138 @@ async def test_resume_keeps_slot_and_identifier_protections(tmp_path, monkeypatc
 
 
 @pytest.mark.anyio
+async def test_resume_blocked_by_another_journal_owner_writes_nothing(tmp_path, monkeypatch):
+    app = _app(tmp_path)
+    source, options = _source(tmp_path, ".mbox")
+    _stop_first_run_after(monkeypatch, 1, lambda runner: runner.request_cancel())
+    async with _client(app) as client:
+        job_id = await _create(client, source, options)
+        first = await app.state.job_manager.wait_for_terminal(job_id, timeout=20)
+        folder = Path(first.output_location.job_path)
+        descriptor = (folder / mbox_jobs.MBOX_JOB_DESCRIPTOR).read_bytes()
+        reports = sorted(path.name for path in folder.glob(".dead-letter-report*"))
+        # Another server process converting into the same folder holds this lock.
+        with mbox_resume._lock(folder / ".dead-letter-resume" / "lock"):
+            response = await _resume(client, job_id)
+            assert response.status_code == 202, response.text
+            busy = await app.state.job_manager.wait_for_terminal(job_id, timeout=20)
+        assert (folder / mbox_jobs.MBOX_JOB_DESCRIPTOR).read_bytes() == descriptor
+        assert sorted(path.name for path in folder.glob(".dead-letter-report*")) == reports
+        assert [job["id"] for job in await _resumable(client)] == [job_id]
+        again = await _resume(client, job_id)
+        assert again.status_code == 202, again.text
+        resumed = await app.state.job_manager.wait_for_terminal(job_id, timeout=20)
+    assert busy.status == "failed" and busy.report_path is None
+    assert "mbox_resume_busy" in {error.code for error in busy.errors}
+    # The stop this run started from is still recorded, so it can still resume.
+    assert busy.resumable is True
+    assert resumed.status == "succeeded"
+    assert resumed.mbox.records_reused == 1
+    assert Path(resumed.report_path) == folder / ".dead-letter-report-2.json"
+
+
+@pytest.mark.anyio
+async def test_resume_refuses_a_descriptor_changed_since_it_was_read(tmp_path, monkeypatch):
+    app = _app(tmp_path)
+    source, options = _source(tmp_path, ".mbox")
+    _stop_first_run_after(monkeypatch, 1, lambda runner: runner.request_cancel())
+    async with _client(app) as client:
+        job_id = await _create(client, source, options)
+        await app.state.job_manager.wait_for_terminal(job_id, timeout=20)
+        read = jobs.read_job_descriptor
+        seen = []
+
+        def racing(folder):
+            # A concurrent resume ran between this request's two reads.
+            descriptor = read(folder)
+            seen.append(descriptor)
+            return descriptor if len(seen) == 1 else descriptor.model_copy(update={"runs": descriptor.runs + 1})
+
+        monkeypatch.setattr(jobs, "read_job_descriptor", racing)
+        response = await _resume(client, job_id)
+        monkeypatch.setattr(jobs, "read_job_descriptor", read)
+        listed = await _resumable(client)
+    assert response.status_code == 409
+    assert response.json()["errors"][0]["code"] == "mbox_resume_unavailable"
+    assert len(seen) == 2
+    assert (await app.state.job_manager.get_job(job_id)).status == "cancelled"
+    assert app.state.job_manager._active_mbox_jobs == 0
+    assert [job["id"] for job in listed] == [job_id]
+
+
+@pytest.mark.anyio
+async def test_unrecorded_stop_is_not_offered_as_interrupted(tmp_path, monkeypatch):
+    app = _app(tmp_path)
+    source, options = _source(tmp_path, ".mbox")
+    _stop_first_run_after(monkeypatch, 1, lambda runner: runner.request_cancel())
+    write = mbox_jobs.write_job_descriptor
+
+    def failing(folder, descriptor):
+        if descriptor.state != "running":
+            raise OSError("synthetic descriptor failure")
+        write(folder, descriptor)
+
+    monkeypatch.setattr(mbox_jobs, "write_job_descriptor", failing)
+    app.state.job_manager._max_retained_terminal_jobs = 1
+    other = tmp_path / "other.mbox"
+    other.write_bytes(THREE)
+    async with _client(app) as client:
+        job_id = await _create(client, source, options)
+        terminal = await app.state.job_manager.wait_for_terminal(job_id, timeout=20)
+        # On disk the job still says "running", which reads as a killed server.
+        assert mbox_jobs.read_job_descriptor(Path(terminal.output_location.job_path)).state == "running"
+        listed = await _resumable(client)
+        response = await _resume(client, job_id)
+        monkeypatch.setattr(mbox_jobs, "write_job_descriptor", write)
+        # Pruning the finished job from history must not lift the guard.
+        later = await _create(client, other, MboxJobOptions())
+        await app.state.job_manager.wait_for_terminal(later, timeout=20)
+        assert job_id not in app.state.job_manager._jobs
+        pruned_list = await _resumable(client)
+        pruned_resume = await _resume(client, job_id)
+    assert terminal.status == "cancelled" and terminal.resumable is False
+    assert listed == []
+    assert job_id not in {job["id"] for job in pruned_list}
+    for refused in (response, pruned_resume):
+        assert refused.status_code == 409
+        assert refused.json()["errors"][0]["code"] == "mbox_resume_unavailable"
+
+
+@pytest.mark.anyio
+async def test_job_owned_by_another_server_is_never_resumed_here(tmp_path, monkeypatch):
+    app = _app(tmp_path)
+    source, options = _source(tmp_path, ".mbox")
+    _stop_first_run_after(monkeypatch, 1, lambda runner: runner.request_cancel())
+    async with _client(app) as client:
+        job_id = await _create(client, source, options)
+        first = await app.state.job_manager.wait_for_terminal(job_id, timeout=20)
+        folder = Path(first.output_location.job_path)
+        path = folder / mbox_jobs.MBOX_JOB_DESCRIPTOR
+        stopped = path.read_bytes()
+        reports = sorted(item.name for item in folder.glob(".dead-letter-report*"))
+        # A second server holds the job lock: it has claimed the job but not yet
+        # recorded "running", then records it.
+        with mbox_resume._lock(folder / mbox_jobs.MBOX_JOB_LOCK):
+            response = await _resume(client, job_id)
+            assert response.status_code == 202, response.text
+            raced = await app.state.job_manager.wait_for_terminal(job_id, timeout=20)
+            assert path.read_bytes() == stopped
+            assert sorted(item.name for item in folder.glob(".dead-letter-report*")) == reports
+            descriptor = mbox_jobs.read_job_descriptor(folder)
+            mbox_jobs.write_job_descriptor(folder, descriptor.model_copy(update={"state": "running"}))
+            live_list = await _resumable(client)
+            live = await _resume(client, job_id)
+        # Once that server dies, the OS releases its lock: now it was interrupted.
+        [listed] = await _resumable(client)
+    assert raced.status == "failed" and raced.report_path is None
+    assert "mbox_resume_busy" in {error.code for error in raced.errors}
+    assert live_list == []
+    assert live.status_code == 409
+    assert live.json()["errors"][0]["code"] == "mbox_resume_unavailable"
+    assert listed["id"] == job_id and listed["reason"] == "interrupted"
+
+
+@pytest.mark.anyio
 async def test_filesystem_without_exclusive_publication_runs_without_resume(tmp_path, monkeypatch):
     app = _app(tmp_path)
     source, options = _source(tmp_path, ".mbox")
@@ -434,7 +567,7 @@ async def test_job_descriptor_is_private(tmp_path):
     assert descriptor.stat().st_mode & 0o077 == 0
 
 
-def test_descriptor_reader_rejects_links_oversize_and_foreign_ids(tmp_path):
+def test_descriptor_reader_rejects_links_oversize_and_foreign_ids(tmp_path, monkeypatch):
     cabinet = tmp_path / "Cabinet"
     folder = cabinet / f"mbox-{'a' * 32}"
     folder.mkdir(parents=True)
@@ -465,3 +598,6 @@ def test_descriptor_reader_rejects_links_oversize_and_foreign_ids(tmp_path):
         linked = cabinet / f"mbox-{'c' * 32}"
         linked.symlink_to(folder, target_is_directory=True)
         assert mbox_jobs.read_job_descriptor(linked) is None
+        # Without O_NOFOLLOW (Windows) the lstat and same-file checks still refuse a link.
+        monkeypatch.delattr(os, "O_NOFOLLOW")
+        assert mbox_jobs.read_job_descriptor(folder) is None

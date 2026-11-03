@@ -73,6 +73,23 @@ def test_cancel_before_fingerprinting_leaves_no_output(tmp_path):
     assert not root.exists()
 
 
+def test_cancel_while_fingerprinting_stops_between_chunks(tmp_path):
+    source = tmp_path / "mail.mbox"
+    # Several hash chunks, so a cancel lands before the whole file is read.
+    source.write_bytes(POSTMARK + b"Subject: big\n\n" + b"x" * (3 << 20) + b"\n")
+    root = tmp_path / "out"
+    calls = []
+
+    def cancel():
+        calls.append(None)
+        return len(calls) >= 2
+
+    with pytest.raises(MboxCancelled):
+        next(convert_mbox(source, output=root, resume=True, cancel_requested=cancel))
+    assert len(calls) == 2
+    assert not root.exists()
+
+
 @pytest.mark.parametrize("suffix", [".zip", ".tgz"])
 def test_compressed_resume_restages_and_keeps_archive_provenance(tmp_path, suffix):
     container = _archive(tmp_path / ("takeout" + suffix), [

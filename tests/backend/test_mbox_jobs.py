@@ -538,9 +538,9 @@ async def test_cancellation_during_report_publication_stays_nonterminal(
         assert not (
             Path(created.output_location.job_path) / ".dead-letter-report.json"
         ).exists()
-        assert not (
-            Path(created.output_location.job_path) / ".dead-letter-report.pending.json"
-        ).exists()
+        assert not list(
+            Path(created.output_location.job_path).glob(".dead-letter-report*.pending.json")
+        )
     else:
         assert terminal.status == "cancelled"
         assert statuses == ["succeeded", "cancelled"]

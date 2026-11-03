@@ -23,6 +23,7 @@ from dead_letter.backend.mbox_jobs import (
     MboxResumeUnavailableError,
     admit_mbox_source,
     admit_staged_mbox_source,
+    job_owner_active,
     mbox_job_folder,
     read_job_descriptor,
     resume_identity,
@@ -172,6 +173,9 @@ class JobManager:
         self._max_retained_terminal_jobs = max(1, int(max_retained_terminal_jobs))
         self._max_mbox_jobs = max(1, int(max_mbox_jobs))
         self._active_mbox_jobs = 0
+        # Jobs whose final descriptor write failed; kept apart from the pruned
+        # job history so their stale "running" state is never offered.
+        self._unrecorded_mbox_jobs: set[str] = set()
         self._mbox_shutting_down = False
         self._inbox_root = Path(inbox_root or (Path.home() / "Inbox")).expanduser().resolve()
         self._cabinet_root = Path(cabinet_root or (Path.home() / "Cabinet")).expanduser().resolve()
@@ -252,6 +256,8 @@ class JobManager:
         if descriptor is None:
             # No folder, or one this server did not start as a resumable web job.
             raise KeyError(job_id)
+        if descriptor.state == "running" and await asyncio.to_thread(job_owner_active, folder):
+            raise MboxResumeUnavailableError("This archive import is still running")
         if descriptor.resume_reason() is None:
             raise MboxResumeUnavailableError(
                 "This archive import cannot be resumed; start a new import instead"
@@ -295,14 +301,19 @@ class JobManager:
         existing = self._jobs.get(job_id)
         if existing is not None and existing.status not in TERMINAL_STATUSES:
             raise MboxResumeUnavailableError("This archive import is still running")
+        if job_id in self._unrecorded_mbox_jobs:
+            raise MboxResumeUnavailableError(
+                "This archive import's stop could not be recorded; start a new import instead"
+            )
 
     async def list_resumable_mbox_jobs(self) -> list[MboxResumableJob]:
         """Stopped jobs in the current Cabinet, including ones from an earlier server process."""
         async with self._lock:
+            # Running jobs, and stopped ones whose final state never reached disk.
             active = {
                 job_id for job_id, record in self._jobs.items()
                 if record.mbox_runner is not None and record.status not in TERMINAL_STATUSES
-            }
+            } | self._unrecorded_mbox_jobs
         return await asyncio.to_thread(scan_resumable_jobs, self._cabinet_root, active=active)
 
     async def reserve_mbox_slot(self) -> MboxSlotReservation:
@@ -358,6 +369,12 @@ class JobManager:
         async with self._lock:
             if resume_of is not None:
                 self._refuse_active_mbox_job_locked(job_id)
+                # A concurrent resume may have run since this request read the
+                # descriptor; act only on the stop it saw.
+                if await asyncio.to_thread(read_job_descriptor, runner.output) != resume_of:
+                    raise MboxResumeUnavailableError(
+                        "This archive import changed while resuming; reload and try again"
+                    )
                 previous = self._jobs.get(job_id)
             if reservation is None:
                 # Reserve before the worker can create an output directory or spool.
@@ -708,6 +725,8 @@ class JobManager:
         async with locked():
             _, record.summary, _ = runner.snapshot()
             record.report_path = outcome.report_path
+            if runner.descriptor_unrecorded:
+                self._unrecorded_mbox_jobs.add(job_id)
             self._release_mbox_slot(record)
             self._transition(record, outcome.status)
 
