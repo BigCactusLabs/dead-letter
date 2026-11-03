@@ -124,6 +124,11 @@ def test_plain_crlf_signature_without_forward_still_strips(tmp_path: Path) -> No
         "-------- 转发的消息 --------",
         "Anfang der weitergeleiteten Nachricht:",
         "Début du message réexpédié :",
+        "下面是被转发的邮件：",
+        "下面是被转发的邮件:",
+        "開始轉寄郵件：",
+        "開始轉寄郵件:",
+        "전달된 메시지 시작:",
     ],
 )
 def test_forward_marker_lines_recognized(line: str) -> None:
@@ -904,6 +909,92 @@ def test_localized_plain_forwards_get_parsed_headings(
     assert "thread_messages: 1" in front
     assert "## Forwarded message" not in structured
     _positions(structured, [heading, kept, body])
+
+
+# Synthetic Apple fixtures use exact labels from the local macOS MailCore
+# string table. The HTML shape follows the existing English Apple fixture;
+# no Chinese Apple Mail capture is available.
+@pytest.mark.parametrize(
+    ("name", "marker", "heading", "retained"),
+    [
+        (
+            "plain_apple_forward_zh_cn_i193.eml", "下面是被转发的邮件：",
+            "## Forwarded from Bob <bob@example.cn> — 计划", "reply@example.cn",
+        ),
+        (
+            "plain_apple_forward_zh_tw_i193.eml", "開始轉寄郵件：",
+            "## Forwarded from Bob <bob@example.tw> — 規劃", "reply@example.tw",
+        ),
+        (
+            "html_apple_forward_zh_cn_i193.eml", "下面是被转发的邮件：",
+            "## Forwarded from Bob <bob@example.cn> — 计划", "audit@example.cn",
+        ),
+        (
+            "html_apple_forward_zh_tw_i193.eml", "開始轉寄郵件：",
+            "## Forwarded from Bob <bob@example.tw> — 規劃", "audit@example.tw",
+        ),
+    ],
+)
+def test_chinese_apple_forwards_get_parsed_headings_in_both_modes(
+    name: str, marker: str, heading: str, retained: str, tmp_path: Path,
+) -> None:
+    _, latest = _body(name, tmp_path)
+    front, structured = _body(name, tmp_path, thread_mode="structured")
+
+    assert marker in latest
+    assert "CHINESE_APPLE_FORWARD_BODY" in latest
+    assert "thread_messages: 1" in front
+    assert "## Forwarded message" not in structured
+    _positions(structured, [heading, retained, "CHINESE_APPLE_FORWARD_BODY"])
+
+
+# Synthetic zh-CN Outlook labels follow the independent examples summarized
+# in the #193 research report (mail-parser-reply and Microsoft Q&A sources).
+@pytest.mark.parametrize("thread_mode", ["latest", "structured"])
+def test_paired_zh_cn_outlook_reply_and_true_forward_convert(
+    thread_mode: str, tmp_path: Path,
+) -> None:
+    _, reply = _body("plain_outlook_zh_cn_reply_i193.eml", tmp_path, thread_mode=thread_mode)
+    front, forward = _body(
+        "plain_outlook_zh_cn_forward_i193.eml", tmp_path, thread_mode=thread_mode,
+    )
+
+    assert "AUTHORED_PAYLOAD" in reply
+    assert ("OLD_REPLY_PAYLOAD" in reply) == (thread_mode == "structured")
+    assert "## Forwarded" not in reply
+    assert "AUTHORED_PAYLOAD" in forward
+    assert "FORWARDED_PAYLOAD" in forward
+    if thread_mode == "structured":
+        assert "thread_messages: 1" in front
+        assert "## Forwarded from Bob <bob@example.cn>" in forward
+        assert "## Forwarded message" not in forward
+
+
+def test_zh_cn_outlook_history_accepts_fullwidth_colons() -> None:
+    fixture = (FIXTURES / "plain_outlook_zh_cn_reply_i193.eml").read_text(encoding="utf-8")
+    text = fixture.split("\n\n", 1)[1]
+    for label in ("发件人", "发送时间", "收件人", "抄送", "主题"):
+        text = text.replace(f"{label}:", f"{label}：")
+
+    zones = segment_text_conversation(text).zones
+
+    assert [zone.kind for zone in zones] == [ZoneKind.BODY, ZoneKind.QUOTED]
+    assert zones[0].content == "AUTHORED_PAYLOAD"
+    assert "OLD_REPLY_PAYLOAD" in zones[1].content
+
+
+def test_chinese_header_labels_mid_sentence_are_not_headers() -> None:
+    prose_lines = [
+        f"正文中提到{label}: 值，但这一行不是邮件头。"
+        for label in ("发件人", "发送时间", "收件人", "主题", "抄送")
+    ]
+    text = f"AUTHORED_PAYLOAD\n\n{'_' * 32}\n" + "\n".join(prose_lines)
+    zones = segment_text_conversation(text).zones
+
+    assert len(zones) == 1
+    assert zones[0].kind is ZoneKind.BODY
+    assert zones[0].content == text.replace(f"{'_' * 32}\n", "")
+    assert parse_forward_headers("普通正文提到了主题和发件人: Bob，但不是邮件头。") is None
 
 
 def test_fullwidth_colon_header_line_follows_separator() -> None:

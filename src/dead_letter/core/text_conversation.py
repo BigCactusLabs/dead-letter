@@ -57,6 +57,7 @@ _OUTLOOK_HEADER_FIELDS = {
     for field, labels in OUTLOOK_HEADER_LABELS.items()
     for label in labels
 }
+# Locale labels come from the shared table; Outlook headers accept both colon forms.
 _OUTLOOK_HEADER_RE = re.compile(
     r"^[ \t]*\*{0,2}(?P<label>"
     + "|".join(re.escape(label) for label in sorted(_OUTLOOK_HEADER_FIELDS, key=len, reverse=True))

@@ -84,6 +84,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Plain-text reply parsing skips mail-parser-reply when a message's long
   whitespace runs exceed a shared per-message budget, keeping the full text
   instead of hanging on pathological input (#193).
+- Plain-text forwarding recognizes Apple Mail Simplified and Traditional Chinese
+  markers and labels, plus the verified Korean marker. Outlook reply-history
+  splitting supports Simplified Chinese labels (#193).
 - Forwarded-header detection recognizes the Spanish `Enviado el`, Traditional
   Chinese `寄件日期`/`收件者`/`至` and Korean `참조` labels (#193).
 
