@@ -1,6 +1,6 @@
 import Alpine from "/static/vendor/alpine.esm.js";
 import { apiFetch } from "/static/lib/api.js";
-import { applyStoredOptions, buildPayload, buildMboxOptions, buildMboxPayload, computeGrade, firstErrorMessage, formatBytes, isTerminalStatus, jobDisplayName, jobProgressView, jobStatusColor, relativeTime, validateForm, validateMboxForm, validateMboxUpload } from "/static/lib/helpers.js";
+import { isCompressedMbox, applyStoredOptions, buildPayload, buildMboxOptions, buildMboxPayload, computeGrade, firstErrorMessage, formatBytes, isTerminalStatus, jobDisplayName, jobProgressView, jobStatusColor, relativeTime, validateForm, validateMboxForm, validateMboxUpload } from "/static/lib/helpers.js";
 import { registerJobStore } from "/static/stores/job.js";
 import { registerSettingsStore } from "/static/stores/settings.js";
 import { registerWatchStore } from "/static/stores/watch.js";
@@ -17,6 +17,7 @@ Alpine.data("deadLetterApp", () => ({
   mode: "file",
   inputPath: "",
   mboxTimeout: 30,
+  mboxMember: "",
   mboxSource: "path",
   mboxFile: null,
   mboxUploadNotice: "",
@@ -143,6 +144,10 @@ Alpine.data("deadLetterApp", () => ({
       return "Stopping the message worker and finishing the partial report. Completed bundles are kept.";
     }
     if (job.mbox?.phase === "publishing") return "Finishing the import report.";
+    if (job.status === "failed") {
+      const failure = job.errors.find((error) => error.code === "mbox_disk_reserve" || error.code?.startsWith("mbox_archive_"));
+      if (failure) return `${failure.message} Completed bundles are kept.`;
+    }
     if (job.status === "failed" || job.status === "cancelled") {
       return "The import stopped. Completed bundles stay in this job's output folder.";
     }
@@ -440,6 +445,10 @@ Alpine.data("deadLetterApp", () => ({
     return true;
   },
 
+  get mboxIsCompressed() {
+    return isCompressedMbox(this.mboxSource === "upload" ? this.mboxFile?.name : this.inputPath);
+  },
+
   get mboxFileLabel() {
     const file = this.mboxFile;
     return file ? `${file.name} · ${formatBytes(file.size || 0)}` : "";
@@ -484,7 +493,7 @@ Alpine.data("deadLetterApp", () => ({
     this.applyDryRunSafety();
     this._saveOptions();
     const payload = isMbox
-      ? buildMboxPayload(this.inputPath, this.options, this.mboxTimeout)
+      ? buildMboxPayload(this.inputPath, this.options, this.mboxTimeout, this.mboxMember)
       : buildPayload(this.mode, this.inputPath, { ...this.options, ...(overrides || {}) });
     this.settingsOpen = false;
     const result = await (isMbox ? this.$store.job.startMbox(payload) : this.$store.job.start(payload));
@@ -504,7 +513,7 @@ Alpine.data("deadLetterApp", () => ({
     this.applyDryRunSafety();
     this._saveOptions();
     this.settingsOpen = false;
-    const result = await this.$store.job.uploadMbox(this.mboxFile, buildMboxOptions(this.options, this.mboxTimeout));
+    const result = await this.$store.job.uploadMbox(this.mboxFile, buildMboxOptions(this.options, this.mboxTimeout, this.mboxIsCompressed ? this.mboxMember : ""));
     if (result?.formErrors || result?.cancelled) {
       // Reopen the form with the chosen file so the user can retry or switch to a path.
       this.formErrors = result.formErrors || [];

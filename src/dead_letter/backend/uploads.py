@@ -66,6 +66,7 @@ class UploadRejected(Exception):
 class MboxUploadRequest:
     filename: str
     stem: str
+    suffix: str
     length: int
     options: MboxJobOptions
 
@@ -76,6 +77,12 @@ def parse_mbox_upload_request(request: Request) -> MboxUploadRequest:
     length = _parse_length(headers)
     filename, stem = _parse_filename(headers.get(MBOX_UPLOAD_FILENAME_HEADER))
     options = _parse_options(request)
+    suffix = mbox_jobs.mbox_input_suffix(filename)
+    if options.member is not None and suffix == ".mbox":
+        raise UploadRejected(
+            422, code="invalid_request",
+            message="member is only supported for compressed MBOX archives", path="options.member",
+        )
     media_type = headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if media_type != "application/octet-stream":
         raise UploadRejected(
@@ -84,7 +91,11 @@ def parse_mbox_upload_request(request: Request) -> MboxUploadRequest:
             message="Send the archive bytes as application/octet-stream",
             path="Content-Type",
         )
-    return MboxUploadRequest(filename=filename, stem=stem, length=length, options=options)
+    return MboxUploadRequest(
+        filename=filename, stem=stem,
+        suffix=".mbox" if suffix == ".mbox" else filename[-len(suffix):],
+        length=length, options=options,
+    )
 
 
 def _parse_length(headers: Headers) -> int:
@@ -132,7 +143,7 @@ def _parse_filename(raw: str | None) -> tuple[str, str]:
     invalid = UploadRejected(
         400,
         code="invalid_request",
-        message="X-Dead-Letter-Filename must be a percent-encoded UTF-8 .mbox file name",
+        message="X-Dead-Letter-Filename must be a percent-encoded UTF-8 MBOX archive file name",
         path="X-Dead-Letter-Filename",
     )
     if not raw or len(raw) > _MAX_FILENAME_HEADER_CHARS or not raw.isascii():
@@ -144,14 +155,15 @@ def _parse_filename(raw: str | None) -> tuple[str, str]:
     if any(ord(char) < 0x20 or ord(char) == 0x7F for char in decoded):
         raise invalid
     name = decoded.replace("\\", "/").rsplit("/", 1)[-1]
-    if not name.lower().endswith(".mbox"):
+    suffix = mbox_jobs.mbox_input_suffix(name)
+    if not suffix:
         raise UploadRejected(
             400,
             code="invalid_request",
-            message="MBOX uploads accept one flat .mbox file; compressed archives are not supported",
+            message="MBOX uploads accept one .mbox, .zip, .tgz or .tar.gz file",
             path=name or "X-Dead-Letter-Filename",
         )
-    stem = "".join("_" if char in _UNSAFE_NAME_CHARS else char for char in name[: -len(".mbox")])
+    stem = "".join("_" if char in _UNSAFE_NAME_CHARS else char for char in name[: -len(suffix)])
     stem = stem.encode("utf-8")[:_MAX_STEM_BYTES].decode("utf-8", errors="ignore")
     stem = stem.lstrip(". ").rstrip(" ") or "upload"
     return name, stem
@@ -175,7 +187,8 @@ def _parse_options(request: Request) -> MboxJobOptions:
     try:
         return MboxJobOptions.model_validate_json(values[0] if values else "{}")
     except ValidationError as exc:
-        raise UploadRejected(400, code="invalid_request", message=str(exc), path="options") from exc
+        status = 422 if any(error["type"] == "mbox_invalid_member" for error in exc.errors()) else 400
+        raise UploadRejected(status, code="invalid_request", message=str(exc), path="options") from exc
 
 
 def prepare_staging_dir(inbox_root: Path) -> Path:
@@ -232,7 +245,7 @@ def ensure_upload_space(staging_dir: Path, still_to_write: int) -> None:
 
 
 async def stage_mbox_upload(
-    request: Request, *, staging_dir: Path, stem: str, length: int,
+    request: Request, *, staging_dir: Path, stem: str, length: int, suffix: str = ".mbox",
 ) -> Path:
     """Stream the body to a private part file, then publish it without overwriting.
 
@@ -246,7 +259,7 @@ async def stage_mbox_upload(
             with part.open("xb") as handle:
                 await _receive_body(request, handle, staging_dir=staging_dir, length=length)
                 await asyncio.to_thread(_flush_and_sync, handle)
-            return _publish(part, staging_dir, stem)
+            return _publish(part, staging_dir, stem, suffix)
     except BaseException:
         with suppress(OSError):
             part.unlink(missing_ok=True)
@@ -318,8 +331,8 @@ def _flush_and_sync(handle: BufferedWriter) -> None:
     os.fsync(handle.fileno())
 
 
-def _publish(part: Path, staging_dir: Path, stem: str) -> Path:
-    """Rename the part file to the first free ``<stem>[-n].mbox`` name.
+def _publish(part: Path, staging_dir: Path, stem: str, extension: str = ".mbox") -> Path:
+    """Rename the part file to the first free ``<stem>[-n]<extension>`` name.
 
     An exclusive placeholder claims the name first, so publication never replaces
     a file that existed when the claim was made. The claim and the rename are two
@@ -328,7 +341,7 @@ def _publish(part: Path, staging_dir: Path, stem: str) -> Path:
     """
     for index in range(1, _MAX_COLLISION_INDEX + 1):
         suffix = f"-{index}" if index > 1 else ""
-        candidate = staging_dir / f"{stem}{suffix}.mbox"
+        candidate = staging_dir / f"{stem}{suffix}{extension}"
         try:
             candidate.open("xb").close()
         except FileExistsError:

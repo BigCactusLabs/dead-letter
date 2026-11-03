@@ -57,6 +57,7 @@ _OUTLOOK_HEADER_FIELDS = {
     for field, labels in OUTLOOK_HEADER_LABELS.items()
     for label in labels
 }
+# Locale labels come from the shared table; Outlook headers accept both colon forms.
 _OUTLOOK_HEADER_RE = re.compile(
     r"^[ \t]*\*{0,2}(?P<label>"
     + "|".join(re.escape(label) for label in sorted(_OUTLOOK_HEADER_FIELDS, key=len, reverse=True))
@@ -181,6 +182,11 @@ def _outlook_block_ends_at(lines: list[str], last: int) -> bool:
     while first >= 0 and not lines[first].strip():
         first -= 1
     return first >= 0 and _OUTLOOK_SEPARATOR_RE.match(lines[first]) is not None
+
+
+def is_outlook_separator_line(line: str) -> bool:
+    """True for an underscore or localized dashed ``Original Message`` line."""
+    return _OUTLOOK_SEPARATOR_RE.match(line) is not None
 
 
 def _outlook_history_boundaries(

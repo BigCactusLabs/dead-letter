@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Web MBOX jobs and browser uploads accept Takeout `.zip`, `.tgz` and
+  `.tar.gz` archives with optional exact member selection (up to 1024
+  characters, without control characters). Staging folders are validated at
+  admission, and private member staging is cleaned up after every terminal
+  outcome. Jobs enforce a 1 GiB free-space reserve on staging and Cabinet
+  volumes, retaining completed bundles and a partial report on a reserve stop.
+  Web-job resume remains unsupported (#146).
 - Opt-in synthetic MBOX worker amplification benchmark
   (`scripts/measure_mbox_amplification.py`) that records per-worker CPU time,
   peak RSS, output bytes and a temporary-storage checkpoint for the timed
@@ -68,6 +75,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   existing breaks. Stripped HTML block elements (`center`, `details`,
   `summary` and others) keep paragraph boundaries, including elements with
   `title` or `lang` attributes, so attribution lines stay detectable (#241).
+- HTML reply history: an Outlook `divRplyFwdMsg` boundary nested inside a
+  Gmail, Proton or Yahoo wrapper now ends with that wrapper, so text after it
+  stays in the current message and the history carries no `<body>` markup.
+  Outlook ids with OWA `x_` prefixes (`x_divRplyFwdMsg`) are recognized.
+  Second and later plain blockquotes in a reply wrapper move to history while
+  text between them stays. Proton's `------- Original Message -------` label
+  moves with its attribution, also when it sits in its own `<div>`; other
+  dashed lines before an attribution stay in the current message (#241).
 - Plain-text Outlook history splits into separate messages at column-0
   separator and header blocks in English, German, French, Spanish, Dutch,
   Italian and Japanese. Separator lines are consumed, nested `On … wrote:`
@@ -76,6 +91,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Plain-text reply parsing skips mail-parser-reply when a message's long
   whitespace runs exceed a shared per-message budget, keeping the full text
   instead of hanging on pathological input (#193).
+- Plain-text forwarding recognizes Apple Mail Simplified and Traditional Chinese
+  markers and labels, plus the verified Korean marker. Outlook reply-history
+  splitting supports Simplified Chinese labels (#193).
 - Forwarded-header detection recognizes the Spanish `Enviado el`, Traditional
   Chinese `寄件日期`/`收件者`/`至` and Korean `참조` labels (#193).
 

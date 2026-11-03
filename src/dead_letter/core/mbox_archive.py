@@ -13,14 +13,14 @@ import sys
 import tarfile
 import zipfile
 import zlib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import ExitStack, closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from tempfile import TemporaryDirectory
 from typing import Any, BinaryIO
 
-from dead_letter.core.mbox import MboxFormatError, MboxLimits, UnescapeMode, _check_source, _source_signature
+from dead_letter.core.mbox import MboxFormatError, MboxLimits, UnescapeMode, _check_source, _source_signature, _raise_if_cancelled
 from dead_letter.core.mbox_import import MboxConversion, _convert_mbox, _worker_budgets
 from dead_letter.core.types import ConvertOptions
 
@@ -68,7 +68,16 @@ def _validate_name(name: str) -> None:
 
 
 class _Selection:
-    def __init__(self, member: str | None, limits: ArchiveLimits):
+    def __init__(self, member: str | None, limits: ArchiveLimits,
+                 cancel_requested: Callable[[], bool] | None = None,
+                 staging_check: Callable[[Path, int], None] | None = None):
+        self.cancel_requested = cancel_requested
+        self.staging_check = staging_check
+        self.copy_hooks = {
+            name: hook for name, hook in (
+                ("cancel_requested", cancel_requested), ("staging_check", staging_check),
+            ) if hook is not None
+        }
         self.member = member
         self.limits = limits
         self.names: set[str] = set()
@@ -76,6 +85,7 @@ class _Selection:
         self.count = 0
 
     def consider(self, name: str, regular: bool) -> bool:
+        _raise_if_cancelled(self.cancel_requested)
         self.count += 1
         if self.count > self.limits.max_members:
             raise _ArchiveError("limit_exceeded", "Archive member count exceeds configured limit")
@@ -101,11 +111,21 @@ class _Selection:
             raise _ArchiveError("multiple_mbox", "Select an exact MBOX member name: " + names)
 
 
-def _copy_member(stream: BinaryIO, target: Path, limits: ArchiveLimits) -> tuple[int, str]:
+def _copy_member(
+    stream: BinaryIO, target: Path, limits: ArchiveLimits, *,
+    cancel_requested: Callable[[], bool] | None = None,
+    staging_check: Callable[[Path, int], None] | None = None,
+) -> tuple[int, str]:
     digest = hashlib.sha256()
     size = 0
     with target.open("wb") as out:
-        while chunk := stream.read(min(_CHUNK, limits.max_decompressed_bytes - size + 1)):
+        while True:
+            _raise_if_cancelled(cancel_requested)
+            if staging_check is not None:
+                staging_check(target, size)
+            chunk = stream.read(min(_CHUNK, limits.max_decompressed_bytes - size + 1))
+            if not chunk:
+                break
             size += len(chunk)
             if size > limits.max_decompressed_bytes:
                 raise _ArchiveError("limit_exceeded", "Decompressed bytes exceed configured limit")
@@ -131,10 +151,12 @@ def _stage_zip(raw: BinaryIO, target: Path, selection: _Selection) -> dict[str, 
             raise _ArchiveError("unsupported", "Encrypted or unsupported ZIP compression")
         if chosen.file_size > selection.limits.max_decompressed_bytes:
             raise _ArchiveError("limit_exceeded", "Declared MBOX size exceeds configured limit")
-        if shutil.disk_usage(target.parent).free < chosen.file_size:
+        if selection.staging_check is None and shutil.disk_usage(target.parent).free < chosen.file_size:
             raise _ArchiveError("insufficient_space", "Insufficient staging space for declared MBOX size")
         with container.open(chosen) as stream:
-            size, digest = _copy_member(stream, target, selection.limits)
+            size, digest = _copy_member(
+                stream, target, selection.limits, **selection.copy_hooks,
+            )
         if size != chosen.file_size:
             raise _ArchiveError("corrupt", "MBOX member size does not match its declaration")
         return {
@@ -174,12 +196,19 @@ def convert_mbox_archive(
     memory_limit_mib: int | None = None,
     cpu_seconds: int | None = None,
     max_output_mib: int | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
+    staging_check: Callable[[Path, int], None] | None = None,
 ) -> Iterator[MboxConversion]:
     """Fully stage one ZIP/TGZ mailbox, then use the ordinary MBOX pipeline.
 
     The original is only opened read-only. Close the iterator on early exit.
     Fatal staging failures produce one result with ``mbox is None`` and no
     message conversion. Offsets/hashes locate bytes in the decompressed member.
+    ``cancel_requested`` cooperatively stops staging and conversion. The optional
+    ``staging_check`` receives the private staged path and bytes written before
+    each copy chunk (64 KiB), including the final check; exceptions stop the import.
+    When supplied it owns staging free-space policy instead of the default
+    declared-member-size check.
     Worker ``timeout_seconds`` and resource budgets behave as in ``convert_mbox``
     and are validated before the archive is read.
     """
@@ -188,14 +217,24 @@ def convert_mbox_archive(
         output=output, options=options, limits=limits, unescape=unescape,
         bundles=bundles, timeout_seconds=timeout_seconds, memory_limit_mib=memory_limit_mib,
         cpu_seconds=cpu_seconds, max_output_mib=max_output_mib,
+        cancel_requested=cancel_requested, staging_check=staging_check,
     )
 
 
 def _convert_mbox_archive(
     path: str | Path, *, member: str | None = None,
     staging_dir: str | Path | None = None, archive_limits: ArchiveLimits | None = None,
-    archive_summary: dict[str, Any] | None = None, **conversion_options: Any,
+    archive_summary: dict[str, Any] | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
+    staging_check: Callable[[Path, int], None] | None = None, **conversion_options: Any,
 ) -> Iterator[MboxConversion]:
+    if cancel_requested is not None and not callable(cancel_requested):
+        raise ValueError("MBOX cancel_requested must be callable")
+    if staging_check is not None and not callable(staging_check):
+        raise ValueError("MBOX staging_check must be callable")
+    _raise_if_cancelled(cancel_requested)
+    if cancel_requested is not None:
+        conversion_options["cancel_requested"] = cancel_requested
     source = Path(path).expanduser().resolve()
     # Reject invalid or unsupported worker budgets before staging any bytes.
     _worker_budgets(*(conversion_options.get(name) for name in (
@@ -208,7 +247,7 @@ def _convert_mbox_archive(
     root = Path(output).expanduser().resolve() if output is not None else source.with_suffix(".markdown")
     if root == source or root.suffix.lower() == ".md" or (root.exists() and not root.is_dir()):
         raise ValueError("MBOX output must be a directory distinct from the source")
-    selection = _Selection(member, archive_limits or ArchiveLimits())
+    selection = _Selection(member, archive_limits or ArchiveLimits(), cancel_requested, staging_check)
     try:
         # Validate the destination before reading even the archive's magic bytes.
         with _staging_file(staging_dir) as staged:
@@ -271,13 +310,15 @@ class _CheckedGzipInput:
     This costs a second inflation, but no second source pass or archive copy.
     """
 
-    def __init__(self, raw: BinaryIO, limit: int):
+    def __init__(self, raw: BinaryIO, limit: int, cancel_requested: Callable[[], bool] | None = None):
+        self.cancel_requested = cancel_requested
         self.raw = raw
         self.validator = zlib.decompressobj(16 + zlib.MAX_WBITS)
         self.limit = limit
         self.size = 0
 
     def read(self, size: int) -> bytes:
+        _raise_if_cancelled(self.cancel_requested)
         data = self.raw.read(min(size, 4096))
         if not data:
             if not self.validator.eof:
@@ -308,7 +349,7 @@ def _stage_tgz(raw: BinaryIO, target: Path, selection: _Selection) -> dict[str, 
     # closed if this CPython does not provide it, rather than parse unbounded.
     if not callable(getattr(tarfile.TarInfo, "_proc_member", None)):
         raise _ArchiveError("unsupported", _TAR_HOOKS_MISSING)
-    checked = _CheckedGzipInput(raw, selection.limits.max_decompressed_bytes)
+    checked = _CheckedGzipInput(raw, selection.limits.max_decompressed_bytes, selection.cancel_requested)
     metadata_bytes = depth = hook_calls = 0
     saw_end_marker = False
 
@@ -386,10 +427,12 @@ def _stage_tgz(raw: BinaryIO, target: Path, selection: _Selection) -> dict[str, 
             if selection.consider(info.name, regular):
                 if info.size > selection.limits.max_decompressed_bytes:
                     raise _ArchiveError("limit_exceeded", "Declared MBOX size exceeds configured limit")
-                if shutil.disk_usage(target.parent).free < info.size:
+                if selection.staging_check is None and shutil.disk_usage(target.parent).free < info.size:
                     raise _ArchiveError("insufficient_space", "Insufficient staging space for declared MBOX size")
                 with container.extractfile(info) as stream:
-                    size, digest = _copy_member(stream, target, selection.limits)
+                    size, digest = _copy_member(
+                        stream, target, selection.limits, **selection.copy_hooks,
+                    )
                 if size != info.size:
                     raise _ArchiveError("corrupt", "MBOX member size does not match its declaration")
                 metadata = {

@@ -91,7 +91,11 @@ account for completed output. Already yielded results remain valid.
 
 The callback cannot preempt an in-process MIME parser or a blocked filesystem
 call; use timed workers for cancellable parsing. Combining the callback with
-`resume=True` is rejected, and compressed input does not expose it. Omitting
+`resume=True` is rejected. Unreleased `convert_mbox_archive()` also accepts
+`cancel_requested` for staging and conversion and an optional
+`staging_check(path, bytes_written)` callback, called before each 64 KiB copy
+chunk and at the end. The callback owns staging free-space policy when supplied;
+without it, the existing declared-member-size check applies. Omitting
 the callback preserves existing behavior, including the MCP tool's separate
 cancellation limitations.
 
@@ -153,11 +157,11 @@ for further message splits, or stays one raw QUOTED zone when parsing is skipped
 Structural splitting requires separator and header lines at column 0;
 indented examples stay body. Supported
 labels are English, German, French, Spanish (`Enviado el` included), Dutch,
-Italian desktop and Japanese, with ASCII/full-width colons and an optional
+Italian desktop, Japanese and Simplified Chinese (`发件人`, `发送时间`, `收件人`, `主题`, `抄送`), with ASCII/full-width colons and an optional
 space, tab or NBSP before the colon. Dashed separators include `Original Message`,
 `Ursprüngliche Nachricht`, `Message d'origine`/`Message d’origine`,
 `Mensaje original` and `Oorspronkelijk bericht`; underscore separators work
-across these locales. Chinese history labels and other localized dashed
+across these locales. Traditional Chinese history labels and other localized dashed
 separators remain unconfirmed. A message containing only Outlook history uses
 the existing quote-only fallback in both modes, without separate thread headings.
 
@@ -175,15 +179,16 @@ Other dependency slow paths remain for separate follow-up, including long
 
 Forwarded messages are content, not reply history:
 
-- **Gmail HTML.** Wrappers are classified on the unchanged tree before extraction. The first non-empty line is read through inline formatting and empty elements, ending at a `<br>` or block boundary; Unicode format characters and soft hyphens count as whitespace. A recognized forward separator takes precedence, including separators in descendant elements (gogcli). Inside `div.gmail_attr` only, a dashed label with non-empty text (not only dashes and spaces) between two or more dashes on each side is also a separator, independent of its wording; the localized separator list still governs bare HTML text and plain text. Otherwise, a `div.gmail_quote` with a direct-child blockquote identifies reply history: **only its first direct-child blockquote and at most one immediately preceding attribution unit** move to history. Text before that unit and after the blockquote stays authored. Prefer the last non-empty direct `div.gmail_attr` as a whole unit; otherwise take the last non-empty adjacent line of this wrapper's direct content (a line that is direct content of the wrapper, or the last line of one non-wrapper block that is a direct child; that block moves whole only when the line is also its first line). Attribution lines longer than 1000 characters are never recognized. The unit covers only sibling nodes that hold no other line and no planned history, so an inline element that spans several lines, or a block that already holds planned quotes, leaves the attribution in the body. A bare-line unit must be recognized by the attribution parser after whitespace collapse; the parser is called only for text ending in `:` or `：`. An immediately preceding dashed label in the same parent joins the attribution unit when only `<br>` elements or whitespace separate the lines. A nested wrapper owns its own lines; an ancestor cannot take them. A bare `blockquote.gmail_quote` is structural reply evidence itself, and takes at most one attribution unit from its parent's direct content by the same rule. Without structural evidence, the first line must be a recognized attribution, or be inside `gmail_attr` and end in `:` or `：`; if a `gmail_attr` first line is neither a separator nor attribution-shaped, its own first two collected lines are joined with a space and checked against the attribution parser, so a `<br>` before `wrote:` does not hide it. No-signal **div** wrappers are unwrapped as current body, including a long wrapper below `Thanks!`; `gmail_quote_container` alone is not a quote wrapper. Siblings are classified independently. Wrappers inside reply history stay in that history. Inside a forward, nested forwards split out and reply quotes stay with their forward; transparent containers sharing one separator produce one section. Attribution history moves as HTML, preserving links and original characters; authored content outside that unit stays in the body. A message that is only reply history keeps its quoted provenance and is rendered through the existing quote-only fallback. Forward collection is capped at 64 sections. Forwards past the cap stay in the body with their own text (or in their enclosing forward); reply, Outlook, and Front history inside or after uncollected forwards is still extracted, unless the uncollected forward sits inside a collected one, whose section keeps it. Body is rendered before sections, so excess sibling forwards can appear before the first 64 sections, with no content lost.
+- **Gmail HTML.** Wrappers are classified on the unchanged tree before extraction. The first non-empty line is read through inline formatting and empty elements, ending at a `<br>` or block boundary; Unicode format characters and soft hyphens count as whitespace. A recognized forward separator takes precedence, including separators in descendant elements (gogcli). Inside `div.gmail_attr` only, a dashed label with non-empty text (not only dashes and spaces) between two or more dashes on each side is also a separator, independent of its wording; the localized separator list still governs bare HTML text and plain text. Otherwise, a `div.gmail_quote` with a direct-child blockquote identifies reply history: **its first direct-child blockquote and at most one immediately preceding attribution unit** move to history. Second and later direct-child blockquotes that are not themselves recognized wrappers also move to history, without an attribution unit; talon, quotequail and Proton all treat them as quoted. Text before the unit, between the blockquotes and after them stays authored. Prefer the last non-empty direct `div.gmail_attr` as a whole unit; otherwise take the last non-empty adjacent line of this wrapper's direct content (a line that is direct content of the wrapper, or the last line of one non-wrapper block that is a direct child; that block moves whole only when the line is also its first line). Attribution lines longer than 1000 characters are never recognized. The unit covers only sibling nodes that hold no other line and no planned history, so an inline element that spans several lines, or a block that already holds planned quotes, leaves the attribution in the body. A bare-line unit must be recognized by the attribution parser after whitespace collapse; the parser is called only for text ending in `:` or `：`. A preceding dashed label joins the attribution unit only when its wording is one of the dashed Outlook separators listed under plain-text Outlook history (`Original Message` and its localized forms). The label may be a line in the same parent or its own block-level sibling (Proton's div-per-line layout); only `<br>` elements, whitespace or blocks holding nothing else may separate it from the attribution. Any other dashed line, such as `----- see below -----`, stays authored. A nested wrapper owns its own lines; an ancestor cannot take them. A bare `blockquote.gmail_quote` is structural reply evidence itself, and takes at most one attribution unit from its parent's direct content by the same rule. Without structural evidence, the first line must be a recognized attribution, or be inside `gmail_attr` and end in `:` or `：`; if a `gmail_attr` first line is neither a separator nor attribution-shaped, its own first two collected lines are joined with a space and checked against the attribution parser, so a `<br>` before `wrote:` does not hide it. No-signal **div** wrappers are unwrapped as current body, including a long wrapper below `Thanks!`; `gmail_quote_container` alone is not a quote wrapper. Siblings are classified independently. Wrappers inside reply history stay in that history. Inside a forward, nested forwards split out and reply quotes stay with their forward; transparent containers sharing one separator produce one section. Attribution history moves as HTML, preserving links and original characters; authored content outside that unit stays in the body. A message that is only reply history keeps its quoted provenance and is rendered through the existing quote-only fallback. Forward collection is capped at 64 sections. Forwards past the cap stay in the body with their own text (or in their enclosing forward); reply, Outlook, and Front history inside or after uncollected forwards is still extracted, unless the uncollected forward sits inside a collected one, whose section keeps it. Body is rendered before sections, so excess sibling forwards can appear before the first 64 sections, with no content lost.
 - **Yahoo HTML.** The same rules apply to `div` and `blockquote` wrappers with any class token containing `yahoo_quoted`, or an ID starting with `yahoo_quoted_`. A wrapper around current body is retained; reply and forward wrappers require the evidence above.
 - **Proton HTML.** The same rules apply to `protonmail_quote` wrappers. A forward separator takes precedence over Proton's direct-child blockquote. A body container can hold a note followed by a separate nested forward.
-- **OWA-prefixed HTML.** Any run of leading `x_` prefixes is ignored on wrapper and `gmail_attr` class tokens (`x_x_gmail_quote`, for example). A prefixed wrapper inside an Outlook `divRplyFwdMsg` boundary remains part of that Outlook history. Outlook and Front boundaries keep their existing handling.
-- **Plain text.** A forward starts at an unindented separator line: Gmail's `---------- Forwarded message ---------` (any run of 2+ dashes), Thunderbird/Yahoo `-------- Forwarded Message --------` and its localized labels, or Apple Mail `Begin forwarded message:` and its localized forms (including Japanese `転送されたメッセージ:`). The next non-blank line must look like a header (`From:`, `Von:`, `De :`, `发件人：`, …: a label, an optional space or no-break space, then an ASCII or full-width colon), and the first separator must not sit inside reply history; otherwise the text keeps its reply handling. A separator is inside reply history when an Outlook separator line (underscores or one of the dashed separators above) followed by a From + Sent/Date header block appears anywhere before it (Outlook history is unquoted, so everything after that block is history), or when the last line before it that is neither blank nor `>`-quoted is a reply attribution that mail-parser-reply recognizes (`On … wrote:`, including one wrapped across lines; only checked when that line ends in `:` or `：`). A `>` line, a `… wrote:`-like line, or a bare `From:`/`Sent:` pair in the forwarder's own note, followed by ordinary text, does not make the separator reply history. The separators live in one list in `dead_letter/core/forwarding.py`, drawn from Gmail samples, Thunderbird l10n sources, and the MIT-licensed crisp-oss/email-forward-parser fixtures.
+- **OWA-prefixed HTML.** Any run of leading `x_` prefixes is ignored on wrapper and `gmail_attr` class tokens (`x_x_gmail_quote`, for example) and on the Outlook `divRplyFwdMsg` id (`x_divRplyFwdMsg`, `x_x_divRplyFwdMsg`), in classification and in quote-pattern detection. A prefixed wrapper or id inside history that is already being extracted, such as an Outlook boundary or a reply blockquote, remains part of that history. Front boundaries keep their existing handling.
+- **Plain text.** A forward starts at an unindented separator line: Gmail's `---------- Forwarded message ---------` (any run of 2+ dashes), Thunderbird/Yahoo `-------- Forwarded Message --------` and its localized labels, or Apple Mail `Begin forwarded message:` and its localized forms (including Japanese `転送されたメッセージ:`, Simplified Chinese `下面是被转发的邮件`, Traditional Chinese `開始轉寄郵件`, and Korean `전달된 메시지 시작`); Apple markers accept ASCII or full-width colons. The next non-blank line must look like a header (`From:`, `Von:`, `De :`, `发件人：`, …: a label, an optional space or no-break space, then an ASCII or full-width colon), and the first separator must not sit inside reply history; otherwise the text keeps its reply handling. A separator is inside reply history when an Outlook separator line (underscores or one of the dashed separators above) followed by a From + Sent/Date header block appears anywhere before it (Outlook history is unquoted, so everything after that block is history), or when the last line before it that is neither blank nor `>`-quoted is a reply attribution that mail-parser-reply recognizes (`On … wrote:`, including one wrapped across lines; only checked when that line ends in `:` or `：`). A `>` line, a `… wrote:`-like line, or a bare `From:`/`Sent:` pair in the forwarder's own note, followed by ordinary text, does not make the separator reply history. The separators live in one list in `dead_letter/core/forwarding.py`, drawn from Gmail samples, Thunderbird l10n sources, and the MIT-licensed crisp-oss/email-forward-parser fixtures.
 - **`thread_mode="latest"`** keeps Gmail, Yahoo and Proton HTML forwards and unquoted plain-text forwards (Gmail, Thunderbird, Yahoo, Apple Mail separators) inline: separator line, forwarded header lines, then the forwarded body. Body text that sits after or between top-level HTML forwards is emitted before the forwards; no content is lost. Reply quotes are still dropped, including a reply quote that contains a forward. A text/plain forward inside `>` quoting (Apple Mail's plain-text layout) is kept when its separator opens a quote block that no attribution line (a line ending in `:`) or quoted line directly precedes, with one `>` level removed from the separator and the forwarded text; a quoted separator under `On … wrote:` stays reply history and is dropped. HTML-derived `>`-quoted forwards (Apple Mail HTML) keep their previous latest-mode output. Signature and disclaimer stripping run separately on the text between forward separators, `>`-quoted or not, whose next non-blank line is a header line, so a `-- ` line in one forward removes only the rest of that forward, never a later one. Only that header check applies there, not the reply-history rules: a separator right after a signature line ending in `:` (`Contact:`) still starts a new part. Wrappers with no reply or forward evidence stay in the body in both modes. Latest-mode output for Thunderbird and Apple Mail HTML forwards and for plain-text forwards that meet the rule above is unchanged. An English separator that appears after reply history or without a following header line is now left to reply handling.
 - **`thread_mode="structured"`** uses the same HTML wrapper classifications as latest mode and renders one section per forward, before any reply sections, in document order (outermost first for nested forwards). The separator line is dropped. When a `From:` header parses, the section heading is `## Forwarded from {sender}` with the same optional date / subject ladder, for HTML-derived text, Markdown emphasis pairs that wrap a value (`**Dave**`, `__Budget__`) unwrapped in the sender and subject and doubled angle brackets removed from the sender; plain-text values keep literal `**` and `__`; the first From, Date and Subject lines of the top header block (labels in English and the localized forms listed below, with an ASCII or full-width colon and an optional space or no-break space before it) (up to the first blank line; in Apple Mail's bold-label layout, up to the first line that is not a bold-label header) move into the heading, while `To`, `Cc`, other header lines and the body stay in the section. Otherwise the heading is `## Forwarded message`. `thread_order` reorders reply sections only. A `>`-quoted separator (Apple Mail plain text) counts as a forward only when no attribution line (a line ending in `:`) or quoted line directly precedes it, and in latest mode only for text/plain bodies. A forward nested one `>` level deeper inside a quoted forward gets its own section once the outer level is removed, up to 64 plain-text forward sections. Each nested search reads the whole body of the enclosing forward, so the characters searched across those searches are capped at four times the length of the body text or 1,000,000 characters, whichever is larger (ordinary chains split fully; only very large deeply nested bodies reach the budget); the search stops at the first forward that would pass that budget. Past either limit, the remaining nested forwards stay in the enclosing section, unchanged and in order, and no content is lost. Zone content, and so the analysis snapshot, keeps the full forwarded header block.
-- **Forwarded-header labels.** One label table in `dead_letter/core/forwarding.py` maps labels to fields. From: `From`, `De`, `Von`, `Da`, `Mittente`, `Van`, `差出人`, `送信者`, `送信元`, `发件人`, `寄件者`, `從`. Date: `Date`, `Sent`, `Envoyé`, `Datum`, `Gesendet`, `Fecha`, `Enviado`, `Enviado el`, `Data`, `Inviato`, `Verzonden`, `送信日時`, `日時`, `日付`, `发送时间`, `日期`, `寄件日期`. Subject: `Subject`, `Objet`, `Sujet`, `Betreff`, `Asunto`, `Oggetto`, `Assunto`, `Onderwerp`, `件名`, `主题`, `主旨`. To, Cc, Bcc and Reply-To labels (`À`, `Pour`, `An`, `Para`, `A`, `Aan`, `宛先`, `送信先`, `收件人`, `到`, `收件者`, `至`, `Copie à`, `Kopie`, `Kopie (CC)`, `抄送`, `副本`, `참조`) continue the block and stay in the section. Short labels such as `A`, `An`, `Da`, `De` and `至` require a complete label and colon and are only read in the header block right after a forward separator. Sources: crisp-oss/email-forward-parser per-locale fixtures (Gmail, Apple Mail, Thunderbird, Yahoo, New Outlook), Thunderbird l10n `mime.properties`, Proton WebClients locale files, mail-parser-reply Outlook label sets, Microsoft's Exchange `MessageHeaders.xml` (Outlook/OWA labels, via an unofficial mirror; the erroneous Italian OWA `Inizio`/`Fine` row is excluded), a 2024 Gmail zh-CN forward (`发件人：`) and a 2019 Apple Mail ja forward (`転送されたメッセージ:`). Existing `送信者`, `日時`, `到` and `Pour` also cover Thunderbird/ReplyWithHeader output; they are not evidence for Outlook history. Gmail ja labels and Apple Mail zh labels have no sample yet.
-- Outlook `divRplyFwdMsg` blocks and `message/rfc822` attachments are handled as before.
+- **Forwarded-header labels.** One label table in `dead_letter/core/forwarding.py` maps labels to fields. From: `From`, `De`, `Von`, `Da`, `Mittente`, `Van`, `差出人`, `送信者`, `送信元`, `发件人`, `寄件人`, `寄件者`, `從`. Date: `Date`, `Sent`, `Envoyé`, `Datum`, `Gesendet`, `Fecha`, `Enviado`, `Enviado el`, `Data`, `Inviato`, `Verzonden`, `送信日時`, `日時`, `日付`, `发送时间`, `日期`, `寄件日期`. Subject: `Subject`, `Objet`, `Sujet`, `Betreff`, `Asunto`, `Oggetto`, `Assunto`, `Onderwerp`, `件名`, `主题`, `標題`, `主旨`. To, Cc, Bcc and Reply-To labels (`À`, `Pour`, `An`, `Para`, `A`, `Aan`, `宛先`, `送信先`, `收件人`, `到`, `收件者`, `至`, `Copie à`, `Kopie`, `Kopie (CC)`, `抄送`, `副本`, `참조`, `回复给`, `回覆給`, `密送`, `密件副本`) continue the block and stay in the section. Short labels such as `A`, `An`, `Da`, `De` and `至` require a complete label and colon and are only read in the header block right after a forward separator. Sources: crisp-oss/email-forward-parser per-locale fixtures (Gmail, Apple Mail, Thunderbird, Yahoo, New Outlook), Thunderbird l10n `mime.properties`, Proton WebClients locale files, mail-parser-reply Outlook label sets, Microsoft's Exchange `MessageHeaders.xml` (Outlook/OWA labels, via an unofficial mirror; the erroneous Italian OWA `Inizio`/`Fine` row is excluded), a 2024 Gmail zh-CN forward (`发件人：`) and a 2019 Apple Mail ja forward (`転送されたメッセージ:`). Existing `送信者`, `日時`, `到` and `Pour` also cover Thunderbird/ReplyWithHeader output; they are not evidence for Outlook history. Gmail ja labels have no sample. Apple Mail zh marker and header labels, and the Korean marker, come from the current macOS MailCore string table; no raw Chinese capture is available.
+- **Outlook HTML.** A top-level `divRplyFwdMsg` boundary takes the rest of the document in order. A boundary nested inside a recognized wrapper (`gmail_quote`, `protonmail_quote`, `yahoo_quoted`) takes only the content from the boundary to the end of the nearest enclosing wrapper, keeping the intervening wrapper markup and no `<body>` markup. Content after that wrapper stays authored and is still classified. This follows talon's sibling-scoped Microsoft split and Proton's rule that an Outlook header inside another quote belongs to that quote. `message/rfc822` attachments are handled as before.
+- **Known limits, no confirmed real-client shape (#241).** An Outlook `-----Original Message-----` line followed by `From:`/`Sent:` lines inside a Gmail wrapper is not reply evidence; only the wrapper's first line is classified. A wrapper is classified by its first non-empty line even when that line belongs to a nested wrapper; ownership is enforced only during extraction.
 
 ### `ConvertResult`
 
@@ -408,13 +413,15 @@ mutating API routes.
 Admission and output rules:
 
 - `input_path` is relative to the server's filesystem-browser root (the OS
-  user's home directory by default). It selects one regular, flat `.mbox`
-  file, case-insensitively. Absolute paths, root escapes, symlinks escaping
-  the root, Cabinet sources, directories and compressed archives are rejected.
+  user's home directory by default). It selects one regular `.mbox` file or,
+  in unreleased source, a `.zip`, `.tgz` or `.tar.gz` archive (case-insensitive).
+  Absolute paths, root escapes, symlinks escaping the root, Cabinet sources
+  and directories are rejected.
   The file must already be present on the server; this endpoint is not an upload.
   To send an archive from the browser, use
   [`POST /api/mbox/uploads`](#post-apimboxuploads-unreleased).
-- Archives larger than 16 GiB are rejected before staging. The admitted
+- Archives larger than 16 GiB are rejected before staging; for compressed
+  input this is the container file size. The admitted
   device/inode, size and modification/change timestamps are rechecked before
   work and at message boundaries, with the core reader's own handle checks.
   These are best-effort mutation checks, not a filesystem snapshot; use an
@@ -434,8 +441,37 @@ Admission and output rules:
   `no_calendar_summary`, `allow_fallback_on_html_error`,
   `allow_html_repair_on_panic`, `thread_mode` and `thread_order`, with their
   existing defaults. `timeout_seconds` is a finite JSON number in `(0, 300]`,
-  default 30. Unknown request/option fields are rejected, including `delete_eml`,
+  default 30. Unreleased source also accepts optional `member`: the exact
+  `.mbox` member name, as with CLI `--mbox-member`. Web member names are
+  limited to 1024 characters and cannot contain NUL or control characters;
+  violations return `422` on both the job and upload routes. One eligible member
+  is selected automatically; several members without a selection fail before
+  conversion with `mbox_archive_multiple_mbox`. Other archive errors retain
+  their core `mbox_archive_*` codes. `member` on a flat `.mbox` returns `422`.
+  Unknown request/option fields are rejected, including `delete_eml`,
   `dry_run`, `report`, `output`, `source_handling` and `resume`.
+- Compressed jobs (unreleased) use the core archive importer and default
+  `ArchiveLimits`. They stage one member in a private, job-owned directory
+  under `<Inbox>/mbox-uploads/`, separate from the selected source and Cabinet
+  output. Admission creates this parent folder (and the Inbox if needed) when
+  missing and checks that it is a real folder inside the Inbox before reserving
+  a slot or creating Cabinet job output. An unsafe parent returns a clear
+  `403 invalid_request` naming `mbox-uploads`. Private job staging is created
+  only when the worker starts and removed before completion, failure or
+  cancellation becomes terminal. Tasks cancelled before their first step create
+  no private staging directory. Only job-owned temporary data is removed; the source archive is always kept.
+- Jobs enforce a 1 GiB **free-space reserve**, not a total byte quota
+  (unreleased). Cabinet free space is checked before conversion and after each
+  message result. Compressed jobs also check staging-volume free space before
+  staging and at least every 64 MiB written. A low reading or inability to
+  measure free space stops the job with fatal `mbox_disk_reserve`. Completed
+  bundles and a partial report are kept, and staging is removed. Cancellation
+  takes precedence only if it was requested before the reserve failure was
+  detected. A later cancel, including during report publication, leaves the
+  reserve failure as `failed`. Report errors always take precedence over
+  cancellation, including after a reserve stop. Concurrent disk use and writes
+  within a message/check interval can still exhaust storage; space is not reserved
+  from other processes.
 - The runner uses timed, sequential message workers, default `preserve`
   quoting, a 64 MiB stored-message cap and a 1 MiB physical-line cap. It does
   not pre-scan for a message count. Retained job state contains counters and
@@ -446,7 +482,9 @@ Admission and output rules:
 Success is `202`. Admission failures use `400` for invalid input/options,
 `403` for path confinement failures, `409` for missing settings or occupied
 archive slots (`mbox_busy`), and `413` for an oversized archive
-(`mbox_too_large`). Validation and busy failures create no job output.
+(`mbox_too_large`). A flat-input `member`, an overlong member name or a member
+containing control characters returns `422`; other schema failures remain `400`.
+Validation and busy failures create no job output.
 
 Poll the existing `GET /api/jobs/{id}` route. MBOX snapshots have `kind="mbox"`,
 `diagnostics=null`, no retry actions, and an additive `mbox` object:
@@ -463,7 +501,10 @@ Poll the existing `GET /api/jobs/{id}` route. MBOX snapshots have `kind="mbox"`,
 }
 ```
 
-Phases are `queued`, `converting`, `publishing` and `finished`. Byte progress is
+Phases are `queued`, `converting`, `publishing` and `finished`. For compressed
+input, `bytes_total` initially reports the container size, then switches to
+the decompressed member size at the first message result. Member offsets and
+hashes refer to decompressed bytes. Byte progress is
 the last processed record's end offset, not a live read counter or a count of
 successful messages. It can stay still while a message is framed/converted,
 and reach the archive size before report publication finishes. Use `mbox` for
@@ -472,15 +513,16 @@ actual written/skipped results and errors, including archive-level failures.
 
 Ordinary message failures, timeouts and generic worker crashes permit later
 records and produce `completed_with_errors`. Archive-fatal results, source
-changes, `mbox_publish_failed`, `mbox_storage_error` and report failures make
-the job `failed`. Error text does not include private exception tracebacks.
+changes, `mbox_publish_failed`, `mbox_storage_error`, `mbox_disk_reserve` and
+report failures make the job `failed`. Error text does not include private exception tracebacks.
 The [worker contract](mbox-workers.md#errors-and-reports) explains the reserved
 storage-exhaustion outcome, including failure to write a receipt.
 
 The runner spools report rows to disk and publishes
 `<job_path>/.dead-letter-report.json`. Its schema remains 1, with MBOX provenance,
-`mbox_options` and terminal status. `archive.observed_summary` records the
-actual observed counts; `report.summary` counts committed report rows.
+`mbox_options` and terminal status. After the first compressed message result,
+`archive` also includes the core container/member provenance and container size.
+`archive.observed_summary` records the actual observed counts; `report.summary` counts committed report rows.
 `archive.report_complete` means all observed outcomes were appended, not that
 the whole source archive was imported. After an append failure, a completed
 bundle may exist without a committed report row; the retained prefix report
@@ -493,8 +535,10 @@ while an accepted cancellation still requires a rewritten report.
 acknowledges the request; the job remains queued/running while the runner stops
 the framer/worker, waits for direct-child termination and iterator cleanup, and
 publishes the partial report before terminal `cancelled` is visible. A
-fatal error takes precedence over cancellation. Report finalization eventually
-seals cancellation; a request after that point returns `409`, even if the
+fatal source/report error always takes precedence over cancellation. A cancel
+requested before a disk-reserve failure was detected takes precedence over
+that reserve stop; a later cancel does not change its failed status. Report
+finalization eventually seals cancellation; a request after that point returns `409`, even if the
 terminal snapshot has not yet been installed. Graceful server shutdown stops
 new archive admission, signals active jobs and waits for this same cleanup.
 
@@ -502,15 +546,15 @@ The UI's **Import a local MBOX archive** action opens this path/timeout form
 and displays byte progress, processed messages, cancellation state, retained
 output and omitted errors. Its EML drag-and-drop/upload flow remains separate.
 Archive jobs use the existing bounded, in-memory history. They have no durable
-job resume or automatic retry. There is no total output/temp-disk quota or
-worker-memory cap on this endpoint: reserve space for staging, bundles and the
-disk-backed report. Cancellation/timeouts cannot bound blocked OS I/O, and a
-hard process kill cannot guarantee a final report or cleanup.
+job resume or automatic retry. The free-space reserve is not a total
+output/temp-disk byte quota or worker-memory cap: allow space for staging,
+bundles and the disk-backed report. Cancellation/timeouts cannot bound
+blocked OS I/O, and a hard process kill cannot guarantee a final report or cleanup.
 
 ### `POST /api/mbox/uploads` (unreleased)
 
-Sends one flat `.mbox` archive from the browser, stages it under the Inbox and
-starts the same archive job as `POST /api/mbox/jobs`. Configure Inbox/Cabinet
+Sends one `.mbox`, `.zip`, `.tgz` or `.tar.gz` archive from the browser, stages
+it under the Inbox and starts the same archive job as `POST /api/mbox/jobs`. Configure Inbox/Cabinet
 first; the loopback Host, same-origin and CSRF rules apply. For an archive that
 is already on the machine running dead-letter, the local-path route is faster
 and needs no second copy.
@@ -529,9 +573,9 @@ X-Dead-Letter-CSRF: <csrf_token>
 - `Content-Length` is required and chunked bodies are refused.
   `X-Dead-Letter-Upload-Length` must repeat the same decimal byte count.
 - `X-Dead-Letter-Filename` is the percent-encoded UTF-8 file name. The server
-  keeps the part after the last `/` or `\`, requires a case-insensitive `.mbox`
-  suffix, replaces `<>:"|?*` with `_`, drops leading dots and spaces, caps the
-  stem at 200 UTF-8 bytes and uses `upload` for an empty stem. Invalid UTF-8
+  keeps the part after the last `/` or `\`, requires a case-insensitive `.mbox`,
+  `.zip`, `.tgz` or `.tar.gz` suffix, replaces `<>:"|?*` with `_`, drops leading
+  dots and spaces, caps the stem at 200 UTF-8 bytes and uses `upload` for an empty stem. Invalid UTF-8
   and control characters are rejected.
 - The optional `options` query parameter is one JSON object with the same
   fields, defaults and validation as `options` on `POST /api/mbox/jobs`.
@@ -551,7 +595,9 @@ closes the connection; a client that sent `Expect: 100-continue` never receives
    above 16 GiB + 1 MiB gets the body-limit backstop's plain `413` instead
    (see [HTTP Status Mapping](#http-status-mapping)).
 4. `413 mbox_too_large`: the declared length is above 16 GiB.
-5. `400 invalid_request`: the file name or `options` is invalid.
+5. `400 invalid_request`: the file name or `options` is invalid. A `member`
+   option for a flat `.mbox`, a member longer than 1024 characters, or a member
+   containing NUL/control characters returns `422 invalid_request`.
 6. `415 mbox_upload_unsupported_media_type`: the content type is not
    `application/octet-stream`.
 7. `409 mbox_busy`: the archive slot is occupied. The upload reserves the same
@@ -560,6 +606,7 @@ closes the connection; a client that sent `Expect: 100-continue` never receives
 8. `403 invalid_request` (path `mbox-uploads`): `<Inbox>/mbox-uploads` is a
    symlink, is not a folder, or resolves outside the Inbox. The server creates
    the folder when it is missing and stages only under the checked path.
+   For compressed input, this folder check runs before the slot check in step 7.
 9. `507 mbox_upload_insufficient_storage`: the staging folder's free space,
    less the declared length, is below 1 GiB. The 1 GiB margin leaves room for
    the job's report spool and first bundles and for the host itself. Free space
@@ -578,9 +625,10 @@ bytes it actually receives:
   flushing or publishing: `507 mbox_upload_insufficient_storage`;
 - any other staging failure: `500 backend_error`.
 
-After the last byte the file is flushed to disk and renamed to `<stem>.mbox`,
-or `<stem>-2.mbox`, `<stem>-3.mbox`, and so on when the name is taken. The
-server first claims the name by creating an empty file there exclusively, so
+After the last byte the file is flushed to disk and renamed to `<stem><suffix>`,
+or `<stem>-2<suffix>`, `<stem>-3<suffix>`, and so on when the name is taken.
+Compressed suffixes are preserved, including `.tar.gz` as a double suffix;
+flat uploads retain the normalized `.mbox` suffix. The server first claims the name by creating an empty file there exclusively, so
 publication never replaces a file that existed when the name was claimed. A
 concurrent local writer that replaces the claimed name before the rename is
 out of scope. The `.part` file is removed on every failure,
@@ -593,11 +641,15 @@ archive is the job's immutable source: it stays in `<Inbox>/mbox-uploads/`
 after the job succeeds, fails or is cancelled, and is not deleted for you. The
 Inbox watcher ignores it because it only picks up `.eml` files. Output follows
 the local-path rules: a new `<Cabinet>/mbox-<job-id>/` of copy-only bundles,
-each with its own `source.eml`.
+each with its own `source.eml`. Compressed input uses separate, private
+per-job member staging under the same upload area, with the cleanup and
+1 GiB staging/Cabinet reserve rules described above.
 
 Limits: an interrupted upload cannot be resumed and starts again from byte
-zero. The 507 check covers staging only; the bundles need roughly the archive's
-size again in the Cabinet. There is no total output/temp-disk quota. Browsers
+zero; web-job resume is also unsupported. The upload's 507 check covers the
+source copy only; the job then enforces its own staging and output reserve
+with `mbox_disk_reserve`. Allow space for the decompressed member and bundles.
+The reserve is not a total output/temp-disk byte quota. Browsers
 can report an early rejection as a network error, because the server closes the
 connection while the browser is still sending.
 

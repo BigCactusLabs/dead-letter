@@ -15,7 +15,10 @@ from dead_letter.core.attribution import parse_attribution_line
 from dead_letter.core.conversation import ConversationResult
 from dead_letter.core.forwarding import is_forward_marker_line
 from dead_letter.core.sanitize import sanitize_html
-from dead_letter.core.text_conversation import parse_email_replies
+from dead_letter.core.text_conversation import (
+    is_outlook_separator_line,
+    parse_email_replies,
+)
 from dead_letter.core.types import ConversationZone, ZoneKind
 
 
@@ -51,9 +54,12 @@ def _wrap_node_html(node, inner_html: str) -> str:
     return f"<{node.tag}{attrs}>{inner_html}</{node.tag}>"
 
 
+_OWA_PREFIX_RE = re.compile(r"^(?:x_)+")
+
+
 def _class_tokens(node) -> set[str]:
     class_attr = node.attributes.get("class", "") or ""
-    return {re.sub(r"^(?:x_)+", "", token) for token in class_attr.split()}
+    return {_OWA_PREFIX_RE.sub("", token) for token in class_attr.split()}
 
 
 def _iter_nodes_in_document_order(node):
@@ -130,6 +136,11 @@ def _is_dashed_label(text: str) -> bool:
     return text.startswith("--") and text.endswith("--") and bool(text.strip("- "))
 
 
+def _is_separator_label(text: str) -> bool:
+    """A dashed label whose wording is a known ``Original Message`` separator."""
+    return _is_dashed_label(text) and is_outlook_separator_line(text)
+
+
 def _format_whitespace(text: str) -> str:
     if text.isascii():
         return text
@@ -199,7 +210,8 @@ class _Wrapper:
 
 
 def _wrapper_match(node, classes: set[str]) -> tuple[str, str] | None:
-    if node.attributes.get("id") == "divRplyFwdMsg":
+    # OWA adds one ``x_`` per quoting hop to ids as well as classes.
+    if _OWA_PREFIX_RE.sub("", node.attributes.get("id", "") or "") == "divRplyFwdMsg":
         return "outlook", "outlook_divRplyFwdMsg"
     if node.tag == "blockquote" and "front-blockquote" in classes:
         return "front", "front_blockquote"
@@ -377,7 +389,8 @@ def _preceding_attribution(
         # An attribution element already holding planned history is not a unit.
         if _holds_wrapper(previous, lines, wrapper_orders):
             return [], None
-        return [previous], None
+        label = _preceding_label(previous, parent, wrappers, lines, wrapper_orders)
+        return [*label, previous], None
     container = line.container
     direct = container.mem_id == parent.mem_id
     child_block = (
@@ -391,20 +404,62 @@ def _preceding_attribution(
         # A block already holding planned history is never taken whole.
         if _holds_wrapper(container, lines, wrapper_orders):
             return [], None
-        return [container], None
-    selected = _line_span(line, lines, wrapper_orders)
-    if not selected:
-        return [], None
-    previous = selected[0].prev
-    while previous is not None and (
-        previous.tag == "br" or (previous.tag == "-text" and not _format_whitespace(previous.text_content or "").strip())
-    ):
+        selected = [container]
+    else:
+        selected = _line_span(line, lines, wrapper_orders)
+        if not selected:
+            return [], None
+    label = _preceding_label(selected[0], parent, wrappers, lines, wrapper_orders)
+    return label + selected, None
+
+
+_BLANK_GAP_TAGS = frozenset({"br", "div", "p", "span"})
+
+
+def _blank_gap(node) -> bool:
+    """True for a ``<br>``, whitespace, or a block holding only those."""
+    for child in _iter_nodes_in_document_order(node):
+        if child.tag == "-text":
+            if _format_whitespace(child.text_content or "").strip():
+                return False
+        elif child.tag not in _BLANK_GAP_TAGS:
+            return False
+    return True
+
+
+def _preceding_label(
+    first, parent, wrappers, lines: _Lines, wrapper_orders: list[int]
+) -> list:
+    """Join a known separator label directly before an attribution unit.
+
+    Proton writes ``------- Original Message -------`` before its attribution,
+    either on a ``<br>``-separated line or in its own block. Only blank gaps
+    may separate the two; an authored dashed line stays in the body.
+    """
+    gap = []
+    previous = first.prev
+    while previous is not None and previous.mem_id not in wrappers and _blank_gap(previous):
+        gap.append(previous)
         previous = previous.prev
-    if previous is not None and previous.tag not in _BLOCK_TAGS and previous.mem_id not in wrappers:
-        marker = lines.last.get(previous.mem_id)
-        if marker is not None and marker.container.mem_id == container.mem_id and _is_dashed_label(marker.text):
-            selected = _line_span(marker, lines, wrapper_orders) + selected
-    return selected, None
+    if previous is None or previous.mem_id in wrappers or previous.tag == "blockquote":
+        return []
+    marker = lines.last.get(previous.mem_id)
+    if marker is None or not _is_separator_label(marker.text):
+        return []
+    if previous.tag in _BLOCK_TAGS:
+        if lines.first.get(previous.mem_id) is not marker or _holds_wrapper(
+            previous, lines, wrapper_orders
+        ):
+            return []
+        label = [previous]
+    elif marker.container.mem_id == parent.mem_id:
+        label = _line_span(marker, lines, wrapper_orders)
+        if not label:
+            return []
+    else:
+        return []
+    taken = {node.mem_id for node in label}
+    return label + [node for node in reversed(gap) if node.mem_id not in taken]
 
 
 def _reply_parts(
@@ -418,8 +473,30 @@ def _reply_parts(
     return [*selected, quote], leading
 
 
+def _outlook_scope(node, root, wrappers: dict[int, _Wrapper]):
+    """Return the nearest enclosing wrapper, or None at the top level."""
+    parent = node.parent
+    while parent is not None and parent.mem_id != root.mem_id:
+        if parent.mem_id in wrappers:
+            return parent
+        parent = parent.parent
+    return None
+
+
+def _scoped_history_nodes(boundary, scope) -> list:
+    """The boundary and everything after it, up to the end of ``scope``."""
+    nodes, node, sibling = [], boundary, boundary
+    while node.mem_id != scope.mem_id:
+        while sibling is not None:
+            nodes.append(sibling)
+            sibling = sibling.next
+        node = node.parent
+        sibling = node.next
+    return nodes
+
+
 def _plan_extraction(root, wrappers: dict[int, _Wrapper], lines: _Lines):
-    forwards, replies, body_wrappers = [], [], []
+    forwards, replies, body_wrappers, scoped_outlooks = [], [], [], []
     skipped: set[int] = set()
     wrapper_orders = sorted(lines.order[mem_id] for mem_id in wrappers)
     outlook = None
@@ -431,6 +508,20 @@ def _plan_extraction(root, wrappers: dict[int, _Wrapper], lines: _Lines):
         if node.mem_id in skipped:
             continue
         wrapper = wrappers.get(node.mem_id)
+        if wrapper is None and node.tag == "blockquote" and forward_line is None:
+            # The first direct quote was planned with its wrapper; later
+            # direct quotes are history too, and text between them stays.
+            owner = wrappers.get(node.parent.mem_id) if node.parent is not None else None
+            if (
+                owner is not None
+                and owner.kind == "reply"
+                and owner.quotes
+                and owner.hint != "front"
+                and owner.node.tag != "blockquote"
+            ):
+                skipped.add(node.mem_id)
+                replies.append((owner, [node], None))
+                continue
         if wrapper is not None:
             if wrapper.kind == "forward":
                 # Transparent containers can share the exact same separator.
@@ -447,8 +538,22 @@ def _plan_extraction(root, wrappers: dict[int, _Wrapper], lines: _Lines):
                 if forward_line is not None:
                     continue  # reply history inside a forward stays with it
                 if wrapper.hint == "outlook":
-                    outlook = wrapper
-                    break  # Outlook owns the remainder in document order
+                    scope = _outlook_scope(node, root, wrappers)
+                    if scope is None:
+                        outlook = wrapper
+                        break  # top-level Outlook owns the remainder in document order
+                    # Inside another wrapper, Outlook history ends with it.
+                    scoped = _scoped_history_nodes(node, scope)
+                    skipped.update(child.mem_id for child in scoped)
+                    # The scope's own reply plan can fall after the boundary;
+                    # that history now belongs to the Outlook range.
+                    start, end = lines.order[node.mem_id], lines.end[scope.mem_id]
+                    replies = [
+                        reply for reply in replies
+                        if not start <= lines.order[reply[1][0].mem_id] < end
+                    ]
+                    scoped_outlooks.append((wrapper, scope))
+                    continue
                 if (
                     node.tag == "blockquote" or wrapper.quotes
                 ) and wrapper.hint != "front":
@@ -465,7 +570,7 @@ def _plan_extraction(root, wrappers: dict[int, _Wrapper], lines: _Lines):
         if node.child is not None:
             stack.append((node.child, forward_line))
     replies.sort(key=lambda reply: lines.order[reply[1][0].mem_id])
-    return forwards, replies, body_wrappers, outlook
+    return forwards, replies, body_wrappers, outlook, scoped_outlooks
 
 
 def _split_node_html(node, quote_mem_id: int) -> tuple[str, str, bool]:
@@ -663,6 +768,25 @@ def _extract_quote_html(
     return quoted_content or None
 
 
+def _extract_scoped_history(boundary, scope) -> str:
+    """Remove a nested Outlook boundary and what follows it inside ``scope``.
+
+    The fragment keeps the ancestors between the boundary and the scope, and
+    the scope itself, as wrapping markup.
+    """
+    parent = boundary.parent
+    fragment = _extract_quote_html(boundary, include_following_siblings=True) or ""
+    while parent.mem_id != scope.mem_id:
+        following = parent.next
+        fragment = _wrap_node_html(parent, fragment)
+        if following is not None:
+            fragment += (
+                _extract_quote_html(following, include_following_siblings=True) or ""
+            )
+        parent = parent.parent
+    return _wrap_node_html(scope, fragment)
+
+
 def segment_html_conversation(
     html: str, *, client_hint: str | None = None
 ) -> ConversationResult:
@@ -672,20 +796,32 @@ def segment_html_conversation(
     if root is None:
         return ConversationResult(zones=[], client_hint=client_hint, rules_triggered=[])
     wrappers, lines = _classify_tree(root)
-    forwards, replies, body_wrappers, outlook = _plan_extraction(root, wrappers, lines)
+    forwards, replies, body_wrappers, outlook, scoped_outlooks = _plan_extraction(
+        root, wrappers, lines
+    )
     rules = list(dict.fromkeys(f"{item.hint}_forward" for item in forwards))
     rules.extend(dict.fromkeys(item.rule for item, _, _ in replies))
-    if outlook is not None:
-        rules.append(outlook.rule)
+    for item in [*(item for item, _ in scoped_outlooks), outlook]:
+        if item is not None and item.rule not in rules:
+            rules.append(item.rule)
+    history = [(lines.order[selected[0].mem_id], item.hint) for item, selected, _ in replies]
+    history.extend((lines.order[item.node.mem_id], item.hint) for item, _ in scoped_outlooks)
     hint = (
-        replies[0][0].hint
-        if replies
+        min(history)[1]
+        if history
         else outlook.hint
         if outlook
         else forwards[0].hint
         if forwards
         else client_hint
     )
+
+    # A nested Outlook boundary is taken before its scope can be unwrapped,
+    # so the history keeps the wrapper markup that enclosed it.
+    quoted = [
+        (lines.order[item.node.mem_id], _extract_scoped_history(item.node, scope))
+        for item, scope in scoped_outlooks
+    ]
 
     # Unwrap planned body containers before removing history. This keeps
     # references valid when a bare quote takes a preceding attribution unit.
@@ -697,19 +833,20 @@ def segment_html_conversation(
         forwarded.append(_extract_quote_html(wrapper.node) or "")
     forwarded.reverse()
 
-    quoted = []
     for wrapper, selected, leading in replies:
+        order = lines.order[selected[0].mem_id]
         bare_quote = wrapper.node.tag == "blockquote"
         if len(selected) == 1 and selected[0].mem_id == wrapper.node.mem_id:
-            quoted.append(_extract_quote_html(wrapper.node) or "")
+            quoted.append((order, _extract_quote_html(wrapper.node) or ""))
             continue
         parts = []
         for node in selected:
             parts.append(_extract_quote_html(node) or "")
         fragment = "".join(parts)
         quoted.append(
-            fragment if bare_quote else _wrap_node_html(wrapper.node, fragment)
+            (order, fragment if bare_quote else _wrap_node_html(wrapper.node, fragment))
         )
+    quoted = [fragment for _, fragment in sorted(quoted, key=lambda item: item[0])]
     body = _body_html(tree)
     if outlook is not None:
         body, quote = _split_outlook_body_and_quote(tree, outlook.node)
