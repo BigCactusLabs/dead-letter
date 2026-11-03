@@ -793,11 +793,16 @@ def test_r3_adjacent_inline_or_last_block_line_keeps_earlier_text(tmp_path, pref
     assert "KEEP BEFORE" in latest and "KEEP AFTER" in latest
 
 
-def test_r3_first_direct_quote_only():
-    html = f'<div>TOP</div><div class="gmail_quote">{BOB}<br><blockquote>OLD</blockquote><div>CURRENT AFTER</div><blockquote>UNCLASSIFIED AFTER</blockquote></div>'
+def test_r3_later_direct_quotes_are_history_between_text_stays_authored():
+    # #241: talon, quotequail and Proton quote these; interleaved text stays.
+    html = f'<div>TOP</div><div class="gmail_quote">{BOB}<br><blockquote>OLD</blockquote><div>CURRENT AFTER</div><blockquote>UNCLASSIFIED AFTER</blockquote><div>TAIL</div></div>'
     zones = segment_html_conversation(html).zones
-    assert "UNCLASSIFIED AFTER" in _zone_text(zones, ZoneKind.BODY)
-    assert "UNCLASSIFIED AFTER" not in _zone_text(zones, ZoneKind.QUOTED)
+    body = _zone_text(zones, ZoneKind.BODY)
+    quoted = _zone_text(zones, ZoneKind.QUOTED)
+    assert "UNCLASSIFIED AFTER" in quoted and "UNCLASSIFIED AFTER" not in body
+    assert "CURRENT AFTER" in body and "TAIL" in body
+    assert "CURRENT AFTER" not in quoted and "TAIL" not in quoted
+    assert quoted.index("OLD") < quoted.index("UNCLASSIFIED AFTER")
 
 
 def test_r3_bare_blockquote_takes_one_parent_attribution():
@@ -1032,3 +1037,187 @@ def test_r5_gmail_attr_holding_planned_history_is_not_taken_whole(inner):
     assert quoted.count(BOB) == 1 and quoted.count('QQ') == 1
     assert quoted.count('INNER') == (1 if inner == 'INNER' else 0)
     assert 'wrote:' not in _zone_text(zones, ZoneKind.BODY)
+
+
+# Issue #241: nested Outlook scope, later direct quotes, separator labels and
+# prefixed Outlook ids.
+@pytest.mark.parametrize("mode", ["latest", "structured"])
+@pytest.mark.parametrize("lead", [
+    f'<div class="gmail_attr">{BOB}</div><blockquote class="gmail_quote">OLD</blockquote>',
+    f'{BOB}<br><blockquote>OLD</blockquote>',
+    "<div>Thanks!</div>",
+], ids=["gmail-attr-reply", "structural-reply", "no-evidence-wrapper"])
+def test_241_nested_outlook_split_ends_with_enclosing_wrapper(tmp_path, mode, lead):
+    html = (
+        f'<div>TOP</div><div class="gmail_quote">{lead}'
+        '<div><span>WRAPPED NOTE</span><div id="divRplyFwdMsg">From: Carol<br>Sent: Sun</div>'
+        '<div>OUTLOOK HISTORY</div></div><div>TRAILING HISTORY</div></div>'
+        f'<div>AFTER WRAPPER</div><div class="gmail_quote">{CAROL}<br><blockquote>LATER HISTORY</blockquote></div>'
+    )
+    result = segment_html_conversation(html)
+    body = _zone_text(result.zones, ZoneKind.BODY)
+    quoted = _zone_text(result.zones, ZoneKind.QUOTED)
+    assert "outlook_divRplyFwdMsg" in result.rules_triggered
+    for authored in ("TOP", "WRAPPED NOTE", "AFTER WRAPPER"):
+        assert authored in body and authored not in quoted
+    for history in ("From: Carol", "OUTLOOK HISTORY", "TRAILING HISTORY", "LATER HISTORY"):
+        assert history in quoted and history not in body
+    assert all(
+        "<body" not in zone.content for zone in result.zones if zone.kind is ZoneKind.QUOTED
+    )
+
+    meta, rendered = _render(tmp_path, html, mode)
+    authored = rendered.split("\n\n## ", 1)[0]
+    assert "TOP" in authored and "AFTER WRAPPER" in authored
+    assert "OUTLOOK HISTORY" not in authored and "LATER HISTORY" not in authored
+    if mode == "latest":
+        assert "OUTLOOK HISTORY" not in rendered and "TRAILING HISTORY" not in rendered
+    else:
+        assert rendered.count("OUTLOOK HISTORY") == rendered.count("TRAILING HISTORY") == 1
+        assert "LATER HISTORY" in rendered and "thread_messages:" in meta
+
+
+@pytest.mark.parametrize("mode", ["latest", "structured"])
+def test_241_top_level_outlook_keeps_remainder(tmp_path, mode):
+    html = '<div>TOP</div><div><div id="divRplyFwdMsg">From: Carol</div><div>OUTLOOK HISTORY</div></div><div>MORE</div>'
+    zones = segment_html_conversation(html).zones
+    assert _zone_text(zones, ZoneKind.BODY) == "TOP"
+    assert "OUTLOOK HISTORY" in _zone_text(zones, ZoneKind.QUOTED)
+    assert "MORE" in _zone_text(zones, ZoneKind.QUOTED)
+    _, rendered = _render(tmp_path, html, mode)
+    if mode == "latest":
+        assert rendered == "TOP"
+    else:
+        assert rendered.split("\n\n## ", 1)[0] == "TOP" and "MORE" in rendered
+
+
+@pytest.mark.parametrize("mode", ["latest", "structured"])
+@pytest.mark.parametrize("cls", CLASSES)
+def test_241_later_direct_quotes_are_history(tmp_path, mode, cls):
+    html = (
+        f'<div>TOP</div><div class="{cls}">{BOB}<br><blockquote>OLD</blockquote>'
+        '<div>CURRENT AFTER</div><blockquote>SECOND</blockquote>'
+        'BETWEEN<blockquote type="cite">THIRD</blockquote><div>TAIL</div></div>'
+    )
+    meta, rendered = _render(tmp_path, html, mode)
+    authored = rendered.split("\n\n## ", 1)[0]
+    assert authored.split() == ["TOP", "CURRENT", "AFTER", "BETWEEN", "TAIL"]
+    if mode == "latest":
+        assert not any(word in rendered for word in ("OLD", "SECOND", "THIRD"))
+    else:
+        assert "thread_messages: 1" in meta
+        section = rendered.split("\n\n## ", 1)[1]
+        assert section.index("OLD") < section.index("SECOND") < section.index("THIRD")
+
+
+@pytest.mark.parametrize("mode", ["latest", "structured"])
+def test_241_later_quotes_inside_a_forward_stay_with_it(tmp_path, mode):
+    html = (
+        f'<div>NOTE</div><div class="gmail_quote"><div class="gmail_attr">{MARKER}<br>From: Bob<br></div>'
+        f'<div class="gmail_quote">{CAROL}<br><blockquote>OLD</blockquote>MID<blockquote>SECOND</blockquote></div></div>'
+    )
+    zones = segment_html_conversation(html).zones
+    forwarded = _zone_text(zones, ZoneKind.FORWARDED_BODY)
+    assert "SECOND" in forwarded and "MID" in forwarded
+    assert "SECOND" not in _zone_text(zones, ZoneKind.QUOTED)
+
+
+def _proton_reply(label="------- Original Message -------"):
+    # Shape modeled on Proton's div-per-line reply wrapper; written by hand.
+    return (
+        '<div>Sounds good, see you then.</div>'
+        '<div class="protonmail_quote">'
+        f'<div>{label}<br></div>'
+        f'<div> {BOB}<br></div>'
+        '<div> <br></div>'
+        '<blockquote class="protonmail_quote" type="cite"><div>OLD HISTORY</div></blockquote>'
+        '</div>'
+    )
+
+
+@pytest.mark.parametrize("mode", ["latest", "structured"])
+@pytest.mark.parametrize("label", [
+    "------- Original Message -------",
+    "----- Ursprüngliche Nachricht -----",
+])
+def test_241_proton_block_separator_label_joins_attribution(tmp_path, mode, label):
+    html = _proton_reply(label)
+    zones = segment_html_conversation(html).zones
+    body = _zone_text(zones, ZoneKind.BODY)
+    quoted = _zone_text(zones, ZoneKind.QUOTED)
+    assert body.strip() == "Sounds good, see you then."
+    assert label in quoted and BOB in quoted and "OLD HISTORY" in quoted
+
+    meta, rendered = _render(tmp_path, html, mode)
+    authored = rendered.split("\n\n## ", 1)[0]
+    assert authored == "Sounds good, see you then."
+    if mode == "structured":
+        assert "thread_messages: 1" in meta and "## From Bob" in rendered
+        assert "OLD HISTORY" in rendered
+
+
+@pytest.mark.parametrize("mode", ["latest", "structured"])
+@pytest.mark.parametrize("html", [
+    f'<div>Hi<br>----- see below -----<br>{BOB}<br><blockquote class="gmail_quote">OLD</blockquote></div>',
+    f'<div>TOP</div><div class="protonmail_quote">----- see below -----<br>{BOB}<br><blockquote class="protonmail_quote">OLD</blockquote></div>',
+    _proton_reply("----- see below -----"),
+], ids=["inline-bare-quote", "inline-wrapper", "block-wrapper"])
+def test_241_authored_dashed_line_before_attribution_stays_body(tmp_path, mode, html):
+    zones = segment_html_conversation(html).zones
+    assert "----- see below -----" in _zone_text(zones, ZoneKind.BODY)
+    quoted = _zone_text(zones, ZoneKind.QUOTED)
+    assert "see below" not in quoted and BOB in quoted
+    _, rendered = _render(tmp_path, html, mode)
+    assert "see below" in rendered.split("\n\n## ", 1)[0]
+
+
+def test_241_label_separated_by_text_or_image_is_not_joined():
+    for gap in ("<div>AUTHORED</div>", '<div><img src="cid:x"></div>'):
+        html = (
+            '<div class="protonmail_quote"><div>------- Original Message -------</div>'
+            f'{gap}<div>{BOB}</div><blockquote class="protonmail_quote">OLD</blockquote></div>'
+        )
+        zones = segment_html_conversation(html).zones
+        assert "Original Message" in _zone_text(zones, ZoneKind.BODY)
+        assert "Original Message" not in _zone_text(zones, ZoneKind.QUOTED)
+
+
+@pytest.mark.parametrize("mode", ["latest", "structured"])
+@pytest.mark.parametrize("prefix", ["x_", "x_x_", "x_x_x_"])
+def test_241_prefixed_outlook_id_is_history(tmp_path, mode, prefix):
+    html = f'<div>TOP</div><div id="{prefix}divRplyFwdMsg">From: Carol<br>Sent: Sun</div><div>OUTLOOK HISTORY</div>'
+    result = segment_html_conversation(html)
+    assert result.rules_triggered == ["outlook_divRplyFwdMsg"]
+    assert _zone_text(result.zones, ZoneKind.BODY) == "TOP"
+    assert "outlook" in detect_quote_patterns(html)
+    _, rendered = _render(tmp_path, html, mode)
+    if mode == "latest":
+        assert rendered == "TOP"
+    else:
+        assert rendered.split("\n\n## ", 1)[0] == "TOP" and "OUTLOOK HISTORY" in rendered
+
+
+@pytest.mark.parametrize("mode", ["latest", "structured"])
+def test_241_prefixed_outlook_id_inside_history_stays_with_it(tmp_path, mode):
+    html = (
+        '<div>TOP</div><div id="x_divRplyFwdMsg">From: Carol</div><div>CAROL TEXT'
+        '<div id="x_x_divRplyFwdMsg">From: Dave</div><div>DAVE TEXT</div></div>'
+        f'<div>NOTE</div><div class="gmail_quote">{BOB}<br><blockquote>OLD'
+        '<div id="x_divRplyFwdMsg">From: Erin</div><div>ERIN TEXT</div></blockquote></div>'
+    )
+    result = segment_html_conversation(html)
+    assert result.rules_triggered == ["outlook_divRplyFwdMsg"]
+    quoted = [zone.content for zone in result.zones if zone.kind is ZoneKind.QUOTED]
+    assert len(quoted) == 1
+    for history in ("CAROL TEXT", "DAVE TEXT", "ERIN TEXT"):
+        assert quoted[0].count(history) == 1
+    _, rendered = _render(tmp_path, html, mode)
+    assert rendered.split("\n\n## ", 1)[0] == "TOP"
+
+
+def test_241_prefixed_outlook_id_inside_reply_quote_keeps_reply_rule():
+    html = f'<div>TOP</div><div class="gmail_quote">{BOB}<br><blockquote>OLD<div id="x_divRplyFwdMsg">From: Erin</div><div>ERIN TEXT</div></blockquote></div><div>AFTER</div>'
+    result = segment_html_conversation(html)
+    assert result.rules_triggered == ["gmail_quote"]
+    assert "AFTER" in _zone_text(result.zones, ZoneKind.BODY)
+    assert "ERIN TEXT" in _zone_text(result.zones, ZoneKind.QUOTED)

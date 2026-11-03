@@ -20,7 +20,8 @@ def _detect_element_patterns(tag: str, attrs: dict[str, str], patterns: set[str]
     if tag == "blockquote" and "gmail_quote" in classes:
         patterns.add("gmail")
 
-    if (tag == "div" and element_id == "divrplyfwdmsg") or (
+    # OWA adds one ``x_`` per quoting hop to this id as well as to classes.
+    if (tag == "div" and re.sub(r"^(?:x_)+", "", element_id) == "divrplyfwdmsg") or (
         tag == "span" and element_id == "olk_src_body_section"
     ):
         patterns.add("outlook")

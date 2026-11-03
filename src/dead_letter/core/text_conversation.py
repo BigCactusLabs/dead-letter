@@ -183,6 +183,11 @@ def _outlook_block_ends_at(lines: list[str], last: int) -> bool:
     return first >= 0 and _OUTLOOK_SEPARATOR_RE.match(lines[first]) is not None
 
 
+def is_outlook_separator_line(line: str) -> bool:
+    """True for an underscore or localized dashed ``Original Message`` line."""
+    return _OUTLOOK_SEPARATOR_RE.match(line) is not None
+
+
 def _outlook_history_boundaries(
     source: str, *, column_zero: bool = False
 ) -> Iterator[tuple[int, int]]:
