@@ -55,7 +55,9 @@ class _SourceChangedError(RuntimeError):
 
 
 class _DiskReserveError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, cancel_requested: bool) -> None:
+        super().__init__(message)
+        self.cancel_requested = cancel_requested
 
 
 class _ReportError(RuntimeError):
@@ -301,11 +303,13 @@ class MboxJobRunner:
             free = shutil.disk_usage(path).free
         except Exception as exc:
             raise _DiskReserveError(
-                "Free space could not be measured; the import stopped to protect the 1 GiB reserve"
+                "Free space could not be measured; the import stopped to protect the 1 GiB reserve",
+                cancel_requested=self.cancel_event.is_set(),
             ) from exc
         if free < MBOX_UPLOAD_DISK_RESERVE_BYTES:
             raise _DiskReserveError(
-                "Less than 1 GiB is free on the staging or Cabinet volume; free space before importing again"
+                "Less than 1 GiB is free on the staging or Cabinet volume; free space before importing again",
+                cancel_requested=self.cancel_event.is_set(),
             )
 
     def _check_staging(self, path: Path, written: int) -> None:
@@ -318,7 +322,6 @@ class MboxJobRunner:
     def _convert(self, report: StreamingReport, options: ConvertOptions) -> bool:
         """Return whether an archive/report failure occurred; close before publish."""
         fatal = False
-        self._reserve_failed = False
         try:
             self._check_source()
             self._check_disk(self.cabinet_root)
@@ -386,8 +389,7 @@ class MboxJobRunner:
                         "Could not append the archive failure to the report",
                     )
         except Exception as exc:
-            fatal = True
-            self._reserve_failed = isinstance(exc, _DiskReserveError)
+            fatal = not (isinstance(exc, _DiskReserveError) and exc.cancel_requested)
             code = (
                 "mbox_disk_reserve"
                 if isinstance(exc, _DiskReserveError)
@@ -423,7 +425,7 @@ class MboxJobRunner:
                         "mbox_report_error",
                         "Could not append the archive failure to the report",
                     )
-        return fatal
+        return fatal or self._report_incomplete
 
     def _publish(
         self,
@@ -441,7 +443,7 @@ class MboxJobRunner:
             with self._lock:
                 status: JobStatus = (
                     "failed"
-                    if fatal and not (self._reserve_failed and self.cancel_event.is_set())
+                    if fatal
                     else "cancelled"
                     if self.cancel_event.is_set()
                     else "completed_with_errors"
@@ -493,10 +495,7 @@ class MboxJobRunner:
                     )
                 return MboxJobOutcome("failed", None)
             with self._lock:
-                if self.cancel_event.is_set() and (
-                    status not in {"failed", "cancelled"}
-                    or (status == "failed" and self._reserve_failed)
-                ):
+                if self.cancel_event.is_set() and status not in {"failed", "cancelled"}:
                     # Cancellation accepted during publication must be reflected
                     # in the durable report before polling becomes terminal.
                     continue

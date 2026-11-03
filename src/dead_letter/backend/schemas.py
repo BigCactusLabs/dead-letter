@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
 from dead_letter.core.types import ThreadMode, ThreadOrder
@@ -126,10 +126,22 @@ class MboxJobOptions(BaseModel):
     allow_html_repair_on_panic: bool = False
     thread_mode: ThreadMode = ThreadMode.LATEST
     thread_order: ThreadOrder = ThreadOrder.OLDEST_FIRST
-    member: str | None = None
+    member: str | None = Field(default=None, max_length=1024)
     timeout_seconds: float = Field(default=30.0, gt=0, le=300, allow_inf_nan=False, strict=True)
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("member", mode="before")
+    @classmethod
+    def validate_member_name(cls, value):
+        if isinstance(value, str) and (
+            len(value) > 1024 or any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in value)
+        ):
+            raise PydanticCustomError(
+                "mbox_invalid_member",
+                "member must be at most 1024 characters and contain no control characters",
+            )
+        return value
 
 
 class MboxJobCreateRequest(BaseModel):

@@ -327,3 +327,154 @@ async def test_cancel_wins_reserve_failure_and_keeps_partial_report(tmp_path, mo
     assert json.loads(Path(terminal.report_path).read_text())["job"]["status"] == "cancelled"
     assert manager._active_mbox_jobs == 0
     _clean_staging(tmp_path)
+
+
+@pytest.mark.parametrize("cancel_at", ["reserve_check", "reserve_row", "publication"])
+@pytest.mark.parametrize("report_error", [False, True])
+def test_reserve_failure_order_and_report_error_precedence(tmp_path, monkeypatch, cancel_at, report_error):
+    from dead_letter.core.stream_report import StreamingReport
+
+    source = _archive(tmp_path / "takeout.zip", [("mail.mbox", MAIL + POSTMARK + MESSAGE)])
+    cabinet = tmp_path / "Cabinet"
+    runner = mbox_jobs.MboxJobRunner(
+        admission=mbox_jobs.admit_mbox_source(source.name, source_root=tmp_path, cabinet_root=cabinet),
+        cabinet_root=cabinet, inbox_root=tmp_path / "Inbox", job_id="precedence",
+        options=MboxJobOptions(),
+    )
+    append, finish = StreamingReport.append, StreamingReport.finish
+    statuses = []
+
+    def disk(path):
+        if Path(path) == cabinet and len(list(cabinet.rglob("message.md"))) == 2:
+            if cancel_at == "reserve_check":
+                assert runner.request_cancel()
+            return SimpleNamespace(free=RESERVE - 1)
+        return SimpleNamespace(free=RESERVE * 4)
+
+    def append_row(self, entry):
+        if (entry.get("error") or {}).get("code") == "mbox_disk_reserve":
+            if cancel_at == "reserve_row":
+                assert runner.request_cancel()
+            if report_error:
+                raise OSError("synthetic report append failure")
+        return append(self, entry)
+
+    def publish(self, *args, **kwargs):
+        statuses.append(kwargs["status"])
+        if cancel_at == "publication":
+            assert runner.request_cancel()
+        return finish(self, *args, **kwargs)
+
+    monkeypatch.setattr(mbox_jobs.shutil, "disk_usage", disk)
+    monkeypatch.setattr(StreamingReport, "append", append_row)
+    monkeypatch.setattr(StreamingReport, "finish", publish)
+    outcome = runner.run()
+    expected = "cancelled" if cancel_at == "reserve_check" and not report_error else "failed"
+    assert outcome.status == expected
+    assert statuses == [expected]
+    _, summary, errors = runner.snapshot()
+    assert summary.written == 2
+    assert len(list(cabinet.rglob("message.md"))) == 2
+    assert [error.code for error in errors] == ["mbox_disk_reserve"] + (["mbox_report_error"] if report_error else [])
+    report = json.loads(Path(outcome.report_path).read_text())
+    assert report["job"]["status"] == expected
+    assert report["archive"]["report_complete"] is not report_error
+    _clean_staging(tmp_path)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("flow", ["path", "upload"])
+@pytest.mark.parametrize("unsafe", ["symlink", "dangling_symlink", "file"])
+async def test_compressed_staging_parent_rejected_before_slot_or_output(tmp_path, monkeypatch, flow, unsafe):
+    app = _app(tmp_path)
+    source = _archive(tmp_path / "takeout.zip")
+    data = source.read_bytes()
+    target = tmp_path / "foreign"
+    target.mkdir()
+    sentinel = target / "keep.txt"
+    sentinel.write_text("unrelated")
+    staging = tmp_path / "Inbox" / "mbox-uploads"
+    if unsafe == "file":
+        staging.write_text("keep existing file")
+    else:
+        staging.symlink_to(target if unsafe == "symlink" else tmp_path / "missing")
+    manager = app.state.job_manager
+    monkeypatch.setattr(manager, "_reserve_mbox_slot_locked", lambda: pytest.fail("slot reserved before staging validation"))
+    if flow == "path":
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
+            response = await client.post("/api/mbox/jobs", json={"input_path": source.name}, headers=await csrf_headers(client))
+        status, payload = response.status_code, response.json()
+    else:
+        body = _Body([data])
+        status, _, payload = await _post(app, _headers(app, len(data), name=source.name), body)
+        assert body.calls == 0
+    assert status == 403
+    assert payload["errors"][0]["path"] == "mbox-uploads"
+    assert "must be a real folder inside the Inbox" in payload["errors"][0]["message"]
+    assert not manager._jobs
+    assert manager._active_mbox_jobs == 0
+    assert not list((tmp_path / "Cabinet").glob("mbox-*"))
+    assert sentinel.read_text() == "unrelated"
+    assert source.read_bytes() == data
+
+
+@pytest.mark.anyio
+async def test_compressed_admission_creates_missing_staging_parent_before_worker(tmp_path):
+    manager = _manager(tmp_path)
+    source = _archive(tmp_path / "takeout.zip")
+    assert not (tmp_path / "Inbox").exists()
+    created = await manager.create_mbox_job(MboxJobCreateRequest(input_path=source.name), source_root=tmp_path)
+    # No event-loop turn has started the worker yet.
+    assert (tmp_path / "Inbox" / "mbox-uploads").is_dir()
+    assert not Path(created.output_location.job_path).exists()
+    terminal = await manager.wait_for_terminal(created.id, timeout=20)
+    assert terminal.status == "succeeded"
+    _clean_staging(tmp_path)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("member", ["x" * 1025, "a\x00.mbox", "a\n.mbox", "a\t.mbox", "a\x7f.mbox", "a\x85.mbox", "a\x9f.mbox"])
+async def test_invalid_member_rejected_with_422_before_admission_or_upload_body(tmp_path, monkeypatch, member):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        MboxJobOptions(member=member)
+    app = _app(tmp_path)
+    source = _archive(tmp_path / "takeout.zip")
+    data = source.read_bytes()
+    manager = app.state.job_manager
+    monkeypatch.setattr(manager, "_reserve_mbox_slot_locked", lambda: pytest.fail("invalid member reached admission"))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
+        response = await client.post("/api/mbox/jobs", json={"input_path": source.name, "options": {"member": member}}, headers=await csrf_headers(client))
+    assert response.status_code == 422
+    assert "1024 characters" in response.json()["errors"][0]["message"]
+    body = _Body([data])
+    status, _, payload = await _post(app, _headers(app, len(data), name=source.name), body, query="options=" + quote(json.dumps({"member": member})))
+    assert status == 422
+    assert "1024 characters" in payload["errors"][0]["message"]
+    assert body.calls == 0
+    assert not manager._jobs
+    assert not (tmp_path / "Inbox" / "mbox-uploads").exists()
+
+
+@pytest.mark.parametrize("member", [None, "", " ", "Takeout/ Mail.mbox", "é" * 1019 + ".mbox"])
+def test_member_bounds_preserve_exact_valid_names(member):
+    assert MboxJobOptions(member=member).member == member
+    assert MboxJobOptions.model_json_schema()["properties"]["member"]["anyOf"][0]["maxLength"] == 1024
+
+
+@pytest.mark.anyio
+async def test_compressed_upload_staging_setup_error_keeps_error_envelope(tmp_path, monkeypatch):
+    from dead_letter.backend import api
+
+    app = _app(tmp_path)
+    data = _archive(tmp_path / "takeout.zip").read_bytes()
+    def unavailable(path):
+        raise OSError("synthetic inaccessible staging parent")
+    monkeypatch.setattr(api, "prepare_staging_dir", unavailable)
+    body = _Body([data])
+    status, _, payload = await _post(app, _headers(app, len(data), name="takeout.zip"), body)
+    assert status == 500
+    assert payload["errors"][0]["code"] == "backend_error"
+    assert body.calls == 0
+    assert app.state.job_manager._active_mbox_jobs == 0

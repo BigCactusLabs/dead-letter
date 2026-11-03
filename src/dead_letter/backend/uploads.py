@@ -187,7 +187,8 @@ def _parse_options(request: Request) -> MboxJobOptions:
     try:
         return MboxJobOptions.model_validate_json(values[0] if values else "{}")
     except ValidationError as exc:
-        raise UploadRejected(400, code="invalid_request", message=str(exc), path="options") from exc
+        status = 422 if any(error["type"] == "mbox_invalid_member" for error in exc.errors()) else 400
+        raise UploadRejected(status, code="invalid_request", message=str(exc), path="options") from exc
 
 
 def prepare_staging_dir(inbox_root: Path) -> Path:

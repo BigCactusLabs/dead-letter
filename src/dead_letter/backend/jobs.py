@@ -260,6 +260,10 @@ class JobManager:
     ) -> JobCreateResponse:
         if request.options.member is not None and admission.source.suffix.lower() == ".mbox":
             raise MboxMemberError("member is only supported for compressed MBOX archives")
+        if admission.source.suffix.lower() != ".mbox":
+            from dead_letter.backend.uploads import prepare_staging_dir
+
+            prepare_staging_dir(self._inbox_root)
         job_id = uuid4().hex
         runner = MboxJobRunner(
             admission=admission, cabinet_root=cabinet_root, job_id=job_id, options=request.options,

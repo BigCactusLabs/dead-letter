@@ -337,7 +337,7 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(_request, exc: RequestValidationError):
-        status = 422 if any(error["type"] == "mbox_member_requires_archive" for error in exc.errors()) else 400
+        status = 422 if any(error["type"] in {"mbox_member_requires_archive", "mbox_invalid_member"} for error in exc.errors()) else 400
         return JSONResponse(status_code=status, content=_validation_error_payload(exc))
 
     @app.get("/api/session", status_code=200)
@@ -395,6 +395,8 @@ def create_app(
         _sync_job_manager_roots(configured)
         try:
             return await job_manager.create_mbox_job(request, source_root=fs_browser.root)
+        except UploadRejected as exc:
+            return _error_response(exc.status_code, code=exc.code, message=exc.message, path=exc.path)
         except PermissionError as exc:
             return _error_response(403, code="invalid_request", message=str(exc), path=request.input_path)
         except MboxMemberError as exc:
@@ -431,11 +433,18 @@ def create_app(
             return _closing_error(exc.status_code, code=exc.code, message=exc.message, path=exc.path)
         _sync_job_manager_roots(configured)
         try:
+            staging_dir = prepare_staging_dir(configured.inbox_path) if upload.suffix.lower() != ".mbox" else None
             reservation = await job_manager.reserve_mbox_slot()
+        except UploadRejected as exc:
+            return _closing_error(exc.status_code, code=exc.code, message=exc.message, path=exc.path)
         except MboxBusyError as exc:
             return _closing_error(409, code="mbox_busy", message=str(exc), path=upload.filename)
+        except Exception:
+            return _closing_error(
+                500, code="backend_error", message="Could not stage MBOX upload", stage="backend",
+            )
         try:
-            staging_dir = prepare_staging_dir(configured.inbox_path)
+            staging_dir = staging_dir or prepare_staging_dir(configured.inbox_path)
             ensure_upload_space(staging_dir, upload.length)
             staged = await stage_mbox_upload(
                 request, staging_dir=staging_dir, stem=upload.stem, length=upload.length, suffix=upload.suffix,

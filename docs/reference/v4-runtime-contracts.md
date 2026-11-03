@@ -441,8 +441,10 @@ Admission and output rules:
   `allow_html_repair_on_panic`, `thread_mode` and `thread_order`, with their
   existing defaults. `timeout_seconds` is a finite JSON number in `(0, 300]`,
   default 30. Unreleased source also accepts optional `member`: the exact
-  `.mbox` member name, as with CLI `--mbox-member`. One eligible member is
-  selected automatically; several members without a selection fail before
+  `.mbox` member name, as with CLI `--mbox-member`. Web member names are
+  limited to 1024 characters and cannot contain NUL or control characters;
+  violations return `422` on both the job and upload routes. One eligible member
+  is selected automatically; several members without a selection fail before
   conversion with `mbox_archive_multiple_mbox`. Other archive errors retain
   their core `mbox_archive_*` codes. `member` on a flat `.mbox` returns `422`.
   Unknown request/option fields are rejected, including `delete_eml`,
@@ -450,18 +452,24 @@ Admission and output rules:
 - Compressed jobs (unreleased) use the core archive importer and default
   `ArchiveLimits`. They stage one member in a private, job-owned directory
   under `<Inbox>/mbox-uploads/`, separate from the selected source and Cabinet
-  output. Staging is created only when the worker starts and removed before
-  completion, failure or cancellation becomes terminal. Tasks cancelled before
-  their first step create no staging directory. Only job-owned temporary data
-  is removed; the source archive is always kept.
+  output. Admission creates this parent folder (and the Inbox if needed) when
+  missing and checks that it is a real folder inside the Inbox before reserving
+  a slot or creating Cabinet job output. An unsafe parent returns a clear
+  `403 invalid_request` naming `mbox-uploads`. Private job staging is created
+  only when the worker starts and removed before completion, failure or
+  cancellation becomes terminal. Tasks cancelled before their first step create
+  no private staging directory. Only job-owned temporary data is removed; the source archive is always kept.
 - Jobs enforce a 1 GiB **free-space reserve**, not a total byte quota
   (unreleased). Cabinet free space is checked before conversion and after each
   message result. Compressed jobs also check staging-volume free space before
   staging and at least every 64 MiB written. A low reading or inability to
   measure free space stops the job with fatal `mbox_disk_reserve`. Completed
   bundles and a partial report are kept, and staging is removed. Cancellation
-  takes precedence over a reserve stop. Concurrent disk use and writes within
-  a message/check interval can still exhaust storage; space is not reserved
+  takes precedence only if it was requested before the reserve failure was
+  detected. A later cancel, including during report publication, leaves the
+  reserve failure as `failed`. Report errors always take precedence over
+  cancellation, including after a reserve stop. Concurrent disk use and writes
+  within a message/check interval can still exhaust storage; space is not reserved
   from other processes.
 - The runner uses timed, sequential message workers, default `preserve`
   quoting, a 64 MiB stored-message cap and a 1 MiB physical-line cap. It does
@@ -473,8 +481,9 @@ Admission and output rules:
 Success is `202`. Admission failures use `400` for invalid input/options,
 `403` for path confinement failures, `409` for missing settings or occupied
 archive slots (`mbox_busy`), and `413` for an oversized archive
-(`mbox_too_large`). A flat-input `member` returns `422`; other schema failures
-remain `400`. Validation and busy failures create no job output.
+(`mbox_too_large`). A flat-input `member`, an overlong member name or a member
+containing control characters returns `422`; other schema failures remain `400`.
+Validation and busy failures create no job output.
 
 Poll the existing `GET /api/jobs/{id}` route. MBOX snapshots have `kind="mbox"`,
 `diagnostics=null`, no retry actions, and an additive `mbox` object:
@@ -525,9 +534,10 @@ while an accepted cancellation still requires a rewritten report.
 acknowledges the request; the job remains queued/running while the runner stops
 the framer/worker, waits for direct-child termination and iterator cleanup, and
 publishes the partial report before terminal `cancelled` is visible. A
-fatal source/report error takes precedence over cancellation; an accepted
-cancellation takes precedence over a disk-reserve stop. Report finalization
-eventually seals cancellation; a request after that point returns `409`, even if the
+fatal source/report error always takes precedence over cancellation. A cancel
+requested before a disk-reserve failure was detected takes precedence over
+that reserve stop; a later cancel does not change its failed status. Report
+finalization eventually seals cancellation; a request after that point returns `409`, even if the
 terminal snapshot has not yet been installed. Graceful server shutdown stops
 new archive admission, signals active jobs and waits for this same cleanup.
 
@@ -585,7 +595,8 @@ closes the connection; a client that sent `Expect: 100-continue` never receives
    (see [HTTP Status Mapping](#http-status-mapping)).
 4. `413 mbox_too_large`: the declared length is above 16 GiB.
 5. `400 invalid_request`: the file name or `options` is invalid. A `member`
-   option for a flat `.mbox` returns `422 invalid_request`.
+   option for a flat `.mbox`, a member longer than 1024 characters, or a member
+   containing NUL/control characters returns `422 invalid_request`.
 6. `415 mbox_upload_unsupported_media_type`: the content type is not
    `application/octet-stream`.
 7. `409 mbox_busy`: the archive slot is occupied. The upload reserves the same
@@ -594,6 +605,7 @@ closes the connection; a client that sent `Expect: 100-continue` never receives
 8. `403 invalid_request` (path `mbox-uploads`): `<Inbox>/mbox-uploads` is a
    symlink, is not a folder, or resolves outside the Inbox. The server creates
    the folder when it is missing and stages only under the checked path.
+   For compressed input, this folder check runs before the slot check in step 7.
 9. `507 mbox_upload_insufficient_storage`: the staging folder's free space,
    less the declared length, is below 1 GiB. The 1 GiB margin leaves room for
    the job's report spool and first bundles and for the host itself. Free space
