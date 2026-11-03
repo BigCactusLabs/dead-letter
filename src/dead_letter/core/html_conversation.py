@@ -389,7 +389,8 @@ def _preceding_attribution(
         # An attribution element already holding planned history is not a unit.
         if _holds_wrapper(previous, lines, wrapper_orders):
             return [], None
-        return [previous], None
+        label = _preceding_label(previous, parent, wrappers, lines, wrapper_orders)
+        return [*label, previous], None
     container = line.container
     direct = container.mem_id == parent.mem_id
     child_block = (
@@ -544,6 +545,13 @@ def _plan_extraction(root, wrappers: dict[int, _Wrapper], lines: _Lines):
                     # Inside another wrapper, Outlook history ends with it.
                     scoped = _scoped_history_nodes(node, scope)
                     skipped.update(child.mem_id for child in scoped)
+                    # The scope's own reply plan can fall after the boundary;
+                    # that history now belongs to the Outlook range.
+                    start, end = lines.order[node.mem_id], lines.end[scope.mem_id]
+                    replies = [
+                        reply for reply in replies
+                        if not start <= lines.order[reply[1][0].mem_id] < end
+                    ]
                     scoped_outlooks.append((wrapper, scope))
                     continue
                 if (

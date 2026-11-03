@@ -1221,3 +1221,40 @@ def test_241_prefixed_outlook_id_inside_reply_quote_keeps_reply_rule():
     assert result.rules_triggered == ["gmail_quote"]
     assert "AFTER" in _zone_text(result.zones, ZoneKind.BODY)
     assert "ERIN TEXT" in _zone_text(result.zones, ZoneKind.QUOTED)
+
+
+# #241 repair round 1: a reply planned by the scope wrapper after a nested
+# Outlook boundary is taken once, with the Outlook history.
+@pytest.mark.parametrize("mode", ["latest", "structured"])
+def test_241_reply_after_nested_outlook_boundary_is_not_duplicated(tmp_path, mode):
+    html = f'<div class="gmail_quote"><div id="divRplyFwdMsg">HEADER</div>{BOB}<br><blockquote>OLD</blockquote></div>AFTER'
+    result = segment_html_conversation(html)
+    quoted = "".join(z.content for z in result.zones if z.kind is ZoneKind.QUOTED)
+    assert quoted.count("HEADER") == quoted.count(BOB) == quoted.count("OLD") == 1
+    assert quoted.index("HEADER") < quoted.index(BOB) < quoted.index("OLD")
+    assert _zone_text(result.zones, ZoneKind.BODY) == "AFTER"
+    assert result.rules_triggered == ["outlook_divRplyFwdMsg"]
+    meta, rendered = _render(tmp_path, html, mode)
+    assert rendered.split("\n\n## ", 1)[0] == "AFTER"
+    if mode == "latest":
+        assert "OLD" not in rendered and "HEADER" not in rendered
+    else:
+        assert rendered.count("OLD") == rendered.count("HEADER") == 1
+        assert rendered.count("## From Bob") == 1 and "thread_messages:" in meta
+
+
+@pytest.mark.parametrize("mode", ["latest", "structured"])
+@pytest.mark.parametrize("label, joins", [
+    ("----- Original Message -----", True),
+    ("----- see below -----", False),
+])
+def test_241_separator_label_before_gmail_attr(tmp_path, mode, label, joins):
+    html = f'TOP<div class="gmail_quote"><div>{label}</div><div class="gmail_attr">{BOB}</div><blockquote>OLD</blockquote></div>'
+    zones = segment_html_conversation(html).zones
+    body = _zone_text(zones, ZoneKind.BODY)
+    quoted = _zone_text(zones, ZoneKind.QUOTED)
+    assert BOB in quoted and "OLD" in quoted and "wrote:" not in body
+    assert (label in quoted) is joins and (label in body) is not joins
+    _, rendered = _render(tmp_path, html, mode)
+    authored = rendered.split("\n\n## ", 1)[0]
+    assert "TOP" in authored and (label.strip("- ") in authored) is not joins
