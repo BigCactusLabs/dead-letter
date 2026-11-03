@@ -69,6 +69,9 @@ _APPLE_FORWARD_LABELS: tuple[str, ...] = (
     r"İleti başlangıcı",
     r"Початок листа, що пересилається",
     r"転送されたメッセージ",
+    r"下面是被转发的邮件",
+    r"開始轉寄郵件",
+    r"전달된 메시지 시작",
 )
 
 # One regex fragment per client family, each matched case-insensitively as a
@@ -78,7 +81,7 @@ FORWARD_MARKER_PATTERNS: tuple[str, ...] = (
     # Gmail keeps this English separator in every UI language checked.
     r"-{2,}[ \t]*Forwarded message[ \t]*-{2,}",
     r"-{3,10}[ \t]*(?:" + "|".join(_DASHED_FORWARD_LABELS) + r")[ \t]*-{3,10}",
-    r"(?:" + "|".join(_APPLE_FORWARD_LABELS) + r")[ \t]?:",
+    r"(?:" + "|".join(_APPLE_FORWARD_LABELS) + r")[ \t]?[:：]",
 )
 
 _MARKER_ALTERNATION = "|".join(f"(?:{pattern})" for pattern in FORWARD_MARKER_PATTERNS)
@@ -104,18 +107,21 @@ _QUOTE_PREFIX_RE = re.compile(r"^(?:>[ \t]?)+")
 _HARD_BREAK_RE = re.compile(r"(?:\s|\\)+$")
 
 # Outlook desktop/OWA labels supported by the Exchange MessageHeaders.xml
-# resource and independent mail artifacts/reports: en, de, fr, es, nl, it, ja.
-# Exclude the erroneous it(OWA) Inizio/Fine row and single-origin zh rows.
+# resource and independent mail artifacts/reports: en, de, fr, es, nl, it, ja,
+# and evidence-backed Simplified Chinese. Exclude the erroneous it(OWA)
+# Inizio/Fine row and unconfirmed Traditional Chinese Outlook labels.
 # Reply-history recognition and forward parsing share these field labels.
 OUTLOOK_HEADER_LABELS: dict[str, tuple[str, ...]] = {
-    "from": ("From", "Von", "De", "Van", "Da", "差出人"),
+    "from": ("From", "Von", "De", "Van", "Da", "差出人", "发件人"),
     "date": (
         "Sent", "Date", "Gesendet", "Envoyé", "Enviado", "Enviado el",
-        "Verzonden", "Inviato", "送信日時",
+        "Verzonden", "Inviato", "送信日時", "发送时间",
     ),
-    "subject": ("Subject", "Betreff", "Objet", "Asunto", "Onderwerp", "Oggetto", "件名"),
-    "to": ("To", "An", "À", "Para", "Aan", "A", "宛先"),
-    "cc": ("Cc",),
+    "subject": (
+        "Subject", "Betreff", "Objet", "Asunto", "Onderwerp", "Oggetto", "件名", "主题",
+    ),
+    "to": ("To", "An", "À", "Para", "Aan", "A", "宛先", "收件人"),
+    "cc": ("Cc", "抄送"),
     "bcc": ("Bcc",),
     "reply-to": ("Reply-To",),
 }
@@ -129,21 +135,21 @@ OUTLOOK_HEADER_LABELS: dict[str, tuple[str, ...]] = {
 _FORWARD_HEADER_LABELS: dict[str, tuple[str, ...]] = {
     "from": (
         *OUTLOOK_HEADER_LABELS["from"], "Mittente",
-        "送信者", "送信元", "发件人", "寄件者", "從",
+        "送信者", "送信元", "寄件人", "寄件者", "從",
     ),
     "date": (
         *OUTLOOK_HEADER_LABELS["date"], "Datum", "Fecha", "Data",
-        "日時", "日付", "发送时间", "日期", "寄件日期",
+        "日時", "日付", "日期", "寄件日期",
     ),
     "subject": (
-        *OUTLOOK_HEADER_LABELS["subject"], "Sujet", "Assunto", "主题", "主旨",
+        *OUTLOOK_HEADER_LABELS["subject"], "Sujet", "Assunto", "標題", "主旨",
     ),
     "to": (
-        *OUTLOOK_HEADER_LABELS["to"], "Pour", "送信先", "收件人", "到", "收件者", "至",
+        *OUTLOOK_HEADER_LABELS["to"], "Pour", "送信先", "到", "收件者", "至",
     ),
-    "cc": (*OUTLOOK_HEADER_LABELS["cc"], "Copie à", "Kopie", "Kopie (CC)", "抄送", "副本", "참조"),
-    "bcc": OUTLOOK_HEADER_LABELS["bcc"],
-    "reply-to": OUTLOOK_HEADER_LABELS["reply-to"],
+    "cc": (*OUTLOOK_HEADER_LABELS["cc"], "Copie à", "Kopie", "Kopie (CC)", "副本", "참조"),
+    "bcc": (*OUTLOOK_HEADER_LABELS["bcc"], "密送", "密件副本"),
+    "reply-to": (*OUTLOOK_HEADER_LABELS["reply-to"], "回复给", "回覆給"),
 }
 _LABEL_FIELDS = {
     label.casefold(): field

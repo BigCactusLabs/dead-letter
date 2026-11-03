@@ -1,0 +1,18 @@
+From: Alice <alice@example.cn>
+To: Bob <bob@example.cn>
+Subject: Synthetic locale control
+Date: Thu, 05 Mar 2026 12:15:00 +0000
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+AUTHORED_PAYLOAD
+
+________________________________
+发件人: Bob <bob@example.cn>
+发送时间: Wed, 4 Mar 2026 09:00:00 +0000
+收件人: Alice <alice@example.cn>
+抄送: Eve <eve@example.cn>
+主题: 回复: Plan
+
+OLD_REPLY_PAYLOAD
