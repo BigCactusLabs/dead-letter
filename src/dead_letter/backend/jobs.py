@@ -17,6 +17,7 @@ from dead_letter.backend.mbox_jobs import (
     MboxBusyError,
     MboxJobOutcome,
     MboxJobRunner,
+    MboxMemberError,
     admit_mbox_source,
     admit_staged_mbox_source,
 )
@@ -257,9 +258,12 @@ class JobManager:
         reservation: MboxSlotReservation | None = None,
         origin: str = "manual",
     ) -> JobCreateResponse:
+        if request.options.member is not None and admission.source.suffix.lower() == ".mbox":
+            raise MboxMemberError("member is only supported for compressed MBOX archives")
         job_id = uuid4().hex
         runner = MboxJobRunner(
             admission=admission, cabinet_root=cabinet_root, job_id=job_id, options=request.options,
+            inbox_root=self._inbox_root,
         )
         record = _JobRecord(
             id=job_id, request=request.model_copy(deep=True), files=[], cabinet_root=cabinet_root,

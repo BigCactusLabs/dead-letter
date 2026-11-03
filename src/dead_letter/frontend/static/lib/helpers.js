@@ -91,17 +91,21 @@ const MBOX_OPTION_KEYS = [
 
 export const MBOX_UPLOAD_MAX_BYTES = 16 * 1024 ** 3;
 
-export function buildMboxOptions(options, timeoutSeconds = 30) {
+export function isCompressedMbox(source) {
+  return /\.(zip|tgz|tar\.gz)$/i.test(String(source || "").trim());
+}
+
+export function buildMboxOptions(options, timeoutSeconds = 30, member = "") {
   const selected = Object.fromEntries(
     MBOX_OPTION_KEYS.filter((key) => key in options).map((key) => [key, options[key]])
   );
-  return { ...selected, timeout_seconds: timeoutSeconds };
+  return { ...selected, timeout_seconds: timeoutSeconds, ...(member ? { member } : {}) };
 }
 
-export function buildMboxPayload(inputPath, options, timeoutSeconds = 30) {
+export function buildMboxPayload(inputPath, options, timeoutSeconds = 30, member = "") {
   return {
     input_path: inputPath.trim().replace(/\\/g, "/"),
-    options: buildMboxOptions(options, timeoutSeconds),
+    options: buildMboxOptions(options, timeoutSeconds, isCompressedMbox(inputPath) ? member : ""),
   };
 }
 
@@ -116,7 +120,7 @@ export function validateMboxForm({ inputPath, timeoutSeconds = 30 }) {
   const path = inputPath.trim().replace(/\\/g, "/");
   const errors = [];
   if (!path) errors.push("MBOX path is required.");
-  else if (!path.toLowerCase().endsWith(".mbox")) errors.push("Choose a single uncompressed .mbox file.");
+  else if (!path.toLowerCase().endsWith(".mbox") && !isCompressedMbox(path)) errors.push("Choose one .mbox, .zip, .tgz or .tar.gz file.");
   if (/^(\/|[a-z]:|~\/)/i.test(path) || path.split("/").includes("..")) {
     errors.push("Use a path within the file browser root, such as Downloads/Takeout.mbox.");
   }
@@ -125,9 +129,9 @@ export function validateMboxForm({ inputPath, timeoutSeconds = 30 }) {
 
 export function validateMboxUpload({ file, timeoutSeconds = 30 }) {
   const errors = [];
-  if (!file) errors.push("Choose a .mbox file to upload.");
-  else if (!String(file.name || "").toLowerCase().endsWith(".mbox")) {
-    errors.push("Choose a single uncompressed .mbox file.");
+  if (!file) errors.push("Choose an archive to upload.");
+  else if (!String(file.name || "").toLowerCase().endsWith(".mbox") && !isCompressedMbox(file.name)) {
+    errors.push("Choose one .mbox, .zip, .tgz or .tar.gz file.");
   } else if (file.size > MBOX_UPLOAD_MAX_BYTES) {
     errors.push("Archives larger than 16 GiB cannot be uploaded.");
   }

@@ -5,7 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic_core import PydanticCustomError
 
 from dead_letter.core.types import ThreadMode, ThreadOrder
 
@@ -125,6 +126,7 @@ class MboxJobOptions(BaseModel):
     allow_html_repair_on_panic: bool = False
     thread_mode: ThreadMode = ThreadMode.LATEST
     thread_order: ThreadOrder = ThreadOrder.OLDEST_FIRST
+    member: str | None = None
     timeout_seconds: float = Field(default=30.0, gt=0, le=300, allow_inf_nan=False, strict=True)
 
     model_config = ConfigDict(extra="forbid")
@@ -135,6 +137,15 @@ class MboxJobCreateRequest(BaseModel):
     options: MboxJobOptions = Field(default_factory=MboxJobOptions)
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_member(self) -> MboxJobCreateRequest:
+        if self.options.member is not None and self.input_path.lower().endswith(".mbox"):
+            raise PydanticCustomError(
+                "mbox_member_requires_archive",
+                "member is only supported for compressed MBOX archives",
+            )
+        return self
 
 
 class MboxProgress(BaseModel):

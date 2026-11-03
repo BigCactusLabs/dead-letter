@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 import threading
-from contextlib import closing
+from contextlib import ExitStack, closing
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from time import monotonic
 from typing import Any
 
@@ -20,24 +22,39 @@ from dead_letter.backend.schemas import (
     Summary,
 )
 from dead_letter.core.mbox import MboxCancelled, MboxLimits
+from dead_letter.core.mbox_archive import ArchiveLimits, convert_mbox_archive
 from dead_letter.core.mbox_import import MboxConversion, convert_mbox
 from dead_letter.core.stream_report import StreamingReport
 from dead_letter.core.types import ConvertOptions
 
+MBOX_INPUT_SUFFIXES = (".mbox", ".zip", ".tgz", ".tar.gz")
 MAX_MBOX_ARCHIVE_BYTES = 16 * 1024 * 1024 * 1024
 MAX_MBOX_FAILURES_RETURNED = 20
-_FATAL_RESULT_CODES = frozenset({"mbox_publish_failed", "mbox_storage_error"})
+_STAGING_SPACE_RECHECK_BYTES = 64 * 1024 * 1024
+_FATAL_RESULT_CODES = frozenset({"mbox_publish_failed", "mbox_storage_error", "mbox_disk_reserve"})
+
+
+def mbox_input_suffix(name: str) -> str:
+    return next((suffix for suffix in MBOX_INPUT_SUFFIXES if name.lower().endswith(suffix)), "")
 
 
 class MboxBusyError(RuntimeError):
     """All archive slots are reserved by queued or running jobs."""
 
 
+class MboxMemberError(ValueError):
+    """Member selection was requested for a resolved flat input."""
+
+
 class MboxArchiveTooLargeError(ValueError):
-    """The flat archive exceeds the web job admission limit."""
+    """The input archive exceeds the web job admission limit."""
 
 
 class _SourceChangedError(RuntimeError):
+    pass
+
+
+class _DiskReserveError(RuntimeError):
     pass
 
 
@@ -91,9 +108,9 @@ def _admit_resolved(
 ) -> MboxAdmission:
     if source.is_relative_to(cabinet_root):
         raise ValueError("Cabinet sources are not allowed")
-    if source.suffix.lower() != ".mbox":
+    if not mbox_input_suffix(source.name):
         raise ValueError(
-            "MBOX jobs accept one flat .mbox file; compressed archives are not supported"
+            "MBOX jobs accept one .mbox, .zip, .tgz or .tar.gz file"
         )
     try:
         admitted = source.stat()
@@ -130,7 +147,9 @@ class MboxJobRunner:
         cabinet_root: Path,
         job_id: str,
         options: MboxJobOptions,
+        inbox_root: Path | None = None,
     ) -> None:
+        self.inbox_root = inbox_root
         self.admission = admission
         self.cabinet_root = cabinet_root
         self.output = cabinet_root / f"mbox-{job_id}"
@@ -142,9 +161,11 @@ class MboxJobRunner:
         self._progress = MboxProgress(
             source_path=str(admission.source), bytes_total=admission.size
         )
+        self._archive_summary: dict[str, Any] = {}
         self._summary = Summary()
         self._errors: list[ErrorItem] = []
         self._report_incomplete = False
+        self._next_staging_check = 0
 
     def request_cancel(self) -> bool:
         with self._lock:
@@ -239,9 +260,17 @@ class MboxJobRunner:
                 entry[key] = value
         with self._lock:
             if item.mbox is not None:
+                container = item.mbox.get("container")
+                if container is not None:
+                    self._archive_summary = {
+                        **container,
+                        "container_path": str(self.admission.source),
+                        "container_size": self.admission.size,
+                    }
+                    self._progress.bytes_total = container["staged_bytes"]
                 self._progress.records_processed += 1
                 self._progress.bytes_processed = min(
-                    self.admission.size,
+                    self._progress.bytes_total,
                     max(self._progress.bytes_processed, int(item.mbox["end_offset"])),
                 )
             if not item.success:
@@ -265,13 +294,51 @@ class MboxJobRunner:
                 "Could not append to the MBOX report; partial outputs were retained"
             ) from exc
 
+    def _check_disk(self, path: Path) -> None:
+        from dead_letter.backend.uploads import MBOX_UPLOAD_DISK_RESERVE_BYTES
+
+        try:
+            free = shutil.disk_usage(path).free
+        except Exception as exc:
+            raise _DiskReserveError(
+                "Free space could not be measured; the import stopped to protect the 1 GiB reserve"
+            ) from exc
+        if free < MBOX_UPLOAD_DISK_RESERVE_BYTES:
+            raise _DiskReserveError(
+                "Less than 1 GiB is free on the staging or Cabinet volume; free space before importing again"
+            )
+
+    def _check_staging(self, path: Path, written: int) -> None:
+        if self.cancel_event.is_set():
+            raise MboxCancelled()
+        if written >= self._next_staging_check:
+            self._check_disk(path.parent)
+            self._next_staging_check = written + _STAGING_SPACE_RECHECK_BYTES
+
     def _convert(self, report: StreamingReport, options: ConvertOptions) -> bool:
         """Return whether an archive/report failure occurred; close before publish."""
         fatal = False
+        self._reserve_failed = False
         try:
             self._check_source()
-            with closing(
-                convert_mbox(
+            self._check_disk(self.cabinet_root)
+            with ExitStack() as stack:
+                convert = convert_mbox
+                archive_options: dict[str, Any] = {}
+                if mbox_input_suffix(self.admission.source.name) != ".mbox":
+                    from dead_letter.backend.uploads import prepare_staging_dir
+
+                    parent = prepare_staging_dir(self.inbox_root) if self.inbox_root is not None else None
+                    staging = Path(stack.enter_context(TemporaryDirectory(prefix="mbox-job-", dir=parent)))
+                    self._check_disk(staging)
+                    convert = convert_mbox_archive
+                    archive_options = {
+                        "member": self.options.member,
+                        "staging_dir": staging,
+                        "archive_limits": ArchiveLimits(),
+                        "staging_check": self._check_staging,
+                    }
+                results = stack.enter_context(closing(convert(
                     self.admission.source,
                     output=self.output,
                     options=options,
@@ -279,8 +346,8 @@ class MboxJobRunner:
                     bundles=True,
                     timeout_seconds=self.options.timeout_seconds,
                     cancel_requested=self.cancel_event.is_set,
-                )
-            ) as results:
+                    **archive_options,
+                )))
                 for item in results:
                     self._record(item, report)
                     if (
@@ -290,6 +357,7 @@ class MboxJobRunner:
                         fatal = True
                         break
                     self._check_source()
+                    self._check_disk(self.cabinet_root)
             self._check_source()
         except MboxCancelled:
             # Worker termination and generator cleanup precede this exception.
@@ -319,8 +387,11 @@ class MboxJobRunner:
                     )
         except Exception as exc:
             fatal = True
+            self._reserve_failed = isinstance(exc, _DiskReserveError)
             code = (
-                "mbox_source_changed"
+                "mbox_disk_reserve"
+                if isinstance(exc, _DiskReserveError)
+                else "mbox_source_changed"
                 if isinstance(exc, _SourceChangedError)
                 else "mbox_report_error"
                 if isinstance(exc, _ReportError)
@@ -328,7 +399,7 @@ class MboxJobRunner:
             )
             message = (
                 str(exc)
-                if isinstance(exc, (_SourceChangedError, _ReportError))
+                if isinstance(exc, (_SourceChangedError, _ReportError, _DiskReserveError))
                 else ("Archive conversion failed; partial outputs were retained")
             )
             self._failure(code, message)
@@ -370,7 +441,7 @@ class MboxJobRunner:
             with self._lock:
                 status: JobStatus = (
                     "failed"
-                    if fatal
+                    if fatal and not (self._reserve_failed and self.cancel_event.is_set())
                     else "cancelled"
                     if self.cancel_event.is_set()
                     else "completed_with_errors"
@@ -378,6 +449,7 @@ class MboxJobRunner:
                     else "succeeded"
                 )
                 archive_summary = {
+                    **self._archive_summary,
                     "records_total": None,
                     "records_processed": self._progress.records_processed,
                     "bytes_processed": self._progress.bytes_processed,
@@ -402,6 +474,7 @@ class MboxJobRunner:
                         "max_line_bytes": MboxLimits().max_line_bytes,
                         "timeout_seconds": self.options.timeout_seconds,
                         "archive_bytes": self.admission.size,
+                        **({"member": self.options.member} if self.options.member is not None else {}),
                     },
                 )
             except Exception:
@@ -420,7 +493,10 @@ class MboxJobRunner:
                     )
                 return MboxJobOutcome("failed", None)
             with self._lock:
-                if self.cancel_event.is_set() and status not in {"failed", "cancelled"}:
+                if self.cancel_event.is_set() and (
+                    status not in {"failed", "cancelled"}
+                    or (status == "failed" and self._reserve_failed)
+                ):
                     # Cancellation accepted during publication must be reflected
                     # in the durable report before polling becomes terminal.
                     continue
@@ -446,7 +522,7 @@ class MboxJobRunner:
 
     def run(self) -> MboxJobOutcome:
         started = monotonic()
-        options = ConvertOptions(**self.options.model_dump(exclude={"timeout_seconds"}))
+        options = ConvertOptions(**self.options.model_dump(exclude={"timeout_seconds", "member"}))
         outcome = MboxJobOutcome("failed", None)
         try:
             self._check_source()

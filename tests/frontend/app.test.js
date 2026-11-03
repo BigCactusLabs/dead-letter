@@ -346,8 +346,8 @@ test("archive upload validates the chosen file locally, then sends it with archi
   Object.assign(app.options, { delete_eml: true, dry_run: true, report: true, thread_mode: "structured" });
 
   for (const [file, timeout, expected] of [
-    [null, 45, /Choose a \.mbox file/],
-    [{ name: "Takeout.zip", size: 10 }, 45, /uncompressed \.mbox/],
+    [null, 45, /Choose an archive/],
+    [{ name: "Takeout.rar", size: 10 }, 45, /\.mbox, \.zip/],
     [{ name: "Takeout.mbox", size: helpers.MBOX_UPLOAD_MAX_BYTES + 1 }, 45, /larger than 16 GiB/],
     [{ name: "Takeout.mbox", size: 10 }, 0, /time limit/],
   ]) {
@@ -420,7 +420,7 @@ test("upload progress drives the converting view with coarse announcements", () 
 
 test("archive form offers an upload picker beside the local path and wires upload cancellation", () => {
   const html = readHtml();
-  const inputs = [...html.matchAll(/<input[^>]*type="file"[^>]*accept="\.mbox"[^>]*>/g)];
+  const inputs = [...html.matchAll(/<input[^>]*type="file"[^>]*accept="\.mbox,\.zip,\.tgz,\.tar\.gz"[^>]*>/g)];
   assert.equal(inputs.length, 1);
   assert.doesNotMatch(inputs[0][0], /multiple/);
   assert.match(inputs[0][0], /@change="chooseMboxFile\(\$event\)"/);
@@ -447,4 +447,46 @@ test("the manual job button is enabled for an archive before any job has run", (
   assert.equal(disabled(scope("mbox", { id: "job-1", status: "running" })), true);
   assert.equal(disabled(scope("mbox", { id: "job-1", status: "succeeded" })), false);
   assert.equal(disabled(scope("file", { id: "job-1", kind: "mbox", status: "queued" })), true);
+});
+
+test("archive member field follows compressed path or upload and preserves exact names", async () => {
+  const uploads = [];
+  const { app, calls } = createApp({
+    async uploadMbox(file, options) { uploads.push({ file, options }); return { ok: true }; },
+  });
+  const html = readHtml();
+  assert.match(html, /x-show="mboxIsCompressed"[\s\S]*?id="mbox-member"[^>]*x-model="mboxMember"/);
+  Object.assign(app, { mode: "mbox", mboxSource: "path", mboxMember: "Takeout/ Mail.mbox " });
+  for (const name of ["mail.zip", "mail.TGZ", "mail.TAR.GZ"]) {
+    app.inputPath = name;
+    assert.equal(app.mboxIsCompressed, true);
+    await app.submitJob();
+    assert.equal(calls.at(-1).payload.options.member, "Takeout/ Mail.mbox ");
+  }
+  app.inputPath = "mail.mbox";
+  assert.equal(app.mboxIsCompressed, false);
+  await app.submitJob();
+  assert.equal("member" in calls.at(-1).payload.options, false);
+  app.mboxSource = "upload";
+  for (const name of ["mail.zip", "mail.tgz", "mail.tar.gz", "mail.mbox"]) {
+    app.mboxFile = { name, size: 10 };
+    assert.equal(app.mboxIsCompressed, name !== "mail.mbox");
+    await app.submitJob();
+    assert.equal(uploads.at(-1).options.member, name === "mail.mbox" ? undefined : "Takeout/ Mail.mbox ");
+  }
+  app.mboxFile = null;
+  assert.equal(app.mboxIsCompressed, false);
+});
+
+test("archive failures show plain core and reserve messages", () => {
+  const { app } = createApp({ kind: "mbox", status: "failed", errors: [] });
+  for (const [code, message] of [
+    ["mbox_archive_multiple_mbox", 'Select an exact MBOX member name: "a.mbox", "b.mbox"'],
+    ["mbox_archive_corrupt", "Truncated gzip stream"],
+    ["mbox_disk_reserve", "Less than 1 GiB is free on the staging or Cabinet volume"],
+    ["mbox_disk_reserve", "Free space could not be measured"],
+  ]) {
+    app.$store.job.errors = [{ code, message }];
+    assert.equal(app.mboxNotice, message + " Completed bundles are kept.");
+  }
 });

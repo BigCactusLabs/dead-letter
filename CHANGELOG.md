@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Web MBOX jobs and browser uploads accept Takeout `.zip`, `.tgz` and
+  `.tar.gz` archives with optional exact member selection. Private member
+  staging is cleaned up after every terminal outcome. Jobs enforce a 1 GiB
+  free-space reserve on staging and Cabinet volumes, retaining completed
+  bundles and a partial report on a reserve stop. Web-job resume remains
+  unsupported (#146).
 - Opt-in synthetic MBOX worker amplification benchmark
   (`scripts/measure_mbox_amplification.py`) that records per-worker CPU time,
   peak RSS, output bytes and a temporary-storage checkpoint for the timed

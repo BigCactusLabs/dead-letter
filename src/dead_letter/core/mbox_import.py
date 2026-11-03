@@ -211,8 +211,8 @@ def _convert_mbox(
     if cancel_requested is not None:
         if not callable(cancel_requested):
             raise ValueError("MBOX cancel_requested must be callable")
-        if resume or archive is not None:
-            raise ValueError("MBOX cooperative cancellation requires non-resumed flat input")
+        if resume:
+            raise ValueError("MBOX cooperative cancellation requires non-resumed input")
     _raise_if_cancelled(cancel_requested)
     budgets = _worker_budgets(timeout_seconds, memory_limit_mib, cpu_seconds, max_output_mib)
     if budgets is not None:

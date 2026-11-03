@@ -429,8 +429,10 @@ CI also validates plugin/skill schemas, frontend syntax, maintained Markdown lin
 
 - CLI/Python accept `.eml`, flat `.mbox` exports, and (from 0.4.5) ZIP/TGZ
   Takeout downloads; see the [Takeout guide](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/gmail-takeout.md). The web UI
-  imports `.eml` files and, from 0.4.10, one flat `.mbox` by local path; its
-  watch and file-import flows stay EML-only. From 0.4.5 the MCP server adds a bounded `convert_mbox` tool for
+  imports `.eml` files and, from 0.4.10, one flat `.mbox` by local path.
+  Unreleased source adds `.zip`, `.tgz` and `.tar.gz` input by path or browser
+  upload, with a 1 GiB staging/output free-space reserve; web jobs cannot resume.
+  Its watch and file-import flows stay EML-only. From 0.4.5 the MCP server adds a bounded `convert_mbox` tool for
   one flat `.mbox`. PST, MSG and live-mailbox connections are unsupported.
   An opt-in resumable MBOX import (`--mbox-resume`, CLI/Python only) is
   available from 0.4.6; see the [resume contract](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/mbox-resume.md).
