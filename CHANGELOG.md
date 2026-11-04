@@ -69,6 +69,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `triage` and `mbox` commands ask Claude to run.
 - The ARD catalog's skill entry now uses the standard `application/agent-skills+md`
   media type from ARD v0.91, previously `application/ai-skill+md` (#159).
+- `mail-parser` is now required at 4.10.0 or later, up from 4.2.0. Version 4.9.0
+  fixes a regular-expression denial of service in `Received` header parsing,
+  and 4.10.0 parses those headers for every message. A Subject encoded word
+  with an unknown charset now adds a `mime_defect` warning, so the message's
+  diagnostics report `degraded` quality. The converted subject text is
+  unchanged.
 
 ### Fixed
 
