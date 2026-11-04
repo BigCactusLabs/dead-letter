@@ -231,7 +231,9 @@ def page(
 
 
 RENDER_JS = r"""
-const { chromium } = require('playwright');
+// process.argv[3] is the absolute module path resolved from the caller's
+// directory, because this file runs from a temporary directory.
+const { chromium } = require(process.argv[3]);
 const jobs = JSON.parse(require('fs').readFileSync(process.argv[2], 'utf8'));
 (async () => {
   const browser = await chromium.launch();
@@ -670,11 +672,17 @@ def main() -> int:
     if missing:
         print(f"missing tools: {', '.join(missing)}", file=sys.stderr)
         return 2
-    if subprocess.run(
-        ["node", "-e", "require('playwright')"], capture_output=True
-    ).returncode:
+    # Resolve Playwright here, from the caller's directory, and hand the
+    # absolute path to the renderer, which runs from a temporary directory.
+    found = subprocess.run(
+        ["node", "-p", "require.resolve('playwright')"],
+        capture_output=True,
+        text=True,
+    )
+    if found.returncode:
         print("node cannot load the playwright package", file=sys.stderr)
         return 2
+    playwright_module = found.stdout.strip()
 
     temp = Path(tempfile.mkdtemp(prefix="dead-letter-demo-"))
     try:
@@ -693,7 +701,15 @@ def main() -> int:
             jobs.append({"html": str(target)})
         (temp / "jobs.json").write_text(json.dumps(jobs))
         (temp / "render.js").write_text(RENDER_JS)
-        run(["node", str(temp / "render.js"), str(temp / "jobs.json")], cwd=temp)
+        run(
+            [
+                "node",
+                str(temp / "render.js"),
+                str(temp / "jobs.json"),
+                playwright_module,
+            ],
+            cwd=temp,
+        )
         args.out.mkdir(parents=True, exist_ok=True)
         assets = encode(
             [temp / f"scene{i}@1x.png" for i in range(1, 6)],
