@@ -11,6 +11,7 @@ from dead_letter.core.attachments import (
     collect_inline_cid_data_uris,
 )
 from dead_letter.core.header_parser import parse_subject
+from dead_letter.core.mime import parse_eml_bytes
 
 
 @pytest.mark.parametrize("encoding", ["base64", "7bit", "8bit", ""])
@@ -91,6 +92,43 @@ def test_subject_with_unknown_or_nontext_charset_uses_utf8_fallback(charset: str
 
 def test_subject_fallback_preserves_adjacent_words() -> None:
     assert parse_subject("Before =?x-not-a-charset?q?caf=C3=A9?= after") == "Before café after"
+
+
+def _message_with_subject(subject: str) -> bytes:
+    return (
+        "From: sender@example.com\r\n"
+        "To: recipient@example.com\r\n"
+        f"Subject: {subject}\r\n"
+        "Date: Tue, 3 Nov 2026 10:00:00 +0000\r\n"
+        "Content-Type: text/plain; charset=utf-8\r\n"
+        "\r\n"
+        "Body.\r\n"
+    ).encode("ascii")
+
+
+def test_unknown_charset_subject_decodes_and_reports_header_defect() -> None:
+    # mail-parser >= 4.10 leaves the encoded word raw and records a header
+    # decoding defect; dead-letter still decodes the subject itself.
+    parsed = parse_eml_bytes(
+        _message_with_subject("=?x-not-a-charset?q?caf=C3=A9?= tail"),
+        source="unknown-charset-subject.eml",
+    )
+
+    assert parsed.subject == "café tail"
+    assert [(d.part_id, d.code, d.severity) for d in parsed.defects] == [
+        ("root", "mime_defect", "warning"),
+    ]
+    assert "HeaderDecodeDefect" in parsed.defects[0].message
+
+
+def test_known_charset_subject_reports_no_header_defect() -> None:
+    parsed = parse_eml_bytes(
+        _message_with_subject("=?iso-8859-1?q?caf=E9?= tail"),
+        source="known-charset-subject.eml",
+    )
+
+    assert parsed.subject == "café tail"
+    assert parsed.defects == []
 
 
 def test_subject_with_malformed_base64_remains_readable() -> None:
