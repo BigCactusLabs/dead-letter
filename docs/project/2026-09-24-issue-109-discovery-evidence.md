@@ -69,6 +69,12 @@ The resolved release asset `dead-letter-server-0.4.0.json` carries the MCPB
 hash and OCI digest, so a hosted catalog can reference it instead of the
 source-template `server.json`.
 
+2026-11-04: the skill entry type changed to `application/agent-skills+md`. The
+conformance tool at `ards-project/ard-spec@f073b1e` (spec v0.91) passed the
+source manifest with 0 errors and 0 warnings, including the strict JSON Schema
+check (`jsonschema` installed). See the
+[November 4 refresh](2026-11-04-distribution-refresh.md#ard-media-type-159).
+
 ## Agent Finder (#160)
 
 At [`github/agentfinder-catalog@666cf8a`](https://github.com/github/agentfinder-catalog/tree/666cf8a51e2329d577e73d6e3c00fa5eae55ce2c):

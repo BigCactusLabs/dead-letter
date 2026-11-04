@@ -67,6 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Claude plugin 0.4.13 keeps the 0.4.10 pin. Its README links synthetic
   sample mail for trying each command and lists the shell helpers that the
   `triage` and `mbox` commands ask Claude to run.
+- The ARD catalog's skill entry now uses the standard `application/agent-skills+md`
+  media type from ARD v0.91, previously `application/ai-skill+md` (#159).
 
 ### Fixed
 
