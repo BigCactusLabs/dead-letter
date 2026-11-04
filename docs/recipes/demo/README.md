@@ -18,7 +18,9 @@ marker.
 
 None of the sites and directories below shows video or a screenshot gallery.
 Link cards use a 2:1 image, and icon fields take a small square image. Use
-these files as they are.
+these files as they are. The limits come from each surface's own docs, schema
+or source, checked on 2026-11-04. Glama, PulseMCP and mcpservers.org could not
+be checked then; confirm their fields when you fill in their forms.
 
 | File | Dimensions | Bytes | Use it for | Caption keys |
 | --- | --- | --- | --- | --- |
