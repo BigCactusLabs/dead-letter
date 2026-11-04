@@ -16,6 +16,10 @@ dead-letter converts `.eml` email exports into clean Markdown with YAML front ma
 
 Use it to build a readable email archive, move messages into Markdown-based knowledge systems, or prepare email for RAG and LLM pipelines without feeding raw MIME and base64 into your context window. No account, upload, or API key required.
 
+<p align="center">
+  <a href="https://github.com/BigCactusLabs/dead-letter/blob/main/docs/recipes/demo/README.md"><img src="https://raw.githubusercontent.com/BigCactusLabs/dead-letter/main/docs/recipes/demo/dead-letter-demo.gif" width="800" alt="dead-letter 0.4.10 converting a synthetic inbox: raw MIME input, CLI folder conversion, Markdown with YAML front matter, a copy-only Cabinet bundle with the decoded CSV attachment, and report plus diagnostics"></a>
+</p>
+
 ## ⚡ Try it
 
 If you already have [`uv`](https://docs.astral.sh/uv/), run dead-letter without installing it globally:
