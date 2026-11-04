@@ -10,7 +10,53 @@ marker.
 | [`dead-letter-demo.gif`](dead-letter-demo.gif) | GIF, 800×450, loops | 186,347 bytes |
 | [`dead-letter-demo.mp4`](dead-letter-demo.mp4) | H.264, yuv420p, 1600×900, 30 fps, no audio | 551,078 bytes |
 | [`dead-letter-demo.png`](dead-letter-demo.png) | Still of scene 3, 1600×900 | 142,079 bytes |
+| [`dead-letter-social-1280x640.png`](dead-letter-social-1280x640.png) | Social card, PNG, 1280×640 | 130,461 bytes |
+| [`captions.json`](captions.json) | Reviewed captions and alt text for the files here | — |
 | [`capture.json`](capture.json) | Commands, full outputs, resolved packages, host tools | — |
+
+## Reusable versions
+
+None of the sites and directories below shows video or a screenshot gallery.
+Link cards use a 2:1 image, and icon fields take a small square image. Use
+these files as they are. The limits come from each surface's own docs, schema
+or source, checked on 2026-11-04. Glama, PulseMCP and mcpservers.org could not
+be checked then; confirm their fields when you fill in their forms.
+
+| File | Dimensions | Bytes | Use it for | Caption keys |
+| --- | --- | --- | --- | --- |
+| [`dead-letter-social-1280x640.png`](dead-letter-social-1280x640.png) | 1280×640 | 130,461 | GitHub repository social preview (1280×640, under 1 MB). `og:image` and `twitter:image` (`summary_large_image`, 2:1, under 5 MB) on a site page. | `title`, `card_description`, `social_alt` |
+| [`dead-letter-demo.gif`](dead-letter-demo.gif) | 800×450 | 186,347 | README and PyPI through an absolute `https` URL, the recipes index, a blog post. | `demo_caption`, `demo_alt` |
+| [`dead-letter-demo.mp4`](dead-letter-demo.mp4) | 1600×900 | 551,078 | A direct link for a sharper, full-size view. No directory accepts it. | `demo_caption` |
+| [`dead-letter-demo.png`](dead-letter-demo.png) | 1600×900 | 142,079 | A static picture where motion is unwelcome. It shows scene 3 only. | none; describe scene 3 |
+| [`readme-logo.png`](../../brand/production/readme-logo.png) | 512×512 | 150,851 | Icon fields: Agent Finder (static PNG, at most 256 KiB and 512 px), Smithery (at most 1 MB), MCP Registry icons (PNG or JPEG by `https` URL), Cline (PNG or SVG). Do not make a new icon. | `title`, `one_liner` |
+
+The social card is rendered in the same run as the demo, from the same
+captured output. The logo is the existing brand file, a static RGB PNG.
+
+Nothing in this folder is uploaded anywhere. The GitHub social preview
+setting, `og:` and `twitter:` tags on bigcactuslabs.xyz, and directory forms
+are separate owner actions.
+
+The repository README embeds the GIF from `main` by absolute URL. PyPI shows
+README images through its image proxy, so a PyPI page shows the demo on `main`
+at view time. That may not match the release the page describes.
+
+### Captions
+
+[`captions.json`](captions.json) holds the copy. Use it as written. Each key
+must stay within the strictest limit of the places it goes;
+`tests/plugin/test_demo_assets.py` checks the limits.
+
+| Key | Limit | Use it for |
+| --- | --- | --- |
+| `version` | — | The release the captions describe. It matches `capture.json`. |
+| `title` | 70 | `og:title` and `twitter:title` (70); a directory title (MCP Registry, 100). |
+| `one_liner` | 100 | MCP Registry description (100); Cline tagline (120); short directory descriptions. |
+| `card_description` | 200 | `og:description` and `twitter:description` (200). |
+| `demo_caption` | 200 | A caption under the GIF or MP4 on a page or in a post. |
+| `social_alt` | 420 | `og:image:alt` and `twitter:image:alt` (420) for the social card. |
+| `demo_alt` | 420 | Alt text for the GIF on a page or in a README, kept within the same image-alt limit. |
+| `site_paragraph` | — | A longer description on bigcactuslabs.xyz or a directory field without a short limit. |
 
 ## Storyboard
 
@@ -84,10 +130,20 @@ Captured on 2026-11-04 with uv 0.11.32, CPython 3.12.3, Node 22.23.4
   downscaling; 13.6 px mono, about the size of GitHub code text) and at 2× for the MP4
   and the still. The GIF is built with palettegen/paletteuse and no dithering.
   The script fails if any text pane overflows.
+- **Social card:** laid out at 1280×640 CSS pixels and captured once at 1×,
+  with 48 px margins and 18 px mono text. The left column has `readme-logo.png`,
+  the name, the line "Email exports to clean, LLM-ready Markdown" and the
+  release chip. On the right, the top pane shows header lines and the first
+  MIME boundary from the same `cat` of `order-update.eml`. The arrow shows the
+  folder `convert` command as it ran. The bottom pane shows the YAML front
+  matter of the converted file. Skipped lines use the same `… N lines not
+  shown …` marker. The script also fails if the card overflows, is not
+  1280×640, or is 1 MB or larger.
 
 ## Regenerate
 
-Do not hand-edit these files. To regenerate them, run from the repository root:
+Do not hand-edit the media or `capture.json`. `captions.json` is reviewed copy,
+not generated. To regenerate the rest, run from the repository root:
 
 ```bash
 python scripts/render_demo.py            # rewrites docs/recipes/demo/
@@ -99,4 +155,5 @@ You need network access to PyPI, plus uv, bash, ffmpeg and Node with the
 test suites do not run it. A new run changes the report's `created_at` and
 `duration_ms` and may encode slightly different bytes. Update the sizes above
 and the version in the [recipes index](../README.md) caption when you
-regenerate for another release.
+regenerate for another release. Update `captions.json` for that release too;
+the tests check that its `version` matches `capture.json`.

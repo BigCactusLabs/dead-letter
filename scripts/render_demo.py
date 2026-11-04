@@ -1,4 +1,4 @@
-"""Render the recipe demo (MP4, GIF, still PNG) from a released dead-letter.
+"""Render the recipe demo (MP4, GIF, still, social card) from a released dead-letter.
 
 Maintainer tool, not run by CI or the test suite. It installs the named release
 from PyPI into a temporary virtual environment, copies the synthetic recipe
@@ -43,8 +43,14 @@ STEM = "dead-letter-demo"
 CLIENT = "inbox/clients/order-update.eml"
 SCENE_SECONDS = (5, 5, 7, 5, 5)
 
+LOGO = ROOT / "docs" / "brand" / "production" / "readme-logo.png"
+# Link-card size GitHub recommends for a repository social preview (2:1).
+CARD_WIDTH, CARD_HEIGHT = 1280, 640
+SOCIAL = "dead-letter-social-1280x640.png"
+SOCIAL_MAX_BYTES = 1_000_000
+
 # Brume tokens and font stacks from docs/brand/style-guide.md.
-CSS = """
+TOKENS = """
 :root {
   --bg: #0d1117; --panel: #161b22; --line: #30363d; --ink: #e6edf3;
   --muted: #8b949e; --faint: #484f58; --accent: #5870a8; --accent-2: #6b9db5;
@@ -53,7 +59,8 @@ CSS = """
   --mono: "IBM Plex Mono", "Source Code Pro", "Fira Mono", Menlo, Consolas, monospace;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { width: 800px; height: 450px; overflow: hidden; background: var(--bg); color: var(--ink); }
+"""
+SCENE_LAYOUT = """html, body { width: 800px; height: 450px; overflow: hidden; background: var(--bg); color: var(--ink); }
 body { font-family: var(--sans); display: flex; flex-direction: column; padding: 12px 24px 10px; }
 .top { display: flex; align-items: center; gap: 8px; }
 .top img { width: 18px; height: 18px; }
@@ -68,7 +75,8 @@ h1 { font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
 .label { font-family: var(--mono); font-size: 12px; color: var(--accent-2); margin-bottom: 3px; }
 pre { font-family: var(--mono); font-size: 13.6px; line-height: 17px; white-space: pre; }
 pre.big { font-size: 15px; line-height: 19px; }
-.cmd { color: var(--ink); font-weight: 600; }
+"""
+PAINT = """.cmd { color: var(--ink); font-weight: 600; }
 .ps { color: var(--muted); }
 .k { color: var(--accent-2); }
 .b { color: var(--counter); }
@@ -76,11 +84,32 @@ pre.big { font-size: 15px; line-height: 19px; }
 .t { color: var(--ok); }
 .dim { color: var(--muted); }
 .gap { color: var(--muted); font-style: italic; }
-.exit { color: var(--ok); font-size: 12px; }
+"""
+SCENE_TAIL = """.exit { color: var(--ok); font-size: 12px; }
 .progress { display: flex; gap: 4px; margin-top: 8px; }
 .progress span { flex: 1; height: 3px; background: var(--line); }
 .progress span.on { background: var(--accent); }
 """
+CSS = TOKENS + SCENE_LAYOUT + PAINT + SCENE_TAIL
+CARD_CSS = (
+    TOKENS
+    + """html, body { width: %dpx; height: %dpx; overflow: hidden; background: var(--bg); color: var(--ink); }
+body { font-family: var(--sans); display: flex; align-items: center; gap: 48px; padding: 48px; }
+.col { flex: 0 0 420px; display: flex; flex-direction: column; align-items: flex-start; }
+.col img { width: 168px; height: 168px; border: 1px solid var(--line); }
+.nb { white-space: nowrap; }
+.name { font-size: 54px; font-weight: 600; letter-spacing: -0.02em; line-height: 64px; margin-top: 24px; }
+.tag { font-size: 26px; line-height: 34px; color: var(--muted); margin-top: 8px; }
+.chip { font-family: var(--mono); font-size: 16px; color: var(--counter); border: 1px solid var(--line); padding: 2px 8px; margin-top: 24px; }
+.panes { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pane { background: var(--panel); border: 1px solid var(--line); padding: 10px 16px; min-width: 0; overflow: hidden; }
+.label { font-family: var(--mono); font-size: 15px; color: var(--accent-2); margin-bottom: 4px; }
+pre { font-family: var(--mono); font-size: 18px; line-height: 22px; white-space: pre; }
+.arrow { font-family: var(--mono); font-size: 16px; color: var(--accent-2); padding: 6px 16px; }
+"""
+    % (CARD_WIDTH, CARD_HEIGHT)
+    + PAINT
+)
 
 
 class DemoError(Exception):
@@ -233,19 +262,29 @@ def page(
 RENDER_JS = r"""
 // process.argv[3] is the absolute module path resolved from the caller's
 // directory, because this file runs from a temporary directory.
+// Each job names its viewport and scales; one browser context serves each
+// viewport and scale, opened in first-use order.
 const { chromium } = require(process.argv[3]);
 const jobs = JSON.parse(require('fs').readFileSync(process.argv[2], 'utf8'));
 (async () => {
   const browser = await chromium.launch();
   const problems = [];
-  for (const scale of [1, 2]) {
-    const context = await browser.newContext({ viewport: { width: %d, height: %d }, deviceScaleFactor: scale });
+  const groups = [];
+  for (const scale of [...new Set(jobs.flatMap(job => job.scales))].sort((a, b) => a - b)) {
+    for (const job of jobs.filter(job => job.scales.includes(scale))) {
+      let group = groups.find(g => g.scale === scale && g.width === job.width && g.height === job.height);
+      if (!group) groups.push(group = { scale, width: job.width, height: job.height, jobs: [] });
+      group.jobs.push(job);
+    }
+  }
+  for (const { scale, width, height, jobs: batch } of groups) {
+    const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: scale });
     const page = await context.newPage();
-    for (const job of jobs) {
+    for (const job of batch) {
       await page.goto('file://' + job.html);
       await page.evaluate(() => document.fonts.ready);
-      if (scale === 1) {
-        const overflow = await page.evaluate(() => [...document.querySelectorAll('.pane, body')]
+      if (scale === Math.min(...job.scales)) {
+        const overflow = await page.evaluate(() => [...document.querySelectorAll('.pane, .col, body')]
           .filter(el => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)
           .map(el => (el.querySelector('.label') || el).textContent.slice(0, 40)));
         if (overflow.length) problems.push(job.html + ': ' + overflow.join(', '));
@@ -257,7 +296,7 @@ const jobs = JSON.parse(require('fs').readFileSync(process.argv[2], 'utf8'));
   await browser.close();
   if (problems.length) { console.error('overflow:\n' + problems.join('\n')); process.exit(1); }
 })().catch(err => { console.error(err); process.exit(1); });
-""" % (WIDTH, HEIGHT)
+"""
 
 
 # ---------------------------------------------------------------- capture
@@ -579,6 +618,60 @@ def scenes(data: dict, version: str, icon: str) -> list[str]:
     ]
 
 
+def runs(indexes: list[int]) -> list[tuple[int, int]]:
+    """Group sorted line indexes into half-open ranges of consecutive lines."""
+    ranges: list[tuple[int, int]] = []
+    for index in indexes:
+        if ranges and ranges[-1][1] == index:
+            ranges[-1] = (ranges[-1][0], index + 1)
+        else:
+            ranges.append((index, index + 1))
+    return ranges
+
+
+def card(data: dict, version: str, logo: str) -> str:
+    """Social card: the raw message headers above the front matter they became."""
+    s = data["scenes"]
+    raw_lines = s["raw"]["output"].rstrip("\n").split("\n")
+    head_end = raw_lines.index("")
+    shown = [
+        i
+        for i in range(head_end)
+        if raw_lines[i].startswith(
+            ("From:", "To:", "Date:", "Subject:", "Content-Type:")
+        )
+    ]
+    boundary = next(
+        i for i in range(head_end, len(raw_lines)) if raw_lines[i].startswith("--")
+    )
+    raw_body = excerpt(
+        raw_lines, runs(shown + list(range(head_end, boundary + 1))), paint_mime
+    )
+
+    md_path = s["markdown"]["command"].removeprefix("cat ")
+    require(md_path in s["tree"]["output"].split(), "card output path not converted")
+    md_lines = s["markdown"]["output"].rstrip("\n").split("\n")
+    front_end = md_lines.index("---", 1)
+    md_body = excerpt(md_lines, [(0, front_end + 1)], paint_md)
+
+    return f"""<!doctype html><html><head><meta charset="utf-8"><style>{CARD_CSS}</style></head><body>
+<div class="col"><img src="data:image/png;base64,{logo}" alt="">
+<div class="name">dead-letter</div>
+<div class="tag">Email exports to clean, <span class="nb">LLM-ready</span> Markdown</div>
+<span class="chip">dead-letter {esc(version)} · PyPI</span></div>
+<div class="panes">
+<div class="pane"><div class="label">{esc(CLIENT)}</div><pre>{raw_body}</pre></div>
+<div class="arrow">↓ {esc(s["convert"]["command"])}</div>
+<div class="pane"><div class="label">{esc(md_path)}</div><pre>{md_body}</pre></div>
+</div></body></html>"""
+
+
+def png_size(path: Path) -> tuple[int, int]:
+    head = path.read_bytes()[:24]
+    require(head[:8] == b"\x89PNG\r\n\x1a\n" and head[12:16] == b"IHDR", "not a PNG")
+    return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
+
+
 # ---------------------------------------------------------------- encode
 
 
@@ -698,7 +791,26 @@ def main() -> int:
         for index, markup in enumerate(pages, 1):
             target = temp / f"scene{index}.html"
             target.write_text(markup, encoding="utf-8")
-            jobs.append({"html": str(target)})
+            jobs.append(
+                {
+                    "html": str(target),
+                    "width": WIDTH,
+                    "height": HEIGHT,
+                    "scales": [1, 2],
+                }
+            )
+        logo = base64.b64encode(LOGO.read_bytes()).decode()
+        (temp / "card.html").write_text(
+            card(data, args.version, logo), encoding="utf-8"
+        )
+        jobs.append(
+            {
+                "html": str(temp / "card.html"),
+                "width": CARD_WIDTH,
+                "height": CARD_HEIGHT,
+                "scales": [1],
+            }
+        )
         (temp / "jobs.json").write_text(json.dumps(jobs))
         (temp / "render.js").write_text(RENDER_JS)
         run(
@@ -717,6 +829,17 @@ def main() -> int:
             temp,
             args.out,
         )
+        social = args.out / SOCIAL
+        shutil.copyfile(temp / "card@1x.png", social)
+        require(
+            png_size(social) == (CARD_WIDTH, CARD_HEIGHT),
+            f"social card is {png_size(social)}, not {CARD_WIDTH}×{CARD_HEIGHT}",
+        )
+        require(
+            social.stat().st_size < SOCIAL_MAX_BYTES,
+            f"social card is {social.stat().st_size} bytes",
+        )
+        assets["social"] = social
 
         def fonts(name: str) -> str:
             if not shutil.which("fc-match"):

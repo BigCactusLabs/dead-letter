@@ -118,7 +118,7 @@
     {
       "command": "cat audit/.dead-letter-report.json",
       "exit": 0,
-      "output": "{\n  \"schema_version\": 1,\n  \"generator\": {\n    \"name\": \"dead-letter\",\n    \"version\": \"0.4.10\"\n  },\n  \"created_at\": \"2026-11-04T06:09:49.015644+00:00\",\n  \"job\": {\n    \"id\": \"cli\",\n    \"status\": \"succeeded\",\n    \"duration_ms\": 10,\n    \"input_path\": \"<work>/inbox/clients/order-update.eml\",\n    \"input_mode\": \"file\"\n  },\n  \"options\": {\n    \"strip_signatures\": false,\n    \"strip_disclaimers\": false,\n    \"strip_quoted_headers\": false,\n    \"strip_signature_images\": false,\n    \"strip_tracking_pixels\": false,\n    \"embed_inline_images\": false,\n    \"include_all_headers\": false,\n    \"include_raw_html\": false,\n    \"no_calendar_summary\": false,\n    \"allow_fallback_on_html_error\": false,\n    \"allow_html_repair_on_panic\": false,\n    \"delete_eml\": false,\n    \"dry_run\": false,\n    \"thread_mode\": \"latest\",\n    \"thread_order\": \"oldest-first\"\n  },\n  \"summary\": {\n    \"total\": 1,\n    \"written\": 1,\n    \"skipped\": 0,\n    \"errors\": 0\n  },\n  \"results\": [\n    {\n      \"source\": \"order-update.eml\",\n      \"output\": \"audit/cedar-works-order-4821-revised-delivery.md\",\n      \"success\": true\n    }\n  ]\n}\n"
+      "output": "{\n  \"schema_version\": 1,\n  \"generator\": {\n    \"name\": \"dead-letter\",\n    \"version\": \"0.4.10\"\n  },\n  \"created_at\": \"2026-11-04T16:26:47.806709+00:00\",\n  \"job\": {\n    \"id\": \"cli\",\n    \"status\": \"succeeded\",\n    \"duration_ms\": 11,\n    \"input_path\": \"<work>/inbox/clients/order-update.eml\",\n    \"input_mode\": \"file\"\n  },\n  \"options\": {\n    \"strip_signatures\": false,\n    \"strip_disclaimers\": false,\n    \"strip_quoted_headers\": false,\n    \"strip_signature_images\": false,\n    \"strip_tracking_pixels\": false,\n    \"embed_inline_images\": false,\n    \"include_all_headers\": false,\n    \"include_raw_html\": false,\n    \"no_calendar_summary\": false,\n    \"allow_fallback_on_html_error\": false,\n    \"allow_html_repair_on_panic\": false,\n    \"delete_eml\": false,\n    \"dry_run\": false,\n    \"thread_mode\": \"latest\",\n    \"thread_order\": \"oldest-first\"\n  },\n  \"summary\": {\n    \"total\": 1,\n    \"written\": 1,\n    \"skipped\": 0,\n    \"errors\": 0\n  },\n  \"results\": [\n    {\n      \"source\": \"order-update.eml\",\n      \"output\": \"audit/cedar-works-order-4821-revised-delivery.md\",\n      \"success\": true\n    }\n  ]\n}\n"
     }
   ],
   "mcp": {
@@ -138,6 +138,10 @@
     "png": {
       "file": "dead-letter-demo.png",
       "bytes": 142079
+    },
+    "social": {
+      "file": "dead-letter-social-1280x640.png",
+      "bytes": 130461
     }
   }
 }
