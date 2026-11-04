@@ -13,6 +13,12 @@ reply and a small CSV attachment; it contains no private mail.
 | Keep Markdown, source mail, and decoded files together | [Durable Cabinet](durable-cabinet.md) |
 | Audit a conversion and inspect quality signals | [Report and diagnostics](report-and-diagnostics.md) |
 
+[![Released dead-letter 0.4.10 converting the synthetic inbox: raw MIME input, CLI folder conversion, Markdown with YAML front matter, a copy-only Cabinet bundle with the decoded CSV, and report plus diagnostics](demo/dead-letter-demo.gif)](demo/README.md)
+
+*A 27-second capture of released dead-letter 0.4.10 run on this inbox. It
+shows only real command output. See the [MP4](demo/dead-letter-demo.mp4) and
+the [storyboard and capture record](demo/README.md).*
+
 The CLI and Python examples in these guides were exercised against the released 0.4.0
 package. The MCP examples were exercised against its real stdio server; this
 does not establish a named GUI client's install or model behavior. All five

@@ -1,0 +1,143 @@
+{
+  "release": {
+    "package": "dead-letter==0.4.10",
+    "python": "3.12.3",
+    "uv": "uv 0.11.32 (x86_64-unknown-linux-gnu)",
+    "exclude_newer": "2026-10-30T00:00:00Z",
+    "resolved": [
+      "annotated-types==0.8.0",
+      "anyio==4.15.1",
+      "attrs==26.1.0",
+      "cffi==2.1.1",
+      "click==8.5.0",
+      "cryptography==50.0.2",
+      "dead-letter==0.4.10",
+      "h11==0.16.0",
+      "html-to-markdown==3.19.0",
+      "httpcore2==2.16.0",
+      "httpx2==2.16.0",
+      "icalendar==7.3.0",
+      "idna==3.20",
+      "jsonschema==4.26.0",
+      "jsonschema-specifications==2025.9.1",
+      "mail-parser==4.9.0",
+      "mail-parser-reply==1.36",
+      "mcp==2.3.0",
+      "mcp-types==2.3.0",
+      "nh3==0.3.7",
+      "opentelemetry-api==1.45.2",
+      "pycparser==3.12",
+      "pydantic==2.14.2",
+      "pydantic-core==2.50.2",
+      "pyjwt==2.15.1",
+      "python-dateutil==3.0.0",
+      "python-multipart==0.0.32",
+      "pyyaml==6.0.3",
+      "referencing==0.37.0",
+      "rpds-py==2026.9.1",
+      "selectolax==1.0.2",
+      "six==1.17.0",
+      "sse-starlette==3.6.0",
+      "starlette==1.10.0",
+      "truststore==0.10.5",
+      "typing-extensions==4.16.0",
+      "typing-inspection==0.4.4",
+      "tzdata==2026.6",
+      "uvicorn==0.54.0"
+    ]
+  },
+  "host": {
+    "platform": "Linux-6.18.44-fc-v233-x86_64-with-glibc2.39",
+    "node": "v22.23.4",
+    "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+    "monospace_fallback": "DejaVuSansMono.ttf: \"DejaVu Sans Mono\" \"Book\"",
+    "sans": "Inter-Regular.otf: \"Inter\" \"Regular\""
+  },
+  "scene_seconds": [
+    5,
+    5,
+    7,
+    5,
+    5
+  ],
+  "source_sha256": {
+    "inbox/clients/order-update.eml": "b472dfb168cd5efc9c993878b86ea1b7dc4f29659413283375328c10583e4b0c",
+    "inbox/ops/loading-window.eml": "40dce67047d4191b23a09aeea98e6459de2427c5fdb7c3644df56d21d0b98322"
+  },
+  "commands": [
+    {
+      "command": "cat inbox/clients/order-update.eml",
+      "exit": 0,
+      "output": "From: Mara Chen <mara@cedarworks.example>\nTo: Operations <ops@northstar.example>\nDate: Tue, 15 Sep 2026 09:20:00 -0400\nSubject: Cedar Works order 4821 - revised delivery\nMessage-ID: <order-4821@cedarworks.example>\nMIME-Version: 1.0\nContent-Type: multipart/mixed; boundary=\"cedar-4821\"\n\n--cedar-4821\nContent-Type: text/plain; charset=\"utf-8\"\n\nHello team,\n\nPlease move order 4821 to Thursday, 17 September. The revised quantities are\nin the attached CSV. Please confirm the delivery window by Wednesday noon.\n\nRegards,\nMara\n\n--cedar-4821\nContent-Type: text/csv; charset=\"utf-8\"; name=\"order-4821.csv\"\nContent-Disposition: attachment; filename=\"order-4821.csv\"\nContent-Transfer-Encoding: base64\n\nc2t1LHF1YW50aXR5Cm5vdGVib29rLDI0CnBlbiw0OAo=\n--cedar-4821--\n"
+    },
+    {
+      "command": "find inbox -type f | sort",
+      "exit": 0,
+      "output": "inbox/clients/order-update.eml\ninbox/ops/loading-window.eml\n"
+    },
+    {
+      "command": "dead-letter convert inbox --output vault",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "command": "find vault -type f | sort",
+      "exit": 0,
+      "output": "vault/clients/cedar-works-order-4821-revised-delivery.md\nvault/ops/loading-window-for-cedar-works.md\n"
+    },
+    {
+      "command": "cat vault/clients/cedar-works-order-4821-revised-delivery.md",
+      "exit": 0,
+      "output": "---\nsource: order-update.eml\nsubject: Cedar Works order 4821 - revised delivery\nsender: mara@cedarworks.example\ndate: '2026-09-15T13:20:00+00:00'\nattachments:\n- order-4821.csv\n---\n\nHello team,\n\nPlease move order 4821 to Thursday, 17 September. The revised quantities are\nin the attached CSV. Please confirm the delivery window by Wednesday noon.\n\nRegards,\nMara\n"
+    },
+    {
+      "command": "python - <<'PY'\nfrom dead_letter import convert_to_bundle\nr = convert_to_bundle(\"inbox/clients/order-update.eml\",\n                      bundle_root=\"Cabinet\", source_handling=\"copy\")\nprint(r.success, r.bundle.name, len(r.attachments))\nPY",
+      "exit": 0,
+      "output": "True order-update 1\n"
+    },
+    {
+      "command": "find Cabinet -type f | sort",
+      "exit": 0,
+      "output": "Cabinet/order-update/attachments/order-4821.csv\nCabinet/order-update/message.md\nCabinet/order-update/order-update.eml\n"
+    },
+    {
+      "command": "cat Cabinet/order-update/attachments/order-4821.csv",
+      "exit": 0,
+      "output": "sku,quantity\nnotebook,24\npen,48\n"
+    },
+    {
+      "command": "ls inbox/clients",
+      "exit": 0,
+      "output": "order-update.eml\n"
+    },
+    {
+      "command": "dead-letter convert inbox/clients/order-update.eml --output audit --report",
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "command": "cat audit/.dead-letter-report.json",
+      "exit": 0,
+      "output": "{\n  \"schema_version\": 1,\n  \"generator\": {\n    \"name\": \"dead-letter\",\n    \"version\": \"0.4.10\"\n  },\n  \"created_at\": \"2026-11-04T06:09:49.015644+00:00\",\n  \"job\": {\n    \"id\": \"cli\",\n    \"status\": \"succeeded\",\n    \"duration_ms\": 10,\n    \"input_path\": \"<work>/inbox/clients/order-update.eml\",\n    \"input_mode\": \"file\"\n  },\n  \"options\": {\n    \"strip_signatures\": false,\n    \"strip_disclaimers\": false,\n    \"strip_quoted_headers\": false,\n    \"strip_signature_images\": false,\n    \"strip_tracking_pixels\": false,\n    \"embed_inline_images\": false,\n    \"include_all_headers\": false,\n    \"include_raw_html\": false,\n    \"no_calendar_summary\": false,\n    \"allow_fallback_on_html_error\": false,\n    \"allow_html_repair_on_panic\": false,\n    \"delete_eml\": false,\n    \"dry_run\": false,\n    \"thread_mode\": \"latest\",\n    \"thread_order\": \"oldest-first\"\n  },\n  \"summary\": {\n    \"total\": 1,\n    \"written\": 1,\n    \"skipped\": 0,\n    \"errors\": 0\n  },\n  \"results\": [\n    {\n      \"source\": \"order-update.eml\",\n      \"output\": \"audit/cedar-works-order-4821-revised-delivery.md\",\n      \"success\": true\n    }\n  ]\n}\n"
+    }
+  ],
+  "mcp": {
+    "tool": "get_diagnostics",
+    "eml_path": "<work>/inbox/clients/order-update.eml",
+    "text": "{\n  \"state\": \"normal\",\n  \"selected_body\": \"plain\",\n  \"segmentation_path\": \"plain_fallback\",\n  \"client_hint\": \"generic\",\n  \"confidence\": \"medium\",\n  \"fallback_used\": \"plain_text_reply_parser\",\n  \"warnings\": [],\n  \"attachments\": {\n    \"referenced\": 1,\n    \"retained\": 1\n  }\n}"
+  },
+  "assets": {
+    "mp4": {
+      "file": "dead-letter-demo.mp4",
+      "bytes": 551078
+    },
+    "gif": {
+      "file": "dead-letter-demo.gif",
+      "bytes": 186347
+    },
+    "png": {
+      "file": "dead-letter-demo.png",
+      "bytes": 142079
+    }
+  }
+}
