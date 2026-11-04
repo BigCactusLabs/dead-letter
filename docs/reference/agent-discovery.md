@@ -121,7 +121,10 @@ a result covers only the host and version it names.
 - `urn:air:github.com:bigcactuslabs:dead-letter:mcp-server`, type
   `application/mcp-server-card+json`, pointing at source `server.json`.
 - `urn:air:github.com:bigcactuslabs:dead-letter:skill`, type
-  `application/ai-skill+md`, pointing at the portable `SKILL.md`.
+  `application/agent-skills+md`, pointing at the portable `SKILL.md`. This is
+  the ARD v0.91 standard skill type (ard-spec `cbe4bbf`, 2026-10-11); the entry
+  used `application/ai-skill+md` before 2026-11-04. See the
+  [November 4 refresh](../project/2026-11-04-distribution-refresh.md#ard-media-type-159).
 
 Representative queries cover exported email conversion, reading `.eml`, RAG
 preparation, and local archives. These are discovery intents, not measured
@@ -173,6 +176,10 @@ publication alone is not evidence that a named client query returns
 dead-letter; record the actual catalog/client result. The
 [Agent Finder search page](https://github.com/agentfinder) accepts
 natural-language queries for retrieval checks once an entry is listed.
+The catalog's `CONTRIBUTING.md` was revised on 2026-10-13. `sourceSet` and
+`repoPath` are required for GitHub-file references, which this skill entry is.
+Validation now needs `python3 -m pip install -r requirements.txt` before the
+generator runs.
 
 The prepared skill-entry shape below follows the catalog's own `urn:ai:`
 identifier and `application/ai-skill` media type, not ARD's `urn:air:` scheme:
@@ -197,7 +204,8 @@ and still passes the generator and `--check` at
 The catalog's generator enforces fewer fields than that guide, so a generator
 pass is not proof of a complete entry. In a fork of that catalog, add
 `catalog/bigcactuslabs/dead-letter.json`, check it with `python -m json.tool`,
-and run `python3 scripts/generate_ai_catalog.py` and its `--check` mode; the
+run `python3 -m pip install -r requirements.txt`, then
+`python3 scripts/generate_ai_catalog.py` and its `--check` mode; the
 generator fetches GitHub's live MCP catalog. Fork workflows validate but
 cannot push the regenerated `ai-catalog.json`; upstream regenerates it after
 merge. Review whether the catalog permits a released commit URL instead of the

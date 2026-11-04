@@ -41,6 +41,8 @@ capability in user-facing docs.
 - `scripts/verify.py` — shared quick/full/packaging checks with JSON outcomes
 - `scripts/{package_artifacts,smoke_package,package_probe}.py` — built metadata,
   checksum evidence, and isolated noneditable wheel/sdist probes
+- `scripts/render_demo.py` — regenerates the `docs/recipes/demo/` capture from
+  the released PyPI package; manual only, never run in CI or tests
 - `tests/{core,backend,plugin,frontend}/` — suites split by module; synthetic
   `.eml` fixtures under `tests/core/fixtures/`
 - `docs/reference/` — durable public contracts and runbooks
