@@ -51,6 +51,9 @@ filename. Machine-readable versions live in package/distribution metadata;
 
 [Reach & Distribution](project/reach.md) retains the product/discovery
 strategy and outstanding evidence requirements. The
+[November 5 discovery plan](project/2026-11-05-discovery-without-social-posting.md)
+records source-backed distribution experiments without regular social posting,
+their priorities, and completion evidence. The
 [MBOX ingestion design notes](project/2026-09-18-mbox-ingestion.md) are a
 history record of the research and boundaries behind the streaming Takeout
 importer and its worker follow-up, both shipped in 0.4.0; current availability
