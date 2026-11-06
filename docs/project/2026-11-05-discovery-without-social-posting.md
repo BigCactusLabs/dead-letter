@@ -8,10 +8,11 @@ Status: **proposed distribution experiments**, with dated observations below.
 
 Prioritize a complete **Google Takeout to Obsidian archive** workflow: one
 searchable public page, one inspectable synthetic sample vault, and one tested
-path through the released package. Then test a small number of placements in
-existing tool documentation, a preservation registry, and a Python publication.
-Evaluate one optional MarkItDown integration after checking its audience and
-licensing fit.
+path through the released package. Then answer an existing Thunderbird
+Markdown-export request with a tested workflow and make one Python editorial
+submission. Add a preservation-registry entry once that registry is back
+online. Converter-framework integrations are deferred: the checked candidates
+already have permissively licensed email options.
 
 These are assets and contributions that can remain useful between releases.
 The plan does not depend on a recurring social-posting schedule. The working
@@ -71,10 +72,13 @@ Obsidian; add other pages only when each has a distinct, tested workflow.
 | Prepare email for local RAG | A working handoff for text, provenance, and separately retained binaries | [RAG preprocessing](../recipes/rag-preprocessing.md), [quality diagnostics](../reference/quality-diagnostics.md) |
 
 Dedicated task pages already exist for [inktomd][inktomd] and
-[mdgate][mdgate]; mdgate also exposes a local browser conversion experience.
-This establishes competing presentation patterns, not their traffic, output
-quality, or conversion rates. Dead-letter's archive workflow is the proposed
-starting point; privacy alone is not unique to this project.
+[mdgate][mdgate]. inktomd handles EML and MSG. mdgate converts in the browser
+and also offers [MBOX to Markdown][mdgate-mbox], so MBOX support alone does not
+set dead-letter apart. This establishes competing presentation patterns, not
+their traffic, output quality, or conversion rates. The proposed distinction is
+a complete Takeout migration: Gmail labels, attachment handling, resume, and
+large archives, each stated only as far as release evidence supports it.
+Privacy alone is not unique to this project.
 
 ### First deliverable
 
@@ -130,82 +134,72 @@ configuration purpose.
 
 [ImportExportTools NG][ietng] exports folders and subfolders as MBOX and
 messages as EML and other formats. Markdown is absent from its documented
-export list. A tested Thunderbird export to dead-letter to Markdown guide is
-a candidate for its documentation or wiki.
+export list, and [issue #317][ietng-317], a Markdown export request opened in
+2022 that cites Obsidian and Joplin archiving, is still open without a
+maintainer answer.
 
-First validate the actual export dialect, folder behavior, attachments, and
-output on a small synthetic collection. The contribution should supply exact
-steps and expected results. Upstream maintainers decide whether an external
-tool workflow belongs in their documentation; a useful guide is not a
-guaranteed placement. Keep this an external-tool pipeline rather than copying
-or bundling differently licensed code into the upstream extension.
+Answer that request with a tested Thunderbird export to dead-letter to
+Markdown workflow. First validate the actual export dialect, folder behavior,
+attachments, and output on a small synthetic collection, and give exact steps
+and expected results. The extension's single-page wiki already credits a
+third-party Apple Mail import script, so a linked workflow is a plausible
+later wiki addition; upstream maintainers decide that. Keep this an
+external-tool pipeline rather than copying or bundling differently licensed
+code into the upstream extension.
 
-### Obsidian import documentation
+### Obsidian
 
-The official [Obsidian Importer][obsidian-importer] currently omits email/MBOX
-from its documented supported formats. It welcomes contributions to import
-guides and new formats. A verified Takeout-to-vault workflow is a candidate
-for an appropriate documentation contribution.
+The official [Obsidian Importer][obsidian-importer] omits email formats, and
+no open issue there requests them. Its
+[contribution guide][obsidian-contributing] requires TypeScript, few
+dependencies, and mobile-safe code, and its documentation covers its own
+importers rather than external-tool workflows. It is not a route for this
+Python engine; the Obsidian audience is reached through the task page and
+sample vault in section 1.
 
-Individual-email importing already has competition: [Postbox][postbox]
-advertises EML/MSG imports, attachments, frontmatter, watched folders, and
-duplicate handling. Its advertised features do not include MBOX. This makes
-bulk archive migration a more specific hypothesis than generic email import;
-an omitted feature is not proof that every competing implementation lacks it.
+[Postbox][postbox] imports EML and MSG files with attachments and frontmatter.
+No Obsidian community plugin found on November 5 imports MBOX or Gmail
+Takeout; the email plugins found sync from a live account or a forwarding
+address. This makes bulk archive migration a more specific hypothesis than
+generic email import; an omitted feature is not proof that every competing
+implementation lacks it.
 
-A native plugin is a later option. Official Importer contributions must be
-TypeScript and should keep dependencies light; its
-[contribution guide][obsidian-contributing] also addresses mobile compatibility.
-The Python engine is not a drop-in format contribution. A separate desktop
-companion would introduce helper installation, versioning, and support costs.
-Build it only if observed use shows that invoking the existing converter is
-the remaining obstacle.
+A native plugin or desktop companion is a later option with helper
+installation, versioning, and support costs. Build it only if observed use
+shows that invoking the existing converter is the remaining obstacle.
 
-**Completion evidence:** a tested workflow, a suitable upstream contribution,
-and a recorded accepted URL or rejection/defer decision. Maintained referral
-placement and successful user imports matter more than a submitted PR alone.
+**Completion evidence:** a tested workflow posted to the upstream request,
+with the issue URL and any maintainer response recorded. Referrals and
+successful user imports matter more than the post alone.
 
-## 3. Evaluate one optional converter integration
+## 3. Converter integrations: deferred
 
-### Preferred pilot: MarkItDown
+### MarkItDown
 
-[MarkItDown][markitdown] explicitly supports independently published plugins,
-directs users to the `markitdown-plugin` GitHub topic, and provides a
-[sample plugin][markitdown-sample]. Its contribution guidance recommends
-plugins for many new formats, particularly when they add dependencies.
+[MarkItDown][markitdown] supports independently published plugins, directs
+users to the `markitdown-plugin` GitHub topic, and provides a
+[sample plugin][markitdown-sample]. [Issue #1662][markitdown-email] asks for
+attachment conversion in its EML converter and remains open.
 
-[Issue #1662][markitdown-email] describes inbox exports and attachment-bearing
-emails for which body-only extraction is insufficient. This is specific
-problem evidence, not a market-size estimate or a claim that dead-letter
-already solves the requested recursive attachment-content conversion.
+The email slot is already contested. An MIT
+[email plugin][markitdown-email-plugin] converts EML and MSG with attachments,
+and several open core pull requests add an EML converter. MarkItDown itself is
+MIT-licensed, and that plugin keeps an LGPL dependency optional so the core
+install stays MIT-only, which suggests its users weigh permissive licensing.
+A dead-letter adapter would bring PolyForm Noncommercial terms into that
+setting, and its distinct contribution would be MBOX support. Do not pursue
+it unless users of MarkItDown ask for archive conversion.
 
-Propose a small separately installable adapter around the existing API. Show
-why someone would choose its thread handling, message metadata, cleanup, and
-explicit attachment behavior. Keep binary extraction and downstream content
-parsing distinct. Avoid a new conversion engine or a broad framework campaign.
+### Haystack
 
-Plugins require explicit installation and activation. A topic tag does not
-put the adapter in the default MarkItDown installation or establish Microsoft
-endorsement. Check overlapping email plugins and current upstream behavior
-before implementation.
+[Haystack's integration catalog][haystack-integrations] accepts
+community-maintained integrations by PR and states no license requirement.
+A listing would first require building and maintaining a Haystack converter
+component. Consider it only after the task page and sample produce evidence
+of RAG-pipeline demand.
 
-**Completion evidence:** a runnable installed adapter, a representative
-synthetic input/output example, a supported dependency range, explicit license
-information, and an actual discovery URL. Continue based on user requests or
-downstream use, not merely publication.
-
-### Alternative: Haystack
-
-[Haystack's integration catalog][haystack-integrations] documents a PR route
-for community-maintained integrations, including data ingestion and custom
-components. A small converter returning documents with stable email/source
-metadata could be considered. Catalog eligibility and downstream permission
-to use dead-letter are separate questions; the published process is not
-unconditional acceptance of this license.
-
-Choose MarkItDown or Haystack for the first experiment. A collection of
-unmaintained adapters would add support obligations without demonstrating a
-working discovery channel.
+A collection of unmaintained adapters would add support obligations without
+demonstrating a working discovery channel.
 
 ## 4. Reach preservation practitioners through COPTR
 
@@ -221,16 +215,21 @@ sample containing the original archive, output, retained attachments, source
 references, and a conversion report. Cleaned Markdown is not an archival
 preservation master or a guarantee of evidentiary fidelity.
 
-COPTR's [contribution guidance][coptr-add] allows factual tool entries. Its
-About page currently requires an account request because of spam. This is a
-one-time submission path with later maintenance; a listing is not an
-endorsement or evidence of traffic.
+COPTR's [contribution guidance][coptr-add] allows factual tool entries,
+including entries written by a tool's authors. Editing requires an account,
+requested by email because of spam. This is a one-time submission path with
+later maintenance; a listing is not an endorsement or evidence of traffic.
 
-**Completion evidence:** confirm current account/submission instructions,
-prepare accurate format/function/license fields, and record the actual entry
-URL and any workflow feedback. No account request or submission was made in
-this research. Some COPTR pages returned HTTP 503 during direct retrieval;
-their indexed primary guidance was used. Recheck availability before acting.
+**Availability:** on November 5 the live site returned HTTP 503 with a notice
+that its operators had taken it offline as a precaution after a critical PHP
+vulnerability. The notice gives no return date; the outage page was last
+modified on October 21. The links in this section are Internet Archive copies
+from before the outage. Wait until the site is back, then confirm the current
+account and submission instructions before acting.
+
+**Completion evidence:** prepare accurate format/function/license fields, and
+record the actual entry URL and any workflow feedback. No account request or
+submission was made in this research.
 
 ## 5. Make a small number of editorial submissions
 
@@ -270,7 +269,13 @@ Reproduce the exact configurations shown by [MCP Find][mcp-find] and
 [mcpcost][mcpcost], then compare them with the
 [canonical install guide](../../llms-install.md). The documented MCP
 entrypoint is `dead-letter-mcp`; `uvx dead-letter` invokes the ordinary CLI.
-Check published registry metadata and the downstream generator separately.
+On November 5, MCP Find displayed `uvx dead-letter` and mcpcost displayed
+`uvx dead-letter@0.4.10`. The repository's 0.4.10 `server.json` declares the
+`--python`, `--from dead-letter[mcp]==0.4.10`, and `--exclude-newer` runtime
+arguments and the `dead-letter-mcp` package argument, so the first suspect is
+how each directory builds a command from the registry entry. Neither site
+documents its derivation or a correction route; confirm the live registry
+record before contacting either one.
 
 Record the listing URL, displayed version, complete generated command, actual
 process result, and a known-good synthetic conversion using the documented
@@ -311,10 +316,10 @@ separate; publication of this plan does not complete those issues.
 | --- | --- | --- |
 | 1 | Public Takeout-to-Obsidian page and finished sample vault | Reproducible released workflow, verified destination behavior, indexing/inbound use when observed |
 | 2 | UI project links and diagnosis of generated MCP commands | Installed UI links; exact listing-derived command tested and corrected |
-| 3 | COPTR entry and one PyCoder's submission | Actual published URLs or explicit outcomes; subsequent referrals/use |
-| 4 | Thunderbird export guide and appropriate documentation contribution | Verified export/import path and upstream acceptance or feedback |
-| 5 | One MarkItDown or Haystack pilot | License/audience fit, installed example, discovery placement, downstream use |
-| 6 | Native Obsidian integration, conditionally | Users identify CLI/helper friction that an integration would materially resolve |
+| 3 | One PyCoder's submission and a tested Thunderbird workflow posted to ImportExportTools NG #317 | Actual published URLs or explicit outcomes; subsequent referrals/use |
+| 4 | COPTR entry, after the site returns | Current submission instructions confirmed; actual entry URL |
+| Deferred | MarkItDown or Haystack adapter | User requests for archive conversion in that framework; license fit |
+| Conditional | Native Obsidian integration | Users identify CLI/helper friction that an integration would materially resolve |
 
 Before increasing implementation scope, ask what evidence the smaller
 experiment supplied. A page or adapter receiving no useful traffic or usage
@@ -354,18 +359,21 @@ section. The cited upstream issues show specific problems, not market size.
 [mcpcost]: https://mcpcost.ulehla.dev/s/io.github.BigCactusLabs/dead-letter
 [inktomd]: https://www.inktomd.com/email-to-markdown
 [mdgate]: https://convert.mdgate.dev/eml-to-markdown
+[mdgate-mbox]: https://convert.mdgate.dev/mbox-to-markdown
 [google-search]: https://developers.google.com/search/docs/fundamentals/ai-optimization-guide
 [ietng]: https://github.com/thunderbird/import-export-tools-ng
+[ietng-317]: https://github.com/thunderbird/import-export-tools-ng/issues/317
 [obsidian-importer]: https://github.com/obsidianmd/obsidian-importer
 [postbox]: https://community.obsidian.md/plugins/postbox
 [obsidian-contributing]: https://github.com/obsidianmd/obsidian-importer/blob/master/CONTRIBUTING.md
 [markitdown]: https://github.com/microsoft/markitdown
 [markitdown-sample]: https://github.com/microsoft/markitdown/blob/main/packages/markitdown-sample-plugin/README.md
 [markitdown-email]: https://github.com/microsoft/markitdown/issues/1662
+[markitdown-email-plugin]: https://github.com/reecemiao/markitdown-email-plugin
 [haystack-integrations]: https://github.com/deepset-ai/haystack-integrations
-[coptr-about]: https://coptr.digipres.org/index.php/About_COPTR
-[coptr-add]: https://coptr.digipres.org/index.php/Add_a_tool_to_COPTR
-[emailchemy]: https://coptr.digipres.org/Emailchemy
+[coptr-about]: https://web.archive.org/web/20260609122236/https://coptr.digipres.org/index.php/About_COPTR
+[coptr-add]: https://web.archive.org/web/20260413080737/https://coptr.digipres.org/index.php/Add_a_tool_to_COPTR
+[emailchemy]: https://web.archive.org/web/20250914175304/https://coptr.digipres.org/Emailchemy
 [pycoders]: https://pycoders.com/submissions
 [console]: https://console.dev/selection-criteria
 [glama-issue]: https://github.com/BigCactusLabs/dead-letter/issues/149

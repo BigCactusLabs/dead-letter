@@ -24,7 +24,7 @@ Lead with email normalization, readable archives, attachment-aware ingestion,
 and Markdown knowledge bases. MBOX/Gmail Takeout is available through the
 CLI/Python importer and bounded MCP tool. Local-path MBOX web/API jobs have
 shipped; browser uploads, compressed web imports, and durable web-job resume
-remain unreleased source work under #146. The
+are merged under the closed #146 but not yet released. The
 [Takeout guide](../reference/gmail-takeout.md) owns current availability.
 PST and MSG remain separate format-expansion work. See the
 [development handoff](2026-10-27-development-groundwork.md) for the remaining
@@ -77,9 +77,10 @@ accepted placements.
 | --- | --- | --- |
 | Now | Public Takeout-to-Obsidian page and finished synthetic sample vault | Reproduced released workflow, verified destination behavior, indexing/inbound use when observed |
 | Now | Project/help links in the UI and investigation of generated MCP launch commands | Installed UI links; exact directory-generated configuration diagnosed and corrected |
-| Next | COPTR entry and one PyCoder's editorial submission | Actual entry/feature URL or recorded outcome; subsequent referrals/use |
-| Next | Tested Thunderbird export workflow and appropriate upstream documentation contribution | Reproducible export/conversion and maintainer acceptance or feedback |
-| Conditional | One MarkItDown or Haystack integration pilot | License/audience fit, maintained installed example, discovery placement, downstream use |
+| Next | One PyCoder's editorial submission | Actual feature URL or recorded outcome; subsequent referrals/use |
+| Next | Tested Thunderbird export workflow posted to the open ImportExportTools NG Markdown request | Reproducible export/conversion; issue URL and maintainer response |
+| When available | COPTR entry (site offline as of 2026-11-05) | Current submission instructions confirmed; actual entry URL |
+| Deferred | MarkItDown or Haystack adapter | User requests for archive conversion in that framework; license fit |
 | Later | Native Obsidian integration or broader catalogs/formats | Observed user need and a maintainable install/update path |
 
 Keep release/onboarding validation and real-export acceptance (#138) active
