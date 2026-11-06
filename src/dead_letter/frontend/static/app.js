@@ -5,11 +5,13 @@ import { registerJobStore } from "/static/stores/job.js";
 import { registerSettingsStore } from "/static/stores/settings.js";
 import { registerWatchStore } from "/static/stores/watch.js";
 import { registerHistoryStore } from "/static/stores/history.js";
+import { registerAboutStore } from "/static/stores/about.js";
 
 registerSettingsStore(Alpine);
 registerJobStore(Alpine);
 registerWatchStore(Alpine);
 registerHistoryStore(Alpine);
+registerAboutStore(Alpine);
 
 const SIZE_WARNING_BYTES = 100 * 1024 * 1024;
 
@@ -57,6 +59,7 @@ Alpine.data("deadLetterApp", () => ({
     this.$store.watch.poll();
     this.$store.history.load();
     this.$store.job.loadResumable();
+    this.$store.about.load();
     this.$watch("$store.settings.configured", (configured) => {
       if (configured) this.$store.job.loadResumable();
     });

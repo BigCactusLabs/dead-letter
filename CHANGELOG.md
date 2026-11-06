@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The local web UI has a project footer under the paths strip with the running
+  package version and links to the documentation, the GitHub repository, and
+  issue reporting, each opening in a new tab. The version comes from a new
+  read-only `GET /api/about` route. Converted Markdown is unchanged.
 - Web MBOX imports can resume. Jobs record the core resume journal and a job
   descriptor in their `Cabinet/mbox-<job-id>` folder from the first run. A job
   that was cancelled, stopped by the free-space reserve, or cut off by a server

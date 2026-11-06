@@ -106,7 +106,7 @@ Usage guidance:
 ### Layout Model
 
 - Shell width: `min(720px, 92vw)`.
-- Vertical stacking order: header bar, status strip, workspace, read-only paths strip.
+- Vertical stacking order: header bar, status strip, workspace, read-only paths strip, project footer.
 - Workspace is the primary interaction plane and must preserve minimum height during state transitions.
 - Mobile breakpoint: `600px`; status cards stack vertically and settings grid becomes one column.
 
@@ -122,6 +122,7 @@ Usage guidance:
 - Active Watch state uses the accent edge treatment plus an animated perimeter trace; reduced-motion users keep the static active edge only.
 - Workspace (`.workspace`) that renders one of: drop zone, converting panel, done panel, settings panel.
 - Read-only paths strip (`.paths-readout`) beneath the workspace showing current Inbox and Cabinet paths.
+- Project footer (`.project-footer`) beneath the paths strip: running package version (`--mono`, shown once `GET /api/about` loads) and links to Documentation, GitHub, and issue reporting (`.project-links`). Borderless, `--muted` text at `--font-size-xs`, hover to `--ink` with the `↗` mark in `--accent-2`; links open in a new tab and carry visually hidden "opens in a new tab" text. It is UI chrome only and never adds anything to converted Markdown.
 
 ### Workspace States
 
