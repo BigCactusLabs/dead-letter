@@ -1,0 +1,108 @@
+{
+  "generated_utc": "2026-11-06",
+  "release": {
+    "package": "dead-letter==0.4.10",
+    "python": "3.12.13",
+    "uv": "uv 0.13.7 (Homebrew 2026-11-03 aarch64-apple-darwin)",
+    "exclude_newer": "2026-10-30T00:00:00Z",
+    "resolved": [
+      "annotated-types==0.8.0",
+      "anyio==4.15.1",
+      "attrs==26.1.0",
+      "cffi==2.1.1",
+      "click==8.5.0",
+      "cryptography==50.0.2",
+      "dead-letter==0.4.10",
+      "h11==0.16.0",
+      "html-to-markdown==3.19.0",
+      "httpcore2==2.16.0",
+      "httpx2==2.16.0",
+      "icalendar==7.3.0",
+      "idna==3.20",
+      "jsonschema==4.26.0",
+      "jsonschema-specifications==2025.9.1",
+      "mail-parser==4.9.0",
+      "mail-parser-reply==1.36",
+      "mcp==2.3.0",
+      "mcp-types==2.3.0",
+      "nh3==0.3.7",
+      "opentelemetry-api==1.45.2",
+      "pycparser==3.12",
+      "pydantic==2.14.2",
+      "pydantic-core==2.50.2",
+      "pyjwt==2.15.1",
+      "python-dateutil==3.0.0",
+      "python-multipart==0.0.32",
+      "pyyaml==6.0.3",
+      "referencing==0.37.0",
+      "rpds-py==2026.9.1",
+      "selectolax==1.0.2",
+      "six==1.17.0",
+      "sse-starlette==3.6.0",
+      "starlette==1.10.0",
+      "truststore==0.10.5",
+      "typing-extensions==4.16.0",
+      "typing-inspection==0.4.4",
+      "tzdata==2026.6",
+      "uvicorn==0.54.0"
+    ]
+  },
+  "host": {
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O"
+  },
+  "input": {
+    "zip": "takeout-20260921T120000Z-001.zip",
+    "zip_sha256": "e08f606b38507d9bac5baf0aacaca0422a30d0ccace9e261109cfe70bcd23b4c",
+    "zip_sha256_after_conversion": "e08f606b38507d9bac5baf0aacaca0422a30d0ccace9e261109cfe70bcd23b4c",
+    "members": {
+      "Takeout/Mail/All mail Including Spam and Trash.mbox": "9c7d2e46e79b6513795cd6fd237b88de7b8450a000c6937f5796094092e1f503",
+      "Takeout/archive_browser.html": "12e05de868aecfa59b7b7aabefd64cfd5daa17bed5d9ea31488e50077459f64e"
+    }
+  },
+  "conversion": {
+    "command": "dead-letter convert takeout-20260921T120000Z-001.zip --output vault/Email/Gmail --mbox-bundles --report",
+    "exit": 0,
+    "stdout": "",
+    "stderr": "MBOX: 5 succeeded, 0 errors\n"
+  },
+  "vault_files": [
+    "Email/Gmail/.dead-letter-report.json",
+    "Email/Gmail/00000001-bb82fa241bd345d2/attachments/order-4821.csv",
+    "Email/Gmail/00000001-bb82fa241bd345d2/message.md",
+    "Email/Gmail/00000001-bb82fa241bd345d2/source.eml",
+    "Email/Gmail/00000002-2363d420ed4d4957/message.md",
+    "Email/Gmail/00000002-2363d420ed4d4957/source.eml",
+    "Email/Gmail/00000003-a8d4f44e6c9f4392/message.md",
+    "Email/Gmail/00000003-a8d4f44e6c9f4392/source.eml",
+    "Email/Gmail/00000004-743a237f650af168/attachments/dock-3-map.pdf",
+    "Email/Gmail/00000004-743a237f650af168/message.md",
+    "Email/Gmail/00000004-743a237f650af168/source.eml",
+    "Email/Gmail/00000005-a53ee1f0d3803c19/message.md",
+    "Email/Gmail/00000005-a53ee1f0d3803c19/source.eml"
+  ],
+  "rerun_into_same_output": {
+    "command": "dead-letter convert takeout-20260921T120000Z-001.zip --output vault/Email/Gmail --mbox-bundles --report",
+    "exit": 0,
+    "stdout": "",
+    "stderr": "MBOX: 5 succeeded, 0 errors\n",
+    "bundle_directories": [
+      "00000001-bb82fa241bd345d2",
+      "00000001-bb82fa241bd345d2-2",
+      "00000002-2363d420ed4d4957",
+      "00000002-2363d420ed4d4957-2",
+      "00000003-a8d4f44e6c9f4392",
+      "00000003-a8d4f44e6c9f4392-2",
+      "00000004-743a237f650af168",
+      "00000004-743a237f650af168-2",
+      "00000005-a53ee1f0d3803c19",
+      "00000005-a53ee1f0d3803c19-2"
+    ],
+    "report_outputs": [
+      "00000001-bb82fa241bd345d2-2/message.md",
+      "00000002-2363d420ed4d4957-2/message.md",
+      "00000003-a8d4f44e6c9f4392-2/message.md",
+      "00000004-743a237f650af168-2/message.md",
+      "00000005-a53ee1f0d3803c19-2/message.md"
+    ]
+  }
+}
