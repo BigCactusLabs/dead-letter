@@ -43,6 +43,9 @@ capability in user-facing docs.
   checksum evidence, and isolated noneditable wheel/sdist probes
 - `scripts/render_demo.py` — regenerates the `docs/recipes/demo/` capture from
   the released PyPI package; manual only, never run in CI or tests
+- `scripts/render_takeout_sample.py` — regenerates the synthetic Takeout ZIP
+  and expected Obsidian vault in `docs/recipes/takeout-sample/` from the
+  released PyPI package; manual only, never run in CI or tests
 - `tests/{core,backend,plugin,frontend}/` — suites split by module; synthetic
   `.eml` fixtures under `tests/core/fixtures/`
 - `docs/reference/` — durable public contracts and runbooks

@@ -10,6 +10,7 @@ runtime contracts and historical design notes serve different purposes.
 | Understand the product and convert a first email | [README](../README.md) |
 | Follow tested Markdown, RAG, MCP, Cabinet, and audit workflows | [Conversion recipes](recipes/README.md) |
 | Convert a Gmail Takeout `.mbox` export locally | [Gmail Takeout / MBOX](reference/gmail-takeout.md) |
+| Move a Takeout export into an Obsidian vault, starting from a synthetic sample | [Takeout to Obsidian](recipes/takeout-to-obsidian.md) |
 | Contain MBOX parser hangs or crashes with per-message deadlines | [MBOX Workers](reference/mbox-workers.md) |
 | Resume an interrupted MBOX import (from 0.4.6) | [Resumable MBOX imports](reference/mbox-resume.md) |
 | Measure or audit a full MBOX import | [MBOX Validation](reference/mbox-validation.md) |

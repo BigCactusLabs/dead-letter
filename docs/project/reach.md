@@ -11,7 +11,10 @@ or a claim of acceptance by every catalog. Use the
 The [November 5 discovery plan](2026-11-05-discovery-without-social-posting.md)
 records the evidence, candidate channels, and completion criteria for growth
 without regular social posting. Its first experiment is a public
-Takeout-to-Obsidian workflow and inspectable sample vault. The
+Takeout-to-Obsidian workflow and inspectable sample vault; the
+[Takeout to Obsidian recipe](../recipes/takeout-to-obsidian.md) and its
+[synthetic sample](../recipes/takeout-sample/) now exist in the repository,
+pending a public site (#159). The
 [November 4 refresh](2026-11-04-distribution-refresh.md) and
 [distribution ledger](../reference/mcp-distribution.md) retain detailed
 catalog status and existing owner holds.
@@ -57,7 +60,7 @@ catalog acceptance.
 | Portable skill / ARD (#109) | Portable source, catalog, CI validation | Named-host usability and domain-anchored discovery |
 | Client-native listings (#104) | Setup and submission guidance | Dated submission, acceptance, and client evidence |
 | MBOX (#103) | Released CLI/Python streaming, resume, workers, bounded MCP ingestion, local-path web/API jobs, and Windows CPU/memory budgets | Real-corpus acceptance (#138); release-specific validation of newer web/archive work (#146) |
-| Demo / recipes (#105) | Five recipes, synthetic inbox, release-verification helper, and actual 27-second released-package recording plus still; #161/#162 complete | Reuse in searchable task pages and an inspectable downloadable sample |
+| Demo / recipes (#105) | Five recipes, synthetic inbox, release-verification helper, and actual 27-second released-package recording plus still; #161/#162 complete. A sixth recipe, Takeout to Obsidian, adds a synthetic Takeout ZIP and the vault released 0.4.10 produces, checked in Obsidian 1.12.4 | Publish the Takeout page on a public site; record indexing and inbound use |
 
 Use **implemented**, **published**, **submitted**, **accepted**,
 **client-tested**, and **unverified** distinctly. Record date, version,
@@ -75,7 +78,7 @@ accepted placements.
 
 | Priority | Deliverable | Completion evidence |
 | --- | --- | --- |
-| Now | Public Takeout-to-Obsidian page and finished synthetic sample vault | Reproduced released workflow, verified destination behavior, indexing/inbound use when observed |
+| Now | Public Takeout-to-Obsidian page and finished synthetic sample vault | In-repo [recipe](../recipes/takeout-to-obsidian.md) and [sample](../recipes/takeout-sample/) reproduce released 0.4.10 and record Obsidian 1.12.4 behavior; still needed: a public page (#159) and indexing/inbound use when observed |
 | Now | Project/help links in the UI and investigation of generated MCP launch commands | Installed UI links; exact directory-generated configuration diagnosed and corrected |
 | Next | One PyCoder's editorial submission | Actual feature URL or recorded outcome; subsequent referrals/use |
 | Next | Tested Thunderbird export workflow posted to the open ImportExportTools NG Markdown request | Reproducible export/conversion; issue URL and maintainer response |
@@ -126,11 +129,12 @@ launch copy rather than inventing separate claims for each channel.
 
 ### Recipes that earn references
 
-The [five conversion recipes](../recipes/README.md) cover Markdown/Obsidian,
+The [conversion recipes](../recipes/README.md) cover Markdown/Obsidian,
 RAG preprocessing, MCP, Cabinet and auditing, with a shared synthetic inbox
-and a release-verification helper. The [demo](../recipes/demo/README.md)
+and a release-verification helper, plus a Takeout-to-Obsidian walkthrough
+with its own synthetic sample vault. The [demo](../recipes/demo/README.md)
 already records a released conversion. Reuse those assets for searchable
-task pages, a downloadable sample, and client acceptance. Test one optional
+task pages and client acceptance. Test one optional
 adapter only when a concrete upstream discovery route and audience fit are
 established. A field note about a real parser edge case can link the fixture,
 regression test, and recipe;
