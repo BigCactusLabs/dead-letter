@@ -122,7 +122,9 @@ python scripts/smoke_client_install.py
 The last command requires network access on first use. It launches the public
 PyPI command from a temporary working directory and isolated uv cache, performs
 an MCP handshake, lists tools, and converts synthetic mail. CI repeats it on
-Linux, macOS, and Windows. It tests the generated executable configuration,
+Linux, macOS, and Windows, pointing `DEAD_LETTER_SMOKE_UV_CACHE_DIR` at a uv
+cache restored between runs so repeated checks do not inflate public PyPI
+download counts. uv still resolves the unpinned command against the live index. It tests the generated executable configuration,
 **not** browser deep-link handling, a named GUI release, or Cline's autonomous
 README installation. Record those client/version/OS observations separately.
 

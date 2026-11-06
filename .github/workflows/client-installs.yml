@@ -26,7 +26,19 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Check generated metadata without modifying client settings
         run: python scripts/generate_client_installs.py --check
+      # Reuse downloaded files so repeated runs do not inflate the package's
+      # public PyPI download count. uv still resolves the unpinned command
+      # against the live index. No restore-keys: each release (server.json
+      # change) starts from an empty cache, so every version gets one cold
+      # install per OS.
+      - name: Restore uv cache for the public launcher
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/client-smoke-uv-cache
+          key: client-smoke-uv-${{ runner.os }}-${{ hashFiles('server.json') }}
       - name: Launch public PyPI package and convert synthetic mail
+        env:
+          DEAD_LETTER_SMOKE_UV_CACHE_DIR: ${{ runner.temp }}/client-smoke-uv-cache
         run: python scripts/smoke_client_install.py
 
   cline-catalog:
@@ -71,7 +83,14 @@ jobs:
         with:
           node-version: '22'
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Restore uv cache for the registered launcher
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/cline-smoke-uv-cache
+          key: cline-smoke-uv-${{ runner.os }}-${{ hashFiles('server.json') }}
       - name: Register the candidate in a disposable Cline CLI profile
+        env:
+          DEAD_LETTER_SMOKE_UV_CACHE_DIR: ${{ runner.temp }}/cline-smoke-uv-cache
         # Script pins @cline/cli, removes inherited credentials, and never asks
         # an agent/model to run. --yes affects only this synthetic profile.
         run: python scripts/smoke_cline_registration.py
