@@ -1,6 +1,6 @@
 # Reach & Distribution Plan
 
-_Last reconciled with repository evidence: 2026-10-27_
+_Last reconciled with repository evidence: 2026-11-05_
 
 Make dead-letter discoverable where people already need email-to-Markdown
 conversion. This is a product/discovery plan, not a second installation guide
@@ -8,13 +8,24 @@ or a claim of acceptance by every catalog. Use the
 [distribution map](../reference/distribution.md) for routes and
 [Publishing](../reference/publishing.md) for release work.
 
+The [November 5 discovery plan](2026-11-05-discovery-without-social-posting.md)
+records the evidence, candidate channels, and completion criteria for growth
+without regular social posting. Its first experiment is a public
+Takeout-to-Obsidian workflow and inspectable sample vault. The
+[November 4 refresh](2026-11-04-distribution-refresh.md) and
+[distribution ledger](../reference/mcp-distribution.md) retain detailed
+catalog status and existing owner holds.
+
 ## Positioning and truthful boundaries
 
-> Turn `.eml` email exports into clean, local, LLM-ready Markdown.
+> Turn exported email into clean, local, LLM-ready Markdown.
 
 Lead with email normalization, readable archives, attachment-aware ingestion,
 and Markdown knowledge bases. MBOX/Gmail Takeout is available through the
-CLI/Python importer and bounded MCP tool; the web/API extension remains #146.
+CLI/Python importer and bounded MCP tool. Local-path MBOX web/API jobs have
+shipped; browser uploads, compressed web imports, and durable web-job resume
+are merged under the closed #146 but not yet released. The
+[Takeout guide](../reference/gmail-takeout.md) owns current availability.
 PST and MSG remain separate format-expansion work. See the
 [development handoff](2026-10-27-development-groundwork.md) for the remaining
 issue slices and their existing foundations.
@@ -45,8 +56,8 @@ catalog acceptance.
 | OCI / GHCR (#108) | Multi-platform workflow; first public image recorded as 0.3.1 | Docker Catalog submission/outcome and actual discovery |
 | Portable skill / ARD (#109) | Portable source, catalog, CI validation | Named-host usability and domain-anchored discovery |
 | Client-native listings (#104) | Setup and submission guidance | Dated submission, acceptance, and client evidence |
-| MBOX (#103) | Released CLI/Python streaming, resume, workers and bounded MCP ingestion | Real-corpus acceptance (#138), Windows PR #204, optional web/API jobs (#146) |
-| Demo / recipes (#105) | Five recipes, synthetic inbox and release-verification helper; #162 complete | Reproducible 20–30 second demo and still (#161) |
+| MBOX (#103) | Released CLI/Python streaming, resume, workers, bounded MCP ingestion, local-path web/API jobs, and Windows CPU/memory budgets | Real-corpus acceptance (#138); release-specific validation of newer web/archive work (#146) |
+| Demo / recipes (#105) | Five recipes, synthetic inbox, release-verification helper, and actual 27-second released-package recording plus still; #161/#162 complete | Reuse in searchable task pages and an inspectable downloadable sample |
 
 Use **implemented**, **published**, **submitted**, **accepted**,
 **client-tested**, and **unverified** distinctly. Record date, version,
@@ -56,20 +67,30 @@ MCPB subprocess smoke is not a tested extension installer.
 
 ## Execution order
 
-First close release/onboarding gaps across existing channels, then make a
-sample-first path useful. Avoid accumulating new integrations while current
-ones lack clear installation and update evidence.
+Build on the completed recipes and demo to give people a discoverable path
+from an email task to usable output. Repair concrete gaps in existing routes
+alongside that work. The dated discovery plan supplies evidence and acceptance
+criteria; the priorities below are proposed experiments, not submitted or
+accepted placements.
 
 | Priority | Deliverable | Completion evidence |
 | --- | --- | --- |
-| Now | Consistent docs and repeatable multi-channel releases | Metadata/link gates, immutable artifact recovery, explicit plugin/tap handoff |
-| Now | Visual proof using the completed recipes (#105 / #161) | Actual released conversion, readable motion asset and still using the existing synthetic inbox |
-| Next | Focused client/listing work (#104, #108, #109) | Named fresh install, current five-tool inventory, fixture conversion, actual listing status |
-| Next | Remaining MBOX acceptance and extensions (#103) | Independent real-export evidence, reviewed Windows budget PR, separately scoped web/API jobs |
-| Later | Broader catalogs/formats based on observed use | Evidence of user need, policy fit, maintainable release/update path |
+| Now | Public Takeout-to-Obsidian page and finished synthetic sample vault | Reproduced released workflow, verified destination behavior, indexing/inbound use when observed |
+| Now | Project/help links in the UI and investigation of generated MCP launch commands | Installed UI links; exact directory-generated configuration diagnosed and corrected |
+| Next | One PyCoder's editorial submission | Actual feature URL or recorded outcome; subsequent referrals/use |
+| Next | Tested Thunderbird export workflow posted to the open ImportExportTools NG Markdown request | Reproducible export/conversion; issue URL and maintainer response |
+| When available | COPTR entry (site offline as of 2026-11-05) | Current submission instructions confirmed; actual entry URL |
+| Deferred | MarkItDown or Haystack adapter | User requests for archive conversion in that framework; license fit |
+| Later | Native Obsidian integration or broader catalogs/formats | Observed user need and a maintainable install/update path |
 
-No acquisition baseline has been established by this audit. Priorities are
-product hypotheses, not traffic or conversion measurements.
+Keep release/onboarding validation and real-export acceptance (#138) active
+as separate engineering requirements. Existing client/catalog work (#104,
+#108, #109) remains in its canonical ledger; new priorities do not remove
+owner holds or turn prepared entries into submissions.
+
+No acquisition baseline has been established by this audit. The dated plan
+records public stars and package downloads with their limitations. Priorities
+are product hypotheses, not traffic or conversion measurements.
 
 ## Client-native distribution
 
@@ -107,10 +128,12 @@ launch copy rather than inventing separate claims for each channel.
 
 The [five conversion recipes](../recipes/README.md) cover Markdown/Obsidian,
 RAG preprocessing, MCP, Cabinet and auditing, with a shared synthetic inbox
-and a release-verification helper. Reuse those inputs and commands for #161
-and client acceptance. A small Python loader is more maintainable than many
-framework integrations before demand is demonstrated. A field note about a
-real parser edge case can link the fixture, regression test, and recipe;
+and a release-verification helper. The [demo](../recipes/demo/README.md)
+already records a released conversion. Reuse those assets for searchable
+task pages, a downloadable sample, and client acceptance. Test one optional
+adapter only when a concrete upstream discovery route and audience fit are
+established. A field note about a real parser edge case can link the fixture,
+regression test, and recipe;
 do not invent adoption statistics.
 
 ### Benchmark credibility
@@ -126,9 +149,9 @@ token count. Preserve the rows where naive extraction is cheaper.
 
 The MBOX importer already reuses the converter with streaming, source
 provenance, Gmail metadata, per-message failures and explicit resume behavior.
-Its remaining real-export acceptance and optional web/API work should reuse
-that foundation. Evaluate PST/MSG separately; do not let search keywords
-become unsupported product promises.
+Its remaining real-export acceptance and unreleased web/archive extensions
+should reuse that foundation. Evaluate PST/MSG separately; do not let search
+keywords become unsupported product promises.
 
 ## Measurement without private-email telemetry
 
@@ -145,8 +168,8 @@ observed use rather than continuing every packaging experiment automatically.
 
 **Name:** dead-letter
 
-**Description:** Convert `.eml` email exports to clean Markdown for RAG, LLM
-pipelines, and local knowledge bases.
+**Description:** Convert `.eml` and `.mbox` email exports to clean Markdown
+for RAG, LLM pipelines, and local knowledge bases.
 
 **Repository:** https://github.com/BigCactusLabs/dead-letter
 
