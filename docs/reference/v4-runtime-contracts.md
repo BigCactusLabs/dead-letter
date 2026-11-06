@@ -279,6 +279,23 @@ Rules:
 - A response sent before the request body was read to the end (Host/CSRF rejections, body-limit `413`s, MBOX upload rejections) carries `Connection: close`, so the client stops sending and the server never drains the unread bytes.
 - No CORS support is provided; the same-origin local UI is the only browser client. Script clients must call `/api/session` and include the CSRF header before using mutating endpoints.
 
+#### `GET /api/about` (unreleased)
+
+Returns the running package version for the local UI's project footer.
+
+Response (`200`):
+
+```json
+{
+  "version": "string"
+}
+```
+
+Rules:
+
+- `version` is `dead_letter.__version__` of the process serving the API.
+- The route is read-only, takes no parameters, and follows the same trusted loopback `Host` rule as every other `/api/*` route.
+
 ### Workflow Settings
 
 #### `GET /api/settings`

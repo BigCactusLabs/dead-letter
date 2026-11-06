@@ -35,7 +35,7 @@ function createApp(jobOverrides = {}) {
   vm.runInNewContext(source, {
     ...helpers, Alpine, apiFetch: () => assert.fail("Unexpected app API request"),
     registerSettingsStore: noop, registerJobStore: noop,
-    registerWatchStore: noop, registerHistoryStore: noop,
+    registerWatchStore: noop, registerHistoryStore: noop, registerAboutStore: noop,
   }, { filename: APP_PATH });
   const app = factory();
   app.$store = {
@@ -54,6 +54,7 @@ function createApp(jobOverrides = {}) {
     settings: { configured: true, loading: false, load: noop },
     watch: { active: false, poll: noop },
     history: { load: noop, totals: { jobs_completed: 20, total_written: 100, total_skipped: 10, total_errors: 5 } },
+    about: { version: "", loads: 0, load() { this.loads += 1; } },
   };
   app.$watch = (key, callback) => watchers.set(key, callback);
   return { app, calls, watchers, job: app.$store.job };
@@ -559,4 +560,11 @@ test("resume controls are buttons in the done and idle panels with a polite erro
   assert.equal((html.match(/@click="\$store\.job\.resumeMbox\(item\.id\)"/g) || []).length, 2);
   assert.match(html, /x-show="\$store\.job\.kind === 'mbox' && \$store\.job\.resumable"/);
   assert.equal((html.match(/class="mbox-resume-error" role="alert"/g) || []).length, 3);
+});
+
+test("init loads the running package version without blocking the workflow", () => {
+  const { app, calls } = createApp();
+  app.init();
+  assert.equal(app.$store.about.loads, 1);
+  assert.deepEqual(calls, []);
 });

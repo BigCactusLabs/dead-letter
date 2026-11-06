@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 from starlette.routing import Route
 
+from dead_letter import __version__
 from dead_letter.backend import mbox_jobs
 from dead_letter.backend.filesystem import FilesystemBrowser
 from dead_letter.backend.jobs import JobManager
@@ -350,6 +351,10 @@ def create_app(
     @app.get("/api/session", status_code=200)
     async def get_session() -> dict[str, str]:
         return {"csrf_token": app.state.csrf_token}
+
+    @app.get("/api/about", status_code=200)
+    async def get_about() -> dict[str, str]:
+        return {"version": __version__}
 
     @app.post(
         "/api/jobs",

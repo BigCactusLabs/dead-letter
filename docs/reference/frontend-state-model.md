@@ -13,7 +13,7 @@ scope:
 
 # dead-letter v4 Frontend State Model
 
-This document describes runtime UI state management for the Brume Command Center interface. State is split between the `deadLetterApp` component in `src/dead_letter/frontend/static/app.js`, which holds only UI-local state, and four Alpine stores in `src/dead_letter/frontend/static/stores/` — `job`, `settings`, `watch`, and `history` — accessed via `$store.job`, `$store.settings`, `$store.watch`, and `$store.history`. Store fields use unprefixed names (e.g. `$store.job.status`, not `jobStatus`; `$store.watch.active`, not `watchActive`). The one exception is `settingsOpen`: it looks store-prefixed but is a component-local field on `deadLetterApp`, not a settings-store field.
+This document describes runtime UI state management for the Brume Command Center interface. State is split between the `deadLetterApp` component in `src/dead_letter/frontend/static/app.js`, which holds only UI-local state, and five Alpine stores in `src/dead_letter/frontend/static/stores/` — `job`, `settings`, `watch`, `history`, and `about` — accessed via `$store.job`, `$store.settings`, `$store.watch`, `$store.history`, and `$store.about`. Store fields use unprefixed names (e.g. `$store.job.status`, not `jobStatus`; `$store.watch.active`, not `watchActive`). The one exception is `settingsOpen`: it looks store-prefixed but is a component-local field on `deadLetterApp`, not a settings-store field.
 
 ## Workspace State (Computed)
 
@@ -108,6 +108,8 @@ Priority order is fixed:
   - `totals`: `{jobs_completed, total_written, total_skipped, total_errors}`
   - `loading`
   - `open`
+- about store (`$store.about`, unreleased):
+  - `version`: running package version from `GET /api/about`; empty until it loads or when the request fails, which hides the footer version label
 - watch handoff state (`$store.job`):
   - `pendingWatchJobId`
   - `pendingWatchJobStatus`
@@ -318,6 +320,7 @@ Frontend expects:
 - `GET /api/jobs/{id}` response with `status`, `origin`, `cancel_requested`, `output_location`, `progress`, `summary`, `errors`, optional `diagnostics`, and optional `report_path`.
   - when present, `report_path` is a job-specific backend artifact path rather than a shared latest-report alias
 - `GET /api/jobs/history` response with `jobs` array and `totals` aggregate.
+- `GET /api/about` response with a `version` string (unreleased). Failure is silent; the project footer links still render.
 - Error envelopes with top-level `errors`.
 - `POST /api/import` success response with `imported_path`, `id`, `status`, and `output_location`.
 - `POST /api/import-batch` success response with `imported_paths`, `id`, `status`, and `output_location`.
