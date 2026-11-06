@@ -201,7 +201,9 @@ release adds or changes MCP tools, that comparison fails on the preparation PR
 and on `main` after merge until the new version reaches PyPI. This workflow is
 not part of the release gate and does not block tagging or publication. Once
 `wait-pypi` confirms readiness, rerun its failed jobs on the release commit to
-turn `main` green again.
+turn `main` green again. Both jobs keep a uv cache keyed on the OS and
+`server.json`; a failed job saves no cache, and the first passing run after a
+release starts from an empty cache.
 
 Use a maintainer-authorized CLI/session for the release event. A release
 created by another workflow's default `GITHUB_TOKEN` generally does not start

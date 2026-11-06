@@ -2,7 +2,10 @@
 
 This is a subprocess/stdio test, not an assertion that a desktop client's GUI
 or Cline's autonomous README installer has been exercised. No user config or
-mail is read. The first launch downloads the public package into a temp cache.
+mail is read. The launch installs the public package into a temp uv cache.
+Set DEAD_LETTER_SMOKE_UV_CACHE_DIR to reuse a cache between CI runs: uv still
+resolves the unpinned command against the live index and downloads only files
+it has not already stored.
 """
 
 from __future__ import annotations
@@ -69,7 +72,9 @@ def check(command: list[str] | None = None, *, environment: dict[str, str] | Non
         env = dict(os.environ if environment is None else environment)
         env.pop("PYTHONPATH", None)
         env["UV_NO_CONFIG"] = "1"
-        env["UV_CACHE_DIR"] = str(directory / "uv-cache")
+        # Read from this process, not `environment`: registration harnesses
+        # pass a stripped environment, and a cache path is not a credential.
+        env["UV_CACHE_DIR"] = os.environ.get("DEAD_LETTER_SMOKE_UV_CACHE_DIR") or str(directory / "uv-cache")
         # This is deliberately not `uv run` in the source checkout. The exact
         # generated public client command must install the published package.
         process = subprocess.Popen(command, cwd=directory, env=env,
