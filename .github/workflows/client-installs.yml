@@ -27,10 +27,11 @@ jobs:
       - name: Check generated metadata without modifying client settings
         run: python scripts/generate_client_installs.py --check
       # Reuse downloaded files so repeated runs do not inflate the package's
-      # public PyPI download count. uv still resolves the unpinned command
-      # against the live index. No restore-keys: each release (server.json
-      # change) starts from an empty cache, so every version gets one cold
-      # install per OS.
+      # public PyPI download count. The smoke deletes cached tool environments
+      # and index pages before launching, so the unpinned command resolves
+      # against the live index on every run. No restore-keys: each release
+      # (server.json change) starts from an empty cache, so every version gets
+      # one cold install per OS.
       - name: Restore uv cache for the public launcher
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
