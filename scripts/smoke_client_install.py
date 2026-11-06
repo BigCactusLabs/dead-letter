@@ -3,9 +3,10 @@
 This is a subprocess/stdio test, not an assertion that a desktop client's GUI
 or Cline's autonomous README installer has been exercised. No user config or
 mail is read. The launch installs the public package into a temp uv cache.
-Set DEAD_LETTER_SMOKE_UV_CACHE_DIR to reuse a cache between CI runs: uv still
-resolves the unpinned command against the live index and downloads only files
-it has not already stored.
+Set DEAD_LETTER_SMOKE_UV_CACHE_DIR to reuse downloaded files between CI runs.
+Before each launch the smoke deletes uv's cached tool environments and index
+pages from that directory, so the unpinned command resolves against the live
+index; uv downloads only files it has not already stored.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import contextlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -28,6 +30,18 @@ MESSAGE = (
     "Synthetic mail confirms the published client launcher works.\n"
 )
 MARKER = "Synthetic mail confirms the published client launcher works."
+# uv reuses a cached tool environment for an unchanged unpinned `--from`
+# requirement without resolving, and serves index pages from its HTTP cache.
+# Dropping both forces a live resolution; wheels and archives stay reusable.
+RESOLUTION_CACHE_PREFIXES = ("environments-v", "simple-v")
+
+
+def prune_resolution_cache(cache: Path) -> None:
+    if not cache.is_dir():
+        return
+    for entry in cache.iterdir():
+        if entry.is_dir() and entry.name.startswith(RESOLUTION_CACHE_PREFIXES):
+            shutil.rmtree(entry)
 
 
 def command_from_examples(root: Path = ROOT) -> list[str]:
@@ -74,7 +88,10 @@ def check(command: list[str] | None = None, *, environment: dict[str, str] | Non
         env["UV_NO_CONFIG"] = "1"
         # Read from this process, not `environment`: registration harnesses
         # pass a stripped environment, and a cache path is not a credential.
-        env["UV_CACHE_DIR"] = os.environ.get("DEAD_LETTER_SMOKE_UV_CACHE_DIR") or str(directory / "uv-cache")
+        shared_cache = os.environ.get("DEAD_LETTER_SMOKE_UV_CACHE_DIR")
+        if shared_cache:
+            prune_resolution_cache(Path(shared_cache))
+        env["UV_CACHE_DIR"] = shared_cache or str(directory / "uv-cache")
         # This is deliberately not `uv run` in the source checkout. The exact
         # generated public client command must install the published package.
         process = subprocess.Popen(command, cwd=directory, env=env,
