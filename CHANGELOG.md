@@ -68,6 +68,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only, and directories that copy them reported that dead-letter has no MBOX
   support. The portable and plugin skill descriptions also cover Obsidian and
   Markdown-notes workflows and say the skill is not for live mailboxes.
+- The README headline, introduction, quick start, use cases and feature list
+  name `.mbox` and Gmail Takeout conversion, which the README previously
+  mentioned only under Known Limitations. The license section says that only
+  0.1.0 was MIT. A root `context7.json` gives Context7 a title, description,
+  indexed folders and usage rules; it has no effect until the repository is
+  submitted there.
 - MCP `convert_mbox` contract states the observed cancellation behavior:
   cancelling stops the client's wait, but conversion continues while the
   session stays open and publishes a complete report; closing the session
