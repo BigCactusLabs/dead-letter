@@ -896,6 +896,27 @@ def test_server_identity_metadata():
     assert base64.b64decode(icon.src[len(prefix) :]).startswith(b"\x89PNG\r\n\x1a\n")
 
 
+def test_server_instructions_name_the_task_within_client_limits():
+    from dead_letter.backend.mcp_server import (
+        MCP_MAX_MBOX_BYTES,
+        MCP_MAX_MBOX_MESSAGES,
+        SERVER_INSTRUCTIONS,
+        mcp,
+    )
+
+    assert mcp.instructions == SERVER_INSTRUCTIONS
+    # Claude Code cuts server instructions at 4,096 characters.
+    assert len(SERVER_INSTRUCTIONS) <= 4096
+    # The task words lead, so a truncating client still sees them.
+    lead = SERVER_INSTRUCTIONS[:200].lower()
+    for term in (".eml", ".mbox", "gmail takeout", "markdown"):
+        assert term in lead
+    # The stated caps must track the enforced ones.
+    assert f"{MCP_MAX_MBOX_BYTES // (1024 * 1024)} MiB" in SERVER_INSTRUCTIONS
+    assert f"first {MCP_MAX_MBOX_MESSAGES} messages" in SERVER_INSTRUCTIONS
+    assert "untrusted data" in SERVER_INSTRUCTIONS
+
+
 @pytest.mark.anyio
 async def test_tools_have_titles():
     from dead_letter.backend.mcp_server import mcp
