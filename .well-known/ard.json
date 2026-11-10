@@ -24,7 +24,7 @@
         "turn this .eml into markdown with front matter"
       ],
       "metadata": {
-        "registry": "https://registry.modelcontextprotocol.io/v0/servers/io.github.BigCactusLabs/dead-letter",
+        "registry": "https://registry.modelcontextprotocol.io/v0.1/servers/io.github.BigCactusLabs%2Fdead-letter/versions/latest",
         "package": "https://pypi.org/project/dead-letter/",
         "license": "PolyForm-Noncommercial-1.0.0"
       }
