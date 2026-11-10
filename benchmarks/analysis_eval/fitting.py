@@ -259,6 +259,11 @@ def fit_remap(cases, predictions):
     dev = _dev_clean(cases)
     rows = _remap_rows(dev, predictions)
     present = _present_types(predictions)
+    if not present:
+        # Empty, all-failed or all-malformed runs must not yield `types: {}`.
+        raise ValueError(
+            "absent fitting evidence: the run has no valid predictions to remap"
+        )
     types = {}
     if "noul" in present:
         fitted = fit_logistic(
