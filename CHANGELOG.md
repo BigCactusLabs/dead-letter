@@ -82,6 +82,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The ARD catalog's MCP entry linked to a `registry.modelcontextprotocol.io/v0/servers/...`
+  URL that returns 404. It now links to the working `v0.1` latest-version URL
+  for `io.github.BigCactusLabs/dead-letter`, still not pinned to a version.
 - Long `On …` lines, header lines with long runs of asterisks, repeated
   disclaimer keywords and long blank runs no longer make reply parsing take
   seconds during conversion. Conversion output is unchanged (#268).

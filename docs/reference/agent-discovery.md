@@ -147,11 +147,14 @@ https://raw.githubusercontent.com/BigCactusLabs/dead-letter/main/.well-known/ard
 That is not a well-known discovery endpoint. In ARD v0.91, domain anchoring
 applies to the URN publisher segment (here `github.com`) and to any
 `trustManifest` identity; the spec does not require the serving host to match
-that segment or to be an organization apex domain. Serving it from
-`bigcactuslabs.xyz` is the chosen endpoint (#159) but is not live. A hosted
-copy should reference released artifacts, such as the tag-pinned `SKILL.md`
-and the resolved `dead-letter-server-X.Y.Z.json` release asset, not this
-source template. Do not enable GitHub Pages or claim crawler discovery as
+that segment or to be an organization apex domain. A hosted copy
+is served from `https://bigcactuslabs.xyz/.well-known/ard.json` (#159, live
+since 2026-11-10) and is maintained in the site repository, not here. It
+references released artifacts, the tag-pinned `SKILL.md` and the resolved
+`dead-letter-server-X.Y.Z.json` release asset, not this source template, so
+it needs a site change after each package release. The host rejects the
+default `Python-urllib` user agent with HTTP 403 (Cloudflare error 1010);
+other clients tested receive the catalog. Do not enable GitHub Pages or claim crawler discovery as
 part of publishing this source file.
 
 **Release note.** Both entry versions follow the package version and are
