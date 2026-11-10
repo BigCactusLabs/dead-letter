@@ -4,8 +4,9 @@ Status: offline corpus and harness implemented; **reviewed held-out quality
 evidence remains pending**. All 192 messages and their labels are model-authored,
 public synthetic material. Every label is a `model_prelabel` with
 `human_review_status: unreviewed`. They are not gold labels. The baseline, scorer,
-identity staging helper, review-artifact workflow and repeat-run comparator run
-locally without credentials.
+identity staging helper, review-artifact workflow, repeat-run comparator,
+evaluation-only variant registry and dev-only fitting run locally without
+credentials.
 Issues [#196](https://github.com/BigCactusLabs/dead-letter/issues/196) and
 [#197](https://github.com/BigCactusLabs/dead-letter/issues/197) record a September
 28 live run against those pre-labels. Its result trees are not bundled here;
@@ -191,9 +192,119 @@ Native confidence is unused. No thresholds are fitted and no label truth enters
 these metrics; the label-file hash and review-status counts identify the selected
 corpus revision without turning stability into a correctness claim.
 
-This is the offline first slice of #196. Wording/option-order variants,
-probability remapping and log-loss remain separate work. It does not claim live
-Jev stability or modify shipped profiles.
+This is the offline first slice of #196. It does not claim live Jev stability or
+modify shipped profiles. Variants and remapping are described next.
+
+### Evaluation-only variants and dev-only fitting (#196, #197)
+
+Status: offline code and fake-transport tests only. **No variant has been run
+against Jev, and no reviewed labels exist yet**, so there are no variant,
+remapping or combiner results. Those need a separately authorized live run and a
+completed #166 review revision.
+
+`variants.py` holds a harness-local registry. A variant is not a profile:
+`get_profile`, the TypeSafe provider and `score.load_run` still accept only
+`triage-v1` and `triage-choice-v1`, and they reject variant names and variant
+run trees. Each variant has an `eval-*-vN` name, a revision, a SHA-256 digest
+over its ordered questions, its mapping and both production profile hashes, and
+an explicit mapping from every variant question and Choice option to a canonical
+production question and option. Digests are pinned in `PINNED_DIGESTS`; a
+production profile edit or registry edit makes `get_variant` fail until someone
+reviews it.
+
+| Variant | Views | Change |
+| --- | --- | --- |
+| `eval-reply-reworded-v1` | `triage-v1` | Reply Noul reworded; other questions identical |
+| `eval-choice-reordered-v1` | `triage-choice-v1` | Choice options in the reverse of production wire order |
+| `eval-combined-v1` | both | All `triage-v1` Nouls and the 5-way Choice in one request (#197) |
+
+Production wire order is alphabetical because profiles serialize with sorted
+keys. The variant payload keeps its declared order, and the digest records it.
+Whether the provider preserves option order is unverified until a live run.
+
+```bash
+uv run --locked --extra dev python -m benchmarks.analysis_eval.variants list
+uv run --locked --extra dev python -m benchmarks.analysis_eval.variants preview \
+  benchmarks/analysis_eval/corpus/seed-reply-positive.eml --variant eval-combined-v1
+```
+
+`prepare_variant` is the request-preparation hook: it reuses production
+`prepare_eml` state (identical `state_sha256`) and production byte limits, then
+attaches variant questions. Its request fingerprint covers the variant digest.
+`execute(request, call, adapter_version=...)` and `run_staged(...)` write
+ordinary sidecars with `profile.name` set to the variant, an `evaluation_variant`
+block (name, digest, mapping) and the caller's transport name as
+`adapter_version`. The harness ships **no live transport**: the production
+provider refuses non-built-in profiles by design, so an authorized live run must
+supply `call(payload) -> {answers, model, usage, request_id}`.
+
+`load_variant_run` mirrors `score.load_run`: source, state, variant profile and
+fingerprint hashes, pinned model and response validation, with answers returned
+re-keyed to canonical questions and options. A production-profile tree, another
+variant, or a recorded digest that differs from the registry raises an error.
+Inconsistent Choices are malformed rather than diagnosed.
+
+```bash
+# Score a variant per production view with the existing scorer.
+uv run --locked --extra dev python -m benchmarks.analysis_eval.variants score \
+  --variant eval-choice-reordered-v1 --run /tmp/triage-eval/variant-runs/reordered \
+  --split dev --out /tmp/triage-eval/reordered-report
+
+# Flips and drift against the production run on the same staged selection.
+uv run --locked --extra dev python -m benchmarks.analysis_eval.variants compare \
+  --run base=triage-choice-v1=/tmp/triage-eval/full-runs/triage-choice-v1 \
+  --run reordered=eval-choice-reordered-v1=/tmp/triage-eval/variant-runs/reordered \
+  --split dev --out /tmp/triage-eval/reordered-vs-base
+```
+
+`compare` uses the stability comparator's fixed decision rules and exclusions.
+A variant and its production base necessarily have different request
+fingerprints and transports, so cross-identity pairs require equal `state_sha256`
+instead of equal fingerprints, and `adapter_version` may differ (it is recorded
+per run). Reports include response-reported `input_tokens`, `output_tokens` and
+`total_tokens` with unknown counts, and paired deltas only where both runs report
+a value. Missing usage is unknown, never zero.
+
+`fitting.py` fits on **reviewed clean dev cases only**. `--reviewed-labels` is
+required; a training case whose `label_source` is not `human_review` is refused,
+so model pre-labels can never be fitted. Cases are filtered by split/arm metadata
+before labels are read, and the tests show that changing test labels leaves the
+fitted parameters byte-identical. Probabilities are floored to `1e-6` (and
+distributions renormalized) before any logarithm. Absent evidence, a single
+observed class, constant features and uniform distributions are rejected.
+
+- `remap` (#196): one map per question type, pooled across questions. Nouls get
+  a Platt map `sigmoid(a * logit(p) + b)`; Choice and Score get a temperature
+  `softmax(log p / T)`, `T` in `[0.05, 20]` (`at_bound` reports a boundary
+  optimum). Writes `remap.json` (parameters, objective value, training case IDs,
+  data digest) and `metrics.json` with before/after calibration, Brier and
+  floored log loss on the scored split.
+- `combine` (#197): per target (reply, action), logistic regression over the
+  floored logits of the combined arm's reply/action Noul probabilities, with
+  Platt-smoothed targets and a fixed `1e-3` L2 penalty so separable data stay
+  finite. Writes `combiner.json` and `metrics.json` with Noul, Choice and
+  combiner views scored by the existing scorer (the combiner view goes through
+  the same dev-only threshold fit), Choice/Noul and Choice/combiner disagreement
+  coverage, error among agreeing cases, and measured usage.
+
+Insufficient-context treatment for the combined arm: a dev case with a null
+reviewed reply/action label is excluded from that target's fit, and the Choice is
+not a combiner feature. When the same response's Choice returns
+`insufficient_context`, the combiner decision becomes `insufficient_context`
+(routed to review, counted as an abstention by the scorer), and the disagreement
+signal flags the case.
+
+```bash
+uv run --locked --extra dev python -m benchmarks.analysis_eval.fitting remap \
+  --run triage-v1=/tmp/triage-eval/full-runs/triage-v1 \
+  --reviewed-labels /tmp/triage-review-v1.json --split test --out /tmp/triage-eval/remap
+uv run --locked --extra dev python -m benchmarks.analysis_eval.fitting combine \
+  --run /tmp/triage-eval/variant-runs/combined \
+  --reviewed-labels /tmp/triage-review-v1.json --split test --out /tmp/triage-eval/combiner
+```
+
+Every result states agreement with the recorded review revision. Remapping and
+combiners are evaluation outputs; no shipped profile or threshold changes.
 
 ### Deterministic baseline
 

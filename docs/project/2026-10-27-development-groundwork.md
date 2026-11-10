@@ -173,6 +173,17 @@ For the combined Noul/Choice arm, define insufficient-context treatment and
 report disagreement coverage and errors among agreeing cases. Measure actual
 usage instead of assuming extra questions have no cost.
 
+Status (November 10 follow-up, unreleased benchmark code): the offline slice is
+implemented in `benchmarks/analysis_eval/variants.py` and `fitting.py`; see the
+[benchmark workflow](../../benchmarks/analysis_eval/README.md#evaluation-only-variants-and-dev-only-fitting-196-197).
+The registry has pinned-digest reworded-reply, reordered-Choice and combined
+variants with explicit canonical mappings. Production profiles, `get_profile`,
+the provider and `score.load_run` are unchanged and reject variant runs. Fitting
+refuses pre-labels, uses reviewed clean dev cases only, and records parameters,
+objective and training IDs. No variant has been run live and no reviewed labels
+exist yet. The harness ships no live transport; an authorized run must supply one,
+because the production provider executes built-in profiles only.
+
 The implemented CLI/Python analysis runtime is already released, including
 directory analysis in 0.4.9. Optional task reconciliation, MCP/UI analysis and the separate draft
 [DocETL research PR #224](https://github.com/BigCactusLabs/dead-letter/pull/224)
@@ -275,8 +286,8 @@ Deployment and endpoint retrieval remain separate outstanding work.
 | [#166](https://github.com/BigCactusLabs/dead-letter/issues/166) | Review-artifact workflow implemented in follow-up; human review and held-out comparison remain. |
 | [#188](https://github.com/BigCactusLabs/dead-letter/issues/188) | Review existing Windows PR #204 and exact-head native evidence. |
 | [#193](https://github.com/BigCactusLabs/dead-letter/issues/193) | Narrow to residual Outlook/locale/ambiguity evidence and separate reply-parser retiming. 2026-11-02 batch: localized plain-text Outlook history and a per-message reply-parser whitespace budget; #268 also bounds English reply headers and skips unused signature/disclaimer searches. Chinese history labels remain. |
-| [#196](https://github.com/BigCactusLabs/dead-letter/issues/196) | Offline comparator prepared; independent repeat capture, variants and dev-only remapping remain. |
-| [#197](https://github.com/BigCactusLabs/dead-letter/issues/197) | Reuse evaluation-only variant support to add the combined arm; fit and assess the combiner against reviewed labels. |
+| [#196](https://github.com/BigCactusLabs/dead-letter/issues/196) | Offline comparator, evaluation-only reworded/reordered variants and dev-only remapping code implemented (2026-11-10, offline only). Independent repeat capture, a live variant transport and run, and reviewed labels (#166) remain. |
+| [#197](https://github.com/BigCactusLabs/dead-letter/issues/197) | Combined arm, combiner fitting, insufficient-context policy and disagreement report implemented offline (2026-11-10). A live combined-arm run with measured usage and reviewed labels (#166) remain. |
 | [#220](https://github.com/BigCactusLabs/dead-letter/issues/220) | Keep deferred until observed macOS memory pressure justifies a soft watchdog. |
 | [#241](https://github.com/BigCactusLabs/dead-letter/issues/241) | Attribution regex bound implemented in follow-up; keep remaining wrapper semantics fixture-led. 2026-11-02 batch: quote-extraction word boundaries and stripped-block paragraph boundaries fixed; `<pre>` and no-evidence wrapper fusion remain. |
 
@@ -285,7 +296,7 @@ Deployment and endpoint retrieval remain separate outstanding work.
 After the normal locked development setup:
 
 ```bash
-uv run --locked --no-sync pytest -q tests/backend/test_analysis_eval.py tests/backend/test_analysis_stability.py tests/backend/test_analysis_reviewed_labels.py
+uv run --locked --no-sync pytest -q tests/backend/test_analysis_eval.py tests/backend/test_analysis_stability.py tests/backend/test_analysis_reviewed_labels.py tests/backend/test_analysis_variants.py
 uv run --locked --no-sync pytest -q tests/core/test_attribution.py
 uv run --locked --no-sync pytest -q tests/backend/test_mcp_mbox.py
 uv run --locked --no-sync pytest -q tests/backend/test_mbox_jobs.py tests/core/test_mbox_cancellation.py tests/core/test_mbox_storage.py
