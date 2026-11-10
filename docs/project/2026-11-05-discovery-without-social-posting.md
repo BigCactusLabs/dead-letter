@@ -36,7 +36,7 @@ the [distribution map](../reference/distribution.md) and
 | [Five recipes](../recipes/README.md) and a [27-second released-package demo](../recipes/demo/README.md) already exist. | Reuse them. Do not reopen the completed demo work as a prerequisite. The current recipe fixtures require a repository checkout. |
 | The repository homepage points to PyPI, its About description leads with EML, and GitHub Pages is disabled. | A task-oriented public site is not linked from this repository. This observation does not prove that no other project website exists. |
 | The released [UI HTML][released-ui] and the baseline frontend HTML/JavaScript have no project, documentation, or GitHub return link. | Someone can successfully use the UI without visiting the repository. This is a concrete gap to test, not evidence that adding a link will produce stars. |
-| [MCP Find][mcp-find] generates `uvx dead-letter` as an MCP launch command. [mcpcost][mcpcost] reports `needs args`, with a CLI error containing `invalid choice: '3.12'`. | Public discovery routes can present a failing invocation. These observations do not identify the root cause or demonstrate that the documented MCP server is broken. |
+| MCP Find (`www.mcpfind.org/servers/io-github-bigcactuslabs-dead-letter`, observed 2026-11-05; the domain no longer resolved on 2026-11-10, so it is not linked) generated `uvx dead-letter` as an MCP launch command. [mcpcost][mcpcost] reports `needs args`, with a CLI error containing `invalid choice: '3.12'`. | Public discovery routes can present a failing invocation. These observations do not identify the root cause or demonstrate that the documented MCP server is broken. |
 
 The [November 4 channel refresh](2026-11-04-distribution-refresh.md) remains the
 detailed catalog baseline. Glama ownership was already resolved; do not infer
@@ -265,7 +265,7 @@ star count has stalled.
 
 ### Generated MCP launch instructions
 
-Reproduce the exact configurations shown by [MCP Find][mcp-find] and
+Reproduce the exact configurations shown by MCP Find and
 [mcpcost][mcpcost], then compare them with the
 [canonical install guide](../../llms-install.md). The documented MCP
 entrypoint is `dead-letter-mcp`; `uvx dead-letter` invokes the ordinary CLI.
@@ -355,7 +355,6 @@ section. The cited upstream issues show specific problems, not market size.
 [pypi-faq]: https://pypistats.org/faqs
 [release]: https://github.com/BigCactusLabs/dead-letter/releases/tag/v0.4.10
 [released-ui]: https://github.com/BigCactusLabs/dead-letter/blob/v0.4.10/src/dead_letter/frontend/index.html
-[mcp-find]: https://www.mcpfind.org/servers/io-github-bigcactuslabs-dead-letter
 [mcpcost]: https://mcpcost.ulehla.dev/s/io.github.BigCactusLabs/dead-letter
 [inktomd]: https://www.inktomd.com/email-to-markdown
 [mdgate]: https://convert.mdgate.dev/eml-to-markdown
