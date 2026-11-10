@@ -2,6 +2,7 @@ name: typesafe-contracts
 
 on:
   pull_request:
+  workflow_dispatch:
   push:
     branches: [main, 'feat/**']
 

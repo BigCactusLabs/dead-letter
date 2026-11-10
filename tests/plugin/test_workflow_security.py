@@ -179,6 +179,34 @@ class WorkflowSecurityTests(unittest.TestCase):
         self.assertNotIn("git push", "\n".join(s.get("run", "") for s in steps))
         self.assertEqual(writer["with"]["add-paths"].strip(), "uv.lock")
 
+    def test_refresh_pr_checks_are_dispatched_with_the_default_token(self):
+        data = workflow("dependency-refresh.yml")
+        job = data["jobs"]["refresh"]
+        self.assertEqual(job["permissions"], {"contents": "write", "pull-requests": "write",
+                                              "actions": "write"})
+        steps = job["steps"]
+        names = [s.get("name") for s in steps]
+        starter = steps[names.index("Start checks on the refresh branch")]
+        self.assertGreater(names.index("Start checks on the refresh branch"),
+                           names.index("Create pull request"))
+        # Only a created or updated PR starts checks; an unchanged lock does not.
+        self.assertIn("pull-request-operation == 'created'", starter["if"])
+        self.assertIn("pull-request-operation == 'updated'", starter["if"])
+        self.assertEqual(starter["env"]["GH_TOKEN"], "${{ github.token }}")
+        self.assertNotIn("secrets.", str(job))
+        dispatched = re.search(r"for workflow in (.+?); do", starter["run"]).group(1).split()
+        self.assertEqual(dispatched, ["ci.yml", "typesafe-contracts.yml", "release-check.yml",
+                                      "client-installs.yml"])
+        self.assertIn('--ref chore/dependency-refresh', starter["run"])
+        branch = steps[names.index("Create pull request")]["with"]["branch"]
+        self.assertEqual(branch, "chore/dependency-refresh")
+        for name in dispatched:
+            target = workflow(name)
+            events = target.get("on", target.get(True))
+            self.assertIn("workflow_dispatch", events, name)
+            self.assertIsNone(events["workflow_dispatch"], name)  # no inputs to inject
+            self.assertEqual(target["permissions"], {"contents": "read"}, name)
+
 
 @unittest.skipUnless(shutil.which("git") and os.name != "nt", "POSIX Git credential helper test")
 class CredentialHelperTests(unittest.TestCase):
