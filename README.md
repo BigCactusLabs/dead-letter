@@ -10,9 +10,9 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/dead-letter?label=Python&cacheSeconds=300)](https://pypi.org/project/dead-letter/)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-purple.svg)](https://github.com/BigCactusLabs/dead-letter/blob/main/LICENSE)
 
-**Turn `.eml` email exports into clean, local, LLM-ready Markdown.**
+**Turn `.eml` and `.mbox` email exports into clean, local, LLM-ready Markdown.**
 
-dead-letter converts `.eml` email exports into clean Markdown with YAML front matter — threads split, signatures stripped, attachments extracted, calendars parsed. One file or ten thousand.
+dead-letter converts `.eml` files and `.mbox` archives, including Gmail Takeout downloads, into clean Markdown with YAML front matter — threads split, signatures stripped, attachments extracted, calendars parsed. One file or ten thousand.
 
 Use it to build a readable email archive, move messages into Markdown-based knowledge systems, or prepare email for RAG and LLM pipelines without feeding raw MIME and base64 into your context window. No account, upload, or API key required.
 
@@ -28,11 +28,19 @@ If you already have [`uv`](https://docs.astral.sh/uv/), run dead-letter without 
 uvx --python 3.12 dead-letter convert message.eml
 ```
 
+The same command takes a flat `.mbox` or a Gmail Takeout ZIP:
+
+```bash
+uvx --python 3.12 dead-letter convert "Takeout/Mail/All mail.mbox" --output markdown/
+```
+
+The [Takeout to Obsidian recipe](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/recipes/takeout-to-obsidian.md) walks through a full vault import.
+
 Or install with Homebrew or pip below. Agents and MCP clients can use the client-specific setup in [`llms-install.md`](https://github.com/BigCactusLabs/dead-letter/blob/main/llms-install.md).
 
 ## 🎯 Common use cases
 
-- **Email → Markdown archives** — turn exported `.eml` collections into readable, portable Markdown with structured metadata
+- **Email → Markdown archives** — turn exported `.eml` collections and `.mbox` archives into readable, portable Markdown with structured metadata
 - **RAG and LLM ingestion** — normalize message text, thread structure, links, and attachment metadata before chunking or indexing
 - **Agent workflows** — expose conversion and diagnostics directly to Claude, Codex, and other MCP clients
 - **Knowledge bases** — move email into Markdown-first systems such as Obsidian, static archives, or local search pipelines
@@ -42,13 +50,14 @@ Or install with Homebrew or pip below. Agents and MCP clients can use the client
 
 - **Full-fidelity conversion** — HTML sanitization, Gmail/Outlook thread segmentation, inline image handling, and calendar event summaries
 - **CLI** — point it at a file or a directory and go
+- **MBOX and Gmail Takeout** — convert a flat `.mbox` or a Takeout ZIP/TGZ straight to Markdown from the CLI or Python; see the [Takeout guide](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/gmail-takeout.md)
 - **Local web UI** — dark command-center interface with drag-and-drop import, watch mode, conversion grade badges, processing history, and per-job diagnostics
 - **Inbox/Cabinet workflow** — drop `.eml` files into an Inbox, let dead-letter organize the Markdown bundles into a Cabinet
 - **Install validation** — `dead-letter doctor` checks your runtime environment
 - **Conversion report** — opt-in JSON report with per-file diagnostics, including attachment referenced/retained counts for automation and audit
-- **MCP server** — integrate with Claude Desktop, Claude Code, Codex, and other MCP clients
+- **MCP server** — integrate with Claude Desktop, Claude Code, Codex, and other MCP clients; converts `.eml` files and, within fixed size limits, one flat `.mbox`
 - **Claude plugin** — marketplace install in Claude Code or Cowork with five slash commands (`/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`, `/dead-letter:mbox`)
-- **Portable Agent Skill** — teaches skill-aware agents when and how to convert `.eml` files
+- **Portable Agent Skill** — teaches skill-aware agents when and how to convert `.eml` and `.mbox` files
 - **Python API** — `from dead_letter import convert` and you're off
 
 ## 🧠 Built for LLM Pipelines
@@ -447,4 +456,4 @@ CI also validates plugin/skill schemas, frontend syntax, maintained Markdown lin
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](https://github.com/BigCactusLabs/dead-letter/blob/main/LICENSE) — free for personal, educational, and nonprofit use. Commercial use requires a separate license from [Big Cactus Labs](https://github.com/BigCactusLabs).
+[PolyForm Noncommercial 1.0.0](https://github.com/BigCactusLabs/dead-letter/blob/main/LICENSE) — free for personal, educational, and nonprofit use. Commercial use requires a separate license from [Big Cactus Labs](https://github.com/BigCactusLabs). Only 0.1.0 was MIT; every release from 0.1.1 (March 2026) uses PolyForm Noncommercial, so a listing that says MIT is out of date.

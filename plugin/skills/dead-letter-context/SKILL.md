@@ -1,7 +1,7 @@
 ---
 name: dead-letter-context
 license: PolyForm-Noncommercial-1.0.0
-description: Primes Claude with the dead-letter plugin's commands and runtime conventions when the user is working with .eml email files, Gmail/Outlook exports, or email archive workflows.
+description: Primes Claude with the dead-letter plugin's commands and runtime conventions when the user works with .eml files, .mbox archives such as a Gmail Takeout export, Gmail or Outlook exports, email-to-Markdown or Obsidian workflows, or email archives.
 ---
 
 # dead-letter context

@@ -1289,6 +1289,15 @@ From 0.4.5, `serverInfo` also carries a `title`, `description`,
 `data:` URI (no network fetch), and each tool has a human-readable `title`.
 Clients decide whether and where to display these fields.
 
+Unreleased source also returns `instructions` in the `initialize` result:
+one plain-text paragraph, under 1,000 characters, that names the task (local
+`.eml` files, `.eml` folders and flat `.mbox` archives such as a Gmail
+Takeout export, converted to Markdown with YAML front matter), states that
+tools never modify or delete sources, repeats the `convert_mbox` caps, points
+larger or compressed archives to the CLI, and marks email content as
+untrusted data. It adds no capability and changes no tool. Claude Code cuts
+server instructions at 4,096 characters, so the task words come first.
+
 From 0.4.6, each tool also declares MCP annotations.
 `get_diagnostics` is `readOnlyHint: true`. The four conversion tools are
 `readOnlyHint: false`, `destructiveHint: false` and `idempotentHint: false`:
