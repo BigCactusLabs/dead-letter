@@ -656,3 +656,84 @@ def test_fitting_cli_requires_review_and_writes_artifacts(
         params = json.loads((out / artifact).read_text())
         assert params["fit_split"] == "dev" and params["label_source"] == "human_review"
         assert (out / "metrics.json").is_file() and (out / "report.md").is_file()
+
+
+def test_compare_questions_are_per_pair_not_shared_across_all_runs(tmp_path):
+    combined = variants.get_variant("eval-combined-v1")
+    ids = DEV_CLEAN[:3]
+    runs = {
+        "combined": (combined.name, _write_variant_run(tmp_path / "c", combined, ids)),
+        "nouls": ("triage-v1", _write_production_run(tmp_path / "n", "triage-v1", ids)),
+        "choice": (
+            "triage-choice-v1",
+            _write_production_run(tmp_path / "ch", "triage-choice-v1", ids),
+        ),
+    }
+    together = variants.compare_runs(
+        DOCUMENT, runs, split="dev", arms=("clean",), limit=3
+    )
+    for target, profile in (("nouls", "triage-v1"), ("choice", "triage-choice-v1")):
+        alone = variants.compare_runs(
+            DOCUMENT,
+            {"combined": runs["combined"], target: runs[target]},
+            split="dev",
+            arms=("clean",),
+            limit=3,
+        )
+        questions = together["comparisons"][target]["questions"]
+        assert set(questions) == set(get_profile(profile).questions())
+        assert questions == alone["comparisons"][target]["questions"]
+    assert REPLY in together["comparisons"]["nouls"]["questions"]
+    assert EXPECTATION in together["comparisons"]["choice"]["questions"]
+
+
+def _empty_and_failed_runs(tmp_path, variant):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    failed = tmp_path / "failed"
+    failed.mkdir()
+    for case_id in DEV_CLEAN[:2]:
+        case = BY_ID[case_id]
+        request = variants.prepare_variant(ROOT / case["file"], variant)
+
+        def broken(payload):
+            raise RuntimeError("synthetic transport failure")
+
+        result = variants.execute(request, broken, adapter_version="test-fake-v1")
+        (failed / f"{case_id}.analysis.json").write_text(json.dumps(result))
+    return {"empty": empty, "failed": failed}
+
+
+@pytest.mark.parametrize("kind", ["empty", "failed"])
+def test_remap_rejects_runs_without_valid_predictions(tmp_path, monkeypatch, kind):
+    variant = variants.get_variant("eval-combined-v1")
+    run = _empty_and_failed_runs(tmp_path, variant)[kind]
+    imported, _ = fitting.reviewed_cases(DOCUMENT, _reviewed(), ROOT, "test")
+    predictions, _, _ = variants.load_variant_run(run, variant, imported["cases"], ROOT)
+    assert predictions == {}
+    with pytest.raises(ValueError, match="absent fitting evidence"):
+        fitting.fit_remap(imported["cases"], predictions)
+    with pytest.raises(ValueError, match="absent fitting evidence"):
+        fitting.fit_combiner(imported["cases"], predictions)
+    review = tmp_path / "review.json"
+    review.write_text(json.dumps(_reviewed()))
+    for command, run_arg in (("remap", f"{variant.name}={run}"), ("combine", str(run))):
+        out = tmp_path / f"out-{command}"
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "fitting",
+                command,
+                "--run",
+                run_arg,
+                "--reviewed-labels",
+                str(review),
+                "--out",
+                str(out),
+            ],
+        )
+        with pytest.raises(SystemExit) as exit_info:
+            fitting.main()
+        assert exit_info.value.code != 0
+        assert not out.exists()

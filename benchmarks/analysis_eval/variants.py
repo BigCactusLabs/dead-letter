@@ -805,13 +805,14 @@ def compare_runs(document, runs, *, source_root=ROOT, split=None, arms=(), limit
         raise ValueError("selection is empty")
     ids = [c["case_id"] for c in selected]
     identities = {name: identity for name, (identity, _) in runs.items()}
-    question_sets = [
-        set(get_profile(i).questions())
+    # Per run; each pair compares its own intersection, so adding a run never
+    # changes an existing pair's questions or metrics.
+    question_sets = {
+        name: set(get_profile(i).questions())
         if i in PRODUCTION
         else {t["canonical"] for t in get_variant(i).mapping().values()}
-        for i in identities.values()
-    ]
-    questions = sorted(set.intersection(*question_sets))
+        for name, i in identities.items()
+    }
     report = {
         "schema_version": 1,
         "status": "variant/repeat comparison on canonical questions; not correctness or calibration evidence",
@@ -878,7 +879,7 @@ def compare_runs(document, runs, *, source_root=ROOT, split=None, arms=(), limit
             else:
                 matched.append(key)
         metrics = {}
-        for question in questions:
+        for question in sorted(question_sets[reference] & question_sets[name]):
             pairs = [
                 (key, first[key]["answers"][question], second[key]["answers"][question])
                 for key in matched
