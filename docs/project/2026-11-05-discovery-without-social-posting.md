@@ -1,7 +1,8 @@
 # Discovery without regular social posting
 
 Research date: **2026-11-05**. Repository baseline:
-[`4ff528a`](https://github.com/BigCactusLabs/dead-letter/commit/4ff528a55c8886d977eef32913e3a56890553c79).
+`4ff528a`, the merge commit of
+[#280](https://github.com/BigCactusLabs/dead-letter/pull/280).
 Status: **proposed distribution experiments**, with dated observations below.
 
 ## Recommendation
