@@ -101,6 +101,45 @@ Three searches plus direct fetches. Third-party roundups were not used as eviden
 - **Context, not a directory:** an [Agentic AI Foundation post](https://aaif.io/blog/agent-skills-sharing-team-expertise-across-ai-agents) dated 2026-10-22 says Agent Skills moved to that foundation. No foundation-run registry or submission route was found in one search.
 - **Unverified leads, not opened:** the mcp.directory claim and verified-badge flow, a jfrog.com Agent Skills Registry beta, agentroot.io, the AGNTCY directory, a jwatte.com blog post about the GitHub registry (not independent: its author posted an onboarding request in #1257), the GHLists/new-mcp-servers feed, sunnamed434/awesome-mcp-registry, and modelcontextprotocol/registry#1862 (274 entries reference an uninstallable package version).
 
+## Later on November 18
+
+These actions followed the read-only pass above, on the maintainer's go-ahead.
+
+**mcp.directory submission.** The free form at `mcp.directory/submit` was
+submitted with the repository URL `https://github.com/BigCactusLabs/dead-letter`,
+PyPI package `dead-letter`, and the `server.json` description. No contact
+email was given. The site answered "Server Submitted!" and "We'll review your
+server and publish it within 24 hours." State: **submitted, not listed**.
+
+**Copilot CLI runtime check (#157).** Copilot CLI 1.0.114 (npm
+`@github/copilot`), in a scratch git repository:
+
+- The portable skill was installed at project scope with
+  `gh skill install BigCactusLabs/dead-letter dead-letter@v0.4.10 --agent github-copilot --scope project`
+  (gh 2.104.0). It resolved commit `e0862d3` and placed
+  `.agents/skills/dead-letter/SKILL.md`
+  (sha256 `d0255c79…fd3d4`).
+- Inputs were two synthetic fixtures from `tests/core/fixtures/`:
+  `gmail_quote.eml` (sha256 `71669426…703f6`) and `html_only.eml`
+  (sha256 `b591b9ac…b39b5`).
+- Prompt, with no mention of dead-letter: "Convert the exported emails in
+  ./mail to markdown and save them in ./out", run with `copilot -p` and
+  `--allow-all-tools`.
+- **CLI fallback: pass.** Copilot invoked `skill(dead-letter)`, then ran
+  `uvx --python 3.12 dead-letter convert ./mail --output ./out` with the
+  skill's strip options. 2 of 2 converted.
+- **MCP: pass.** With the server added for the session
+  (`--additional-mcp-config`, `uvx --python 3.12 --from dead-letter==0.4.10 dead-letter-mcp`),
+  Copilot invoked the skill and called `convert_directory`: 2 successes,
+  0 failures. The source files were unchanged afterward.
+- The two paths produced byte-identical Markdown.
+- The model was chosen by Copilot's automatic selection and differed between
+  the runs (GPT-6 Luna, then MAI Code 2 Flash).
+- **Cursor: not tested.** It is not installed on the test machine.
+
+This is a CLI observation. It says nothing about Copilot in VS Code or about
+catalog discovery.
+
 ## Related issues
 
 - Closing or deferring #152, and closing or updating #153, are the maintainer's decisions; this record only reports the evidence.

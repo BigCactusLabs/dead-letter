@@ -43,7 +43,7 @@ is a read-only pass with direct API, `gh`, `git ls-remote` and signed-out
 browser reads. The mcpservers.org listing is now verified by browser. GitHub's
 MCP Registry grew to 896 entries without dead-letter, and in VS Code stable
 its gallery is off by default. Agent Finder merged refresh PR #89 and its first
-fork PR since September 30. No submission was made in that run. Its hunt for
+fork PR since September 30. No submission was made in that run. Later that day, on the maintainer's go-ahead, the free mcp.directory form was submitted (**submitted, not listed**; review promised within 24 hours) and Copilot CLI 1.0.114 passed the portable-skill runtime check on both the CLI and MCP paths. Its hunt for
 new directories is recorded there as early signals, not recommendations.
 
 **Earlier checkpoint (September 23):** the [September 23 evidence report](../project/discovery/2026-09-23T165452Z.json),
