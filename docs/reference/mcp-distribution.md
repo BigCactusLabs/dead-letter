@@ -304,8 +304,9 @@ the working direct-install link or by a native Cline registration test.
 Agent Finder queries against a named configured registry/catalog:
 `convert exported email to markdown`, `read an eml file`,
 `prepare email for RAG`, and `build a local email archive`.
-The ARD file is not yet served from a `/.well-known/ard.json` endpoint;
-publishing it or installing a skill does not prove task-level public discovery.
+The ARD catalog has been served from `https://bigcactuslabs.xyz/.well-known/ard.json`
+since 2026-11-10 (see [Agent Discovery](agent-discovery.md)); hosting it or
+installing a skill does not prove task-level public discovery.
 
 Keep #104 open for remaining account claims, submissions, and named-client
 observations. [Container issue #108](https://github.com/BigCactusLabs/dead-letter/issues/108)
