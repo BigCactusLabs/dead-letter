@@ -52,9 +52,10 @@ CLI/MCP smoke test is not a GUI **client-tested** result. Record the version,
 commit or digest, date, platform/client, and evidence with each status.
 
 Claude directory: plugin 0.4.13 (`release` at `fb8f48a`, pin `dead-letter==0.4.10`)
-was **submitted** on 2026-10-29 and is held for review because it runs a
-pinned `uvx` package and ships an icon image. It is not listed until it is
-approved and published.
+was **submitted** on 2026-10-29 and **refused by directory policy** on
+2026-11-18: local MCP servers and non-text plugin files are accepted only
+from Verified organizations. It is not listed
+([runbook](publishing.md#claude-directory-listing)).
 
 The first public GHCR image is recorded as `0.3.1`; the failed `0.3.0` attempt
 must not be advertised as an available container. See the dated

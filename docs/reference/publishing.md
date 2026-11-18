@@ -415,16 +415,23 @@ reviewer because the server launches a registry package. The README and
 `plugin.json` on `release` are what the listing shows, so listing copy ships
 only with a plugin release.
 
-- Before the next plugin tag after the launcher change in #263, wait for the
-  open directory review to finish. Re-validate the release candidate in the
-  Claude directory portal and require `LAUNCHER_LOCKED` (or no new Blocks)
-  **before tagging**. The scanner's locked-launch grammar is unpublished;
-  the local stdio smoke does not satisfy this gate.
+- **The directory does not gate plugin tags (maintainer decision,
+  2026-11-18).** A re-check on 2026-11-18 refused 0.4.13 (`fb8f48a`): local
+  MCP servers, and files other than Markdown, text, JSON, YAML, and common
+  images, are accepted only from Verified organizations, and this
+  organization is not one. No application path for Verified status is
+  documented; see
+  [anthropics/claude-plugins-official#7024](https://github.com/anthropics/claude-plugins-official/issues/7024).
+  The submission stays open and unlisted. The earlier rule to wait for the
+  review before the next plugin tag no longer applies.
+- A third finding asks for `--locked` before the script name in a
+  `uv run` launcher. The scanner's locked-launch grammar is otherwise
+  unpublished; the local stdio smoke says nothing about it.
 - Re-run **Validate** in the portal on the exact `release` commit before
   submitting; results are per commit.
-- Do not move `release` while a version is with a reviewer. The tracked
-  branch cannot change during review, and a pushed version can queue behind
-  the held one.
+- If a version ever reaches a human reviewer, do not move `release` while
+  it is there. The tracked branch cannot change during review, and a pushed
+  version can queue behind the held one.
 - An approved version is not live until someone clicks **Publish**.
 - The directory policy requires telling Anthropic about material changes
   after listing: tool or capability descriptions, data practices, or

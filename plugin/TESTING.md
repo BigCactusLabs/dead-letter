@@ -94,7 +94,7 @@ result is a stdio runtime check, not a fresh Claude Code or Cowork install test.
 - [ ] All checks above pass
 - [ ] No regressions vs. the previous release
 - [ ] Automated launcher smoke passes against the prepared lock
-- [ ] Complete the [Claude directory gate](../docs/reference/publishing.md#claude-directory-listing) before the next launcher-change tag
+- [ ] Read the [Claude directory status](../docs/reference/publishing.md#claude-directory-listing) before the next launcher-change tag; since 2026-11-18 it does not gate the tag
 - [ ] Tag dead-letter repo `plugin-v<X.Y.Z>` and push
 - [ ] Confirm the plugin release workflow merged a marketplace pull request
       with matching `version`, `ref: plugin-v<X.Y.Z>`, and tagged commit `sha`
