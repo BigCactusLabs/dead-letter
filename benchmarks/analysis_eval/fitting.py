@@ -436,7 +436,7 @@ def disagreement(selected, first, second):
     }
 
 
-def combined_report(cases, predictions, records, split, params):
+def combined_report(cases, predictions, records, split, params, *, input_price=None):
     """Score Noul, Choice and combiner views of one combined run on `split`."""
     selected = [c for c in cases if c["split"] == split]
     ids = {c["case_id"] for c in selected}
@@ -497,7 +497,7 @@ def combined_report(cases, predictions, records, split, params):
     report["combiner_vs_choice_difference"] = score.compare(
         selected, normalized["combiner"], normalized["choice"]
     )
-    report["usage"] = variants.usage_summary(records, ids)
+    report["usage"] = variants.usage_summary(records, ids, input_price=input_price)
     return report
 
 
@@ -534,6 +534,11 @@ def main():
         "combine", help="fit #197 combiner on eval-combined-v1"
     )
     combine.add_argument("--run", required=True, type=Path)
+    combine.add_argument(
+        "--input-price-per-million",
+        metavar="USD",
+        help="operator-supplied USD per million input tokens; adds an input-token cost",
+    )
     for command in (remap, combine):
         command.add_argument("--labels", type=Path, default=ROOT / "labels.json")
         command.add_argument("--reviewed-labels", type=Path, required=True)
@@ -541,6 +546,9 @@ def main():
         command.add_argument("--out", required=True, type=Path)
     args = parser.parse_args()
     try:
+        price = getattr(args, "input_price_per_million", None)
+        if price is not None:
+            price = variants.parse_input_price(price)
         document = score._read_json(args.labels)
         imported, provenance = reviewed_cases(
             document,
@@ -583,7 +591,9 @@ def main():
                 "status": "evaluation-only combiner; agreement with the recorded review revision",
                 "evaluation_variant": variant.identity(),
                 "label_provenance": provenance,
-                **combined_report(cases, predictions, records, args.split, params),
+                **combined_report(
+                    cases, predictions, records, args.split, params, input_price=price
+                ),
             }
             _write(
                 args.out,

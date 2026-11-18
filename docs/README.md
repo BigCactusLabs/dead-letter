@@ -55,9 +55,10 @@ strategy and outstanding evidence requirements. The
 [November 5 discovery plan](project/2026-11-05-discovery-without-social-posting.md)
 records source-backed distribution experiments without regular social posting,
 their priorities, and completion evidence. The
-[November 10 distribution refresh](project/2026-11-10-distribution-refresh.md)
+[November 18 distribution refresh](project/2026-11-18-distribution-refresh.md)
 is the latest read-only status check of the MCP and agent-discovery channels;
-the [November 4](project/2026-11-04-distribution-refresh.md) and
+the [November 10](project/2026-11-10-distribution-refresh.md),
+[November 4](project/2026-11-04-distribution-refresh.md) and
 [September 30](project/2026-09-30-distribution-refresh.md) records are its
 baselines. The
 [MBOX ingestion design notes](project/2026-09-18-mbox-ingestion.md) are a

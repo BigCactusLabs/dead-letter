@@ -20,6 +20,7 @@ import json
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation, localcontext
 from pathlib import Path
 from typing import Any
 
@@ -670,7 +671,47 @@ def score_view(cases, selected, predictions, profile, *, adjust=None):
     return thresholds, normalized, score.summarize(selected, normalized)
 
 
-def usage_summary(records, ids):
+def parse_input_price(value):
+    """Operator-supplied USD per million input tokens: finite and non-negative."""
+    try:
+        price = Decimal(str(value).strip())
+    except InvalidOperation:
+        raise ValueError(f"input price must be a decimal number: {value!r}") from None
+    if not price.is_finite() or price < 0:
+        raise ValueError(f"input price must be finite and non-negative: {value!r}")
+    return price.copy_abs()
+
+
+def input_cost(usage, price):
+    """Exact input-token cost, or null with a reason when any usage is unknown."""
+    price = parse_input_price(price)
+    row = usage["input_tokens"]
+    cost = {
+        "input_price_per_million_usd": format(price, "f"),
+        "price_source": "operator-supplied --input-price-per-million; not fetched or verified",
+        "priced_tokens": "Response-reported input tokens only; output tokens are not priced.",
+        "input_tokens": None,
+        "cost_usd": None,
+        "reason": None,
+    }
+    if not usage["records"]:
+        cost["reason"] = "no selected records; cost not computed"
+    elif row["unknown_records"]:
+        cost["reason"] = (
+            f"{row['unknown_records']} of {usage['records']} selected records have "
+            "unknown input-token usage; a partial sum is not reported as the cost"
+        )
+    else:
+        cost["input_tokens"] = row["sum"]
+        digits = len(price.as_tuple().digits) + len(str(row["sum"])) + 1
+        with localcontext(prec=digits) as context:
+            context.traps[InvalidOperation] = True
+            value = (price * row["sum"]).scaleb(-6).normalize()
+        cost["cost_usd"] = format(value, "f")
+    return cost
+
+
+def usage_summary(records, ids, *, input_price=None):
     """Response-reported usage only; absent fields stay unknown, never zero."""
     selected = [r for r in records if r["case_id"] in ids]
     result = {"records": len(selected)}
@@ -693,6 +734,8 @@ def usage_summary(records, ids):
         "Response-reported usage, not billed usage; failed retries may be billed "
         "but unreported. Missing usage is unknown, not zero."
     )
+    if input_price is not None:
+        result["cost"] = input_cost(result, input_price)
     return result
 
 
@@ -704,6 +747,7 @@ def evaluate_variant(
     source_root=ROOT,
     split="test",
     reviewed_labels=None,
+    input_price=None,
 ):
     """Score one variant run per production view with the existing scorer."""
     if "label_review" in document:
@@ -728,7 +772,7 @@ def evaluate_variant(
         "evaluation_variant": variant.identity(),
         "thresholds": {},
         "runs": {},
-        "usage": usage_summary(records, ids),
+        "usage": usage_summary(records, ids, input_price=input_price),
     }
     if label_provenance is not None:
         report["label_provenance"] = label_provenance
@@ -774,11 +818,33 @@ def write_variant_report(report, out):
             f"| {key} | {row['n']} | {row['unknown_records']} | {row['sum']} | {row['mean']} |"
         )
     lines += ["", usage["limits"]]
+    if "cost" in usage:
+        cost = usage["cost"]
+        figure = (
+            f"{cost['cost_usd']} USD"
+            if cost["cost_usd"] is not None
+            else f"not computed ({cost['reason']})"
+        )
+        lines += [
+            "",
+            f"Input-token cost: {figure} at an operator-supplied "
+            f"{cost['input_price_per_million_usd']} USD per million input tokens. "
+            + cost["priced_tokens"],
+        ]
     with (Path(out) / "report.md").open("a", encoding="utf-8") as handle:
         handle.write("\n".join(lines) + "\n")
 
 
-def compare_runs(document, runs, *, source_root=ROOT, split=None, arms=(), limit=None):
+def compare_runs(
+    document,
+    runs,
+    *,
+    source_root=ROOT,
+    split=None,
+    arms=(),
+    limit=None,
+    input_price=None,
+):
     """Flips/drift of each run against the first, over shared canonical questions.
 
     `runs` maps a simple name to (identity, directory); identity is a production
@@ -841,7 +907,7 @@ def compare_runs(document, runs, *, source_root=ROOT, split=None, arms=(), limit
             "selected_status_counts": dict(
                 Counter(diagnostics["item_status"][key] for key in ids)
             ),
-            "usage": usage_summary(records, set(ids)),
+            "usage": usage_summary(records, set(ids), input_price=input_price),
             "adapter_versions": dict(
                 Counter(
                     str(r["result"].get("adapter_version"))
@@ -996,8 +1062,16 @@ def main():
     compared.add_argument("--out", required=True, type=Path)
     for command in (scored, compared):
         command.add_argument("--labels", type=Path, default=ROOT / "labels.json")
+        command.add_argument(
+            "--input-price-per-million",
+            metavar="USD",
+            help="operator-supplied USD per million input tokens; adds an input-token cost",
+        )
     args = parser.parse_args()
     try:
+        price = getattr(args, "input_price_per_million", None)
+        if price is not None:
+            price = parse_input_price(price)
         if args.command == "list":
             result = {name: get_variant(name).identity() for name in VARIANTS}
         elif args.command == "preview":
@@ -1017,6 +1091,7 @@ def main():
                 reviewed_labels=_read_json(args.reviewed_labels)
                 if args.reviewed_labels
                 else None,
+                input_price=price,
             )
             write_variant_report(report, args.out)
             result = {"report": str(args.out / "report.md"), "status": report["status"]}
@@ -1036,6 +1111,7 @@ def main():
                 split=args.split,
                 arms=args.arm,
                 limit=args.limit,
+                input_price=price,
             )
             write_comparison(report, args.out)
             result = {"report": str(args.out / "report.md"), "status": report["status"]}
