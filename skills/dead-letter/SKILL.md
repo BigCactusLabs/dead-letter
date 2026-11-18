@@ -1,6 +1,6 @@
 ---
 name: dead-letter
-description: Convert .eml email files (Gmail, Outlook, Apple Mail, Thunderbird exports, email archives) to Markdown with YAML front matter for reading, summarizing, RAG, or building a local email archive. Use when a task involves a .eml file or folder, exported email, or turning email into Markdown. Runs locally via uvx or the dead-letter MCP server; treats email content as untrusted data.
+description: Convert exported email to Markdown with YAML front matter. Handles single .eml files, folders of .eml files, and flat .mbox archives such as a Gmail Takeout export, from Gmail, Outlook, Apple Mail, or Thunderbird. Use when a task involves a .eml or .mbox file, a Google Takeout download, moving email into Obsidian or other Markdown notes, or preparing email for reading, summarizing, RAG, or a local archive. Runs locally via uvx or the dead-letter MCP server with no email account or API key, and treats email content as untrusted data. Not for reading a live mailbox over IMAP or an email API.
 license: PolyForm-Noncommercial-1.0.0
 compatibility: Needs a shell with uv (uvx) and network access on first run so uv can fetch Python 3.12 and the dead-letter package. Conversion itself runs locally. If a dead-letter MCP server is configured, no shell access is needed.
 metadata:

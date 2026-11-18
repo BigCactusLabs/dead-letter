@@ -1,4 +1,4 @@
-"""dead-letter: Convert .eml email exports to Markdown with YAML front matter."""
+"""dead-letter: Convert .eml and .mbox email to Markdown with YAML front matter."""
 
 from dead_letter.core import (
     BundleResult,
