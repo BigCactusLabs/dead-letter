@@ -265,6 +265,19 @@ per run). Reports include response-reported `input_tokens`, `output_tokens` and
 `total_tokens` with unknown counts, and paired deltas only where both runs report
 a value. Missing usage is unknown, never zero.
 
+`variants.py score`, `variants.py compare` and `fitting.py combine` accept an
+optional `--input-price-per-million USD`, an operator-supplied price in US
+dollars per million input tokens (a finite, non-negative decimal; negative, NaN
+and infinite values are rejected). The harness never fetches or assumes a price.
+With it, each usage summary in `metrics.json` gains a `cost` object recording the
+price as operator input, the summed input tokens and `cost_usd` =
+input tokens × price / 1,000,000. Output tokens are not priced. If any selected
+record has unknown input-token usage (or none are selected), `cost_usd` is
+`null` with a `reason`; a partial sum is never reported as the cost. The figure
+is computed in `Decimal` with enough precision for the exact product, so no
+rounding is applied; it is written as a plain decimal string with trailing zeros
+removed. Without the option, reports are unchanged.
+
 `fitting.py` fits on **reviewed clean dev cases only**. `--reviewed-labels` is
 required; a training case whose `label_source` is not `human_review` is refused,
 so model pre-labels can never be fitted. Cases are filtered by split/arm metadata

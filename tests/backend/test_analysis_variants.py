@@ -452,6 +452,203 @@ def test_variant_scoring_reuses_scorer_and_reports_usage(tmp_path):
     assert variant.digest in text and "input_tokens" in text
 
 
+def _usage_records(*inputs):
+    return [
+        {
+            "case_id": f"case-{index}",
+            "result": {"usage": None if value is None else {"input_tokens": value}},
+        }
+        for index, value in enumerate(inputs)
+    ]
+
+
+def test_usage_cost_absent_price_leaves_summary_unchanged(tmp_path):
+    records = _usage_records(1000, None)
+    ids = {"case-0", "case-1"}
+    summary = variants.usage_summary(records, ids)
+    assert "cost" not in summary
+    assert variants.usage_summary(records, ids, input_price=None) == summary
+    variant = variants.get_variant("eval-combined-v1")
+    run = _write_variant_run(tmp_path / "run", variant, DEV_CLEAN[:3])
+    report = variants.evaluate_variant(DOCUMENT, variant, run, split="dev")
+    assert "cost" not in report["usage"]
+    variants.write_variant_report(report, tmp_path / "report")
+    text = (tmp_path / "report/report.md").read_text()
+    assert "Input-token cost" not in text and "per million" not in text
+    metrics = (tmp_path / "report/metrics.json").read_text()
+    assert '"cost"' not in metrics and "input_price" not in metrics
+
+
+def test_usage_cost_is_exact_when_all_input_usage_is_known():
+    # 1_234_567 input tokens at 2.5 USD per million is exactly 3.0864175 USD.
+    records = _usage_records(1_000_000, 234_567)
+    summary = variants.usage_summary(records, {"case-0", "case-1"}, input_price="2.5")
+    cost = summary["cost"]
+    assert cost["cost_usd"] == "3.0864175"
+    assert cost["input_price_per_million_usd"] == "2.5"
+    assert cost["input_tokens"] == 1_234_567
+    assert cost["reason"] is None
+    assert "operator" in cost["price_source"]
+    assert "output tokens are not priced" in cost["priced_tokens"].lower()
+    # 3 * (0.1 + 1e-28) / 1e6 = 3e-7 + 3e-34: beyond float and default
+    # 28-digit Decimal precision, so the figure must not be rounded.
+    tiny = variants.usage_summary(
+        _usage_records(3), {"case-0"}, input_price="0.1000000000000000000000000001"
+    )
+    assert tiny["cost"]["cost_usd"] == "0.0000003000000000000000000000000003"
+    free = variants.usage_summary(records, {"case-0"}, input_price="0")
+    assert free["cost"]["cost_usd"] == "0"
+
+
+def test_usage_cost_is_null_with_reason_when_any_usage_is_unknown(tmp_path):
+    records = _usage_records(1000, None, 2000)
+    ids = {"case-0", "case-1", "case-2"}
+    cost = variants.usage_summary(records, ids, input_price="3")["cost"]
+    assert cost["cost_usd"] is None
+    assert cost["input_tokens"] is None
+    assert "1 of 3" in cost["reason"] and "unknown" in cost["reason"]
+    # Outside the selection, unknown usage does not matter.
+    known = variants.usage_summary(records, {"case-0", "case-2"}, input_price="3")
+    assert known["cost"]["cost_usd"] == "0.009"
+    empty = variants.usage_summary(records, set(), input_price="3")["cost"]
+    assert empty["cost_usd"] is None and "no selected records" in empty["reason"]
+    variant = variants.get_variant("eval-choice-reordered-v1")
+    base = _write_production_run(tmp_path / "base", "triage-choice-v1", DEV_CLEAN[:2])
+    run = _write_variant_run(tmp_path / "variant", variant, DEV_CLEAN[:2])
+    sidecar = run / f"{DEV_CLEAN[0]}.analysis.json"
+    result = json.loads(sidecar.read_text())
+    result["usage"] = None
+    sidecar.write_text(json.dumps(result))
+    report = variants.compare_runs(
+        DOCUMENT,
+        {"base": ("triage-choice-v1", base), "reordered": (variant.name, run)},
+        split="dev",
+        arms=("clean",),
+        limit=2,
+        input_price="3",
+    )
+    assert report["runs"]["base"]["usage"]["cost"]["cost_usd"] == "0.006"
+    assert report["runs"]["reordered"]["usage"]["cost"]["cost_usd"] is None
+
+
+@pytest.mark.parametrize(
+    "price", ["-1", "-0.01", "nan", "NaN", "sNaN", "inf", "-Infinity", "abc", ""]
+)
+def test_invalid_input_price_is_rejected(price, tmp_path, monkeypatch, capsys):
+    with pytest.raises(ValueError, match="input price"):
+        variants.parse_input_price(price)
+    with pytest.raises(ValueError, match="input price"):
+        variants.usage_summary(_usage_records(1), {"case-0"}, input_price=price)
+    variant = variants.get_variant("eval-combined-v1")
+    run = _write_variant_run(tmp_path / "run", variant, DEV_CLEAN[:2])
+    out = tmp_path / "out"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "variants",
+            "score",
+            "--variant",
+            variant.name,
+            "--run",
+            str(run),
+            "--split",
+            "dev",
+            "--out",
+            str(out),
+            f"--input-price-per-million={price}",
+        ],
+    )
+    with pytest.raises(SystemExit) as exit_info:
+        variants.main()
+    assert exit_info.value.code != 0
+    assert "input price" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_input_price_cli_options_report_cost(tmp_path, monkeypatch):
+    variant = variants.get_variant("eval-combined-v1")
+    ids = DEV_CLEAN + TEST_CLEAN[:5]
+    run = _write_variant_run(tmp_path / "run", variant, ids)
+    per_record = 1000 + len(variant.questions()) * 100
+    out = tmp_path / "scored"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "variants",
+            "score",
+            "--variant",
+            variant.name,
+            "--run",
+            str(run),
+            "--split",
+            "dev",
+            "--out",
+            str(out),
+            "--input-price-per-million",
+            "0.75",
+        ],
+    )
+    variants.main()
+    metrics = json.loads((out / "metrics.json").read_text())
+    tokens = per_record * len(DEV_CLEAN)
+    whole, frac = divmod(tokens * 75, 10**8)
+    assert metrics["usage"]["cost"]["cost_usd"] == (
+        f"{whole}.{frac:08d}".rstrip("0").rstrip(".")
+    )
+    text = (out / "report.md").read_text()
+    assert metrics["usage"]["cost"]["cost_usd"] in text and "0.75" in text
+    repeat = _write_variant_run(tmp_path / "repeat", variant, DEV_CLEAN)
+    compared = tmp_path / "compared"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "variants",
+            "compare",
+            "--run",
+            f"a={variant.name}={run}",
+            "--run",
+            f"b={variant.name}={repeat}",
+            "--split",
+            "dev",
+            "--out",
+            str(compared),
+            "--input-price-per-million",
+            "0.75",
+        ],
+    )
+    variants.main()
+    metrics = json.loads((compared / "metrics.json").read_text())
+    assert metrics["runs"]["a"]["usage"]["cost"]["input_tokens"] == tokens
+    review = tmp_path / "review.json"
+    review.write_text(json.dumps(_reviewed()))
+    combined = tmp_path / "combined"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "fitting",
+            "combine",
+            "--run",
+            str(run),
+            "--reviewed-labels",
+            str(review),
+            "--out",
+            str(combined),
+            "--input-price-per-million",
+            "0.75",
+        ],
+    )
+    fitting.main()
+    metrics = json.loads((combined / "metrics.json").read_text())
+    whole, frac = divmod(per_record * 5 * 75, 10**8)
+    assert metrics["usage"]["cost"]["cost_usd"] == (
+        f"{whole}.{frac:08d}".rstrip("0").rstrip(".")
+    )
+
+
 # Fitting
 
 
