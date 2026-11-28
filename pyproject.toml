@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dead-letter"
-version = "0.4.10"
+version = "0.4.11"
 description = "Convert .eml and .mbox email, including Gmail Takeout, to clean, LLM-ready Markdown with YAML front matter"
 readme = "README.md"
 license = "PolyForm-Noncommercial-1.0.0"
