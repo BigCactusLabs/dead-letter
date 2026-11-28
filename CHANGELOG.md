@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Claude plugin 0.4.14 pins package 0.4.11 (`dead-letter==0.4.11`) and relocks
+  `plugin/uv.lock`, which moves icalendar from 7.3.0 to 7.3.2. Plugin users
+  get the 0.4.11 calendar fix: a calendar part is parsed as data and is never
+  read as a file path. It is also the first plugin release whose launcher runs
+  the shipped lock through frozen, isolated `uv run` (#263).
 - The MBOX import benchmark helper reports the largest reaped worker's peak
   RSS on macOS, and the validation guide has a dated synthetic 2.5 GiB and
   4.5 GiB record for macOS. Real-export validation is still open (#138).
