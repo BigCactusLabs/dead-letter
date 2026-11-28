@@ -29,7 +29,9 @@ def summarize_calendar_parts(parts: list[str]) -> list[str]:
 
     for raw in parts:
         try:
-            cal = Calendar.from_ical(raw)
+            # Pass bytes: icalendar before 7.3.1 reads a single-line str as a
+            # file path, and calendar parts come from untrusted mail.
+            cal = Calendar.from_ical(raw.encode("utf-8", "replace"))
         except Exception:
             continue
 
