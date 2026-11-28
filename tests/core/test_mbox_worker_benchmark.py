@@ -85,14 +85,15 @@ def test_real_fresh_worker_parity_and_measurement(tmp_path, bundles):
         assert summary["conversion_seconds"] is None
 
 
-def test_darwin_rss_is_bytes_and_child_value_unknown(monkeypatch):
+def test_darwin_rss_is_bytes_with_separate_child_value(monkeypatch):
     resource = pytest.importorskip("resource")
     from types import SimpleNamespace
+    values = {resource.RUSAGE_SELF: 123456, resource.RUSAGE_CHILDREN: 654321}
     monkeypatch.setattr(bench.audit.sys, "platform", "darwin")
-    monkeypatch.setattr(resource, "getrusage", lambda who: SimpleNamespace(ru_maxrss=123456))
+    monkeypatch.setattr(resource, "getrusage", lambda who: SimpleNamespace(ru_maxrss=values[who]))
     result = bench.audit.rss_metrics()
     assert result["importer_peak_rss_bytes"] == 123456
-    assert result["largest_reaped_worker_peak_rss_bytes"] is None
+    assert result["largest_reaped_worker_peak_rss_bytes"] == 654321
 
 
 @pytest.mark.parametrize("value", ["0", "33"])

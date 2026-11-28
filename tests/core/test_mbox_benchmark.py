@@ -205,6 +205,26 @@ def test_no_rss_estimate_on_unsupported_platform(monkeypatch):
     assert result["largest_reaped_worker_peak_rss_bytes"] is None
 
 
+def test_darwin_rss_uses_bytes_and_separate_child_high_water(monkeypatch):
+    resource = pytest.importorskip("resource")
+    values = {resource.RUSAGE_SELF: 3 * 1024**2, resource.RUSAGE_CHILDREN: 5 * 1024**2}
+    monkeypatch.setattr(bench.sys, "platform", "darwin")
+    monkeypatch.setattr(resource, "getrusage", lambda who: type("Usage", (), {"ru_maxrss": values[who]}))
+    result = bench.rss_metrics()
+    assert result["importer_peak_rss_bytes"] == 3 * 1024**2
+    assert result["largest_reaped_worker_peak_rss_bytes"] == 5 * 1024**2
+    assert "not_tree_total" in result["rss_method"]
+
+
+@pytest.mark.skipif(bench.sys.platform != "darwin", reason="XNU child accounting")
+def test_darwin_reaped_child_high_water_observed():
+    import subprocess
+
+    code = "b = bytearray(96 * 1024**2)\nfor i in range(0, len(b), 4096): b[i] = 1\n"
+    subprocess.run([bench.sys.executable, "-I", "-c", code], check=True, timeout=60)
+    assert bench.rss_metrics()["largest_reaped_worker_peak_rss_bytes"] >= 96 * 1024**2
+
+
 @pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "-inf"])
 def test_invalid_time_budget(value):
     with pytest.raises(bench.argparse.ArgumentTypeError):
