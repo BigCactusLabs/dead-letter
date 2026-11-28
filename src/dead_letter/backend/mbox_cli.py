@@ -83,12 +83,15 @@ def run_mbox(
                         entry["mbox"] = item.mbox
                     if item.diagnostics is not None:
                         entry["diagnostics"] = item.diagnostics
+                        # Written only by the parent: worker receipts carrying
+                        # this key are rejected as invalid results.
                         overshoot = item.diagnostics.get("memory_watch")
                         if overshoot is not None:
                             label = json.dumps(item.source, ensure_ascii=True) if archive_input else item.source
+                            kept = "; output kept" if item.output is not None else ""
                             print(f"{label}: {overshoot['code']}: worker peak footprint "
                                   f"{overshoot['peak_bytes'] / 1048576:.1f} MiB went over the "
-                                  f"{overshoot['limit_mib']} MiB soft memory watch between samples; output kept",
+                                  f"{overshoot['limit_mib']} MiB soft memory watch between samples{kept}",
                                   file=sys.stderr)
                     recovery = getattr(item, "recovery", None)
                     if recovery is not None:

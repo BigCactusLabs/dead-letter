@@ -1,19 +1,21 @@
 """Parent-side soft memory watchdog for macOS MBOX message workers (#220).
 
 This is a soft limit, not a memory cap. The parent reads the worker's current
-physical footprint every ``SAMPLE_INTERVAL_SECONDS`` and kills a worker it
-sees over the threshold. Memory allocated and released between two samples is
-not prevented: it is found afterwards in the kernel's lifetime peak and
-reported as an overshoot. A worker can also grow for up to one interval, plus
-the time termination takes, before it is stopped.
+physical footprint, targeting one sample every ``SAMPLE_INTERVAL_SECONDS``, and
+kills a worker it sees over the threshold. Memory allocated and released
+between two samples is not prevented: it is found afterwards in the kernel's
+lifetime peak and reported as an overshoot. The interval is a target, not a
+bound on how long a worker can stay over the threshold: the parent can be
+descheduled (for example under memory pressure) or delayed by a cancellation
+callback while the worker keeps allocating, and termination takes time too.
 
 Only the worker process itself is measured. A process the worker started
 would not be counted; the conversion pipeline starts none.
 
 Identity: a child that its parent has not reaped keeps its PID (the kernel does
 not reuse the PID of a live or zombie child). The supervisor samples and
-reaps on one thread and never reaps before the final sample, so a sample cannot
-reach a different process. The kernel's process start time is checked on every
+reaps on one thread, and reaps only after ``waitid(WNOWAIT)`` reports the exit,
+so a sample cannot reach a different process. The kernel's process start time is checked on every
 sample as a second guard.
 """
 
@@ -130,6 +132,8 @@ def exited_unreaped(pid: int) -> bool:
 class FootprintWatch:
     """Sampling state for one worker; ``poll`` never reaps the process."""
 
+    interval = SAMPLE_INTERVAL_SECONDS
+
     def __init__(self, limit_mib: int) -> None:
         self.limit_mib = limit_mib
         self.limit_bytes = limit_mib * _MIB
@@ -143,7 +147,7 @@ class FootprintWatch:
             raise MemoryWatchError("proc_pid_rusage is unavailable") from exc
 
     def poll(self, process: subprocess.Popen[Any]) -> bool:
-        """Sample once. Return True once the unreaped worker has exited.
+        """Sample once. Return True once waitid reports the unreaped worker as exited.
 
         Raises ``MemoryWatchExceeded`` for a live worker over the threshold and
         ``MemoryWatchError`` when the reading fails or cannot be attributed to
@@ -161,14 +165,17 @@ class FootprintWatch:
         elif sample.start_abstime != self._start:
             raise MemoryWatchError("worker start time changed between samples")
         self.samples += 1
-        if exited or sample.exit_abstime:
-            # A zombie's statistics are cached at exit: its current footprint
-            # reads 0 and the lifetime peak is final. Without that cache the
-            # peak is unknown, which is a measurement failure.
-            if not sample.exit_abstime:
-                raise MemoryWatchError("worker exit statistics are unavailable")
+        if sample.exit_abstime:
+            # Exit statistics are cached once the worker exits: its current
+            # footprint reads 0 and the lifetime peak is final. They can appear
+            # before waitid reports the child as waitable, so keep polling
+            # (deadline and cancellation still apply) until it does.
             self.peak = sample.lifetime_peak
-            return True
+            return exited
+        if exited:
+            # Without the cached statistics the peak is unknown, which is a
+            # measurement failure.
+            raise MemoryWatchError("worker exit statistics are unavailable")
         if sample.footprint > self.limit_bytes:
             raise MemoryWatchExceeded(sample.footprint)
         return False

@@ -85,7 +85,7 @@ def _add_convert_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--mbox-memory-watch-mib", type=int, default=None, metavar="MIB",
         help="MBOX worker mode, macOS only: soft memory watchdog. The parent samples each worker's "
-             "physical footprint every 10 ms and stops a worker seen above MIB. Not a hard cap: "
+             "physical footprint about every 10 ms and stops a worker seen above MIB. Not a hard cap: "
              "a spike between samples is reported afterwards, not prevented.",
     )
 

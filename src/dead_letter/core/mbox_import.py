@@ -156,8 +156,8 @@ def convert_mbox(
     They are resource limits, not filesystem or network isolation.
 
     ``memory_watch_mib`` (macOS only, worker mode) opts into a parent-side
-    soft watchdog: the parent samples each worker's physical footprint every
-    10 ms and stops a worker seen over the threshold with
+    soft watchdog: the parent samples each worker's physical footprint about
+    every 10 ms (a target, not a bound) and stops a worker seen over the threshold with
     ``mbox_message_memory_watch``. It is not a hard cap; a spike between samples
     is detected afterwards (``diagnostics["memory_watch"]``), not prevented.
     Other platforms raise ``MboxBudgetError`` (``mbox_budget_unsupported``).

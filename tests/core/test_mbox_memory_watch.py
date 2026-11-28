@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ctypes
 import errno
+import json
 import os
 import signal
 import subprocess
@@ -160,8 +161,10 @@ def test_watch_is_not_a_worker_argument():
 
 # -- struct layout and sampling logic -------------------------------------------
 
+@native_macos
 def test_struct_layouts_match_the_macos_sdk():
     # Offsets from <sys/resource.h> rusage_info_v4 and <sys/signal.h> siginfo_t.
+    # siginfo_t uses C long, so its size is only meaningful on the Darwin ABI.
     info = watch._RusageInfoV4
     assert ctypes.sizeof(info) == 296
     assert (info.ri_phys_footprint.offset, info.ri_proc_start_abstime.offset,
@@ -194,11 +197,47 @@ def test_poll_stops_only_above_the_threshold(monkeypatch):
 
 def test_zombie_sample_ends_sampling_and_reports_its_lifetime_peak(monkeypatch):
     # A zombie's current footprint reads 0; it must not read as "alive and small".
-    monitor, process = fake_watch(monkeypatch, [sample(50), sample(0, peak_mib=300, exit=99)])
+    monitor, process = fake_watch(monkeypatch, [sample(50), sample(0, peak_mib=300, exit=99)], exits=[False, True])
     assert monitor.poll(process) is False
     assert monitor.poll(process) is True
     assert monitor.overshoot() == {"code": "mbox_memory_watch_overshoot", "limit_mib": 100,
                                    "peak_bytes": 300 * MIB}
+
+
+def test_exit_statistics_before_waitid_confirmation_keep_polling(monkeypatch):
+    # Exit statistics can appear before waitid reports the child as waitable.
+    # Polling must continue (so deadline and cancellation checks still run)
+    # instead of handing the supervisor a blocking reap.
+    monitor, process = fake_watch(
+        monkeypatch, [sample(0, peak_mib=300, exit=99), sample(0, peak_mib=300, exit=99)], exits=[False, True],
+    )
+    assert monitor.poll(process) is False
+    assert monitor.peak == 300 * MIB
+    assert monitor.poll(process) is True
+    assert monitor.overshoot()["peak_bytes"] == 300 * MIB
+
+
+def test_unconfirmed_exit_still_reaches_the_deadline(tmp_path, monkeypatch):
+    # A worker that never becomes waitable while its statistics read as exited
+    # must end as a timeout, not block in a reap.
+    class NeverWaitable:
+        interval = 0.01
+        def __init__(self):
+            self.polls = 0
+        def poll(self, process):
+            self.polls += 1
+            return False
+        def overshoot(self):
+            return None
+    monitor = NeverWaitable()
+    monkeypatch.setattr(isolation, "_worker_command",
+                        lambda request, *args: [sys.executable, "-I", "-c", "import time; time.sleep(30)"])
+    request = tmp_path / "request.json"
+    request.write_text("{}", encoding="utf-8")
+    started = time.monotonic()
+    with pytest.raises(subprocess.TimeoutExpired):
+        isolation._run_worker(request, 0.5, memory_watch=cast(Any, monitor))
+    assert time.monotonic() - started < 10 and monitor.polls > 1
 
 
 def test_exit_within_threshold_has_no_overshoot(monkeypatch):
@@ -245,9 +284,69 @@ def test_unavailable_footprint_api_aborts_before_a_worker_starts(tmp_path, monke
 def test_unset_watch_never_samples(tmp_path, monkeypatch):
     def unexpected(*args, **kwargs):
         pytest.fail("an unset watch must not sample")
-    monkeypatch.setattr(isolation, "FootprintWatch", unexpected)
+    monkeypatch.setattr(watch, "FootprintWatch", unexpected)
     rows = list(convert_mbox(archive(tmp_path, 1), output=tmp_path / "out", timeout_seconds=30))
     assert [row.success for row in rows] == [True] and "memory_watch" not in rows[0].diagnostics
+
+
+def test_unwatched_imports_and_conversion_do_not_load_the_native_binding(tmp_path):
+    # ctypes blocked: importing the package and an unwatched worker import must
+    # work, and the watch module must stay unloaded. A child interpreter keeps
+    # this test's own imports out of the check.
+    source = archive(tmp_path, 1)
+    script = (
+        "import sys\n"
+        "sys.modules['ctypes'] = None\n"
+        "import dead_letter, dead_letter.core.mbox_isolation\n"
+        "from dead_letter.core.mbox_import import convert_mbox\n"
+        "rows = list(convert_mbox(sys.argv[1], output=sys.argv[2], timeout_seconds=30))\n"
+        "assert [row.success for row in rows] == [True], rows\n"
+        "assert 'dead_letter.core.mbox_memory_watch' not in sys.modules\n"
+    )
+    subprocess.run([sys.executable, "-c", script, str(source), str(tmp_path / "out")], check=True, timeout=120)
+
+
+def test_watch_without_native_binding_aborts_before_a_worker_starts(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setitem(sys.modules, "ctypes", None)
+    monkeypatch.delitem(sys.modules, "dead_letter.core.mbox_memory_watch", raising=False)
+    def unexpected(*args, **kwargs):
+        pytest.fail("no worker may run unwatched")
+    monkeypatch.setattr(isolation.subprocess, "Popen", unexpected)
+    rows = list(convert_mbox(archive(tmp_path), output=tmp_path / "out", timeout_seconds=15, memory_watch_mib=512))
+    assert len(rows) == 1 and rows[0].mbox is None
+    assert rows[0].error["code"] == "mbox_budget_apply_failed"
+    assert outputs(tmp_path / "out") == []
+
+
+def _worker_claiming_memory_watch(request, timeout, budget_args=(), **kwargs):
+    """A receipt that tries to supply the parent-only diagnostic."""
+    data = json.loads(request.read_text(encoding="utf-8"))
+    record = data["record"]
+    artifacts = request.parent / "artifacts"
+    artifacts.mkdir()
+    (artifacts / f"{record['index']:08d}-{record['sha256'][:16]}.md").write_text("output\n", encoding="utf-8")
+    (request.parent / "receipt.json").write_text(json.dumps({
+        "schema_version": 1, "index": record["index"], "sha256": record["sha256"], "success": True,
+        "diagnostics": {"state": "normal", "memory_watch": {}}, "error_code": None,
+    }), encoding="utf-8")
+    return 0
+
+
+@pytest.mark.parametrize("watched", [False, True])
+def test_worker_supplied_memory_watch_diagnostic_is_an_invalid_receipt(tmp_path, monkeypatch, watched):
+    extra = {}
+    if watched:
+        monkeypatch.setattr(sys, "platform", "darwin")
+        monkeypatch.setattr(watch, "read_footprint", lambda pid: watch.FootprintSample(MIB, MIB, 1, 0))
+        extra["memory_watch_mib"] = 512
+    monkeypatch.setattr(isolation, "_run_worker", _worker_claiming_memory_watch)
+    root = tmp_path / "out"
+    rows = list(convert_mbox(archive(tmp_path), output=root, timeout_seconds=15, **extra))
+    assert [row.success for row in rows] == [False, False, False]
+    assert all(row.error["code"] == "mbox_worker_invalid_result" for row in rows)
+    assert all(row.diagnostics is None for row in rows)
+    assert outputs(root) == []
 
 
 # -- native macOS workers -------------------------------------------------------

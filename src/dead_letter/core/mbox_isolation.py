@@ -6,6 +6,7 @@ validated output after a clean exit; neither mail nor MIME objects cross a pipe.
 
 from __future__ import annotations
 
+import importlib
 import json
 import math
 import os
@@ -28,13 +29,11 @@ from dead_letter._mbox_worker import (
     BUDGET_STATUS_FILE, EXIT_BUDGET_APPLY_FAILED, EXIT_MEMORY_LIMIT, EXIT_STORAGE_ERROR,
 )
 from dead_letter.core.mbox import MboxCancelled, _raise_if_cancelled
-from dead_letter.core.mbox_memory_watch import (
-    SAMPLE_INTERVAL_SECONDS, FootprintWatch, MemoryWatchError, MemoryWatchExceeded,
-)
 
 if TYPE_CHECKING:
     from dead_letter.core.mbox import MboxRecord, UnescapeMode
     from dead_letter.core.mbox_import import MboxConversion
+    from dead_letter.core.mbox_memory_watch import FootprintWatch
     from dead_letter.core.types import ConvertOptions
 
 MAX_RECEIPT_BYTES = 1024 * 1024
@@ -244,8 +243,10 @@ def _run_worker(
         while True:
             _raise_if_cancelled(cancel_requested)
             if memory_watch is not None:
-                # Sample, then reap only once a sample has seen the exit, all on
-                # this thread: an unreaped child's PID cannot be reused.
+                from dead_letter.core.mbox_memory_watch import MemoryWatchError
+
+                # Sample, then reap only once waitid has confirmed the exit, all
+                # on this thread: an unreaped child's PID cannot be reused.
                 try:
                     exited = memory_watch.poll(process)
                 except MemoryWatchError as exc:
@@ -259,7 +260,7 @@ def _run_worker(
                 remaining = deadline - monotonic()
                 if remaining <= 0:
                     raise subprocess.TimeoutExpired(process.args, timeout)
-                sleep(min(SAMPLE_INTERVAL_SECONDS, remaining))
+                sleep(min(memory_watch.interval, remaining))
                 continue
             # Windows waits use bounded integer milliseconds. Chunking avoids
             # overflow for a valid but large budget without imposing a new cap.
@@ -363,6 +364,8 @@ def _read_receipt(path: Path, record: MboxRecord) -> dict[str, Any]:
         or type(data["index"]) is not int or data["index"] != record.index
         or data["sha256"] != record.sha256 or type(data["success"]) is not bool
         or (data["diagnostics"] is not None and not isinstance(data["diagnostics"], dict))
+        # Reserved for the parent's soft memory watch; a worker cannot supply it.
+        or (isinstance(data["diagnostics"], dict) and "memory_watch" in data["diagnostics"])
     ):
         raise ValueError("Invalid worker receipt types or identity")
     code = data["error_code"]
@@ -466,13 +469,22 @@ def convert_record_isolated(
 
     budgets = budgets or WorkerBudgets()
     watch = None
+    # Nothing to catch unless the watch is on; the native binding (ctypes) is
+    # imported only on the watched path.
+    watch_exceeded: tuple[type[BaseException], ...] = ()
     if budgets.memory_watch_mib is not None:
+        unreadable = MboxBudgetError(
+            "mbox_budget_apply_failed", "could not read message worker memory footprints; import aborted",
+        )
         try:
-            watch = FootprintWatch(budgets.memory_watch_mib)
-        except MemoryWatchError as exc:
-            raise MboxBudgetError(
-                "mbox_budget_apply_failed", "could not read message worker memory footprints; import aborted",
-            ) from exc
+            mbox_memory_watch = importlib.import_module("dead_letter.core.mbox_memory_watch")
+        except ImportError as exc:
+            raise unreadable from exc
+        try:
+            watch = mbox_memory_watch.FootprintWatch(budgets.memory_watch_mib)
+        except mbox_memory_watch.MemoryWatchError as exc:
+            raise unreadable from exc
+        watch_exceeded = (mbox_memory_watch.MemoryWatchExceeded,)
     # Set after a worker exits on its own with a lifetime peak over the watch
     # threshold: a spike between samples, detected but not prevented.
     overshoot: dict[str, Any] | None = None
@@ -513,7 +525,7 @@ def convert_record_isolated(
             return failed("mbox_message_timeout")
         except _WorkerResourceLimit as exc:
             return failed("mbox_message_resource_limit", _RESOURCE_MESSAGES[exc.control])
-        except MemoryWatchExceeded:
+        except watch_exceeded:
             # Withheld like a timeout. Distinct from the memory budget: this
             # worker was sampled over a soft threshold, not denied an allocation.
             return failed("mbox_message_memory_watch")
