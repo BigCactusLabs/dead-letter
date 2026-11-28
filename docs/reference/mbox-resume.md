@@ -4,7 +4,7 @@
 resume supports one immutable, flat `.mbox` export with either Markdown files
 or Cabinet-style bundles. Ordinary conversion keeps its existing behavior.
 
-**Unreleased (#272):** Python resume also accepts cooperative cancellation and
+**From 0.4.11 (#272):** Python resume also accepts cooperative cancellation and
 compressed `.zip`/`.tgz`/`.tar.gz` input through `convert_mbox_archive(...,
 resume=True)`, and web/UI archive jobs resume in their original job folder
 ([web jobs](#web-jobs)). The CLI's `--mbox-resume` still takes a flat `.mbox`
@@ -52,7 +52,7 @@ See [worker limits](mbox-workers.md) before choosing a timeout or resource budge
 The example value is not a performance recommendation. Worker crashes/timeouts
 remain per-record failures; a later resume retries failed records.
 
-### Cancellation and compressed input (unreleased)
+### Cancellation and compressed input (0.4.11)
 
 `convert_mbox(..., resume=True, cancel_requested=callable)` checks the callable
 before the source is fingerprinted, after each 1 MiB of fingerprinting and
@@ -230,7 +230,7 @@ can still be used for a flat resume.
 
 ## Web jobs
 
-**Unreleased (#272).** Archive jobs started from the web UI or API use this
+**From 0.4.11 (#272).** Archive jobs started from the web UI or API use this
 journal from their first run, in their own `Cabinet/mbox-<job-id>` folder. A
 job that was cancelled, stopped for disk space, or left unfinished by a server
 stop can be resumed in that folder with the same job id. The server re-admits
@@ -238,7 +238,7 @@ the source with the checks a new job gets and refuses the resume when the
 source's device, inode, size or modification time changed. Each run writes a
 new collision-safe report; earlier reports stay. A Cabinet whose filesystem
 cannot publish bundles without replacement runs new jobs without resume. See
-the [runtime contract](v4-runtime-contracts.md#mbox-job-resume-unreleased) for the
+the [runtime contract](v4-runtime-contracts.md#mbox-job-resume-0411) for the
 endpoints, the job descriptor and which outcomes can be resumed.
 
 ## Concurrency, durability and limits

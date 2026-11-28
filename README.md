@@ -355,7 +355,7 @@ On Claude Code 2.1.275 or later, `/plugin install dead-letter --marketplace BigC
 
 The plugin adds five slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`, `/dead-letter:mbox`. Local Claude Code needs `uv` on `PATH`; see [`plugin/`](https://github.com/BigCactusLabs/dead-letter/tree/main/plugin/) for runtime-specific setup and updates. Email content is treated as untrusted data, not instructions: embedded requests for tool use, credentials, or exfiltration are not followed.
 
-The marketplace pins the plugin tag and commit, and the plugin pins an exact published Python package in its uv project and lock. Plugin releases after 0.4.13 launch with `uv run --frozen --isolated` from the shipped `uv.lock`, which fixes dependency versions and checks their hashes. Plugin 0.4.13 and earlier use `uvx`, which resolves compatible transitive versions itself. Claude Code and Cowork keep separate installed copies; update and verify each client.
+The marketplace pins the plugin tag and commit, and the plugin pins an exact published Python package in its uv project and lock. Plugin 0.4.14 and later launch with `uv run --frozen --isolated` from the shipped `uv.lock`, which fixes dependency versions and checks their hashes. Plugin 0.4.13 and earlier use `uvx`, which resolves compatible transitive versions itself. Claude Code and Cowork keep separate installed copies; update and verify each client.
 
 **Claude Code (manual MCP add — alternative):**
 
@@ -443,7 +443,7 @@ CI also validates plugin/skill schemas, frontend syntax, maintained Markdown lin
 - CLI/Python accept `.eml`, flat `.mbox` exports, and (from 0.4.5) ZIP/TGZ
   Takeout downloads; see the [Takeout guide](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/gmail-takeout.md). The web UI
   imports `.eml` files and, from 0.4.10, one flat `.mbox` by local path.
-  Unreleased source adds `.zip`, `.tgz` and `.tar.gz` input by path or browser
+  From 0.4.11 it also accepts `.zip`, `.tgz` and `.tar.gz` input by path or browser
   upload, with a 1 GiB staging/output free-space reserve, and resumes stopped
   web imports in their job folder.
   Its watch and file-import flows stay EML-only. From 0.4.5 the MCP server adds a bounded `convert_mbox` tool for
@@ -451,8 +451,8 @@ CI also validates plugin/skill schemas, frontend syntax, maintained Markdown lin
   An opt-in resumable MBOX import (`--mbox-resume`, CLI/Python) is
   available from 0.4.6; see the [resume contract](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/mbox-resume.md).
 - Local-only, single-user, single-machine; no remote server or authentication service. An MCP host may send results to its model provider.
-- In-memory job registry: state resets on restart. Unreleased source keeps a
-  stopped archive import resumable across restarts. Retained binary attachments need a separate parser for text indexing.
+- In-memory job registry: state resets on restart. From 0.4.11 a
+  stopped archive import stays resumable across restarts. Retained binary attachments need a separate parser for text indexing.
 
 ## License
 

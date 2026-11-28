@@ -90,10 +90,10 @@ and its result is yielded before the next cancellation check, so callers can
 account for completed output. Already yielded results remain valid.
 
 The callback cannot preempt an in-process MIME parser or a blocked filesystem
-call; use timed workers for cancellable parsing. In 0.4.10, combining the
-callback with `resume=True` is rejected; unreleased source accepts it and
-[resume](mbox-resume.md#cancellation-and-compressed-input-unreleased) retries the
-record in progress on the next run. Unreleased `convert_mbox_archive()` also accepts
+call; use timed workers for cancellable parsing. In 0.4.10 and earlier, combining the
+callback with `resume=True` is rejected; from 0.4.11 it is accepted and
+[resume](mbox-resume.md#cancellation-and-compressed-input-0411) retries the
+record in progress on the next run. From 0.4.11, `convert_mbox_archive()` also accepts
 `cancel_requested` for staging and conversion and an optional
 `staging_check(path, bytes_written)` callback, called before each 64 KiB copy
 chunk and at the end. The callback owns staging free-space policy when supplied;
@@ -279,7 +279,7 @@ Rules:
 - A response sent before the request body was read to the end (Host/CSRF rejections, body-limit `413`s, MBOX upload rejections) carries `Connection: close`, so the client stops sending and the server never drains the unread bytes.
 - No CORS support is provided; the same-origin local UI is the only browser client. Script clients must call `/api/session` and include the CSRF header before using mutating endpoints.
 
-#### `GET /api/about` (unreleased)
+#### `GET /api/about` (0.4.11)
 
 Returns the running package version for the local UI's project footer.
 
@@ -433,12 +433,12 @@ Admission and output rules:
 
 - `input_path` is relative to the server's filesystem-browser root (the OS
   user's home directory by default). It selects one regular `.mbox` file or,
-  in unreleased source, a `.zip`, `.tgz` or `.tar.gz` archive (case-insensitive).
+  from 0.4.11, a `.zip`, `.tgz` or `.tar.gz` archive (case-insensitive).
   Absolute paths, root escapes, symlinks escaping the root, Cabinet sources
   and directories are rejected.
   The file must already be present on the server; this endpoint is not an upload.
   To send an archive from the browser, use
-  [`POST /api/mbox/uploads`](#post-apimboxuploads-unreleased).
+  [`POST /api/mbox/uploads`](#post-apimboxuploads-0411).
 - Archives larger than 16 GiB are rejected before staging; for compressed
   input this is the container file size. The admitted
   device/inode, size and modification/change timestamps are rechecked before
@@ -453,17 +453,17 @@ Admission and output rules:
   always preserved; each completed message becomes a bundle with Markdown,
   retained attachments and `source.eml`. The create response uses the usual
   `id`/`status` fields and adds `output_location.job_path`; `bundle_path` is null.
-  Completed bundles survive cancellation and later failures. In unreleased
-  source the job also writes the core resume journal and a job descriptor
+  Completed bundles survive cancellation and later failures. From 0.4.11
+  the job also writes the core resume journal and a job descriptor
   there, so a stopped job can continue in the same folder
-  ([MBOX job resume](#mbox-job-resume-unreleased)).
+  ([MBOX job resume](#mbox-job-resume-0411)).
 - Options accept the conversion flags `strip_signatures`, `strip_disclaimers`,
   `strip_quoted_headers`, `strip_signature_images`, `strip_tracking_pixels`,
   `embed_inline_images`, `include_all_headers`, `include_raw_html`,
   `no_calendar_summary`, `allow_fallback_on_html_error`,
   `allow_html_repair_on_panic`, `thread_mode` and `thread_order`, with their
   existing defaults. `timeout_seconds` is a finite JSON number in `(0, 300]`,
-  default 30. Unreleased source also accepts optional `member`: the exact
+  default 30. From 0.4.11 the route also accepts optional `member`: the exact
   `.mbox` member name, as with CLI `--mbox-member`. Web member names are
   limited to 1024 characters and cannot contain NUL or control characters;
   violations return `422` on both the job and upload routes. One eligible member
@@ -472,7 +472,7 @@ Admission and output rules:
   their core `mbox_archive_*` codes. `member` on a flat `.mbox` returns `422`.
   Unknown request/option fields are rejected, including `delete_eml`,
   `dry_run`, `report`, `output`, `source_handling` and `resume`.
-- Compressed jobs (unreleased) use the core archive importer and default
+- Compressed jobs (0.4.11) use the core archive importer and default
   `ArchiveLimits`. They stage one member in a private, job-owned directory
   under `<Inbox>/mbox-uploads/`, separate from the selected source and Cabinet
   output. Admission creates this parent folder (and the Inbox if needed) when
@@ -483,7 +483,7 @@ Admission and output rules:
   cancellation becomes terminal. Tasks cancelled before their first step create
   no private staging directory. Only job-owned temporary data is removed; the source archive is always kept.
 - Jobs enforce a 1 GiB **free-space reserve**, not a total byte quota
-  (unreleased). Cabinet free space is checked before conversion and after each
+  (0.4.11). Cabinet free space is checked before conversion and after each
   message result. Compressed jobs also check staging-volume free space before
   staging and at least every 64 MiB written. A low reading or inability to
   measure free space stops the job with fatal `mbox_disk_reserve`. Completed
@@ -541,7 +541,7 @@ The [worker contract](mbox-workers.md#errors-and-reports) explains the reserved
 storage-exhaustion outcome, including failure to write a receipt.
 
 The runner spools report rows to disk and publishes
-`<job_path>/.dead-letter-report.json`. A resumed run (unreleased) publishes
+`<job_path>/.dead-letter-report.json`. A resumed run (0.4.11) publishes
 the next free name, `.dead-letter-report-2.json` and so on, and never replaces
 an earlier report. Its schema remains 1, with MBOX provenance,
 `mbox_options` and terminal status. After the first compressed message result,
@@ -570,14 +570,16 @@ The UI's **Import a local MBOX archive** action opens this path/timeout form
 and displays byte progress, processed messages, cancellation state, retained
 output and omitted errors. Its EML drag-and-drop/upload flow remains separate.
 Archive jobs use the existing bounded, in-memory history and have no automatic
-retry. In unreleased source a stopped job offers **Resume import**, and the idle
+retry. From 0.4.11 a stopped job offers **Resume import**, and the idle
 and done panels list stopped imports from the Cabinet, including ones from an
-earlier server process ([MBOX job resume](#mbox-job-resume-unreleased)). The free-space reserve is not a total
+earlier server process ([MBOX job resume](#mbox-job-resume-0411)). The free-space reserve is not a total
 output/temp-disk byte quota or worker-memory cap: allow space for staging,
 bundles and the disk-backed report. Cancellation/timeouts cannot bound
 blocked OS I/O, and a hard process kill cannot guarantee a final report or cleanup.
 
-### `POST /api/mbox/uploads` (unreleased)
+<a id="post-apimboxuploads-unreleased"></a>
+
+### `POST /api/mbox/uploads` (0.4.11)
 
 Sends one `.mbox`, `.zip`, `.tgz` or `.tar.gz` archive from the browser, stages
 it under the Inbox and starts the same archive job as `POST /api/mbox/jobs`. Configure Inbox/Cabinet
@@ -673,7 +675,7 @@ per-job member staging under the same upload area, with the cleanup and
 
 Limits: an interrupted upload cannot be resumed and starts again from byte
 zero. Once the upload has started its job, that job can be resumed like a
-local-path job (unreleased); resume reuses the kept copy in `mbox-uploads/` and
+local-path job (0.4.11); resume reuses the kept copy in `mbox-uploads/` and
 is refused if that copy was changed or removed. The upload's 507 check covers the
 source copy only; the job then enforces its own staging and output reserve
 with `mbox_disk_reserve`. Allow space for the decompressed member and bundles.
@@ -691,7 +693,7 @@ route with upload progress and a cancel button, then shows the job's progress
 like a local-path import. Cancel is disabled once every byte is sent, because
 the server may already be creating the job.
 
-### MBOX job resume (unreleased)
+### MBOX job resume (0.4.11)
 
 Web archive jobs (#272) run through the [core resume journal](mbox-resume.md)
 from their first run. Before conversion the runner probes the Cabinet for
@@ -923,7 +925,7 @@ Notes:
 - Returns `409` when the retry action is not currently available for the referenced job.
 - MBOX jobs do not expose retry actions; starting an archive again creates a new
   job and output directory. A stopped archive job can instead be resumed in its
-  folder ([MBOX job resume](#mbox-job-resume-unreleased), unreleased).
+  folder ([MBOX job resume](#mbox-job-resume-0411), from 0.4.11).
 
 ### `GET /api/jobs/history`
 
@@ -1289,7 +1291,7 @@ From 0.4.5, `serverInfo` also carries a `title`, `description`,
 `data:` URI (no network fetch), and each tool has a human-readable `title`.
 Clients decide whether and where to display these fields.
 
-Unreleased source also returns `instructions` in the `initialize` result:
+From 0.4.11 the server also returns `instructions` in the `initialize` result:
 one plain-text paragraph, under 1,000 characters, that names the task (local
 `.eml` files, `.eml` folders and flat `.mbox` archives such as a Gmail
 Takeout export, converted to Markdown with YAML front matter), states that

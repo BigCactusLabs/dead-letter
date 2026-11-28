@@ -108,7 +108,7 @@ Priority order is fixed:
   - `totals`: `{jobs_completed, total_written, total_skipped, total_errors}`
   - `loading`
   - `open`
-- about store (`$store.about`, unreleased):
+- about store (`$store.about`, 0.4.11):
   - `version`: running package version from `GET /api/about`; empty until it loads or when the request fails, which hides the footer version label
 - watch handoff state (`$store.job`):
   - `pendingWatchJobId`
@@ -244,7 +244,7 @@ Terminal statuses:
 4. Preserve the current `$store.job.origin` when the replacement job starts so watched failures stay labeled as watch-origin.
 5. Replacement job polling uses the normal create-job flow and clears the prior snapshot state.
 
-### Resume Stopped Archive Import (unreleased)
+### Resume Stopped Archive Import (0.4.11)
 
 1. `$store.job.loadResumable()` reads `GET /api/mbox/resumable` on app init, when settings become configured, and when an archive job reaches terminal. It fills `$store.job.resumableImports`; a failed refresh keeps the previous list.
 2. Polling sets `$store.job.resumable` from the snapshot's `resumable` flag for archive jobs. The done panel shows **Resume import** only while it is true; the idle and done panels list `resumableImports`, leaving out the job the done panel already offers.
@@ -320,7 +320,7 @@ Frontend expects:
 - `GET /api/jobs/{id}` response with `status`, `origin`, `cancel_requested`, `output_location`, `progress`, `summary`, `errors`, optional `diagnostics`, and optional `report_path`.
   - when present, `report_path` is a job-specific backend artifact path rather than a shared latest-report alias
 - `GET /api/jobs/history` response with `jobs` array and `totals` aggregate.
-- `GET /api/about` response with a `version` string (unreleased). Failure is silent; the project footer links still render.
+- `GET /api/about` response with a `version` string (0.4.11). Failure is silent; the project footer links still render.
 - Error envelopes with top-level `errors`.
 - `POST /api/import` success response with `imported_path`, `id`, `status`, and `output_location`.
 - `POST /api/import-batch` success response with `imported_paths`, `id`, `status`, and `output_location`.

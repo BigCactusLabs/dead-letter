@@ -8,7 +8,7 @@ installed, run the commands below without a `uv run` prefix. Keep `uv run` only
 when working from a development checkout. Web UI versions before 0.4.10 are
 EML-only; 0.4.10 adds the [local-path web workflow](#web-local-path-import-0410),
 the first web/API slice of [#146](https://github.com/BigCactusLabs/dead-letter/issues/146).
-Unreleased source adds a [browser upload](#web-browser-upload-unreleased) of one
+Version 0.4.11 adds a [browser upload](#web-browser-upload-0411) of one
 flat archive.
 MCP servers from 0.4.5 add a bounded
 [`convert_mbox` MCP tool](#mcp-bounded-convert_mbox) (#145); 0.4.0 and earlier
@@ -63,9 +63,9 @@ outputs. Reports distinguish `new`, `reused`, `recovered` and `retried` records
 and use collision-safe filenames. Python uses `convert_mbox(..., resume=True)`;
 add `bundles=True` for Cabinet output.
 Timed workers and bundles are supported; dry runs and MCP resume are not. The
-CLI resumes a flat `.mbox` only. Unreleased source adds Python resume for
+CLI resumes a flat `.mbox` only. Version 0.4.11 adds Python resume for
 compressed Takeout archives (`convert_mbox_archive(..., resume=True)`) and
-resumable web jobs ([below](#web-resume-a-stopped-import-unreleased)). Bundle reuse verifies Markdown, source bytes and every
+resumable web jobs ([below](#web-resume-a-stopped-import-0411)). Bundle reuse verifies Markdown, source bytes and every
 retained attachment together; edited or missing individual members are conflicts.
 For the CLI, extract the actual `.mbox` before choosing this mode. Keep the same converter,
 options and output layout across runs. See the [resume contract](mbox-resume.md)
@@ -75,7 +75,7 @@ limits. The rest of this guide describes default conversion unless noted.
 ## Compressed input
 
 Available in 0.4.5 and later; 0.4.0 and earlier do not read ZIP/TGZ input.
-Compressed input shipped first for CLI and Python. Unreleased web/API source
+Compressed input shipped first for CLI and Python. Web/API from 0.4.11
 also accepts these containers by local path or browser upload; MCP still
 requires a flat `.mbox`.
 
@@ -154,10 +154,10 @@ dead-letter convert takeout.tar.gz --mbox-member "Takeout/Mail/All mail.mbox" \
   on failure, normal completion, Ctrl-C or explicit iterator close. Hard kills
   cannot guarantee cleanup. `--dry-run` still stages and validates the whole member.
 
-Python exposes the ordinary conversion keywords of `convert_mbox`; unreleased
-source also accepts `resume=True`, which binds the journal to the archive and
+Python exposes the ordinary conversion keywords of `convert_mbox`; from 0.4.11
+it also accepts `resume=True`, which binds the journal to the archive and
 member rather than the temporary staging path (see the
-[resume contract](mbox-resume.md#cancellation-and-compressed-input-unreleased)):
+[resume contract](mbox-resume.md#cancellation-and-compressed-input-0411)):
 
 ```python
 from contextlib import closing
@@ -453,7 +453,7 @@ In 0.4.10 and later, configure
 Inbox/Cabinet, choose **Import a local MBOX archive**, and enter the archive's
 path relative to the server's filesystem-browser root (your home directory by
 default), for example `Downloads/Takeout/Mail/All mail.mbox`. The file must be
-on that server already. Unreleased source also accepts the Takeout `.zip`,
+on that server already. From 0.4.11 it also accepts the Takeout `.zip`,
 `.tgz` or `.tar.gz` directly; extraction is not needed. The 16 GiB cap applies
 to the selected file, including a compressed container. Use **Archive member**
 only to select an exact `.mbox` member name; it is required when more than one
@@ -468,7 +468,7 @@ the total message count. Cancelling waits for the active worker to stop and
 the partial report to finish; completed bundles stay available. The default
 server allows one queued/running archive job at a time.
 
-Allow disk space for temporary data, output bundles and the report. Unreleased
+Allow disk space for temporary data, output bundles and the report. From 0.4.11,
 web jobs enforce a 1 GiB free-space reserve on Cabinet and, for compressed
 input, the staging volume. Checks run before conversion, during staging at
 least every 64 MiB, and after each message result. A low reading or a failed
@@ -481,9 +481,9 @@ reserve, not a total byte quota or process-memory limit. Compressed member stagi
 Admission creates that parent folder, including the Inbox if missing, and
 validates it before reserving a slot or creating Cabinet output. A symlink or
 non-folder is refused with a clear request error. Tasks cancelled before
-starting create no private member-staging directory. Unreleased source can
-resume a stopped job; see [Web: resume a stopped import](#web-resume-a-stopped-import-unreleased).
-Browser upload is unreleased; see the next section.
+starting create no private member-staging directory. From 0.4.11 a stopped job
+can resume; see [Web: resume a stopped import](#web-resume-a-stopped-import-0411).
+Browser upload is available from 0.4.11; see the next section.
 The EML file upload and watch flows still accept only EML.
 
 For script clients, use `POST /api/mbox/jobs` with a root-relative `input_path`
@@ -491,9 +491,9 @@ and the local CSRF session header, then reuse the existing status/history/cancel
 routes. See the [complete API contract](v4-runtime-contracts.md#post-apimboxjobs-0410)
 for option validation, path confinement, limits, partial reports and failures.
 
-## Web: browser upload (unreleased)
+## Web: browser upload (0.4.11)
 
-Unreleased source adds **Upload archive** beside the path field in the same
+Version 0.4.11 adds **Upload archive** beside the path field in the same
 form. Choose one `.mbox`, `.zip`, `.tgz` or `.tar.gz` file of up to 16 GiB;
 Takeout archives can be uploaded directly. The browser sends it
 to the server, which saves a copy in `<Inbox>/mbox-uploads/` and then imports
@@ -509,12 +509,12 @@ the archive is already on the machine running dead-letter, the local path is
 faster and needs no second copy.
 
 Script clients send the raw bytes to `POST /api/mbox/uploads`; see the
-[upload contract](v4-runtime-contracts.md#post-apimboxuploads-unreleased) for
+[upload contract](v4-runtime-contracts.md#post-apimboxuploads-0411) for
 headers, limits and error codes.
 
-## Web: resume a stopped import (unreleased)
+## Web: resume a stopped import (0.4.11)
 
-Unreleased source lets an archive import continue where it stopped, in the same
+Version 0.4.11 lets an archive import continue where it stopped, in the same
 `<Cabinet>/mbox-<job-id>/` folder. This works when the import was cancelled,
 stopped by the 1 GiB free-space reserve, or cut off because the server stopped
 or crashed. The done panel then shows **Resume import**, and the idle and done
@@ -533,7 +533,7 @@ as a damaged archive or a report error, cannot be resumed.
 
 Script clients use `GET /api/mbox/resumable` and
 `POST /api/mbox/jobs/{id}/resume`; see the
-[job resume contract](v4-runtime-contracts.md#mbox-job-resume-unreleased).
+[job resume contract](v4-runtime-contracts.md#mbox-job-resume-0411).
 
 ## MCP: bounded `convert_mbox`
 
@@ -585,8 +585,8 @@ must be integers, not floats or booleans.
 `dead_letter.core.mbox.MboxCancelled` outside the `closing` context. Framing
 checks between bounded reads; use `timeout_seconds` to also stop/reap an active
 parser worker. Already completed results remain valid. Cancellation cannot
-preempt blocked filesystem I/O or an in-process parser. In 0.4.10 it is not
-supported with `resume=True`; unreleased source supports it, and the next resume
-run retries the record that was in progress. Unreleased `convert_mbox_archive()`
+preempt blocked filesystem I/O or an in-process parser. In 0.4.10 and earlier it is not
+supported with `resume=True`; 0.4.11 supports it, and the next resume
+run retries the record that was in progress. From 0.4.11, `convert_mbox_archive()`
 supports the same callback during staging and conversion. See the
 [core contract](v4-runtime-contracts.md#streaming-mbox-conversion).

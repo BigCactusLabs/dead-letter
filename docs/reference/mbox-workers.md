@@ -117,8 +117,8 @@ any completed output. Close the iterator on every early exit.
 This does not preempt blocked OS calls or an in-process MIME conversion.
 Without a callback, existing CLI/Python callers keep their behavior. The web
 runner always supplies timed workers and the callback; the MCP tool does not
-gain cancellation implicitly. In 0.4.10, resume and compressed input do not
-expose this callback; unreleased source accepts it for both, and a resume run
+gain cancellation implicitly. In 0.4.10 and earlier, resume and compressed input do not
+expose this callback; 0.4.11 accepts it for both, and a resume run
 retries the record that was in progress. See the [core runtime contract](v4-runtime-contracts.md#streaming-mbox-conversion).
 
 ## Optional resource budgets
@@ -183,7 +183,7 @@ capped at 1 MiB and the smallest output budget is 1 MiB, so a valid receipt fits
 ### Windows Job Objects
 
 The clean-exit membership check and CPU accounting fallback described below
-are unreleased changes (#254, #255).
+shipped in 0.4.11 (#254, #255).
 
 The parent creates a fresh job named with the per-launch random nonce, sets
 its limits, then queries them back before starting a worker. It refuses an
