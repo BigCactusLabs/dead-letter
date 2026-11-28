@@ -47,3 +47,22 @@ def test_summarize_calendar_parts_keeps_non_ascii_summary() -> None:
     )
 
     assert summarize_calendar_parts([ics]) == ["Réunion 会議 (2026-03-06T14:00:00+00:00)"]
+
+
+def test_summarize_calendar_parts_passes_bytes_to_the_parser(monkeypatch) -> None:
+    # bytes are never read as a path by any icalendar release; keep the
+    # caller's safeguard even though the locked parser no longer needs it.
+    from dead_letter.core import calendar as calendar_module
+
+    seen: list[object] = []
+    original = calendar_module.Calendar.from_ical
+
+    def recording(data, *args, **kwargs):
+        seen.append(data)
+        return original(data, *args, **kwargs)
+
+    monkeypatch.setattr(calendar_module.Calendar, "from_ical", recording)
+
+    summarize_calendar_parts(["/tmp/not-read.ics"])
+
+    assert seen and all(isinstance(item, bytes) for item in seen)

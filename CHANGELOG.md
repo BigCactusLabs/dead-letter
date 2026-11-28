@@ -100,7 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - A `text/calendar` part whose whole body is one line naming a local path no
-  longer makes conversion read that file. With icalendar 7.3.0 and earlier,
+  longer makes conversion read that file. With icalendar 7.0.2 through 7.3.0,
   such a part was opened as a file, and if the file held a valid calendar its
   event summaries and dates appeared in the converted Markdown. Calendar parts
   are now always parsed as message data, and `icalendar` is required at
