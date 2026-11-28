@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The MBOX import benchmark helper reports the largest reaped worker's peak
+  RSS on macOS, and the validation guide has a dated synthetic 2.5 GiB and
+  4.5 GiB record for macOS. Real-export validation is still open (#138).
+
 ## [0.4.11] - 2026-11-27
 
 ### Added
