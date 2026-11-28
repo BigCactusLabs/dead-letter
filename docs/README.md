@@ -64,6 +64,9 @@ baselines. The
 [November 10 assistant-recommendation record](project/2026-11-10-agent-recommendation.md)
 probes whether ChatGPT and Claude name dead-letter for its tasks, traces the
 wrong facts they repeat, and ranks the remaining discovery work. The
+[October 8 ChatGPT and Codex plugin exploration](project/2026-10-08-openai-plugin-discovery.md)
+is a research record that proposes a hosted single-`.eml` MCP experiment;
+nothing in it was built, submitted or published. The
 [MBOX ingestion design notes](project/2026-09-18-mbox-ingestion.md) are a
 history record of the research and boundaries behind the streaming Takeout
 importer and its worker follow-up, both shipped in 0.4.0; current availability

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Optional macOS soft memory watch for MBOX worker mode:
+  `--mbox-memory-watch-mib` (Python `memory_watch_mib`; CLI and Python only,
+  not MCP or the web UI). The parent samples each worker's physical footprint
+  about every 10 ms and stops a worker seen over the threshold, recording
+  `mbox_message_memory_watch` for that message. It is not a hard cap: a spike
+  between samples is reported afterwards in `diagnostics.memory_watch`
+  (`mbox_memory_watch_overshoot`), not prevented. An unreadable footprint
+  aborts the import with `mbox_budget_apply_failed`, and other platforms
+  reject the option with `mbox_budget_unsupported`. `--mbox-memory-mib` stays
+  unsupported on macOS (#220).
+- The MBOX import benchmark helper reports the largest reaped worker's peak
+  RSS on macOS, and the validation guide has a dated synthetic 2.5 GiB and
+  4.5 GiB record for macOS. Real-export validation is still open (#138).
 - The local web UI has a project footer under the paths strip with the running
   package version and links to the documentation, the GitHub repository, and
   issue reporting, each opening in a new tab. The version comes from a new
