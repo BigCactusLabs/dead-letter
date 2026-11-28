@@ -28,6 +28,9 @@ from dead_letter._mbox_worker import (
     BUDGET_STATUS_FILE, EXIT_BUDGET_APPLY_FAILED, EXIT_MEMORY_LIMIT, EXIT_STORAGE_ERROR,
 )
 from dead_letter.core.mbox import MboxCancelled, _raise_if_cancelled
+from dead_letter.core.mbox_memory_watch import (
+    SAMPLE_INTERVAL_SECONDS, FootprintWatch, MemoryWatchError, MemoryWatchExceeded,
+)
 
 if TYPE_CHECKING:
     from dead_letter.core.mbox import MboxRecord, UnescapeMode
@@ -43,6 +46,9 @@ _ERROR_MESSAGES = {
     "html_markdown_failed": "HTML-to-Markdown conversion failed in worker",
     "mbox_storage_error": "Message conversion exhausted available storage",
     "mbox_publish_failed": "Completed worker output could not be published",
+    "mbox_message_memory_watch": (
+        "Message worker went over its soft memory-watch threshold and was stopped; no output published"
+    ),
 }
 _RESOURCE_MESSAGES = {
     "memory": "Message worker exceeded its memory budget; no output published",
@@ -64,6 +70,10 @@ _SUPPORTED_BUDGETS = {
     "win32": {"memory", "cpu"},
 }
 _PLATFORM_NAMES = {"linux": "Linux", "darwin": "macOS", "win32": "Windows"}
+# The parent-side soft watchdog reads macOS proc_pid_rusage footprints. It is
+# separate from the memory budget above and is not a hard cap.
+_MEMORY_WATCH_PLATFORMS = {"darwin"}
+_MEMORY_WATCH_OPTION = "memory_watch_mib / --mbox-memory-watch-mib"
 
 
 class MboxBudgetError(ValueError):
@@ -82,6 +92,8 @@ class WorkerBudgets:
     memory_limit_mib: int | None = None
     cpu_seconds: int | None = None
     max_output_mib: int | None = None
+    # Soft watchdog (macOS): sampled by the parent, never a worker argument.
+    memory_watch_mib: int | None = None
 
     def requested(self) -> list[str]:
         return [name for name, (field, *_rest) in _BUDGET_CONTROLS.items() if getattr(self, field) is not None]
@@ -107,10 +119,18 @@ def validate_budgets(budgets: WorkerBudgets, *, worker_mode: bool) -> None:
                 maximum = min(maximum, 2 * sys.maxsize + 1)  # SIZE_T bytes
         if type(value) is not int or value <= 0 or value * unit > maximum:
             raise ValueError(f"MBOX {field} ({flag}) must be a positive integer")
-    if requested and not worker_mode:
+    watch = budgets.memory_watch_mib
+    if watch is not None and (type(watch) is not int or watch <= 0 or watch * 1024 * 1024 > 2**62):
+        raise ValueError("MBOX memory_watch_mib (--mbox-memory-watch-mib) must be a positive integer")
+    if (requested or watch is not None) and not worker_mode:
         raise ValueError("MBOX resource budgets require worker mode (timeout_seconds / --mbox-timeout)")
     supported = _SUPPORTED_BUDGETS.get(sys.platform, set())
     platform = _PLATFORM_NAMES.get(sys.platform, sys.platform)
+    if watch is not None and sys.platform not in _MEMORY_WATCH_PLATFORMS:
+        raise MboxBudgetError(
+            "mbox_budget_unsupported",
+            f"the soft memory watch ({_MEMORY_WATCH_OPTION}) is not available on {platform}; it is macOS-only",
+        )
     for control in requested:
         if control not in supported:
             field, flag, _arg, _unit = _BUDGET_CONTROLS[control]
@@ -194,7 +214,7 @@ class _WorkerResourceLimit(Exception):
 
 def _run_worker(
     request: Path, timeout: float, budget_args: tuple[str, ...] = (), *,
-    cancel_requested: Callable[[], bool] | None = None,
+    cancel_requested: Callable[[], bool] | None = None, memory_watch: FootprintWatch | None = None,
 ) -> int:
     # Checked before the job exists: a cancel here needs no handle cleanup.
     _raise_if_cancelled(cancel_requested)
@@ -223,6 +243,24 @@ def _run_worker(
         deadline = monotonic() + timeout
         while True:
             _raise_if_cancelled(cancel_requested)
+            if memory_watch is not None:
+                # Sample, then reap only once a sample has seen the exit, all on
+                # this thread: an unreaped child's PID cannot be reused.
+                try:
+                    exited = memory_watch.poll(process)
+                except MemoryWatchError as exc:
+                    raise MboxBudgetError(
+                        "mbox_budget_apply_failed",
+                        "could not read the message worker memory footprint; import aborted",
+                    ) from exc
+                if exited:
+                    returncode = process.wait()
+                    break
+                remaining = deadline - monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(process.args, timeout)
+                sleep(min(SAMPLE_INTERVAL_SECONDS, remaining))
+                continue
             # Windows waits use bounded integer milliseconds. Chunking avoids
             # overflow for a valid but large budget without imposing a new cap.
             remaining = max(0.0, deadline - monotonic())
@@ -427,9 +465,23 @@ def convert_record_isolated(
         provenance["container"] = dict(archive)
 
     budgets = budgets or WorkerBudgets()
+    watch = None
+    if budgets.memory_watch_mib is not None:
+        try:
+            watch = FootprintWatch(budgets.memory_watch_mib)
+        except MemoryWatchError as exc:
+            raise MboxBudgetError(
+                "mbox_budget_apply_failed", "could not read message worker memory footprints; import aborted",
+            ) from exc
+    # Set after a worker exits on its own with a lifetime peak over the watch
+    # threshold: a spike between samples, detected but not prevented.
+    overshoot: dict[str, Any] | None = None
+
+    def noted(diagnostics: dict[str, Any] | None) -> dict[str, Any] | None:
+        return diagnostics if overshoot is None else {**(diagnostics or {}), "memory_watch": overshoot}
 
     def failed(code: str, message: str | None = None) -> MboxConversion:
-        return MboxConversion(locator, None, False, provenance, error={
+        return MboxConversion(locator, None, False, provenance, noted(None), error={
             "code": code, "stage": "worker", "message": message or _ERROR_MESSAGES[code],
         })
 
@@ -446,8 +498,13 @@ def convert_record_isolated(
             # Without budgets, launch exactly as before this option existed.
             nonce = secrets.token_hex(16)
             budget_args = (*budgets.worker_args(), f"nonce={nonce}") if budgets.requested() else ()
+            run_options: dict[str, Any] = {}
             if cancel_requested is not None:
-                returncode = _run_worker(request, timeout, budget_args, cancel_requested=cancel_requested)
+                run_options["cancel_requested"] = cancel_requested
+            if watch is not None:
+                run_options["memory_watch"] = watch
+            if run_options:
+                returncode = _run_worker(request, timeout, budget_args, **run_options)
             elif budget_args:
                 returncode = _run_worker(request, timeout, budget_args)
             else:
@@ -456,6 +513,11 @@ def convert_record_isolated(
             return failed("mbox_message_timeout")
         except _WorkerResourceLimit as exc:
             return failed("mbox_message_resource_limit", _RESOURCE_MESSAGES[exc.control])
+        except MemoryWatchExceeded:
+            # Withheld like a timeout. Distinct from the memory budget: this
+            # worker was sampled over a soft threshold, not denied an allocation.
+            return failed("mbox_message_memory_watch")
+        overshoot = watch.overshoot() if watch is not None else None
         # Launch failures propagate as archive errors rather than trying to start
         # an unavailable interpreter once for every remaining message. So does a
         # requested budget the worker could not apply: the guarantee is unmet.
@@ -493,4 +555,4 @@ def convert_record_isolated(
                 published = _publish(staged, root, bundles=bundles)
             except (OSError, ValueError, RuntimeError):
                 return failed("mbox_publish_failed")
-        return MboxConversion(locator, published, True, provenance, data["diagnostics"])
+        return MboxConversion(locator, published, True, provenance, noted(data["diagnostics"]))

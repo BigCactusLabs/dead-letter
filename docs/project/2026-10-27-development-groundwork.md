@@ -113,9 +113,9 @@ peak, and worker lifetime is not child CPU time.
 [#204](https://github.com/BigCactusLabs/dead-letter/pull/204) owns Windows
 budget implementation for #188. The observed open head was `ec1e8c2`; validate
 that head and its native Windows evidence rather than repeating older PR-body
-results. #220 remains deliberately deferred until #138 or a user report shows
-a macOS memory problem. A future soft watchdog has different semantics from
-a hard memory limit.
+results. #220 was implemented on 2026-11-27 as a separate, opt-in macOS soft
+memory watch (unreleased). It has different semantics from a hard memory
+limit and does not replace one.
 
 ## Analysis: separate label review, stability and profile experiments
 
@@ -288,7 +288,7 @@ Deployment and endpoint retrieval remain separate outstanding work.
 | [#193](https://github.com/BigCactusLabs/dead-letter/issues/193) | Narrow to residual Outlook/locale/ambiguity evidence and separate reply-parser retiming. 2026-11-02 batch: localized plain-text Outlook history and a per-message reply-parser whitespace budget; #268 also bounds English reply headers and skips unused signature/disclaimer searches. Chinese history labels remain. |
 | [#196](https://github.com/BigCactusLabs/dead-letter/issues/196) | Offline comparator, evaluation-only reworded/reordered variants and dev-only remapping code implemented (2026-11-10, offline only). Independent repeat capture, a live variant transport and run, and reviewed labels (#166) remain. |
 | [#197](https://github.com/BigCactusLabs/dead-letter/issues/197) | Combined arm, combiner fitting, insufficient-context policy and disagreement report implemented offline (2026-11-10). A live combined-arm run with measured usage and reviewed labels (#166) remain. |
-| [#220](https://github.com/BigCactusLabs/dead-letter/issues/220) | Keep deferred until observed macOS memory pressure justifies a soft watchdog. |
+| [#220](https://github.com/BigCactusLabs/dead-letter/issues/220) | 2026-11-27: implemented unreleased as the opt-in macOS soft memory watch (`--mbox-memory-watch-mib` / `memory_watch_mib`, outcome `mbox_message_memory_watch`, overshoot diagnostic `mbox_memory_watch_overshoot`), CLI/Python only; see [macOS soft memory watch](../reference/mbox-workers.md#macos-soft-memory-watch-unreleased). `--mbox-memory-mib` stays unsupported on macOS. |
 | [#241](https://github.com/BigCactusLabs/dead-letter/issues/241) | Attribution regex bound implemented in follow-up; keep remaining wrapper semantics fixture-led. 2026-11-02 batch: quote-extraction word boundaries and stripped-block paragraph boundaries fixed; `<pre>` and no-evidence wrapper fusion remain. |
 
 ## Focused verification

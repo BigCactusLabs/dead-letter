@@ -196,6 +196,7 @@ def convert_mbox_archive(
     memory_limit_mib: int | None = None,
     cpu_seconds: int | None = None,
     max_output_mib: int | None = None,
+    memory_watch_mib: int | None = None,
     cancel_requested: Callable[[], bool] | None = None,
     staging_check: Callable[[Path, int], None] | None = None,
     resume: bool = False,
@@ -220,7 +221,7 @@ def convert_mbox_archive(
         path, member=member, staging_dir=staging_dir, archive_limits=archive_limits,
         output=output, options=options, limits=limits, unescape=unescape,
         bundles=bundles, timeout_seconds=timeout_seconds, memory_limit_mib=memory_limit_mib,
-        cpu_seconds=cpu_seconds, max_output_mib=max_output_mib,
+        cpu_seconds=cpu_seconds, max_output_mib=max_output_mib, memory_watch_mib=memory_watch_mib,
         cancel_requested=cancel_requested, staging_check=staging_check, resume=resume,
     )
 
@@ -244,7 +245,7 @@ def _convert_mbox_archive(
         conversion_options["container"] = source
     # Reject invalid or unsupported worker budgets before staging any bytes.
     _worker_budgets(*(conversion_options.get(name) for name in (
-        "timeout_seconds", "memory_limit_mib", "cpu_seconds", "max_output_mib",
+        "timeout_seconds", "memory_limit_mib", "cpu_seconds", "max_output_mib", "memory_watch_mib",
     )))
     opts = conversion_options.get("options") or ConvertOptions()
     if opts.delete_eml:

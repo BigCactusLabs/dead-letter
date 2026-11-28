@@ -151,6 +151,7 @@ The wall-clock timeout remains the universal backstop on every platform.
 | --- | --- | --- | --- | --- | --- |
 | Memory | `--mbox-memory-mib` / `memory_limit_mib` | Supported | **Unavailable** | Supported | MiB of virtual address space with Linux `RLIMIT_AS`; MiB of committed memory with Windows `JOB_OBJECT_LIMIT_PROCESS_MEMORY`. Neither is an RSS ceiling. Linux counts interpreter/native-library mappings and reservations; Windows denies commits over its limit. The same numeric value does not mean the same accounting on both platforms. |
 | CPU time | `--mbox-cpu-seconds` / `cpu_seconds` | Supported | Supported | Supported | POSIX `RLIMIT_CPU`: `SIGXCPU` at the limit, with the hard limit one second later. Windows `JOB_OBJECT_LIMIT_JOB_TIME`: user-mode CPU seconds, checked periodically by the OS, so termination may overshoot. Neither bounds blocked time; the wall timeout does. |
+| Memory watch (soft) | `--mbox-memory-watch-mib` / `memory_watch_mib` | **Unavailable** | Supported (unreleased) | **Unavailable** | Not a budget or cap: the parent samples the worker's physical footprint every 10 ms and stops a worker seen over the threshold. See [macOS soft memory watch](#macos-soft-memory-watch-unreleased). |
 | Output size | `--mbox-max-output-mib` / `max_output_mib` | Supported | Supported | **Unavailable** | MiB **per file**, not total output or free disk. `RLIMIT_FSIZE` / `SIGXFSZ` bounds each Markdown file, attachment and bundle `source.eml` copy. A bundle whose source message exceeds the limit fails. |
 
 The parent decides this matrix before the first message and never silently
@@ -238,32 +239,121 @@ The committed-memory limit uses the same Python
 
 ### macOS memory decision
 
-Memory is unsupported on macOS because it cannot be enforced; requesting it
-fails with `mbox_budget_unsupported` before conversion. XNU's
-`RLIMIT_AS` accounting includes a very large virtual-address-space baseline,
-so substituting a typical RSS-sized number is not a usable memory ceiling.
-Apple's archived `setrlimit(2)` description treats `RLIMIT_RSS` as a reclaim
-preference under memory pressure, not a dependable hard allocation cap.
+The memory budget (`--mbox-memory-mib`) is unsupported on macOS because it
+cannot be enforced; requesting it fails with `mbox_budget_unsupported` before
+conversion. XNU's `RLIMIT_AS` accounting includes a very large
+virtual-address-space baseline, so substituting a typical RSS-sized number is
+not a usable memory ceiling. Apple's archived `setrlimit(2)` description
+treats `RLIMIT_RSS` as a reclaim preference under memory pressure, not a
+dependable hard allocation cap. No public, unprivileged hard cap is used:
+`memorystatus_control` needs root or an entitlement.
 
-Parent-side RSS polling would be a **soft watchdog**, not an equivalent budget:
-allocations can spike between samples and continue until the parent runs and
-termination completes. It cannot promise prevention of host memory exhaustion.
-A future watchdog would need a separately named control/report contract,
-process-identity-safe sampling, a defined sampling interval, fail-closed handling
-when counters are unavailable, and tests for spikes, blocked workers and
-cancellation on supported macOS versions. None of that monitoring exists, and
-no macOS hard-cap or polling performance result is claimed. An optional soft
-watchdog is deferred to
-[#220](https://github.com/BigCactusLabs/dead-letter/issues/220) until
-real-corpus evidence (#138) shows it is needed.
+macOS instead offers a separately named, opt-in **soft memory watch**
+(unreleased, #220), described next. It is not a memory budget, it does not
+change `--mbox-memory-mib`, and it cannot promise to prevent host memory
+exhaustion.
+
+### macOS soft memory watch (unreleased)
+
+```bash
+uv run dead-letter convert archive.mbox --output markdown/ --report \
+  --mbox-timeout 60 --mbox-memory-watch-mib 2048
+```
+
+```python
+convert_mbox("archive.mbox", output="markdown", timeout_seconds=60,
+             memory_watch_mib=2048)  # macOS only; soft, not a cap
+```
+
+The value is a positive integer number of MiB and needs worker mode
+(`--mbox-timeout` / `timeout_seconds`). It is available from the CLI and the
+Python API (`convert_mbox`, `convert_mbox_archive`) only; the MCP
+`convert_mbox` tool, the web UI and the web API do not accept it. On Linux,
+Windows and other platforms it fails at admission with
+`mbox_budget_unsupported`, before any conversion or output. It can be combined
+with the macOS CPU and output budgets. Unset, nothing is sampled and worker
+behavior is unchanged.
+
+**What is measured.** The parent reads the worker's current physical
+footprint (`ri_phys_footprint` from `proc_pid_rusage(RUSAGE_INFO_V4)`, through
+`ctypes`; no added dependency). This is the kernel's phys_footprint ledger,
+the value Activity Monitor shows as "Memory"; it includes compressed memory,
+unlike RSS. Only the worker process itself is counted. A process that the
+worker started would not be counted; the conversion pipeline starts none. The
+tests check that the sampled PID is the interpreter that runs the conversion.
+
+**Sampling.** The parent samples every 10 ms, on the same thread that waits
+for the worker. A sample over the threshold stops the worker with `SIGKILL`
+and records `mbox_message_memory_watch` for that message: the workspace and
+any partial artifacts are discarded unpublished, as for a timeout, and later
+records continue. This is a **soft limit**. A worker can allocate for up to
+one interval, plus the time termination takes, before it is stopped, so its
+footprint can go well past the threshold; the overshoot is roughly the
+allocation rate multiplied by 10 ms. The watch neither prevents an allocation
+nor bounds host memory use.
+
+**Spikes between samples.** When a worker exits on its own, the parent reads
+its lifetime peak footprint (`ri_lifetime_max_phys_footprint`) before reaping
+it. If that peak is over the threshold, the converted message is kept, and the
+result's `diagnostics.memory_watch` records
+`{"code": "mbox_memory_watch_overshoot", "limit_mib": ..., "peak_bytes": ...}`.
+The CLI also prints the overshoot to stderr. This is detection after the fact:
+the spike was not prevented, and the message is not counted as a failure.
+
+**Process identity.** The kernel does not reuse the PID of a child that its
+parent has not reaped, whether it is running or a zombie. The supervisor
+checks for exit with `waitid(..., WEXITED | WNOHANG | WNOWAIT)`, which does not
+reap, samples, and reaps only after a sample has seen the exit, all on one
+thread. A sample therefore cannot reach a different process. As a second
+guard, the process start time from the same call must be identical on every
+sample. This relies on nothing else in the importing process reaping its
+children (for example a `SIGCHLD` handler that calls `waitpid(-1)`); such a
+handler would break ordinary `subprocess` use as well.
+
+**Fail closed.** Before the first worker starts, the parent reads its own
+footprint to confirm the call is available and permitted. A failed read of a
+live, unreaped worker (any error, including `ESRCH`), a changed start time,
+or an exited worker whose exit statistics are missing stops that worker and
+aborts the import with `mbox_budget_apply_failed`. No worker runs unwatched
+while the option is set. A sandbox profile that denies `proc_pid_rusage`
+therefore stops the import before conversion.
+
+**Interaction with other limits.** The wall timeout still applies: a blocked
+worker under the threshold ends as `mbox_message_timeout`. Cooperative
+cancellation is checked every 10 ms while the watch runs, and the worker is
+killed and reaped before `MboxCancelled` is raised. The watch adds no thread
+and no worker argument.
+
+**Overhead (measured 2026-11-27).** Method: 6 alternating runs per mode of a
+40-message synthetic MBOX (one small plain-text body per message), each with
+`timeout_seconds=30`, with and without `memory_watch_mib=4096`, after one
+warm-up run. The parent's own CPU time (`getrusage(RUSAGE_SELF)`) and wall time
+are divided by the message count; the table shows medians. A separate loop
+timed 20,000 samples of one live child. Host: Apple M5 Max (18 logical CPUs),
+macOS 27.2.1, Python 3.14.9.
+
+| Measurement | Without watch | With watch |
+| --- | ---: | ---: |
+| Parent CPU per message | 2.39 ms | 2.49 ms |
+| Wall time per message | 131.0 ms | 99.6 ms |
+| Worker CPU per message | 92.3 ms | 90.5 ms |
+| Samples per message | 0 | 9 |
+| One sample (`waitid` + `proc_pid_rusage`) | — | 2.0 µs CPU |
+
+The watch added about 0.1 ms of parent CPU per message. It did not add wall
+time on this host; it removed about 31 ms per message, because the 10 ms
+sampling loop notices the worker's exit sooner than the unwatched wait, whose
+`Popen.wait` polling on Python 3.14 backs off to 50 ms between checks. This is one run on one
+host, not a general performance claim.
 
 ### Budget failures
 
 | Code | Scope | Meaning |
 | --- | --- | --- |
 | `mbox_budget_unsupported` | Usage error, before conversion | The control is unavailable on this platform (message names the control, flag and platform). CLI exit code 1, no output or report. |
-| `mbox_budget_apply_failed` | Archive-fatal | A requested limit could not be configured or verified, or Windows job setup/join/state/cleanup failed. No unenforced retry; the import stops with an archive error entry. |
+| `mbox_budget_apply_failed` | Archive-fatal | A requested limit could not be configured or verified, Windows job setup/join/state/cleanup failed, or the macOS soft memory watch could not read a worker footprint. No unenforced retry; the import stops with an archive error entry. |
 | `mbox_message_resource_limit` | One record | The worker exceeded a budget. The message names the limit when determined: CPU time (`SIGXCPU` or Windows job signal/accounting), per-file output (`SIGXFSZ`), or memory (a `MemoryError` observed under a memory budget). |
+| `mbox_message_memory_watch` (unreleased) | One record | The macOS soft memory watch sampled the worker over its threshold and stopped it. This is not `mbox_message_resource_limit`: the worker was not denied an allocation, and its footprint may have gone past the threshold before it was stopped. |
 
 An exceeded budget is handled like a timeout: the worker is reaped, its private
 workspace and any partial artifacts are discarded unpublished, and later
@@ -293,8 +383,9 @@ native library that hits and handles an allocation failure internally, without
 raising into Python, is not observed.
 
 The report records the requested values in `mbox_options.memory_limit_mib`,
-`mbox_options.cpu_seconds` and `mbox_options.max_output_mib`, with `null` when a
-control is not set. The same options reach workers for ZIP/TGZ input; archive
+`mbox_options.cpu_seconds`, `mbox_options.max_output_mib` and (unreleased)
+`mbox_options.memory_watch_mib`, with `null` when a control is not set. A
+soft-watch overshoot appears in that entry's `diagnostics.memory_watch`. The same options reach workers for ZIP/TGZ input; archive
 staging and parent framing are not covered by a per-worker resource budget.
 
 **These are resource limits, not a sandbox.** They do not restrict filesystem
@@ -337,7 +428,9 @@ One fresh interpreter per message adds startup overhead and an extra output-copy
 step. In bundle mode, reserve disk space for the worker's temporary source and
 attachment copies as well as final output. Worker-local allocations disappear
 with the process, but without a supported memory budget a single message can
-still exhaust host memory before its time budget expires. Do not interpret the
+still exhaust host memory before its time budget expires. The macOS soft memory
+watch does not change this: it stops a worker only after a sample sees it over
+the threshold. Do not interpret the
 existing 64 MiB source limit as a 64 MiB resident-memory bound.
 
 Parent publication still uses the existing writers: a file can be visible while
@@ -497,7 +590,8 @@ No private email was used or uploaded, and a real authorized multi-GB Takeout
 archive has not been tested; that remains
 [#138](https://github.com/BigCactusLabs/dead-letter/issues/138). The
 [synthetic worker benchmark](../project/2026-09-24-mbox-worker-benchmark.md)
-measures startup/copy overhead and defers reuse. An optional macOS memory
-watchdog is deferred to #220. Durable resume (#139) is
+measures startup/copy overhead and defers reuse. The optional macOS soft memory
+watch (#220, unreleased) has native macOS tests in
+`tests/core/test_mbox_memory_watch.py`. Durable resume (#139) is
 implemented separately and is available from 0.4.6; see
 [resumable MBOX imports](mbox-resume.md). Neither is implied by the timeout option.

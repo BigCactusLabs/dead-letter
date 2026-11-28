@@ -136,6 +136,7 @@ def convert_mbox(
     memory_limit_mib: int | None = None,
     cpu_seconds: int | None = None,
     max_output_mib: int | None = None,
+    memory_watch_mib: int | None = None,
     resume: bool = False,
     cancel_requested: Callable[[], bool] | None = None,
 ) -> Iterator[MboxConversion]:
@@ -153,6 +154,13 @@ def convert_mbox(
     per-worker resource limits and require ``timeout_seconds``. A budget this
     platform cannot enforce raises ``MboxBudgetError`` before any conversion.
     They are resource limits, not filesystem or network isolation.
+
+    ``memory_watch_mib`` (macOS only, worker mode) opts into a parent-side
+    soft watchdog: the parent samples each worker's physical footprint every
+    10 ms and stops a worker seen over the threshold with
+    ``mbox_message_memory_watch``. It is not a hard cap; a spike between samples
+    is detected afterwards (``diagnostics["memory_watch"]``), not prevented.
+    Other platforms raise ``MboxBudgetError`` (``mbox_budget_unsupported``).
 
     ``resume=True`` opts into a source/options-bound journal for Markdown or
     bundles. Reuse verifies every output hash; conflicts stop without overwriting.
@@ -172,16 +180,16 @@ def convert_mbox(
         path, output=output, options=options, limits=limits, unescape=unescape,
         bundles=bundles, timeout_seconds=timeout_seconds,
         memory_limit_mib=memory_limit_mib, cpu_seconds=cpu_seconds, max_output_mib=max_output_mib,
-        resume=resume, cancel_requested=cancel_requested,
+        memory_watch_mib=memory_watch_mib, resume=resume, cancel_requested=cancel_requested,
     )
 
 
 def _worker_budgets(
     timeout_seconds: float | None, memory_limit_mib: int | None,
-    cpu_seconds: int | None, max_output_mib: int | None,
+    cpu_seconds: int | None, max_output_mib: int | None, memory_watch_mib: int | None = None,
 ) -> WorkerBudgets | None:
     """Validate worker-mode options before any conversion; ``None`` means in-process."""
-    budget_values = (memory_limit_mib, cpu_seconds, max_output_mib)
+    budget_values = (memory_limit_mib, cpu_seconds, max_output_mib, memory_watch_mib)
     if timeout_seconds is None and all(value is None for value in budget_values):
         return None
     from dead_letter.core.mbox_isolation import validate_budgets, validate_timeout
@@ -203,6 +211,7 @@ def _convert_mbox(
     memory_limit_mib: int | None = None,
     cpu_seconds: int | None = None,
     max_output_mib: int | None = None,
+    memory_watch_mib: int | None = None,
     archive: dict[str, Any] | None = None,
     resume: bool = False,
     cancel_requested: Callable[[], bool] | None = None,
@@ -212,7 +221,7 @@ def _convert_mbox(
     if cancel_requested is not None and not callable(cancel_requested):
         raise ValueError("MBOX cancel_requested must be callable")
     _raise_if_cancelled(cancel_requested)
-    budgets = _worker_budgets(timeout_seconds, memory_limit_mib, cpu_seconds, max_output_mib)
+    budgets = _worker_budgets(timeout_seconds, memory_limit_mib, cpu_seconds, max_output_mib, memory_watch_mib)
     if budgets is not None:
         from dead_letter.core.mbox_isolation import convert_record_isolated
     source = Path(path).expanduser().resolve()
