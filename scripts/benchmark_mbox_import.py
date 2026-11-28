@@ -179,9 +179,11 @@ def rss_metrics() -> dict[str, int | str | None]:
         )
     elif sys.platform == "darwin":
         import resource
+        # XNU reports bytes; RUSAGE_CHILDREN keeps the largest reaped child, not a sum.
         metrics.update(
             importer_peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
-            rss_method="darwin_getrusage_self_bytes_children_unavailable",
+            largest_reaped_worker_peak_rss_bytes=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,
+            rss_method="darwin_getrusage_separate_high_water_marks_not_tree_total",
         )
     return metrics
 
