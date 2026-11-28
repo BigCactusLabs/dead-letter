@@ -271,3 +271,48 @@ def test_real_worker_matches_existing_pipeline(tmp_path, bundles, dry_run):
             return {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob("*") if p.is_file()}
         assert contents(worker_root) == contents(direct_root)
     assert source.read_bytes() == original
+
+
+class _LockedWorkspace:
+    """A workspace whose removal is denied while a dying worker holds it."""
+
+    def __init__(self, path: Path, denials: int) -> None:
+        self.name = str(path)
+        self.denials = denials
+        self.attempts = 0
+
+    def cleanup(self) -> None:
+        self.attempts += 1
+        if self.attempts <= self.denials:
+            raise PermissionError(32, "The process cannot access the file")
+
+
+@pytest.mark.parametrize("platform", ["win32", "linux"])
+def test_workspace_removal_waits_for_a_dying_windows_worker(
+    tmp_path: Path, monkeypatch, platform: str
+) -> None:
+    workspace = _LockedWorkspace(tmp_path, denials=3)
+    monkeypatch.setattr(isolation, "TemporaryDirectory", lambda **_: workspace)
+    monkeypatch.setattr(isolation, "sleep", lambda _: None)
+    monkeypatch.setattr(isolation.sys, "platform", platform)
+    if platform == "win32":
+        with isolation._private_workspace() as name:
+            assert name == str(tmp_path)
+        assert workspace.attempts == 4
+    else:
+        # POSIX removal is unchanged: a denial fails at once.
+        with pytest.raises(PermissionError), isolation._private_workspace():
+            pass
+        assert workspace.attempts == 1
+
+
+def test_workspace_removal_gives_up_after_its_bound(tmp_path: Path, monkeypatch) -> None:
+    workspace = _LockedWorkspace(tmp_path, denials=10**6)
+    clock = iter(range(10**6))  # one second per reading; the deadline is t=5
+    monkeypatch.setattr(isolation, "TemporaryDirectory", lambda **_: workspace)
+    monkeypatch.setattr(isolation, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(isolation, "sleep", lambda _: None)
+    monkeypatch.setattr(isolation.sys, "platform", "win32")
+    with pytest.raises(PermissionError), isolation._private_workspace():
+        pass
+    assert workspace.attempts == 5

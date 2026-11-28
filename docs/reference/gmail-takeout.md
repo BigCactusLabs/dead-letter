@@ -5,8 +5,11 @@ release (#103). Compressed ZIP/TGZ input shipped in 0.4.5 (#144).
 Install any CLI/Python route from the
 [installation and distribution map](distribution.md); once dead-letter is
 installed, run the commands below without a `uv run` prefix. Keep `uv run` only
-when working from a development checkout. The web UI remains EML-only (tracked:
-web/API import [#146](https://github.com/BigCactusLabs/dead-letter/issues/146)).
+when working from a development checkout. Web UI versions before 0.4.10 are
+EML-only; 0.4.10 adds the [local-path web workflow](#web-local-path-import-0410),
+the first web/API slice of [#146](https://github.com/BigCactusLabs/dead-letter/issues/146).
+Unreleased source adds a [browser upload](#web-browser-upload-unreleased) of one
+flat archive.
 MCP servers from 0.4.5 add a bounded
 [`convert_mbox` MCP tool](#mcp-bounded-convert_mbox) (#145); 0.4.0 and earlier
 MCP servers are EML-only. Watch
@@ -59,10 +62,12 @@ files or bundles, retries missing/failed records, and refuses modified/conflicti
 outputs. Reports distinguish `new`, `reused`, `recovered` and `retried` records
 and use collision-safe filenames. Python uses `convert_mbox(..., resume=True)`;
 add `bundles=True` for Cabinet output.
-Timed workers and bundles are supported; compressed input, dry runs, MCP and
-web/UI resume are not. Bundle reuse verifies Markdown, source bytes and every
+Timed workers and bundles are supported; dry runs and MCP resume are not. The
+CLI resumes a flat `.mbox` only. Unreleased source adds Python resume for
+compressed Takeout archives (`convert_mbox_archive(..., resume=True)`) and
+resumable web jobs ([below](#web-resume-a-stopped-import-unreleased)). Bundle reuse verifies Markdown, source bytes and every
 retained attachment together; edited or missing individual members are conflicts.
-Extract the actual `.mbox` before choosing this mode. Keep the same converter,
+For the CLI, extract the actual `.mbox` before choosing this mode. Keep the same converter,
 options and output layout across runs. See the [resume contract](mbox-resume.md)
 for source binding, no-replace filesystem requirements, locking and durability
 limits. The rest of this guide describes default conversion unless noted.
@@ -70,8 +75,9 @@ limits. The rest of this guide describes default conversion unless noted.
 ## Compressed input
 
 Available in 0.4.5 and later; 0.4.0 and earlier do not read ZIP/TGZ input.
-This first #144 slice adds CLI and Python input only. MCP and web/API ingestion
-are unchanged and do not accept compressed containers.
+Compressed input shipped first for CLI and Python. Unreleased web/API source
+also accepts these containers by local path or browser upload; MCP still
+requires a flat `.mbox`.
 
 ```bash
 dead-letter convert takeout.zip --output markdown/ --report
@@ -148,7 +154,10 @@ dead-letter convert takeout.tar.gz --mbox-member "Takeout/Mail/All mail.mbox" \
   on failure, normal completion, Ctrl-C or explicit iterator close. Hard kills
   cannot guarantee cleanup. `--dry-run` still stages and validates the whole member.
 
-Python exposes the ordinary conversion keywords of `convert_mbox`, but not `resume`:
+Python exposes the ordinary conversion keywords of `convert_mbox`; unreleased
+source also accepts `resume=True`, which binds the journal to the archive and
+member rather than the temporary staging path (see the
+[resume contract](mbox-resume.md#cancellation-and-compressed-input-unreleased)):
 
 ```python
 from contextlib import closing
@@ -337,11 +346,13 @@ Python usage, tests, and precise limits.
 
 In 0.4.5 and later, worker mode also accepts opt-in resource budgets:
 `--mbox-cpu-seconds` and `--mbox-max-output-mib` (Linux and macOS) and
-`--mbox-memory-mib` (Linux only). An unsupported control is refused before
-conversion. Budgets apply to ZIP/TGZ input as well (Python `convert_mbox_archive`
-accepts the same `memory_limit_mib`, `cpu_seconds` and `max_output_mib`).
-These are resource limits, not filesystem or network isolation; see
-[optional resource budgets](mbox-workers.md#optional-resource-budgets).
+`--mbox-memory-mib` (Linux only). 0.4.10 adds Windows support for
+`--mbox-cpu-seconds` and `--mbox-memory-mib` (committed memory) (#188).
+Windows output size stays unsupported. An unsupported
+control is refused before conversion. Budgets apply to ZIP/TGZ input as well
+(Python `convert_mbox_archive` accepts the same `memory_limit_mib`,
+`cpu_seconds` and `max_output_mib`). These are resource limits, not filesystem
+or network isolation; see [optional resource budgets](mbox-workers.md#optional-resource-budgets).
 
 ## Dialects: do not guess away quoting
 
@@ -436,6 +447,94 @@ and are stricter than [mutt's](https://github.com/muttmua/mutt/blob/b74263bb9381
 which compares only five bytes to `From ` at the endpoint. Dialect names
 follow [de Boyne Pollard's MBOX survey](https://jdebp.uk/FGA/mail-mbox-formats.html).
 
+## Web: local-path import (0.4.10)
+
+In 0.4.10 and later, configure
+Inbox/Cabinet, choose **Import a local MBOX archive**, and enter the archive's
+path relative to the server's filesystem-browser root (your home directory by
+default), for example `Downloads/Takeout/Mail/All mail.mbox`. The file must be
+on that server already. Unreleased source also accepts the Takeout `.zip`,
+`.tgz` or `.tar.gz` directly; extraction is not needed. The 16 GiB cap applies
+to the selected file, including a compressed container. Use **Archive member**
+only to select an exact `.mbox` member name; it is required when more than one
+mailbox is present. Web member names are limited to 1024 characters, with no
+NUL or control characters; invalid names return HTTP 422. The form also accepts
+a per-message timeout (30 seconds by default, at most 300 seconds).
+
+Each job preserves the export and creates its own `mbox-<job-id>` folder in
+Cabinet, with one bundle per completed message and a streaming JSON report.
+The progress view shows archive bytes and processed messages without guessing
+the total message count. Cancelling waits for the active worker to stop and
+the partial report to finish; completed bundles stay available. The default
+server allows one queued/running archive job at a time.
+
+Allow disk space for temporary data, output bundles and the report. Unreleased
+web jobs enforce a 1 GiB free-space reserve on Cabinet and, for compressed
+input, the staging volume. Checks run before conversion, during staging at
+least every 64 MiB, and after each message result. A low reading or a failed
+measurement stops the job with `mbox_disk_reserve`; completed bundles and a
+partial report are kept. A cancel requested before the reserve failure is
+detected wins; a later cancel leaves the job failed. A report error always
+makes the job fail, even if cancellation was requested. This is a free-space
+reserve, not a total byte quota or process-memory limit. Compressed member staging is private under
+`<Inbox>/mbox-uploads/` and removed on completion, failure or cancellation.
+Admission creates that parent folder, including the Inbox if missing, and
+validates it before reserving a slot or creating Cabinet output. A symlink or
+non-folder is refused with a clear request error. Tasks cancelled before
+starting create no private member-staging directory. Unreleased source can
+resume a stopped job; see [Web: resume a stopped import](#web-resume-a-stopped-import-unreleased).
+Browser upload is unreleased; see the next section.
+The EML file upload and watch flows still accept only EML.
+
+For script clients, use `POST /api/mbox/jobs` with a root-relative `input_path`
+and the local CSRF session header, then reuse the existing status/history/cancel
+routes. See the [complete API contract](v4-runtime-contracts.md#post-apimboxjobs-0410)
+for option validation, path confinement, limits, partial reports and failures.
+
+## Web: browser upload (unreleased)
+
+Unreleased source adds **Upload archive** beside the path field in the same
+form. Choose one `.mbox`, `.zip`, `.tgz` or `.tar.gz` file of up to 16 GiB;
+Takeout archives can be uploaded directly. The browser sends it
+to the server, which saves a copy in `<Inbox>/mbox-uploads/` and then imports
+that copy exactly like a local-path archive. The copy stays there after the
+import as the job's source, so delete it yourself when you no longer need it.
+The Inbox needs room for the copy plus 1 GiB, and the Cabinet needs room for
+the bundles plus the same 1 GiB reserve. Compressed jobs also need space for
+the decompressed member; only this temporary member staging is removed after
+the job. `mbox-uploads` must be a real folder inside the Inbox; the server
+refuses the upload when it is a symlink, for example to another disk. An
+interrupted upload cannot be resumed; it starts again from the beginning. When
+the archive is already on the machine running dead-letter, the local path is
+faster and needs no second copy.
+
+Script clients send the raw bytes to `POST /api/mbox/uploads`; see the
+[upload contract](v4-runtime-contracts.md#post-apimboxuploads-unreleased) for
+headers, limits and error codes.
+
+## Web: resume a stopped import (unreleased)
+
+Unreleased source lets an archive import continue where it stopped, in the same
+`<Cabinet>/mbox-<job-id>/` folder. This works when the import was cancelled,
+stopped by the 1 GiB free-space reserve, or cut off because the server stopped
+or crashed. The done panel then shows **Resume import**, and the idle and done
+panels list stopped imports from the Cabinet, including ones from an earlier
+server run. Free some space first after a disk-space stop.
+
+Resume checks completed bundles and keeps them; nothing is converted twice or
+overwritten. The message that was in progress is converted again, and the run
+writes a new report beside the earlier ones (`.dead-letter-report-2.json` and
+so on). The source must be unchanged: the same file at the same path, with the
+same size and modification time. For an upload, that is the copy kept in
+`mbox-uploads/`. If the source was changed, moved or removed, or dead-letter
+was upgraded between runs, resume is refused; start a new import, which uses a
+new job folder. A completed import, or one that failed for another reason, such
+as a damaged archive or a report error, cannot be resumed.
+
+Script clients use `GET /api/mbox/resumable` and
+`POST /api/mbox/jobs/{id}/resume`; see the
+[job resume contract](v4-runtime-contracts.md#mbox-job-resume-unreleased).
+
 ## MCP: bounded `convert_mbox`
 
 Available in MCP servers from 0.4.5 and later; 0.4.0 and earlier do not have
@@ -450,8 +549,8 @@ runs the same importer for small exports, with fixed bounds:
 - at most 1000 messages per call. When an archive holds more, the call stops
   cleanly and returns `truncated: true`; the remaining messages are not
   converted and there is no resume. Use the CLI for the whole archive;
-- default `preserve` quoting and default per-message limits. Unescape modes,
-  `--max-message-mib` and timed workers are CLI/Python-only;
+- default `preserve` quoting and default per-message limits. The MCP tool does
+  not expose unescape modes, `--max-message-mib` or timed workers;
 - `output_directory` is required. Output names and the
   `.dead-letter-report.json` report are collision-safe: a second call into the
   same folder writes `.dead-letter-report-2.json` and suffixed messages;
@@ -480,3 +579,14 @@ Do not wrap a large import in `list(...)`. The lower-level
 copy its path before advancing the iterator, and close it when stopping early.
 Python callers can set both resource limits through `MboxLimits`; byte counts
 must be integers, not floats or booleans.
+
+**0.4.10 and later:** for non-resumed flat imports, pass
+`cancel_requested=event.is_set` with a `threading.Event`. Catch
+`dead_letter.core.mbox.MboxCancelled` outside the `closing` context. Framing
+checks between bounded reads; use `timeout_seconds` to also stop/reap an active
+parser worker. Already completed results remain valid. Cancellation cannot
+preempt blocked filesystem I/O or an in-process parser. In 0.4.10 it is not
+supported with `resume=True`; unreleased source supports it, and the next resume
+run retries the record that was in progress. Unreleased `convert_mbox_archive()`
+supports the same callback during staging and conversion. See the
+[core contract](v4-runtime-contracts.md#streaming-mbox-conversion).

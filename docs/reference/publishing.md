@@ -17,7 +17,7 @@ must not infer permission to perform them.
 | Publish a stable GitHub release for `vX.Y.Z` | Read-only source preflight → build once → packaged-install/README gate → upload those exact bytes to PyPI → install readiness → MCPB and OCI → resolved MCP Registry metadata |
 | Push `plugin-vX.Y.Z` | Plugin checks → exact PyPI pin available → marketplace PR/merge → compatibility `release` branch |
 | Publish a plugin GitHub release or a prerelease | Package publication jobs are skipped |
-| Edit the Homebrew tap | Separate maintainer-owned core-only formula update |
+| Edit the Homebrew tap | Separate maintainer-owned CLI/MCP formula update |
 
 Only stable `X.Y.Z` package releases are supported by the publication gate.
 Do not sneak a prerelease, build suffix, or plugin tag into that channel. Add
@@ -201,7 +201,9 @@ release adds or changes MCP tools, that comparison fails on the preparation PR
 and on `main` after merge until the new version reaches PyPI. This workflow is
 not part of the release gate and does not block tagging or publication. Once
 `wait-pypi` confirms readiness, rerun its failed jobs on the release commit to
-turn `main` green again.
+turn `main` green again. Both jobs keep a uv cache keyed on the OS and
+`server.json`; a failed job saves no cache, and the first passing run after a
+release starts from an empty cache.
 
 Use a maintainer-authorized CLI/session for the release event. A release
 created by another workflow's default `GITHUB_TOKEN` generally does not start
@@ -211,12 +213,18 @@ without designing its authorization and event chain.
 ## MCP Registry Publish (Automatic)
 
 The registry job waits for successful PyPI readiness, MCPB, and OCI jobs. It
-stamps the bundle's actual SHA-256 and URL, adds the tested OCI index digest,
-archives `dead-letter-server-X.Y.Z.json` plus its checksum, then publishes
+stamps the bundle's actual SHA-256 and URL, sets the PyPI launcher's
+`--exclude-newer` from the maximum artifact `upload_time_iso_8601` in that
+version's PyPI JSON (the first whole UTC minute strictly after the last upload,
+formatted as `YYYY-MM-DDTHH:MM:00Z`),
+and adds the tested OCI index digest. It archives
+`dead-letter-server-X.Y.Z.json` plus its checksum, then publishes
 using GitHub OIDC. The archived manifest is the exact input to the publisher,
 not proof that registry publication succeeded; verify the registry's exact version.
 
-The committed `server.json` is a source template. **Never manually publish it
+The committed `server.json` is a source template. Its `--exclude-newer` value is
+a template for the current release; `prepare` leaves it unchanged and the release
+workflow overwrites it at publish. **Never manually publish it
 with a zero bundle hash or invent an OCI digest.** The resolved manifest
 assets are produced only by releases using this refreshed workflow; do not
 expect them on older releases such as `0.3.1`.
@@ -294,11 +302,16 @@ version tag when this happens. Recovery is the same as any other job: rerun
 
 ## Update The Homebrew Tap
 
-Homebrew remains a manual, core-CLI-only channel after PyPI succeeds. In a
-checkout of `BigCactusLabs/homebrew-tap` (installed as `BigCactusLabs/tap`),
+Homebrew remains a manual channel after PyPI succeeds; the preparation policy
+includes the CLI and core MCP server. In a checkout of `BigCactusLabs/homebrew-tap` (installed as `BigCactusLabs/tap`),
 update `Formula/dead-letter.rb` to the exact released sdist URL and SHA-256
 from PyPI. Review its dependency resources; do not accidentally add the
-UI/MCP extras or unrelated development packages.
+optional UI/watch extras or unrelated development packages. MCP and its core
+dependency subtree must remain included, and `dead-letter-mcp` must be retained
+(the formula's `test do` block asserts that entrypoint exists and reads
+`doctor --json` without requiring exit 0, because `doctor` reports the
+missing UI extra and inbox paths as errors).
+The optional `dead-letter-ui` entrypoint must still be removed.
 
 `scripts/release.py homebrew-prepare` can generate the formula change and open
 the draft tap PR, and it requires the original build's checksums. It never
@@ -325,7 +338,9 @@ dead-letter doctor
 ```
 
 Use `brew reinstall --build-from-source` instead of `install` on a test machine
-where the formula is already installed. Convert a synthetic fixture, then
+where the formula is already installed. Verify `dead-letter-mcp` responds to MCP
+`initialize` and `tools/list`, and `dead-letter-ui` is absent. Convert a
+synthetic fixture, then
 commit/push the reviewed formula. Record the tap commit and version in the
 release checklist. A successful Python release does not update the tap.
 
@@ -336,21 +351,25 @@ A plugin-only instruction/command update can keep the prior exact package
 pin. Both cases require a new plugin asset version and reviewed main commit.
 
 Adopt a package in a PR after it is on PyPI. `prepare-plugin` prints a patch
-for the plugin version, the `.mcp.json` pin (`dead-letter==X.Y.Z`, no extras:
-Claude's locked launch refuses them), and the `plugin/pyproject.toml`
-dependency. Then regenerate the lock, which needs network access:
+for the plugin version and the exact `plugin/pyproject.toml` dependency
+(`dead-letter==X.Y.Z`). The `.mcp.json` launcher runs the shipped lock through
+`uv run --frozen --isolated --project ${CLAUDE_PLUGIN_ROOT}`. Then regenerate
+the lock with `--upgrade` to select a fresh transitive set, which needs network
+access, and smoke-test that set:
 
 ```bash
 python scripts/release.py wait-pypi "$PACKAGE_VERSION"
 python scripts/release.py prepare-plugin "$PLUGIN_VERSION" --pin "$PACKAGE_VERSION" > /tmp/plugin.patch
 git apply /tmp/plugin.patch
-uv lock --directory plugin
+uv lock --upgrade --directory plugin
+python3 scripts/smoke_plugin_launcher.py
 python scripts/release.py check
 ```
 
 `check` fails until `plugin/uv.lock` locks the same PyPI version as the
-launcher and project. For a plugin-only release, run
-`prepare-plugin` with the current pin; the lock is unchanged.
+project and the launcher uses the exact frozen, isolated form. For a plugin-only
+release, run `prepare-plugin` with the current pin, then relock with `--upgrade`
+and smoke-test the selected dependencies as above.
 
 ```bash
 PLUGIN_VERSION=A.B.C
@@ -358,7 +377,7 @@ PLUGIN_SHA=FULL_40_CHARACTER_REVIEWED_MAIN_COMMIT
 
 git switch --detach "$PLUGIN_SHA"
 python scripts/release.py check --plugin-tag "plugin-v$PLUGIN_VERSION"
-# Check the exact package version in plugin/.mcp.json before tagging:
+# Check the exact package version in plugin/pyproject.toml before tagging:
 MCP_VERSION=$(python scripts/release.py check | python -c 'import json,sys; print(json.load(sys.stdin)["plugin_pin"])')
 python scripts/release.py wait-pypi "$MCP_VERSION"
 git tag -a "plugin-v$PLUGIN_VERSION" "$PLUGIN_SHA" -m "dead-letter plugin $PLUGIN_VERSION"
@@ -387,14 +406,52 @@ and [manual tests](../../plugin/TESTING.md) in **both** Claude Code and Cowork.
 They retain separate installed copies. Matching source/pins does not prove
 matching client caches or successful runtime resolution.
 
+### Claude directory listing
+
+The Claude directory (claude.ai/directory/manage) tracks the `release`
+branch, plugin path `plugin`. Each `plugin-vX.Y.Z` that moves `release`
+becomes a new directory version, and every version is held for a human
+reviewer because the server launches a registry package. The README and
+`plugin.json` on `release` are what the listing shows, so listing copy ships
+only with a plugin release.
+
+- **The directory does not gate plugin tags (maintainer decision,
+  2026-11-18).** A re-check on 2026-11-18 refused 0.4.13 (`fb8f48a`): local
+  MCP servers, and files other than Markdown, text, JSON, YAML, and common
+  images, are accepted only from Verified organizations, and this
+  organization is not one. No application path for Verified status is
+  documented; see
+  [anthropics/claude-plugins-official#7024](https://github.com/anthropics/claude-plugins-official/issues/7024).
+  The submission stays open and unlisted. The earlier rule to wait for the
+  review before the next plugin tag no longer applies.
+- A third finding asks for `--locked` before the script name in a
+  `uv run` launcher. The scanner's locked-launch grammar is otherwise
+  unpublished; the local stdio smoke says nothing about it.
+- Re-run **Validate** in the portal on the exact `release` commit before
+  submitting; results are per commit.
+- If a version ever reaches a human reviewer, do not move `release` while
+  it is there. The tracked branch cannot change during review, and a pushed
+  version can queue behind the held one.
+- An approved version is not live until someone clicks **Publish**.
+- The directory policy requires telling Anthropic about material changes
+  after listing: tool or capability descriptions, data practices, or
+  connected endpoints. A new package pin can count. Batch pin bumps instead
+  of shipping one plugin release per package patch.
+- For a stalled review, use **Get help** or **Contact Anthropic** in the
+  portal before emailing directory@anthropic.com.
+
+The `bigcactuslabs-plugins` marketplace above is separate from the directory.
+Anthropic's `claude-plugins-official` marketplace takes no portal
+submissions.
+
 ## Plugin Versioning Model
 
 | Field | Meaning | Relationship |
 | --- | --- | --- |
 | `pyproject.toml` / `vX.Y.Z` | Python package release | All package, MCPB, and ARD sync points match |
 | `plugin/.claude-plugin/plugin.json` / `plugin-vA.B.C` | Plugin assets and instructions | Independent, increasing sequence |
-| `plugin/.mcp.json` | Exact package the plugin launches | Must be published; may deliberately lag |
-| `plugin/pyproject.toml`, `plugin/uv.lock` | Locked runtime for that pin | Same exact pin; lock regenerated with `uv lock --directory plugin` |
+| `plugin/.mcp.json` | Frozen, isolated launcher for the shipped lock | Exact command/args checked; no package pin in the launcher |
+| `plugin/pyproject.toml`, `plugin/uv.lock` | Exact published package pin and locked runtime | Same exact pin; may deliberately lag; relock with `uv lock --upgrade --directory plugin` |
 | Marketplace `version`, `source.ref`, `source.sha` | What plugin clients resolve | Same plugin release and peeled commit |
 | Community catalog source SHA | Third-party accepted snapshot | Separate review and update policy |
 
@@ -432,7 +489,7 @@ release, not automatic deletion.
 
 Do not extend package publication to modify the tap in this pass. Cross-repo
 credentials, tests, approval, and rollback need their own design. Keep the
-manual core-only update visible in the completion ledger.
+manual CLI/MCP formula update visible in the completion ledger.
 
 ## Primary references
 

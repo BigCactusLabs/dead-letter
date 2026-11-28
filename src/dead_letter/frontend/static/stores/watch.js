@@ -47,7 +47,8 @@ export function registerWatchStore(Alpine) {
       if (!this.latestJobId || this.latestJobId === jobStore?.id) {
         return;
       }
-      if (jobStore?.id && !isTerminalStatus(jobStore.status)) {
+      // An archive upload has no job id yet but still owns the workspace.
+      if (jobStore?.upload || (jobStore?.id && !isTerminalStatus(jobStore.status))) {
         jobStore.pendingWatchJobId = this.latestJobId;
         jobStore.pendingWatchJobStatus = this.latestJobStatus;
         return;
@@ -69,9 +70,12 @@ export function registerWatchStore(Alpine) {
       jobStore?.clearOpMessages?.();
       jobStore.id = jobId;
       jobStore.origin = "watch";
+      jobStore.kind = "eml";
+      jobStore.mbox = null;
       jobStore.status = typeof initialStatus === "string" ? initialStatus : "";
       jobStore.outputLocation = null;
       jobStore.diagnostics = null;
+      jobStore.reportPath = null;
       jobStore.recoveryActions = [];
       jobStore.diagnosticsOpen = false;
       jobStore.cancelRequested = false;

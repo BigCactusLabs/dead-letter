@@ -23,7 +23,10 @@ CONTAINER_KEYS = {"container_basename", "format", "member_name", "member_compres
 
 posix_budgets = pytest.mark.skipif(
     sys.platform not in ("linux", "darwin"),
-    reason="CPU/output worker budgets are implemented only on Linux and macOS in this slice",
+    reason="Per-file output budgets require Linux or macOS",
+)
+worker_budgets = pytest.mark.skipif(
+    sys.platform not in ("linux", "darwin", "win32"), reason="Unsupported worker-budget platform",
 )
 
 
@@ -50,7 +53,7 @@ def front_matter(path: Path) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8").split("---", 2)[1])
 
 
-@posix_budgets
+@worker_budgets
 @pytest.mark.parametrize("bundles", [False, True])
 def test_zip_staged_mbox_converts_in_budgeted_workers_with_container_provenance(tmp_path, monkeypatch, bundles):
     calls = spy_worker_command(monkeypatch)
@@ -58,15 +61,18 @@ def test_zip_staged_mbox_converts_in_budgeted_workers_with_container_provenance(
     before = hashlib.sha256(source.read_bytes()).hexdigest()
     stage = tmp_path / "stage"
     stage.mkdir()
+    extra = {"memory_limit_mib": 4096} if sys.platform == "win32" else {"max_output_mib": 64}
     rows = list(convert_mbox_archive(
         source, output=tmp_path / "out", staging_dir=stage, bundles=bundles,
-        timeout_seconds=30, cpu_seconds=30, max_output_mib=64,
+        timeout_seconds=30, cpu_seconds=30, **extra,
     ))
     assert len(rows) == 3 and all(r.success for r in rows)
     # Every record ran in a budgeted worker that received both limits and a nonce.
     assert len(calls) == 3
+    expected = (("memory_mib=4096", "cpu_seconds=30") if sys.platform == "win32"
+                else ("cpu_seconds=30", "max_output_mib=64"))
     for args in calls:
-        assert args[:2] == ("cpu_seconds=30", "max_output_mib=64")
+        assert args[:2] == expected
         assert args[2].startswith("nonce=") and len(args) == 3
     for row in rows:
         assert row.mbox["archive"] == source.name
@@ -113,8 +119,9 @@ def test_unsupported_archive_budget_fails_before_staging(tmp_path, monkeypatch):
     source = make_zip(tmp_path / "takeout.zip", POSTMARK + MESSAGE)
     root = tmp_path / "out"
     with pytest.raises(MboxBudgetError) as caught:
-        list(convert_mbox_archive(source, output=root, timeout_seconds=30, cpu_seconds=5))
+        list(convert_mbox_archive(source, output=root, timeout_seconds=30, cpu_seconds=5, max_output_mib=8))
     assert caught.value.code == "mbox_budget_unsupported"
+    assert "--mbox-max-output-mib" in caught.value.message
     assert not root.exists()
 
 

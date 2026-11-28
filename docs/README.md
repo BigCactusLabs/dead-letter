@@ -10,6 +10,7 @@ runtime contracts and historical design notes serve different purposes.
 | Understand the product and convert a first email | [README](../README.md) |
 | Follow tested Markdown, RAG, MCP, Cabinet, and audit workflows | [Conversion recipes](recipes/README.md) |
 | Convert a Gmail Takeout `.mbox` export locally | [Gmail Takeout / MBOX](reference/gmail-takeout.md) |
+| Move a Takeout export into an Obsidian vault, starting from a synthetic sample | [Takeout to Obsidian](recipes/takeout-to-obsidian.md) |
 | Contain MBOX parser hangs or crashes with per-message deadlines | [MBOX Workers](reference/mbox-workers.md) |
 | Resume an interrupted MBOX import (from 0.4.6) | [Resumable MBOX imports](reference/mbox-resume.md) |
 | Measure or audit a full MBOX import | [MBOX Validation](reference/mbox-validation.md) |
@@ -29,6 +30,7 @@ runtime contracts and historical design notes serve different purposes.
 | Task | Read |
 | --- | --- |
 | Set up development and run the required checks | [Contributing](../CONTRIBUTING.md) |
+| Pick up an open issue with current code pointers and a first implementation slice | [October 27 development handoff](project/2026-10-27-development-groundwork.md) |
 | Orient a coding agent | [AGENTS.md](../AGENTS.md) |
 | Change core, CLI, API, or MCP behavior | [Runtime Contracts](reference/v4-runtime-contracts.md) |
 | Change UI stores, job handling, or onboarding | [Frontend State Model](reference/frontend-state-model.md) |
@@ -50,13 +52,30 @@ filename. Machine-readable versions live in package/distribution metadata;
 
 [Reach & Distribution](project/reach.md) retains the product/discovery
 strategy and outstanding evidence requirements. The
+[November 5 discovery plan](project/2026-11-05-discovery-without-social-posting.md)
+records source-backed distribution experiments without regular social posting,
+their priorities, and completion evidence. The
+[November 18 distribution refresh](project/2026-11-18-distribution-refresh.md)
+is the latest read-only status check of the MCP and agent-discovery channels;
+the [November 10](project/2026-11-10-distribution-refresh.md),
+[November 4](project/2026-11-04-distribution-refresh.md) and
+[September 30](project/2026-09-30-distribution-refresh.md) records are its
+baselines. The
+[November 10 assistant-recommendation record](project/2026-11-10-agent-recommendation.md)
+probes whether ChatGPT and Claude name dead-letter for its tasks, traces the
+wrong facts they repeat, and ranks the remaining discovery work. The
+[October 8 ChatGPT and Codex plugin exploration](project/2026-10-08-openai-plugin-discovery.md)
+is a research record that proposes a hosted single-`.eml` MCP experiment;
+nothing in it was built, submitted or published. The
 [MBOX ingestion design notes](project/2026-09-18-mbox-ingestion.md) are a
 history record of the research and boundaries behind the streaming Takeout
 importer and its worker follow-up, both shipped in 0.4.0; current availability
 lives in [Gmail Takeout / MBOX](reference/gmail-takeout.md) and
 [MBOX Workers](reference/mbox-workers.md). The
 [analysis foundation checkpoint](project/2026-09-18-issue-110-analysis-foundation.md)
-records what #117 landed for issue #110 and what remains. The
+records what #117, #195, #237 and #238 landed for issue #110 and what remains. The
+[issue #166 evaluation design](project/2026-09-28-issue-166-evaluation-design.md)
+describes the synthetic triage corpus, split and scorer merged in #195. The
 [DocETL research spike](project/2026-10-11-docetl-spike.md) evaluates a separate
 archive-analysis worker and records an offline compatibility probe; it is not
 a shipped integration. The

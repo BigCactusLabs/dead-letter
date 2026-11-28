@@ -1,0 +1,18 @@
+From: Alice <alice@example.cn>
+To: Bob <bob@example.cn>
+Subject: Synthetic Apple zh-CN forward
+Date: Thu, 05 Mar 2026 12:15:00 +0000
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+请看下面。
+
+下面是被转发的邮件：
+发件人: Bob <bob@example.cn>
+回复给: reply@example.cn
+密送: audit@example.cn
+收件人: Alice <alice@example.cn>
+主题: 计划
+
+CHINESE_APPLE_FORWARD_BODY

@@ -636,3 +636,661 @@ test("clearOpMessages() resets opErrors and opInfo", async () => {
   assert.deepEqual(job.opErrors, []);
   assert.deepEqual(job.opInfo, []);
 });
+
+function mboxStatus(overrides = {}) {
+  return {
+    id: "archive-1", kind: "mbox", status: "running", cancel_requested: false,
+    output_location: {
+      strategy: "cabinet", cabinet_path: "/tmp/Cabinet", bundle_path: null,
+      job_path: "/tmp/Cabinet/mbox-archive-1",
+    },
+    mbox: {
+      source_path: "Downloads/mail.mbox", records_total: null, records_processed: 3,
+      bytes_total: 8192, bytes_processed: 2048, failures_omitted: 0, phase: "converting",
+    },
+    progress: { total: 0, completed: 2, failed: 1, current: null },
+    summary: { written: 2, skipped: 0, errors: 1 },
+    errors: [{ path: "mail.mbox#message-00000002", code: "conversion_error", message: "Message failed" }],
+    report_path: null, created_at: "2026-10-27T10:00:00Z",
+    started_at: "2026-10-27T10:00:01Z", finished_at: null,
+    ...overrides,
+  };
+}
+
+test("startMbox() uses the archive route with CSRF and retains its job folder", async () => {
+  const requests = [];
+  const started = mboxStatus({ status: "queued" });
+  const { job } = await createJobStore(() => Promise.resolve(makeResponse({ jsonData: started })), requests);
+  let polls = 0;
+  job.startPolling = () => { polls += 1; };
+  const payload = { input_path: "Downloads/mail.mbox", options: { timeout_seconds: 30 } };
+
+  assert.deepEqual(await job.startMbox(payload), { ok: true });
+
+  assert.deepEqual(requests.map(({ url }) => url), ["/api/session", "/api/mbox/jobs"]);
+  assert.equal(requests[1].options.method, "POST");
+  assert.equal(headerValue(requests[1].options.headers, "X-Dead-Letter-CSRF"), "csrf-test-token");
+  assert.deepEqual(JSON.parse(requests[1].options.body), payload);
+  assert.equal(job.id, "archive-1");
+  assert.equal(job.kind, "mbox");
+  assert.equal(job.origin, "mbox");
+  assert.equal(job.status, "queued");
+  assert.deepEqual(job.mbox, started.mbox);
+  assert.equal(job.outputLocation.job_path, "/tmp/Cabinet/mbox-archive-1");
+  assert.equal(polls, 1);
+});
+
+test("startMbox() returns backend validation errors without starting polling", async () => {
+  const { job } = await createJobStore(() => Promise.resolve(makeResponse({
+    ok: false, status: 400,
+    jsonData: { errors: [{ path: "input_path", message: "Archive is outside the browser root" }] },
+  })));
+  job.startPolling = () => assert.fail("A rejected import must not start polling");
+  const result = await job.startMbox({ input_path: "mail.mbox", options: {} });
+  assert.deepEqual(result, { ok: false, formErrors: ["input_path: Archive is outside the browser root"] });
+  assert.equal(job.id, "");
+  assert.equal(job.isSubmitting, false);
+});
+
+test("archive polling preserves partial counts, errors, report and job folder through failure", async () => {
+  const running = mboxStatus();
+  const finished = mboxStatus({
+    status: "failed", report_path: "/tmp/Cabinet/mbox-archive-1/report.json",
+    mbox: { ...running.mbox, phase: "finished" },
+    errors: [...running.errors, { code: "mbox_storage_error", message: "Storage exhausted" }],
+  });
+  const snapshots = [running, finished];
+  const requests = [];
+  const { job, stores, intervals } = await createJobStore(
+    () => Promise.resolve(makeResponse({ jsonData: snapshots.shift() })), requests
+  );
+  let historyLoads = 0;
+  stores.history = { load() { historyLoads += 1; } };
+  job.id = "archive-1";
+  job.pollHandle = window.setInterval(() => {}, 800);
+  const activeHandle = job.pollHandle;
+
+  await job.poll();
+  assert.equal(job.kind, "mbox");
+  assert.equal(job.status, "running");
+  assert.equal(job.mbox.records_total, null);
+  assert.equal(job.mbox.bytes_processed, 2048);
+  assert.deepEqual(job.errors, running.errors);
+  assert.deepEqual(job.summary, running.summary);
+  assert.equal(job.outputLocation.job_path, running.output_location.job_path);
+  assert.equal(job.pollHandle, activeHandle);
+  assert.equal(historyLoads, 0);
+
+  await job.poll();
+  // A finished archive job refreshes the list of stopped imports it may have joined.
+  assert.deepEqual(requests.map(({ url }) => url), ["/api/jobs/archive-1", "/api/jobs/archive-1", "/api/mbox/resumable"]);
+  assert.equal(job.status, "failed");
+  assert.deepEqual(job.errors, finished.errors);
+  assert.deepEqual(job.summary, running.summary);
+  assert.equal(job.reportPath, finished.report_path);
+  assert.equal(job.outputLocation.job_path, running.output_location.job_path);
+  assert.equal(job.pollHandle, null);
+  assert.equal(intervals.size, 0);
+  assert.equal(historyLoads, 1);
+});
+
+test("archive cancellation stays nonterminal and keeps polling until the partial report is final", async () => {
+  const requests = [];
+  const final = mboxStatus({
+    status: "cancelled", cancel_requested: true,
+    report_path: "/tmp/Cabinet/mbox-archive-1/report.json",
+  });
+  const { job, intervals } = await createJobStore((url) => Promise.resolve(makeResponse({
+    jsonData: url.endsWith("/cancel") ? { accepted: true, status: "running" } : final,
+  })), requests);
+  job.id = "archive-1";
+  job.kind = "mbox";
+  job.status = "running";
+  job.pollHandle = window.setInterval(() => {}, 800);
+  const activeHandle = job.pollHandle;
+
+  await job.cancel();
+  assert.deepEqual(requests.map(({ url }) => url), ["/api/session", "/api/jobs/archive-1/cancel"]);
+  assert.equal(requests[1].options.method, "POST");
+  assert.equal(headerValue(requests[1].options.headers, "X-Dead-Letter-CSRF"), "csrf-test-token");
+  assert.equal(job.cancelRequested, true);
+  assert.equal(job.status, "running");
+  assert.equal(job.pollHandle, activeHandle);
+  assert.equal(intervals.size, 1);
+  assert.match(job.opInfo[0], /partial report/);
+  assert.match(job.opInfo[0], /Completed bundles are kept/);
+
+  await job.poll();
+  assert.equal(job.status, "cancelled");
+  assert.equal(job.pollHandle, null);
+  assert.equal(intervals.size, 0);
+  assert.equal(job.reportPath, final.report_path);
+  assert.equal(job.summary.written, 2);
+});
+
+test("a cancel response that arrives after a terminal poll cannot reopen the archive", async () => {
+  const cancelResponse = deferred();
+  const final = mboxStatus({
+    status: "cancelled", cancel_requested: true,
+    report_path: "/tmp/Cabinet/mbox-archive-1/report.json",
+  });
+  const { job, intervals } = await createJobStore((url) => (
+    url.endsWith("/cancel") ? cancelResponse.promise : Promise.resolve(makeResponse({ jsonData: final }))
+  ));
+  job.id = "archive-1";
+  job.kind = "mbox";
+  job.status = "running";
+  job.pollHandle = window.setInterval(() => {}, 800);
+
+  const cancelling = job.cancel();
+  await job.poll();
+  assert.equal(job.status, "cancelled");
+  assert.equal(job.pollHandle, null);
+
+  cancelResponse.resolve(makeResponse({ jsonData: { accepted: true, status: "running" } }));
+  await cancelling;
+
+  assert.equal(job.status, "cancelled");
+  assert.equal(job.pollHandle, null);
+  assert.equal(intervals.size, 0);
+  assert.equal(job.cancelInFlight, false);
+  assert.equal(job.keepActiveArchive(), false);
+});
+
+test("an accepted nonterminal cancel restarts polling that had already stopped", async () => {
+  const pollResponse = deferred();
+  const final = mboxStatus({ status: "cancelled", cancel_requested: true });
+  const { job, intervals } = await createJobStore((url) => (
+    url.endsWith("/cancel")
+      ? Promise.resolve(makeResponse({ jsonData: { accepted: true, status: "running" } }))
+      : pollResponse.promise
+  ));
+  job.id = "archive-1";
+  job.kind = "mbox";
+  job.status = "running";
+  assert.equal(job.pollHandle, null);
+
+  await job.cancel();
+  assert.equal(job.cancelRequested, true);
+  assert.notEqual(job.pollHandle, null);
+  assert.equal(intervals.size, 1);
+  assert.equal(job.pollInFlight, true);
+
+  pollResponse.resolve(makeResponse({ jsonData: final }));
+  for (let i = 0; i < 20 && job.pollInFlight; i += 1) await Promise.resolve();
+  assert.equal(job.status, "cancelled");
+  assert.equal(job.pollHandle, null);
+  assert.equal(intervals.size, 0);
+});
+
+test("manual starts and uploads cannot replace an active or cancelling archive", async (t) => {
+  const operations = {
+    start: (job) => job.start({ mode: "file", input_path: "mail.eml", options: {} }),
+    importFile: (job) => job.importFile({ name: "mail.eml" }, {}),
+    importBatch: (job) => job.importBatch([{ name: "mail.eml" }], {}),
+  };
+  for (const [name, run] of Object.entries(operations)) {
+    for (const status of ["queued", "running", "cancelling"]) {
+      await t.test(`${name}: ${status}`, async () => {
+        const requests = [];
+        const { job } = await createJobStore(null, requests);
+        job.id = "archive-1";
+        job.kind = "mbox";
+        job.status = status === "cancelling" ? "running" : status;
+        job.cancelRequested = status === "cancelling";
+        job.mbox = mboxStatus().mbox;
+        job.outputLocation = mboxStatus().output_location;
+        job.reportPath = "/tmp/Cabinet/mbox-archive-1/report.json";
+        job.pollHandle = window.setInterval(() => {}, 800);
+        job.activePollController = new AbortController();
+        const previous = {
+          id: job.id, status: job.status, mbox: job.mbox, outputLocation: job.outputLocation,
+          reportPath: job.reportPath, pollHandle: job.pollHandle, pollSessionId: job.pollSessionId,
+        };
+        const controller = job.activePollController;
+
+        await run(job);
+
+        assert.equal(requests.length, 0);
+        for (const [key, value] of Object.entries(previous)) assert.equal(job[key], value, key);
+        assert.equal(job.cancelRequested, status === "cancelling");
+        assert.equal(controller.signal.aborted, false);
+        assert.match(job.opErrors[0], /archive import to finish/);
+      });
+    }
+  }
+});
+
+test("startMbox() cannot replace an active EML job", async () => {
+  const requests = [];
+  const { job } = await createJobStore(null, requests);
+  job.id = "eml-1";
+  job.status = "running";
+  assert.deepEqual(await job.startMbox({ input_path: "mail.mbox", options: {} }), { ok: false });
+  assert.equal(job.id, "eml-1");
+  assert.equal(requests.length, 0);
+});
+
+test("an EML start after a terminal archive clears archive metadata and report", async () => {
+  const { job } = await createJobStore(() => Promise.resolve(makeResponse({
+    jsonData: { id: "eml-next", status: "queued" },
+  })));
+  Object.assign(job, { id: "archive-1", kind: "mbox", status: "cancelled",
+    mbox: mboxStatus().mbox, reportPath: "/tmp/old-report.json" });
+  job.startPolling = () => {};
+  assert.deepEqual(await job.start({ mode: "file", input_path: "mail.eml", options: {} }), { ok: true });
+  assert.equal(job.id, "eml-next");
+  assert.equal(job.kind, "eml");
+  assert.equal(job.mbox, null);
+  assert.equal(job.reportPath, null);
+});
+
+class FakeXHR {
+  static instances = [];
+
+  constructor() {
+    this.headers = {};
+    this.upload = {};
+    this.aborted = false;
+    FakeXHR.instances.push(this);
+  }
+
+  open(method, url) {
+    this.method = method;
+    this.url = url;
+  }
+
+  setRequestHeader(name, value) {
+    this.headers[name] = value;
+  }
+
+  send(body) {
+    this.body = body;
+  }
+
+  abort() {
+    this.aborted = true;
+    this.onabort?.();
+  }
+
+  respond(status, payload) {
+    this.status = status;
+    this.responseText = typeof payload === "string" ? payload : JSON.stringify(payload);
+    this.onload?.();
+  }
+}
+
+async function createUploadStore(fetchImpl, requestLog = null) {
+  FakeXHR.instances = [];
+  globalThis.XMLHttpRequest = FakeXHR;
+  return createJobStore(fetchImpl, requestLog);
+}
+
+async function nextXhr(index = FakeXHR.instances.length) {
+  for (let turn = 0; turn < 20 && FakeXHR.instances.length <= index; turn += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.ok(FakeXHR.instances[index], "upload request was not sent");
+  return FakeXHR.instances[index];
+}
+
+const ARCHIVE_FILE = { name: "Takeout Mail ü.mbox", size: 10 };
+
+test("uploadMbox() sends the raw file with its declared length and hands off to job polling", async () => {
+  const requests = [];
+  const { job } = await createUploadStore(null, requests);
+  let polls = 0;
+  job.startPolling = () => { polls += 1; };
+  const options = { thread_mode: "structured", timeout_seconds: 45 };
+
+  const pending = job.uploadMbox(ARCHIVE_FILE, options);
+  const xhr = await nextXhr();
+
+  assert.deepEqual(requests.map(({ url }) => url), ["/api/session"]);
+  assert.equal(xhr.method, "POST");
+  const url = new URL(xhr.url, "http://127.0.0.1");
+  assert.equal(url.pathname, "/api/mbox/uploads");
+  assert.deepEqual(JSON.parse(url.searchParams.get("options")), options);
+  assert.equal(xhr.body, ARCHIVE_FILE);
+  assert.deepEqual(xhr.headers, {
+    "Content-Type": "application/octet-stream",
+    "X-Dead-Letter-CSRF": "csrf-test-token",
+    "X-Dead-Letter-Filename": encodeURIComponent(ARCHIVE_FILE.name),
+    "X-Dead-Letter-Upload-Length": "10",
+  });
+  assert.equal(job.isSubmitting, true);
+  assert.equal(job.kind, "mbox");
+  assert.equal(job.id, "");
+  assert.deepEqual(toPlain(job.upload), { name: ARCHIVE_FILE.name, loaded: 0, total: 10, sent: false });
+
+  xhr.upload.onprogress({ loaded: 4, total: 10, lengthComputable: true });
+  assert.equal(job.upload.loaded, 4);
+  xhr.upload.onload();
+  assert.equal(job.upload.sent, true);
+  assert.equal(job.upload.loaded, 10);
+  job.cancelUpload();
+  assert.equal(xhr.aborted, false, "a fully sent upload may already be a job, so it cannot be cancelled");
+
+  xhr.respond(202, mboxStatus({ status: "queued" }));
+  assert.deepEqual(await pending, { ok: true });
+  assert.equal(job.id, "archive-1");
+  assert.equal(job.kind, "mbox");
+  assert.equal(job.origin, "upload");
+  assert.equal(job.outputLocation.job_path, "/tmp/Cabinet/mbox-archive-1");
+  assert.equal(job.upload, null);
+  assert.equal(job.activeUpload, null);
+  assert.equal(job.isSubmitting, false);
+  assert.equal(polls, 1);
+});
+
+test("uploadMbox() turns each rejection into a form error without starting a job", async (t) => {
+  const cases = [
+    [409, "mbox_busy", "server text", /Another archive import is running/],
+    [409, "invalid_request", "workflow settings are not configured", /workflow settings are not configured/],
+    [507, "mbox_upload_insufficient_storage", "server text", /Not enough free space/],
+    [411, "mbox_upload_length_required", "server text", /without a length/],
+    [413, "mbox_too_large", "server text", /larger than 16 GiB/],
+    [413, "mbox_upload_too_long", "server text", /more data than the file size/],
+    [408, "mbox_upload_timeout", "server text", /stalled/],
+    [400, "mbox_upload_incomplete", "server text", /ended before the whole file arrived/],
+    [400, "invalid_request", "bad name", /bad name/],
+    [415, "mbox_upload_unsupported_media_type", "server text", /raw bytes/],
+    [500, "backend_error", "Could not stage MBOX upload", /Could not stage MBOX upload/],
+  ];
+  for (const [status, code, message, expected] of cases) {
+    await t.test(`${status} ${code}`, async () => {
+      const { job } = await createUploadStore();
+      job.startPolling = () => assert.fail("A rejected upload must not start polling");
+      const pending = job.uploadMbox(ARCHIVE_FILE, {});
+      (await nextXhr()).respond(status, { errors: [{ path: null, code, message, stage: "validation" }] });
+      const result = await pending;
+      assert.equal(result.ok, false);
+      assert.match(result.formErrors[0], expected);
+      assert.equal(job.id, "");
+      assert.equal(job.upload, null);
+      assert.equal(job.isSubmitting, false);
+    });
+  }
+
+  await t.test("plain-text 413 from the body backstop", async () => {
+    const { job } = await createUploadStore();
+    const pending = job.uploadMbox(ARCHIVE_FILE, {});
+    (await nextXhr()).respond(413, "Content Too Large");
+    assert.match((await pending).formErrors[0], /larger than 16 GiB/);
+  });
+
+  await t.test("connection closed without a response", async () => {
+    const { job } = await createUploadStore();
+    const pending = job.uploadMbox(ARCHIVE_FILE, {});
+    (await nextXhr()).onerror();
+    assert.match((await pending).formErrors[0], /connection closed before the server replied/);
+    assert.equal(job.isSubmitting, false);
+  });
+});
+
+test("cancelUpload() aborts an upload in flight and reports the cancellation", async () => {
+  const { job } = await createUploadStore();
+  job.startPolling = () => assert.fail("A cancelled upload must not start polling");
+  const pending = job.uploadMbox(ARCHIVE_FILE, {});
+  const xhr = await nextXhr();
+  xhr.upload.onprogress({ loaded: 3, total: 10, lengthComputable: true });
+
+  job.cancelUpload();
+
+  assert.equal(xhr.aborted, true);
+  assert.deepEqual(await pending, { ok: false, cancelled: true });
+  assert.equal(job.id, "");
+  assert.equal(job.upload, null);
+  assert.equal(job.activeUpload, null);
+  assert.equal(job.isSubmitting, false);
+});
+
+test("uploadMbox() refreshes a rotated CSRF token once and resends the file", async () => {
+  const { job } = await createUploadStore();
+  job.startPolling = () => {};
+  const tokens = ["first-token", "second-token"];
+  globalThis.fetch = (url) => {
+    assert.equal(url, "/api/session");
+    return Promise.resolve(makeResponse({ jsonData: { csrf_token: tokens.shift() } }));
+  };
+
+  const pending = job.uploadMbox(ARCHIVE_FILE, {});
+  const first = await nextXhr(0);
+  first.upload.onprogress({ loaded: 10, total: 10, lengthComputable: true });
+  first.respond(403, { errors: [{ code: "csrf_validation_failed", message: "missing or invalid CSRF token" }] });
+  const second = await nextXhr(1);
+  assert.equal(first.headers["X-Dead-Letter-CSRF"], "first-token");
+  assert.equal(second.headers["X-Dead-Letter-CSRF"], "second-token");
+  assert.equal(second.body, ARCHIVE_FILE);
+  assert.equal(job.upload.loaded, 0);
+  second.respond(202, mboxStatus({ status: "queued" }));
+
+  assert.deepEqual(await pending, { ok: true });
+  assert.equal(FakeXHR.instances.length, 2);
+});
+
+test("uploadMbox() cannot replace an active job or run twice", async () => {
+  const requests = [];
+  const { job } = await createUploadStore(null, requests);
+  Object.assign(job, { id: "eml-1", status: "running" });
+  assert.deepEqual(await job.uploadMbox(ARCHIVE_FILE, {}), { ok: false });
+  assert.match(job.opErrors[0], /current job to finish/);
+  Object.assign(job, { id: "archive-1", kind: "mbox", status: "running" });
+  assert.deepEqual(await job.uploadMbox(ARCHIVE_FILE, {}), { ok: false });
+  assert.match(job.opErrors[0], /archive import to finish/);
+  Object.assign(job, { id: "", kind: "eml", status: "", isSubmitting: true });
+  assert.deepEqual(await job.uploadMbox(ARCHIVE_FILE, {}), { ok: false });
+  assert.equal(requests.length, 0);
+  assert.equal(FakeXHR.instances.length, 0);
+});
+
+async function waitForCalls(calls, count) {
+  for (let turn = 0; turn < 20 && calls.length < count; turn += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.equal(calls.length, count);
+}
+
+// Answer any request that was sent anyway, so a failing case ends instead of hanging.
+async function settleUpload(pending) {
+  for (let turn = 0; turn < 20; turn += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  for (const xhr of FakeXHR.instances) {
+    if (xhr.status === undefined && !xhr.aborted) xhr.respond(409, { errors: [{ code: "mbox_busy" }] });
+  }
+  return pending;
+}
+
+test("cancelUpload() while a CSRF token is pending sends nothing", async (t) => {
+  const csrfFailure = { errors: [{ code: "csrf_validation_failed", message: "missing or invalid CSRF token" }] };
+
+  await t.test("first token", async () => {
+    const { job } = await createUploadStore();
+    job.startPolling = () => assert.fail("A cancelled upload must not start polling");
+    const session = deferred();
+    const calls = [];
+    globalThis.fetch = (url) => { calls.push(url); return session.promise; };
+
+    const pending = job.uploadMbox(ARCHIVE_FILE, {});
+    await waitForCalls(calls, 1);
+    assert.equal(job.upload.sent, false, "the cancel button is enabled while the token loads");
+    job.cancelUpload();
+    session.resolve(makeResponse({ jsonData: { csrf_token: "fresh-token" } }));
+
+    assert.deepEqual(await settleUpload(pending), { ok: false, cancelled: true });
+    assert.equal(FakeXHR.instances.length, 0);
+    assert.equal(job.upload, null);
+    assert.equal(job.isSubmitting, false);
+  });
+
+  await t.test("refreshed token after a CSRF rejection", async () => {
+    const { job } = await createUploadStore();
+    job.startPolling = () => assert.fail("A cancelled upload must not start polling");
+    const refresh = deferred();
+    const calls = [];
+    globalThis.fetch = (url) => {
+      calls.push(url);
+      return calls.length === 1
+        ? Promise.resolve(makeResponse({ jsonData: { csrf_token: "first-token" } }))
+        : refresh.promise;
+    };
+
+    const pending = job.uploadMbox(ARCHIVE_FILE, {});
+    (await nextXhr(0)).respond(403, csrfFailure);
+    await waitForCalls(calls, 2);
+    job.cancelUpload();
+    refresh.resolve(makeResponse({ jsonData: { csrf_token: "second-token" } }));
+
+    assert.deepEqual(await settleUpload(pending), { ok: false, cancelled: true });
+    assert.equal(FakeXHR.instances.length, 1, "the retry must not be sent");
+  });
+
+  await t.test("a later upload starts without the old cancellation", async () => {
+    const { job } = await createUploadStore();
+    job.startPolling = () => {};
+    const session = deferred();
+    globalThis.fetch = () => session.promise;
+    const cancelled = job.uploadMbox(ARCHIVE_FILE, {});
+    job.cancelUpload();
+    session.resolve(makeResponse({ jsonData: { csrf_token: "fresh-token" } }));
+    assert.deepEqual(await settleUpload(cancelled), { ok: false, cancelled: true });
+
+    FakeXHR.instances = [];
+    const pending = job.uploadMbox(ARCHIVE_FILE, {});
+    (await nextXhr(0)).respond(202, mboxStatus({ status: "queued" }));
+    assert.deepEqual(await pending, { ok: true });
+  });
+});
+
+test("a connection lost after the whole archive was sent reports an unknown outcome", async () => {
+  const { job } = await createUploadStore();
+  job.startPolling = () => assert.fail("No job id is known, so nothing can be polled");
+  const pending = job.uploadMbox(ARCHIVE_FILE, {});
+  const xhr = await nextXhr();
+  xhr.upload.onload();
+  xhr.onerror();
+
+  const [message] = (await pending).formErrors;
+  assert.doesNotMatch(message, /Nothing was imported/);
+  assert.match(message, /may have started/);
+  assert.match(message, /Check History before uploading again/);
+  assert.equal(job.upload, null);
+  assert.equal(job.isSubmitting, false);
+});
+
+const STOPPED_ID = "c".repeat(32);
+
+function stoppedImport(overrides = {}) {
+  return {
+    id: STOPPED_ID, origin: "upload", source_name: "mail.mbox", member: null, reason: "cancelled",
+    records_processed: 2, updated_at: "2026-11-03T10:00:00Z", job_path: `/tmp/Cabinet/mbox-${STOPPED_ID}`,
+    ...overrides,
+  };
+}
+
+test("poll() records whether a finished archive job can be resumed and refreshes the stopped list", async () => {
+  const listed = [stoppedImport({ id: "archive-1" })];
+  const { job } = await createJobStore((url) => Promise.resolve(makeResponse({
+    jsonData: url === "/api/mbox/resumable" ? { jobs: listed } : mboxStatus({ status: "cancelled", resumable: true }),
+  })));
+  job.id = "archive-1";
+  await job.poll();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(job.resumable, true);
+  assert.deepEqual(toPlain(job.resumableImports), listed);
+});
+
+test("resumeMbox() posts to the resume route and keeps the job id, folder and origin", async () => {
+  const requests = [];
+  const { job } = await createJobStore((url) => Promise.resolve(makeResponse({
+    status: 202,
+    jsonData: { id: STOPPED_ID, status: "queued", output_location: mboxStatus().output_location },
+  })), requests);
+  let polls = 0;
+  job.startPolling = () => { polls += 1; };
+  job.resumableImports = [stoppedImport(), stoppedImport({ id: "d".repeat(32) })];
+
+  assert.deepEqual(await job.resumeMbox(STOPPED_ID), { ok: true });
+
+  assert.deepEqual(requests.map(({ url }) => url), ["/api/session", `/api/mbox/jobs/${STOPPED_ID}/resume`]);
+  assert.equal(requests[1].options.method, "POST");
+  assert.equal(headerValue(requests[1].options.headers, "X-Dead-Letter-CSRF"), "csrf-test-token");
+  assert.equal(job.id, STOPPED_ID);
+  assert.equal(job.kind, "mbox");
+  assert.equal(job.origin, "upload");
+  assert.equal(job.resumedRun, true);
+  assert.equal(job.resumable, false);
+  assert.deepEqual(job.resumableImports.map((item) => item.id), ["d".repeat(32)]);
+  assert.equal(polls, 1);
+  assert.equal(job.isSubmitting, false);
+});
+
+test("resumeMbox() explains a refusal beside the job it was for and refreshes the list", async (t) => {
+  for (const [status, code, expected] of [
+    [409, "mbox_source_changed", /changed, moved or was removed/],
+    [409, "mbox_busy", /Another archive import is running/],
+    [409, "mbox_resume_unavailable", /^This archive import cannot be resumed/],
+    [404, "invalid_request", /no longer in the Cabinet/],
+    [507, "mbox_disk_reserve", /1 GiB must stay free/],
+  ]) {
+    await t.test(`${status} ${code}`, async () => {
+      const requests = [];
+      const { job } = await createJobStore((url) => Promise.resolve(url === "/api/mbox/resumable"
+        ? makeResponse({ jsonData: { jobs: [] } })
+        : makeResponse({
+          ok: false, status,
+          jsonData: { errors: [{ code, path: STOPPED_ID, message: "This archive import cannot be resumed; start a new import instead" }] },
+        })), requests);
+      job.startPolling = () => assert.fail("A refused resume must not start polling");
+      job.id = STOPPED_ID;
+      job.kind = "mbox";
+      job.status = "cancelled";
+      job.resumable = true;
+      job.resumableImports = [stoppedImport()];
+
+      assert.deepEqual(await job.resumeMbox(STOPPED_ID), { ok: false });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      assert.match(job.resumeError, expected);
+      assert.doesNotMatch(job.resumeError, new RegExp(STOPPED_ID));
+      assert.equal(job.resumeErrorId, STOPPED_ID);
+      assert.equal(job.status, "cancelled");
+      const refreshed = status === 404 || status === 409;
+      assert.equal(job.resumable, !refreshed);
+      assert.equal(requests.some(({ url }) => url === "/api/mbox/resumable"), refreshed);
+      if (refreshed) assert.deepEqual(toPlain(job.resumableImports), []);
+    });
+  }
+});
+
+test("resumeMbox() cannot replace an active job or run twice", async () => {
+  const requests = [];
+  const { job } = await createJobStore(() => Promise.resolve(makeResponse()), requests);
+  job.id = "running-eml";
+  job.status = "running";
+  assert.deepEqual(await job.resumeMbox(STOPPED_ID), { ok: false });
+  assert.match(job.resumeError, /Wait for the current job/);
+
+  job.id = "archive-1";
+  job.kind = "mbox";
+  assert.deepEqual(await job.resumeMbox(STOPPED_ID), { ok: false });
+  assert.match(job.opErrors[0], /Wait for the archive import/);
+
+  job.status = "cancelled";
+  job.isSubmitting = true;
+  assert.deepEqual(await job.resumeMbox(STOPPED_ID), { ok: false });
+  assert.deepEqual(requests, []);
+});
+
+test("loadResumable() keeps the previous list when the refresh fails", async () => {
+  let fail = false;
+  const { job } = await createJobStore(() => (fail
+    ? Promise.reject(new Error("offline"))
+    : Promise.resolve(makeResponse({ jsonData: { jobs: [stoppedImport(), { id: 7 }] } }))));
+  await job.loadResumable();
+  assert.deepEqual(job.resumableImports.map((item) => item.id), [STOPPED_ID]);
+  fail = true;
+  await job.loadResumable();
+  assert.equal(job.resumableImports.length, 1);
+});

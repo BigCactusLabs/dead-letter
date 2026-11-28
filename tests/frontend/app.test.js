@@ -2,7 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import vm from "node:vm";
 import { fileURLToPath } from "node:url";
+import * as helpers from "../../src/dead_letter/frontend/static/lib/helpers.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_PATH = path.resolve(__dirname, "../../src/dead_letter/frontend/static/app.js");
@@ -19,6 +21,43 @@ function readApp() {
 
 function readStyles() {
   return fs.readFileSync(STYLES_PATH, "utf8");
+}
+
+function createApp(jobOverrides = {}) {
+  let factory;
+  const calls = [];
+  const watchers = new Map();
+  const noop = () => {};
+  const Alpine = { data(_name, create) { factory = create; }, start: noop };
+  // The browser uses absolute module URLs. Evaluate the same component body
+  // with real helpers and capture its Alpine factory, without a DOM/CDN runtime.
+  const source = readApp().split("\n").filter((line) => !line.startsWith("import ")).join("\n");
+  vm.runInNewContext(source, {
+    ...helpers, Alpine, apiFetch: () => assert.fail("Unexpected app API request"),
+    registerSettingsStore: noop, registerJobStore: noop,
+    registerWatchStore: noop, registerHistoryStore: noop, registerAboutStore: noop,
+  }, { filename: APP_PATH });
+  const app = factory();
+  app.$store = {
+    job: {
+      id: "", kind: "eml", status: "", isSubmitting: false, cancelRequested: false,
+      mbox: null, diagnostics: null, errors: [], opErrors: [], opInfo: [],
+      progress: { total: 0, completed: 0, failed: 0 }, summary: { written: 0, skipped: 0, errors: 0 },
+      resumable: false, resumableImports: [], resumedRun: false,
+      loadResumable() {},
+      clearOpMessages() { this.opErrors = []; this.opInfo = []; },
+      setOpError(message) { this.opErrors = [message]; },
+      async start(payload) { calls.push({ kind: "eml", payload }); return { ok: true }; },
+      async startMbox(payload) { calls.push({ kind: "mbox", payload }); return { ok: true }; },
+      ...jobOverrides,
+    },
+    settings: { configured: true, loading: false, load: noop },
+    watch: { active: false, poll: noop },
+    history: { load: noop, totals: { jobs_completed: 20, total_written: 100, total_skipped: 10, total_errors: 5 } },
+    about: { version: "", loads: 0, load() { this.loads += 1; } },
+  };
+  app.$watch = (key, callback) => watchers.set(key, callback);
+  return { app, calls, watchers, job: app.$store.job };
 }
 
 function escapeRegex(value) {
@@ -183,4 +222,349 @@ test("_loadOptions delegates to applyStoredOptions", () => {
   const source = readApp();
   assert.match(source, /import\s*{[^}]*\bapplyStoredOptions\b[^}]*}\s*from\s*"\/static\/lib\/helpers\.js"/);
   assert.match(source, /applyStoredOptions\(/);
+});
+
+test("archive form submits its normalized payload through startMbox", async () => {
+  const { app, calls } = createApp();
+  app.mode = "mbox";
+  app.settingsOpen = true;
+  app.inputPath = " Downloads\\Takeout.MBOX ";
+  app.mboxTimeout = 45;
+  Object.assign(app.options, { delete_eml: true, dry_run: true, report: true, thread_mode: "structured" });
+
+  await app.submitJob();
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].kind, "mbox");
+  assert.equal(calls[0].payload.input_path, "Downloads/Takeout.MBOX");
+  assert.equal(calls[0].payload.options.timeout_seconds, 45);
+  assert.equal(calls[0].payload.options.thread_mode, "structured");
+  for (const key of ["delete_eml", "dry_run", "report"]) {
+    assert.equal(Object.hasOwn(calls[0].payload.options, key), false, key);
+  }
+  assert.equal(app.settingsOpen, false);
+  assert.equal(app.formErrors.length, 0);
+});
+
+test("archive form keeps invalid paths and time limits local before submission", async () => {
+  for (const input of [
+    { inputPath: "../mail.mbox", mboxTimeout: 30 },
+    { inputPath: "mail.mbox", mboxTimeout: 0 },
+  ]) {
+    const { app, calls } = createApp();
+    Object.assign(app, { mode: "mbox", settingsOpen: true, ...input });
+    await app.submitJob();
+    assert.equal(calls.length, 0);
+    assert.ok(app.formErrors.length > 0);
+    assert.equal(app.settingsOpen, true);
+    assert.equal(app.inputPath, input.inputPath);
+  }
+});
+
+test("archive admission errors reopen the form without discarding its input", async () => {
+  const { app } = createApp({
+    async startMbox() { return { ok: false, formErrors: ["input_path: Archive changed before starting"] }; },
+  });
+  Object.assign(app, { mode: "mbox", settingsOpen: true, inputPath: "Downloads/mail.mbox" });
+  await app.submitJob();
+  assert.equal(app.settingsOpen, true);
+  assert.equal(app.formErrors[0], "input_path: Archive changed before starting");
+  assert.equal(app.inputPath, "Downloads/mail.mbox");
+});
+
+test("manual form protects an active archive and archive form protects an active EML job", async () => {
+  for (const [mode, existingKind] of [["file", "mbox"], ["mbox", "eml"]]) {
+    const { app, calls, job } = createApp({ id: "active-job", kind: existingKind, status: "running" });
+    Object.assign(app, { mode, inputPath: mode === "mbox" ? "mail.mbox" : "mail.eml", settingsOpen: true });
+    await app.submitJob();
+    assert.equal(calls.length, 0);
+    assert.equal(job.id, "active-job");
+    assert.match(app.formErrors[0], /current job to finish/);
+    assert.equal(app.settingsOpen, true);
+  }
+});
+
+test("archive views use byte progress and this job's counts while EML views retain their totals", () => {
+  const { app, job } = createApp({
+    id: "archive-1", kind: "mbox", status: "running",
+    progress: { total: 0, completed: 2, failed: 1 },
+    summary: { written: 2, skipped: 0, errors: 1 },
+    mbox: { records_total: null, records_processed: 3, bytes_total: 8192, bytes_processed: 2048, phase: "converting" },
+    outputLocation: { cabinet_path: "/tmp/Cabinet", job_path: "/tmp/Cabinet/archive-1" },
+  });
+  assert.equal(app.workspaceState, "converting");
+  assert.equal(app.progressPercent, 0.25);
+  assert.equal(app.progressCountLabel, "3 messages processed");
+  assert.equal(app.inboxStatLabel, "3 processed");
+  assert.equal(app.cabinetStatLabel, "2 bundles");
+  assert.equal(app.outputCabinetPath, "/tmp/Cabinet/archive-1");
+  assert.match(app.mboxNotice, /source archive is kept/);
+
+  job.mbox.phase = "publishing";
+  assert.match(app.mboxNotice, /Finishing the import report/);
+  job.cancelRequested = true;
+  assert.match(app.mboxNotice, /Stopping the message worker/);
+  job.status = "cancelled";
+  job.mbox.phase = "finished";
+  assert.equal(app.workspaceState, "done");
+  assert.match(app.mboxNotice, /Completed bundles stay/);
+  assert.equal(app.doneWrittenCount, 2);
+  assert.equal(app.doneSkippedCount, 0);
+  assert.equal(app.doneErrorsCount, 1);
+  job.status = "completed_with_errors";
+  assert.match(app.mboxNotice, /Some messages could not be converted/);
+
+  job.kind = "eml";
+  job.status = "running";
+  job.progress = { total: 8, completed: 3, failed: 1 };
+  assert.equal(app.progressPercent, 0.5);
+  assert.equal(app.progressCountLabel, "4 / 8");
+  assert.equal(app.inboxStatLabel, "4 files");
+  assert.equal(app.mboxNotice, "");
+  job.status = "succeeded";
+  assert.equal(app.doneWrittenCount, 100);
+  assert.equal(app.doneSkippedCount, 10);
+  assert.equal(app.doneErrorsCount, 5);
+});
+
+test("archive progress announcements update without inventing a record total", () => {
+  const { app, job, watchers } = createApp({
+    id: "archive-1", kind: "mbox", status: "running",
+    mbox: { records_total: null, records_processed: 0, bytes_total: 8192, bytes_processed: 0 },
+  });
+  app.init();
+  watchers.get("workspaceState")("converting");
+  assert.equal(app.liveAnnouncement, "Starting archive import");
+  Object.assign(job.mbox, { records_processed: 1, bytes_processed: 1024 });
+  watchers.get("$store.job.mbox")();
+  assert.equal(app.liveAnnouncement, "1 message processed. 1.0 KiB of 8.0 KiB archive bytes processed");
+});
+
+test("archive upload validates the chosen file locally, then sends it with archive options", async () => {
+  const uploads = [];
+  const { app, calls } = createApp({
+    async uploadMbox(file, options) { uploads.push({ file, options }); return { ok: true }; },
+  });
+  Object.assign(app, { mode: "mbox", mboxSource: "upload", settingsOpen: true, mboxTimeout: 45 });
+  Object.assign(app.options, { delete_eml: true, dry_run: true, report: true, thread_mode: "structured" });
+
+  for (const [file, timeout, expected] of [
+    [null, 45, /Choose an archive/],
+    [{ name: "Takeout.rar", size: 10 }, 45, /\.mbox, \.zip/],
+    [{ name: "Takeout.mbox", size: helpers.MBOX_UPLOAD_MAX_BYTES + 1 }, 45, /larger than 16 GiB/],
+    [{ name: "Takeout.mbox", size: 10 }, 0, /time limit/],
+  ]) {
+    Object.assign(app, { mboxFile: file, mboxTimeout: timeout });
+    await app.submitJob();
+    assert.match(app.formErrors[0], expected);
+    assert.equal(app.settingsOpen, true);
+  }
+  assert.equal(uploads.length, 0);
+
+  const file = { name: "Takeout.MBOX", size: helpers.MBOX_UPLOAD_MAX_BYTES };
+  app.mboxTimeout = 45;
+  app.chooseMboxFile({ target: { files: [file] } });
+  assert.equal(app.formErrors.length, 0);
+  assert.equal(app.mboxFileLabel, "Takeout.MBOX · 16.0 GiB");
+  await app.submitJob();
+
+  assert.equal(calls.length, 0, "an upload must not fall back to the local-path route");
+  assert.equal(uploads.length, 1);
+  assert.equal(uploads[0].file, file);
+  assert.equal(uploads[0].options.timeout_seconds, 45);
+  assert.equal(uploads[0].options.thread_mode, "structured");
+  for (const key of ["delete_eml", "dry_run", "report"]) {
+    assert.equal(Object.hasOwn(uploads[0].options, key), false, key);
+  }
+  assert.equal(app.settingsOpen, false);
+});
+
+test("upload failures and cancellation reopen the form with the chosen file kept", async () => {
+  for (const [result, firstError, notice] of [
+    [{ ok: false, formErrors: ["Another archive import is running."] }, "Another archive import is running.", ""],
+    [{ ok: false, cancelled: true }, undefined, "Upload cancelled. Nothing was imported."],
+  ]) {
+    const { app } = createApp({ async uploadMbox() { return result; } });
+    const file = { name: "mail.mbox", size: 10 };
+    Object.assign(app, { mode: "mbox", mboxSource: "upload", settingsOpen: true, mboxFile: file });
+    await app.submitJob();
+    assert.equal(app.settingsOpen, true);
+    assert.equal(app.formErrors[0], firstError);
+    assert.equal(app.mboxUploadNotice, notice);
+    assert.equal(app.mboxFile, file);
+    assert.equal(app.mboxSource, "upload");
+  }
+});
+
+test("upload progress drives the converting view with coarse announcements", () => {
+  const { app, job, watchers } = createApp({
+    isSubmitting: true, kind: "mbox", upload: { name: "mail.mbox", loaded: 0, total: 4096, sent: false },
+  });
+  app.init();
+  assert.equal(app.workspaceState, "converting");
+  watchers.get("workspaceState")("converting");
+  assert.equal(app.liveAnnouncement, "Uploading archive");
+
+  job.upload = { ...job.upload, loaded: 1024 };
+  assert.equal(app.progressPercent, 0.25);
+  assert.equal(app.progressCountLabel, "25% uploaded");
+  assert.equal(app.progressView.detail, "1.0 KiB of 4.0 KiB sent");
+  assert.match(app.mboxNotice, /Keep this page open/);
+  watchers.get("$store.job.upload")(job.upload);
+  assert.equal(app.liveAnnouncement, "20% uploaded");
+  job.upload = { ...job.upload, loaded: 1100 };
+  watchers.get("$store.job.upload")(job.upload);
+  assert.equal(app.liveAnnouncement, "20% uploaded");
+
+  job.upload = { ...job.upload, loaded: 4096, sent: true };
+  watchers.get("$store.job.upload")(job.upload);
+  assert.match(app.liveAnnouncement, /Waiting for the server/);
+});
+
+test("archive form offers an upload picker beside the local path and wires upload cancellation", () => {
+  const html = readHtml();
+  const inputs = [...html.matchAll(/<input[^>]*type="file"[^>]*accept="\.mbox,\.zip,\.tgz,\.tar\.gz"[^>]*>/g)];
+  assert.equal(inputs.length, 1);
+  assert.doesNotMatch(inputs[0][0], /multiple/);
+  assert.match(inputs[0][0], /@change="chooseMboxFile\(\$event\)"/);
+  assert.match(html, /@click="mboxSource = 'path';/);
+  assert.match(html, /@click="mboxSource = 'upload';/);
+  assert.match(html, /x-show="mode !== 'mbox' \|\| mboxSource === 'path'"/);
+  assert.match(html, /@click="\$store\.job\.cancelUpload\(\)"/);
+  assert.match(html, /faster choice for an archive that is already here/);
+});
+
+test("the manual job button is enabled for an archive before any job has run", () => {
+  const button = readHtml().match(/<button class="btn-primary" @click="submitJob\(\)"[^>]*>/)[0];
+  const expression = button.match(/:disabled="([^"]+)"/)[1];
+  // Alpine keeps a boolean attribute for every value except null, undefined
+  // and false, so an empty job id must not leak through as "".
+  const disabled = new Function("scope", `with (scope) { return (${expression}); }`);
+  const scope = (mode, job) => ({
+    mode, isTerminalStatus: helpers.isTerminalStatus,
+    $store: { settings: { configured: true, loading: false }, job: { isSubmitting: false, kind: "eml", ...job } },
+  });
+  for (const mode of ["mbox", "file"]) {
+    assert.equal(disabled(scope(mode, { id: "", status: "" })), false, mode);
+  }
+  assert.equal(disabled(scope("mbox", { id: "job-1", status: "running" })), true);
+  assert.equal(disabled(scope("mbox", { id: "job-1", status: "succeeded" })), false);
+  assert.equal(disabled(scope("file", { id: "job-1", kind: "mbox", status: "queued" })), true);
+});
+
+test("archive member field follows compressed path or upload and preserves exact names", async () => {
+  const uploads = [];
+  const { app, calls } = createApp({
+    async uploadMbox(file, options) { uploads.push({ file, options }); return { ok: true }; },
+  });
+  const html = readHtml();
+  assert.match(html, /x-show="mboxIsCompressed"[\s\S]*?id="mbox-member"[^>]*x-model="mboxMember"/);
+  Object.assign(app, { mode: "mbox", mboxSource: "path", mboxMember: "Takeout/ Mail.mbox " });
+  for (const name of ["mail.zip", "mail.TGZ", "mail.TAR.GZ"]) {
+    app.inputPath = name;
+    assert.equal(app.mboxIsCompressed, true);
+    await app.submitJob();
+    assert.equal(calls.at(-1).payload.options.member, "Takeout/ Mail.mbox ");
+  }
+  app.inputPath = "mail.mbox";
+  assert.equal(app.mboxIsCompressed, false);
+  await app.submitJob();
+  assert.equal("member" in calls.at(-1).payload.options, false);
+  app.mboxSource = "upload";
+  for (const name of ["mail.zip", "mail.tgz", "mail.tar.gz", "mail.mbox"]) {
+    app.mboxFile = { name, size: 10 };
+    assert.equal(app.mboxIsCompressed, name !== "mail.mbox");
+    await app.submitJob();
+    assert.equal(uploads.at(-1).options.member, name === "mail.mbox" ? undefined : "Takeout/ Mail.mbox ");
+  }
+  app.mboxFile = null;
+  assert.equal(app.mboxIsCompressed, false);
+});
+
+test("archive failures show plain core and reserve messages", () => {
+  const { app } = createApp({ kind: "mbox", status: "failed", errors: [] });
+  for (const [code, message] of [
+    ["mbox_archive_multiple_mbox", 'Select an exact MBOX member name: "a.mbox", "b.mbox"'],
+    ["mbox_archive_corrupt", "Truncated gzip stream"],
+    ["mbox_disk_reserve", "Less than 1 GiB is free on the staging or Cabinet volume"],
+    ["mbox_disk_reserve", "Free space could not be measured"],
+  ]) {
+    app.$store.job.errors = [{ code, message }];
+    assert.equal(app.mboxNotice, message + " Completed bundles are kept.");
+  }
+});
+
+test("resumable archive notices say what Resume keeps and when it cannot continue", () => {
+  const { app, job } = createApp({
+    id: "archive-1", kind: "mbox", status: "running", resumedRun: true,
+    mbox: { records_processed: 4, records_reused: 0, bytes_total: 100, bytes_processed: 10 },
+  });
+  assert.match(app.mboxNotice, /^Resuming in the original job folder/);
+  job.resumedRun = false;
+  job.mbox.resumed = true;
+  job.mbox.records_reused = 3;
+  assert.match(app.mboxNotice, /only unfinished messages are converted/);
+  assert.match(app.progressView.detail, /3 kept from the earlier run$/);
+
+  // The done panel's Resume block explains itself; the notice does not repeat it.
+  job.status = "cancelled";
+  job.resumable = true;
+  assert.equal(app.mboxNotice, "The import stopped. Completed bundles stay in this job's output folder.");
+
+  job.status = "failed";
+  job.resumable = true;
+  job.errors = [{ code: "mbox_disk_reserve", message: "Less than 1 GiB is free" }];
+  assert.equal(app.mboxNotice, "Less than 1 GiB is free Completed bundles are kept. Free some space, then resume.");
+  job.resumable = false;
+  job.errors = [{ code: "mbox_resume_mismatch", message: "contract differs" }];
+  assert.match(app.mboxNotice, /dead-letter version differ/);
+  job.errors = [{ code: "mbox_resume_conflict", message: "unexpected file" }];
+  assert.match(app.mboxNotice, /does not account for/);
+});
+
+test("the stopped-imports list leaves out the job the done panel already offers", () => {
+  const imports = [
+    { id: "a".repeat(32), origin: "manual", source_name: "Takeout.zip", member: "Takeout/Mail/All mail.mbox",
+      reason: "interrupted", records_processed: null, updated_at: null, job_path: "/tmp/Cabinet/mbox-a" },
+    { id: "b".repeat(32), origin: "upload", source_name: "mail.mbox", member: null,
+      reason: "disk_space", records_processed: 12, updated_at: null, job_path: "/tmp/Cabinet/mbox-b" },
+  ];
+  const { app, job } = createApp({ resumableImports: imports });
+  assert.equal(app.otherResumableImports.length, 2);
+  assert.deepEqual(app.resumableView(imports[0]), {
+    name: "Takeout.zip \u203a Takeout/Mail/All mail.mbox",
+    meta: "Interrupted by a server stop",
+  });
+  assert.equal(app.resumableView({ ...imports[1], records_processed: 1 }).meta, "Stopped for disk space \u00b7 1 message processed");
+  assert.equal(app.resumableView(imports[1]).meta, "Stopped for disk space \u00b7 12 messages processed");
+  job.id = imports[1].id;
+  job.resumable = true;
+  assert.deepEqual(app.otherResumableImports.map((item) => item.id), [imports[0].id]);
+});
+
+test("init loads stopped imports and reloads them once settings are configured", () => {
+  let loads = 0;
+  const { app, watchers } = createApp({ loadResumable() { loads += 1; } });
+  app.init();
+  assert.equal(loads, 1);
+  watchers.get("$store.settings.configured")(false);
+  assert.equal(loads, 1);
+  watchers.get("$store.settings.configured")(true);
+  assert.equal(loads, 2);
+});
+
+test("resume controls are buttons in the done and idle panels with a polite error line", () => {
+  const html = readHtml();
+  assert.match(html, /@click="\$store\.job\.resumeMbox\(\$store\.job\.id\)"[\s\S]*?>Resume import<\/button>/);
+  assert.equal((html.match(/class="mbox-resume-list"/g) || []).length, 2);
+  assert.equal((html.match(/@click="\$store\.job\.resumeMbox\(item\.id\)"/g) || []).length, 2);
+  assert.match(html, /x-show="\$store\.job\.kind === 'mbox' && \$store\.job\.resumable"/);
+  assert.equal((html.match(/class="mbox-resume-error" role="alert"/g) || []).length, 3);
+});
+
+test("init loads the running package version without blocking the workflow", () => {
+  const { app, calls } = createApp();
+  app.init();
+  assert.equal(app.$store.about.loads, 1);
+  assert.deepEqual(calls, []);
 });

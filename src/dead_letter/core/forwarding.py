@@ -68,6 +68,10 @@ _APPLE_FORWARD_LABELS: tuple[str, ...] = (
     r"Vidarebefordrat mejl",
     r"İleti başlangıcı",
     r"Початок листа, що пересилається",
+    r"転送されたメッセージ",
+    r"下面是被转发的邮件",
+    r"開始轉寄郵件",
+    r"전달된 메시지 시작",
 )
 
 # One regex fragment per client family, each matched case-insensitively as a
@@ -77,39 +81,95 @@ FORWARD_MARKER_PATTERNS: tuple[str, ...] = (
     # Gmail keeps this English separator in every UI language checked.
     r"-{2,}[ \t]*Forwarded message[ \t]*-{2,}",
     r"-{3,10}[ \t]*(?:" + "|".join(_DASHED_FORWARD_LABELS) + r")[ \t]*-{3,10}",
-    r"(?:" + "|".join(_APPLE_FORWARD_LABELS) + r")[ \t]?:",
+    r"(?:" + "|".join(_APPLE_FORWARD_LABELS) + r")[ \t]?[:：]",
 )
 
 _MARKER_ALTERNATION = "|".join(f"(?:{pattern})" for pattern in FORWARD_MARKER_PATTERNS)
 
 # A marker on its own unindented line, optionally behind ``>`` quote markers
 # (Apple Mail quotes its plain-text forwards). Match against text passed
-# through ``normalize_marker_text``.
+# through ``normalize_marker_text``. The quote group is possessive: no marker
+# starts with ``>``, a space or a tab, so backtracking into it cannot produce a
+# match; making it possessive skips that backtracking on long ``>`` prefixes.
 FORWARD_MARKER_RE = re.compile(
-    rf"(?im)^(?P<quote>(?:>[ \t]?)+)?(?:{_MARKER_ALTERNATION})[ \t\r]*$"
+    rf"(?im)^(?P<quote>(?:>[ \t]?)++)?(?:{_MARKER_ALTERNATION})[ \t\r]*$"
 )
 
-# A header-like line ("From:", "Von:", "De :", "| Subject: |", "**From:**")
+# A header-like line ("From:", "Von:", "De :", "发件人：", "| Subject: |", "**From:**")
 # that must follow a plain-text separator, so prose that merely contains a
 # separator-shaped line is not split as a forward.
 _HEADER_LIKE_LINE_RE = re.compile(
-    r"^(?:\|[ \t]*)?\*{0,2}[^\W\d_][\w.-]*(?: [\w.-]+)?\*{0,2}[ \t]?:"
+    r"^(?:\|[ \t]*)?\*{0,2}[^\W\d_][\w.-]*(?: [\w.()-]+)?\*{0,2}[ \t\u00a0]?[:\uff1a]"
 )
 _QUOTE_PREFIX_RE = re.compile(r"^(?:>[ \t]?)+")
 
 # Trailing Markdown hard-break syntax that html_to_markdown emits for ``<br>``.
 _HARD_BREAK_RE = re.compile(r"(?:\s|\\)+$")
 
-# Labels folded into a forward section heading; other header lines stay in
+# Outlook desktop/OWA labels supported by the Exchange MessageHeaders.xml
+# resource and independent mail artifacts/reports: en, de, fr, es, nl, it, ja,
+# and evidence-backed Simplified Chinese. Exclude the erroneous it(OWA)
+# Inizio/Fine row and unconfirmed Traditional Chinese Outlook labels.
+# Reply-history recognition and forward parsing share these field labels.
+OUTLOOK_HEADER_LABELS: dict[str, tuple[str, ...]] = {
+    "from": ("From", "Von", "De", "Van", "Da", "差出人", "发件人"),
+    "date": (
+        "Sent", "Date", "Gesendet", "Envoyé", "Enviado", "Enviado el",
+        "Verzonden", "Inviato", "送信日時", "发送时间",
+    ),
+    "subject": (
+        "Subject", "Betreff", "Objet", "Asunto", "Onderwerp", "Oggetto", "件名", "主题",
+    ),
+    "to": ("To", "An", "À", "Para", "Aan", "A", "宛先", "收件人"),
+    "cc": ("Cc", "抄送"),
+    "bcc": ("Bcc",),
+    "reply-to": ("Reply-To",),
+}
+
+# Forwarded-header labels per field, across clients and locales. Sources and
+# confidence: docs/reference/v4-runtime-contracts.md under forwarded content
+# (crisp-oss/email-forward-parser fixtures, Thunderbird l10n, Proton
+# WebClients locales, mail-parser-reply Outlook tables). Short words such as
+# "A", "An", "Da" and "De" are only read inside a header block that follows a
+# forward separator. Add a label by appending it to its field.
+_FORWARD_HEADER_LABELS: dict[str, tuple[str, ...]] = {
+    "from": (
+        *OUTLOOK_HEADER_LABELS["from"], "Mittente",
+        "送信者", "送信元", "寄件人", "寄件者", "從",
+    ),
+    "date": (
+        *OUTLOOK_HEADER_LABELS["date"], "Datum", "Fecha", "Data",
+        "日時", "日付", "日期", "寄件日期",
+    ),
+    "subject": (
+        *OUTLOOK_HEADER_LABELS["subject"], "Sujet", "Assunto", "標題", "主旨",
+    ),
+    "to": (
+        *OUTLOOK_HEADER_LABELS["to"], "Pour", "送信先", "到", "收件者", "至",
+    ),
+    "cc": (*OUTLOOK_HEADER_LABELS["cc"], "Copie à", "Kopie", "Kopie (CC)", "副本", "참조"),
+    "bcc": (*OUTLOOK_HEADER_LABELS["bcc"], "密送", "密件副本"),
+    "reply-to": (*OUTLOOK_HEADER_LABELS["reply-to"], "回复给", "回覆給"),
+}
+_LABEL_FIELDS = {
+    label.casefold(): field
+    for field, labels in _FORWARD_HEADER_LABELS.items()
+    for label in labels
+}
+# Fields folded into a forward section heading; other header lines stay in
 # the forwarded content.
-_HEADING_LABELS = {"from": "from", "date": "date", "sent": "date", "subject": "subject"}
+_HEADING_FIELDS = frozenset({"from", "date", "subject"})
 # A ``**text**`` / ``__text__`` wrapper, not a delimiter inside a word such as
 # ``deploy__prod``.
 _EMPHASIS_RE = re.compile(r"(?<![\w*])(\*\*|__)(?=\S)(.+?)(?<=\S)\1(?![\w*])")
 _DOUBLE_ANGLE_RE = re.compile(r"<<([^<>]*)>>")
 
+# A label, optionally bold, then an ASCII or full-width colon; French
+# clients put a space or no-break space before the colon ("De :").
 _FORWARD_HEADER_LINE_RE = re.compile(
-    r"^\*{0,2}(?P<label>From|Date|Sent|Subject|To|Cc|Bcc|Reply-To):\*{0,2}[ \t]*(?P<value>.*)$",
+    r"^\*{0,2}(?P<label>"
+    + "|".join(re.escape(label) for label in sorted(_LABEL_FIELDS, key=len, reverse=True))
+    + r")\*{0,2}[ \t\u00a0]?[:\uff1a]\*{0,2}[ \t\u00a0]*(?P<value>.*)$",
     re.IGNORECASE,
 )
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -123,6 +183,12 @@ def normalize_marker_text(text: str) -> str:
 def is_forward_marker_line(line: str) -> bool:
     """Return True when ``line`` is a forward marker, ignoring hard-break syntax."""
     candidate = _HARD_BREAK_RE.sub("", normalize_marker_text(line).strip())
+    # HTML inline emphasis can surround the separator in the Markdown
+    # projection. Strip only a balanced outer pair, never internal marks.
+    for delimiter in ("**", "__", "*", "_"):
+        if candidate.startswith(delimiter) and candidate.endswith(delimiter):
+            candidate = candidate[len(delimiter):-len(delimiter)].strip()
+            break
     return FORWARD_MARKER_RE.fullmatch(candidate) is not None
 
 
@@ -140,13 +206,23 @@ def split_forward_marker(text: str) -> tuple[str | None, str]:
 
 
 def followed_by_header_line(text: str, end: int, *, quoted: bool) -> bool:
-    """True when the first non-blank line after ``end`` looks like a header."""
-    for line in text[end:].split("\n"):
+    """True when the first non-blank line after ``end`` looks like a header.
+
+    Reads line by line from ``end`` and stops at that line, so a check costs
+    only the text up to it, not the rest of ``text``.
+    """
+    start = end
+    while start <= len(text):
+        stop = text.find("\n", start)
+        if stop == -1:
+            stop = len(text)
+        line = text[start:stop]
         if quoted:
             line = _QUOTE_PREFIX_RE.sub("", line.lstrip())
         candidate = line.strip()
         if candidate:
             return _HEADER_LIKE_LINE_RE.match(candidate) is not None
+        start = stop + 1
     return False
 
 
@@ -203,7 +279,8 @@ def parse_forward_headers(
             break
         if apple_layout is None:
             apple_layout = candidate.startswith("**")
-        key = _HEADING_LABELS.get(match.group("label").lower())
+        field = _LABEL_FIELDS.get(match.group("label").casefold())
+        key = field if field in _HEADING_FIELDS else None
         value = _WHITESPACE_RE.sub(" ", match.group("value")).strip()
         if key is not None and value and key not in fields:
             fields[key] = value

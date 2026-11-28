@@ -1,0 +1,15 @@
+From: Alice <alice@example.cn>
+To: Bob <bob@example.cn>
+Subject: Synthetic Apple zh-CN HTML forward
+Date: Thu, 05 Mar 2026 12:15:00 +0000
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<html><body style="line-break:after-white-space">请看下面。<br id="lineBreakAtBeginningOfMessage"><div><br>
+<blockquote type="cite"><div>下面是被转发的邮件：</div><br class="Apple-interchange-newline">
+<div style="margin:0px"><span><b>发件人: </b></span><span>Bob &lt;bob@example.cn&gt;<br></span></div>
+<div style="margin:0px"><span><b>回复给: </b></span><span>reply@example.cn<br></span></div>
+<div style="margin:0px"><span><b>密送: </b></span><span>audit@example.cn<br></span></div>
+<div style="margin:0px"><span><b>收件人: </b></span><span>Alice &lt;alice@example.cn&gt;<br></span></div>
+<div style="margin:0px"><span><b>主题: </b></span><span><b>计划</b><br></span></div>
+<br><div>CHINESE_APPLE_FORWARD_BODY</div></blockquote></div></body></html>

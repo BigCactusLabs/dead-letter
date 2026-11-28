@@ -7,6 +7,7 @@ any ``dead_letter`` package, MIME parser or native extension is imported.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import sys
@@ -17,11 +18,22 @@ from pathlib import Path
 # ordinary exit with the same number cannot impersonate a budget outcome.
 EXIT_BUDGET_APPLY_FAILED = 3
 EXIT_MEMORY_LIMIT = 4
+# Storage exhaustion can prevent even a failure receipt from being written.
+# Reserve this status for caught errno values, without a control-file write.
+EXIT_STORAGE_ERROR = 5
 BUDGET_NAMES = ("memory_mib", "cpu_seconds", "max_output_mib")
 BUDGET_STATUS_FILE = "budget-status.json"
 NONCE_LENGTH = 32
 _OUTCOMES = {EXIT_BUDGET_APPLY_FAILED: "apply_failed", EXIT_MEMORY_LIMIT: "memory_limit"}
 _MIB = 1024 * 1024
+
+
+def _exception_status(exc: BaseException) -> int:
+    if isinstance(exc, OSError) and exc.errno in (
+        errno.ENOSPC, getattr(errno, "EDQUOT", errno.ENOSPC),
+    ):
+        return EXIT_STORAGE_ERROR
+    return 1
 
 
 def _parse_budgets(args: list[str]) -> tuple[dict[str, int], str | None]:
@@ -52,7 +64,41 @@ def _limit_pair(requested: tuple[int, int], inherited: tuple[int, int], infinity
     )
 
 
-def _apply_budgets(budgets: dict[str, int]) -> None:
+def _join_windows_job(nonce: str | None) -> None:
+    """Join the parent's already-configured job before importing any package.
+
+    Do not import dead_letter._mbox_windows here: importing dead_letter would
+    load parsers before the limits. This small bootstrap needs only four APIs,
+    and opens the job with assignment rights, not permission to change limits.
+    """
+    if nonce is None or len(nonce) != NONCE_LENGTH or any(c not in "0123456789abcdef" for c in nonce):
+        raise ValueError("Invalid worker nonce")
+    import ctypes
+
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle, boolean, dword = ctypes.c_void_p, ctypes.c_int32, ctypes.c_uint32
+    for name, args, result in (
+        ("OpenJobObjectW", [dword, boolean, ctypes.c_wchar_p], handle),
+        ("AssignProcessToJobObject", [handle, handle], boolean),
+        ("GetCurrentProcess", [], handle),
+        ("CloseHandle", [handle], boolean),
+    ):
+        function = getattr(api, name)
+        function.argtypes = args
+        function.restype = result
+    job = api.OpenJobObjectW(0x0001, False, "Local\\dead-letter-" + nonce)
+    if not job:
+        raise OSError("Could not open worker job")
+    try:
+        if not api.AssignProcessToJobObject(job, api.GetCurrentProcess()):
+            raise OSError("Could not join worker job")
+    finally:
+        # Keep no child-owned job handle: the parent owns kill-on-close.
+        if not api.CloseHandle(job):
+            raise OSError("Could not close worker job handle")
+
+
+def _apply_budgets(budgets: dict[str, int], *, nonce: str | None = None) -> None:
     """Limit this process before it imports parsers or reads the staged EML.
 
     Applied by the worker itself rather than a ``preexec_fn``, which CPython
@@ -60,6 +106,11 @@ def _apply_budgets(budgets: dict[str, int]) -> None:
     can abort instead of converting without the requested guarantee.
     """
     if not budgets:
+        return
+    if sys.platform == "win32":
+        if budgets.keys() - {"memory_mib", "cpu_seconds"}:
+            raise ValueError("Unsupported Windows worker budget")
+        _join_windows_job(nonce)
         return
     import resource
     import signal
@@ -191,8 +242,8 @@ def _run_budgeted(request_path: Path, budgets: dict[str, int], nonce: str) -> in
     try:
         fd = os.open(request_path.parent / BUDGET_STATUS_FILE,
                      os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
-    except OSError:
-        return 1
+    except OSError as exc:
+        return _exception_status(exc)
     payloads = {
         code: json.dumps({"nonce": nonce, "outcome": outcome}).encode("ascii")
         for code, outcome in _OUTCOMES.items()
@@ -202,14 +253,14 @@ def _run_budgeted(request_path: Path, budgets: dict[str, int], nonce: str) -> in
         try:
             if os.write(fd, payloads[code]) != len(payloads[code]):
                 return 1
-        except OSError:
-            return 1
+        except OSError as exc:
+            return _exception_status(exc)
         return code
 
     watch = _MemoryErrorWatch() if "memory_mib" in budgets else None
     try:
         try:
-            _apply_budgets(budgets)
+            _apply_budgets(budgets, nonce=nonce)
             if watch is not None:
                 # Detection is part of the memory guarantee: no free monitoring
                 # tool id means the budget cannot be honored.
@@ -222,10 +273,9 @@ def _run_budgeted(request_path: Path, budgets: dict[str, int], nonce: str) -> in
             return signal_outcome(EXIT_MEMORY_LIMIT) if "memory_mib" in budgets else 1
         except KeyboardInterrupt:
             raise
-        except BaseException:
-            # Includes SystemExit(3)/(4) from conversion code: an ordinary crash,
-            # never a budget outcome.
-            return 1
+        except BaseException as exc:
+            # Unexpected SystemExit cannot impersonate a reserved outcome.
+            return _exception_status(exc)
     finally:
         if watch is not None:
             watch.__exit__()
@@ -244,9 +294,11 @@ def main() -> int:
         return _run_budgeted(Path(sys.argv[1]), budgets, nonce)
     try:
         return run(Path(sys.argv[1]))
-    except Exception:
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:
         # The parent emits only a fixed safe error code; no private traceback.
-        return 1
+        return _exception_status(exc)
 
 
 if __name__ == "__main__":

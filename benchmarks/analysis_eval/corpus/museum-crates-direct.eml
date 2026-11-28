@@ -1,0 +1,26 @@
+From: Oren Vale <oren@example.test>
+To: Mira Fen <mira@example.test>
+Cc: Niko Reed <niko@example.test>
+Date: Mon, 04 Jun 2001 10:00:00 +0000
+Message-ID: <museum-crates-direct@example.test>
+Subject: Museum crates
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="analysis-eval-museum-crates-direct-0"
+
+--analysis-eval-museum-crates-direct-0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Mira, inspect the blue crate seals by Tuesday. I will arrange the trolley by =
+noon.
+
+--analysis-eval-museum-crates-direct-0
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<html><body><pre>Mira, inspect the blue crate seals by Tuesday. I will arrang=
+e the trolley by noon.</pre></body></html>
+
+--analysis-eval-museum-crates-direct-0--

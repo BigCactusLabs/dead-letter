@@ -42,12 +42,17 @@ jobs:
           # The exact Cursor Directory submission form repeatedly returns 429
           # from Actions; manually verified on 2026-09-18, tracked in #104.
           # Its owner-facing form remains a manual acceptance check.
+          # Absolute links to this repository's main branch (used where the
+          # README must also render on PyPI) are checked against this checkout,
+          # so a PR that adds or removes the target is judged on its own files.
           args: >-
             --no-progress
             --verbose
             --max-retries 4
             --retry-wait-time 5
             --root-dir .
+            --remap '^https://raw\.githubusercontent\.com/BigCactusLabs/dead-letter/main/(.*)$ file://${{ github.workspace }}/$1'
+            --remap '^https://github\.com/BigCactusLabs/dead-letter/(?:blob|tree)/main/([^#?]*)(?:[#?].*)?$ file://${{ github.workspace }}/$1'
             --exclude '^http://127\.0\.0\.1'
             --exclude '^http://localhost'
             --exclude '^https://vscode\.dev/redirect\?url=vscode%3Amcp%2Finstall%3F'

@@ -2,7 +2,7 @@
 title: dead-letter v4 Runtime Contracts
 doc_type: reference
 status: canonical
-last_updated: 2026-10-02
+last_updated: 2026-10-27
 audience:
   - maintainers
   - contributors
@@ -72,6 +72,35 @@ Rules:
 - If bundle creation fails after filesystem work has started, any partial bundle directory is removed.
 - If the source file is missing at conversion time, conversion returns a failed `BundleResult` instead of raising.
 
+### Streaming MBOX conversion
+
+`dead_letter.core.mbox_import.convert_mbox()` returns a lazy iterator; consume
+it under `contextlib.closing`, without collecting the archive in a list. See
+the [Takeout contract](gmail-takeout.md) for source preservation, framing,
+bundle output and reports, and [workers](mbox-workers.md) for process limits.
+
+**0.4.10 and later:** non-resumed flat imports and the lower-level `iter_mbox()`
+accept `cancel_requested`, a thread-safe zero-argument callback such as
+`threading.Event.is_set`. A true result raises
+`dead_letter.core.mbox.MboxCancelled`, rather than yielding a failed message.
+Framing checks between bounded reads and writes, including oversized-record
+drains. Timed workers poll at most every 100 ms, then kill and reap the direct
+worker before raising. Once final artifact publication begins, it finishes
+and its result is yielded before the next cancellation check, so callers can
+account for completed output. Already yielded results remain valid.
+
+The callback cannot preempt an in-process MIME parser or a blocked filesystem
+call; use timed workers for cancellable parsing. In 0.4.10, combining the
+callback with `resume=True` is rejected; unreleased source accepts it and
+[resume](mbox-resume.md#cancellation-and-compressed-input-unreleased) retries the
+record in progress on the next run. Unreleased `convert_mbox_archive()` also accepts
+`cancel_requested` for staging and conversion and an optional
+`staging_check(path, bytes_written)` callback, called before each 64 KiB copy
+chunk and at the end. The callback owns staging free-space policy when supplied;
+without it, the existing declared-member-size check applies. Omitting
+the callback preserves existing behavior, including the MCP tool's separate
+cancellation limitations.
+
 ### `ConvertOptions`
 
 `options` uses this fixed field set:
@@ -95,15 +124,73 @@ Rules:
 
 ### Thread history
 
-When `thread_mode="structured"`, the renderer appends per-message sections after the latest message. Each section uses a header ladder rooted in the parsed sender (`## From {sender}` plus optional date / subject). Sections whose attribution line could not be parsed render as `## Earlier message`; threads that the parser could not split at all render as a single `## Earlier in thread` section. Front matter gains a `thread_messages: N` key when N > 0, counting forward and reply sections.
+When `thread_mode="structured"`, the renderer appends per-message sections after the latest message. Each section uses a header ladder rooted in the parsed sender (`## From {sender}` plus optional date / subject). Sections whose attribution line could not be parsed render as `## Earlier message`; threads that the parser could not split at all render as a single `## Earlier in thread` section. Front matter gains a `thread_messages: N` key when N > 0, counting forward and reply sections. A reply section that would hold only an Outlook `-----Original Message-----` separator line (which mail-parser-reply splits off ahead of the From/Sent block it introduces) is omitted and not counted.
+
+The shared attribution parser limits regex input to 1,000 Python characters,
+including line breaks. For longer text, it considers only complete leading
+lines within that budget; it never turns a truncated physical line into an
+apparent attribution. A short single-line, wrapped Gmail or multiline Outlook
+header can still be recognized before a large body. An over-budget or
+unrecognized candidate keeps its text through the existing fallback, and match
+offsets still refer to the original input. This bounds attribution regex work;
+it does not impose a deadline on the rest of email parsing or conversion.
+
+HTML sanitization preserves paragraph boundaries in stripped block elements,
+including `center`, `details` and `summary`, before classification. History
+extraction adds a line break between adjacent inline content, looking through
+inline ancestors. Inside `pre`, it inserts a text newline only when neither
+adjacent edge already has a newline or is blank. Unwrapping current-body quote
+containers preserves each exposed paragraph edge; existing block and break
+boundaries remain intact.
+
+Before Markdown rendering, nesting is capped at 512 element levels by iterative
+unwrapping, preserving text and block boundaries. Nested blockquotes are capped
+separately at 64 levels to bound the size of Markdown quote prefixes. Any
+flattening adds a `html_depth_flattened` diagnostics warning because formatting
+beyond the nesting limit is reduced. If the renderer still reports skipped content, conversion uses
+block-separated text instead of the incomplete Markdown and adds a diagnostics
+warning: `html_depth_limit` for a traversal-depth limit, or `html_content_skipped`
+for truncated input. This applies to current content and rendered history zones.
+
+Plain-text Outlook history splits before mail-parser-reply, including English.
+Each separator plus contiguous sender and sent/date header block starts a
+history slice; the separator is consumed. Each slice uses the reply parser
+for further message splits, or stays one raw QUOTED zone when parsing is skipped.
+Structural splitting requires separator and header lines at column 0;
+indented examples stay body. Supported
+labels are English, German, French, Spanish (`Enviado el` included), Dutch,
+Italian desktop, Japanese and Simplified Chinese (`发件人`, `发送时间`, `收件人`, `主题`, `抄送`), with ASCII/full-width colons and an optional
+space, tab or NBSP before the colon. Dashed separators include `Original Message`,
+`Ursprüngliche Nachricht`, `Message d'origine`/`Message d’origine`,
+`Mensaje original` and `Oorspronkelijk bericht`; underscore separators work
+across these locales. Traditional Chinese history labels and other localized dashed
+separators remain unconfirmed. A message containing only Outlook history uses
+the existing quote-only fallback in both modes, without separate thread headings.
+
+Plain-text calls budget consecutive Unicode whitespace (`\s`) runs in the
+indentation-protected input: for runs longer than 64 Python characters, sum the
+squared lengths and skip mail-parser-reply when the total exceeds 1,048,576.
+One budget covers a message: the latest message spends it first, then each
+Outlook history slice; a slice that would exceed what remains stays one raw
+QUOTED zone. Sentinels break runs across indented lines; ordinary short spacing
+and long prose/token lines still parse. The no-split fallback keeps all text. If the
+budget is exceeded before `On … wrote:`, that reply boundary can be missed and
+an enclosed forward can remain current forwarded content instead of history.
+Other dependency slow paths remain for separate follow-up, including long
+`On ` lines and HTML Outlook `<pre>` blank lines; this is not a conversion deadline.
 
 Forwarded messages are content, not reply history:
 
-- **Gmail HTML.** A forward block is a Gmail `div.gmail_quote` that has no direct-child `blockquote.gmail_quote` and whose first element child is `div.gmail_attr`, where the attribution's first line (text before the first `<br>`) is a forward separator or does not end in `:`. An attribution ending in `:` or a fullwidth `：` ("On … wrote:", "Le … a écrit :", "… 写道：") marks a reply. A legacy `div.gmail_quote` with no `gmail_attr` whose own leading text is a forward separator is also a forward. Forward blocks nested inside a forward are split out; any other quote block inside a forward stays in that forward's content. Collection stops at the first reply boundary outside a forward, and after 64 forward blocks. At that limit the 64th block also takes the siblings that follow it in the same parent element, so sibling forwards (and anything else there, including a later reply quote) stay in that block in document order. Forwards left uncollected elsewhere stay in the body, which is emitted before the forward blocks; when each forward sits in its own wrapper element, forwards past the limit therefore appear ahead of the first 64. No content is lost.
-- **Plain text.** A forward starts at an unindented separator line: Gmail's `---------- Forwarded message ---------` (any run of 2+ dashes), Thunderbird/Yahoo `-------- Forwarded Message --------` and its localized labels, or Apple Mail `Begin forwarded message:` and its localized forms. The next non-blank line must look like a header (`From:`, `Von:`, `De :`, …), and the first separator must not sit inside reply history; otherwise the text keeps its reply handling. A separator is inside reply history when an Outlook separator line (`____` or `-----Original Message-----`) followed by a From + Sent/Date header block appears anywhere before it (Outlook history is unquoted, so everything after that block is history), or when the last line before it that is neither blank nor `>`-quoted is a reply attribution that mail-parser-reply recognizes (`On … wrote:`, including one wrapped across lines; only checked when that line ends in `:` or `：`). A `>` line, a `… wrote:`-like line, or a bare `From:`/`Sent:` pair in the forwarder's own note, followed by ordinary text, does not make the separator reply history. The separators live in one list in `dead_letter/core/forwarding.py`, drawn from Gmail samples, Thunderbird l10n sources, and the MIT-licensed crisp-oss/email-forward-parser fixtures.
-- **`thread_mode="latest"`** keeps Gmail HTML forwards and unquoted plain-text forwards (Gmail, Thunderbird, Yahoo, Apple Mail separators) inline: separator line, forwarded header lines, then the forwarded body. Body text that sits after or between top-level Gmail forwards is emitted before the forwards; no content is lost. Reply quotes are still dropped, including a reply quote that contains a forward. A text/plain forward inside `>` quoting (Apple Mail's plain-text layout) is still treated as quoted history and dropped. Signature stripping (`strip_signatures`) can still remove text after a `-- ` line inside a forward. Output for mail without a forward is unchanged, and so is latest-mode output for Thunderbird and Apple Mail HTML forwards and for plain-text forwards that meet the rule above, which were already kept. An English separator that appears after reply history or without a following header line is now left to reply handling.
-- **`thread_mode="structured"`** renders one section per forward, before any reply sections, in document order (outermost first for nested forwards). The separator line is dropped. When a `From:` header parses, the section heading is `## Forwarded from {sender}` with the same optional date / subject ladder, for HTML-derived text, Markdown emphasis pairs that wrap a value (`**Dave**`, `__Budget__`) unwrapped in the sender and subject and doubled angle brackets removed from the sender; plain-text values keep literal `**` and `__`; the first `From`, `Date` (or `Sent`) and `Subject` lines of the top header block (up to the first blank line; in Apple Mail's bold-label layout, up to the first line that is not a bold-label header) move into the heading, while `To`, `Cc`, other header lines and the body stay in the section. Otherwise the heading is `## Forwarded message`. `thread_order` reorders reply sections only. A `>`-quoted separator (Apple Mail plain text) counts as a forward only in structured mode, and only when no attribution line (a line ending in `:`) or quoted line directly precedes it. Zone content, and so the analysis snapshot, keeps the full forwarded header block.
-- Outlook `divRplyFwdMsg` blocks and `message/rfc822` attachments are handled as before.
+- **Gmail HTML.** Wrappers are classified on the unchanged tree before extraction. The first non-empty line is read through inline formatting and empty elements, ending at a `<br>` or block boundary; Unicode format characters and soft hyphens count as whitespace. A recognized forward separator takes precedence, including separators in descendant elements (gogcli). Inside `div.gmail_attr` only, a dashed label with non-empty text (not only dashes and spaces) between two or more dashes on each side is also a separator, independent of its wording; the localized separator list still governs bare HTML text and plain text. Otherwise, a `div.gmail_quote` with a direct-child blockquote identifies reply history: **its first direct-child blockquote and at most one immediately preceding attribution unit** move to history. Second and later direct-child blockquotes that are not themselves recognized wrappers also move to history, without an attribution unit; talon, quotequail and Proton all treat them as quoted. Text before the unit, between the blockquotes and after them stays authored. Prefer the last non-empty direct `div.gmail_attr` as a whole unit; otherwise take the last non-empty adjacent line of this wrapper's direct content (a line that is direct content of the wrapper, or the last line of one non-wrapper block that is a direct child; that block moves whole only when the line is also its first line). Attribution lines longer than 1000 characters are never recognized. The unit covers only sibling nodes that hold no other line and no planned history, so an inline element that spans several lines, or a block that already holds planned quotes, leaves the attribution in the body. A bare-line unit must be recognized by the attribution parser after whitespace collapse; the parser is called only for text ending in `:` or `：`. A preceding dashed label joins the attribution unit only when its wording is one of the dashed Outlook separators listed under plain-text Outlook history (`Original Message` and its localized forms). The label may be a line in the same parent or its own block-level sibling (Proton's div-per-line layout); only `<br>` elements, whitespace or blocks holding nothing else may separate it from the attribution. Any other dashed line, such as `----- see below -----`, stays authored. A nested wrapper owns its own lines; an ancestor cannot take them. A bare `blockquote.gmail_quote` is structural reply evidence itself, and takes at most one attribution unit from its parent's direct content by the same rule. Without structural evidence, the first line must be a recognized attribution, or be inside `gmail_attr` and end in `:` or `：`; if a `gmail_attr` first line is neither a separator nor attribution-shaped, its own first two collected lines are joined with a space and checked against the attribution parser, so a `<br>` before `wrote:` does not hide it. No-signal **div** wrappers are unwrapped as current body, including a long wrapper below `Thanks!`; `gmail_quote_container` alone is not a quote wrapper. Siblings are classified independently. Wrappers inside reply history stay in that history. Inside a forward, nested forwards split out and reply quotes stay with their forward; transparent containers sharing one separator produce one section. Attribution history moves as HTML, preserving links and original characters; authored content outside that unit stays in the body. A message that is only reply history keeps its quoted provenance and is rendered through the existing quote-only fallback. Forward collection is capped at 64 sections. Forwards past the cap stay in the body with their own text (or in their enclosing forward); reply, Outlook, and Front history inside or after uncollected forwards is still extracted, unless the uncollected forward sits inside a collected one, whose section keeps it. Body is rendered before sections, so excess sibling forwards can appear before the first 64 sections, with no content lost.
+- **Yahoo HTML.** The same rules apply to `div` and `blockquote` wrappers with any class token containing `yahoo_quoted`, or an ID starting with `yahoo_quoted_`. A wrapper around current body is retained; reply and forward wrappers require the evidence above.
+- **Proton HTML.** The same rules apply to `protonmail_quote` wrappers. A forward separator takes precedence over Proton's direct-child blockquote. A body container can hold a note followed by a separate nested forward.
+- **OWA-prefixed HTML.** Any run of leading `x_` prefixes is ignored on wrapper and `gmail_attr` class tokens (`x_x_gmail_quote`, for example) and on the Outlook `divRplyFwdMsg` id (`x_divRplyFwdMsg`, `x_x_divRplyFwdMsg`), in classification and in quote-pattern detection. A prefixed wrapper or id inside history that is already being extracted, such as an Outlook boundary or a reply blockquote, remains part of that history. Front boundaries keep their existing handling.
+- **Plain text.** A forward starts at an unindented separator line: Gmail's `---------- Forwarded message ---------` (any run of 2+ dashes), Thunderbird/Yahoo `-------- Forwarded Message --------` and its localized labels, or Apple Mail `Begin forwarded message:` and its localized forms (including Japanese `転送されたメッセージ:`, Simplified Chinese `下面是被转发的邮件`, Traditional Chinese `開始轉寄郵件`, and Korean `전달된 메시지 시작`); Apple markers accept ASCII or full-width colons. The next non-blank line must look like a header (`From:`, `Von:`, `De :`, `发件人：`, …: a label, an optional space or no-break space, then an ASCII or full-width colon), and the first separator must not sit inside reply history; otherwise the text keeps its reply handling. A separator is inside reply history when an Outlook separator line (underscores or one of the dashed separators above) followed by a From + Sent/Date header block appears anywhere before it (Outlook history is unquoted, so everything after that block is history), or when the last line before it that is neither blank nor `>`-quoted is a reply attribution that mail-parser-reply recognizes (`On … wrote:`, including one wrapped across lines; only checked when that line ends in `:` or `：`). A `>` line, a `… wrote:`-like line, or a bare `From:`/`Sent:` pair in the forwarder's own note, followed by ordinary text, does not make the separator reply history. The separators live in one list in `dead_letter/core/forwarding.py`, drawn from Gmail samples, Thunderbird l10n sources, and the MIT-licensed crisp-oss/email-forward-parser fixtures.
+- **`thread_mode="latest"`** keeps Gmail, Yahoo and Proton HTML forwards and unquoted plain-text forwards (Gmail, Thunderbird, Yahoo, Apple Mail separators) inline: separator line, forwarded header lines, then the forwarded body. Body text that sits after or between top-level HTML forwards is emitted before the forwards; no content is lost. Reply quotes are still dropped, including a reply quote that contains a forward. A text/plain forward inside `>` quoting (Apple Mail's plain-text layout) is kept when its separator opens a quote block that no attribution line (a line ending in `:`) or quoted line directly precedes, with one `>` level removed from the separator and the forwarded text; a quoted separator under `On … wrote:` stays reply history and is dropped. HTML-derived `>`-quoted forwards (Apple Mail HTML) keep their previous latest-mode output. Signature and disclaimer stripping run separately on the text between forward separators, `>`-quoted or not, whose next non-blank line is a header line, so a `-- ` line in one forward removes only the rest of that forward, never a later one. Only that header check applies there, not the reply-history rules: a separator right after a signature line ending in `:` (`Contact:`) still starts a new part. Wrappers with no reply or forward evidence stay in the body in both modes. Latest-mode output for Thunderbird and Apple Mail HTML forwards and for plain-text forwards that meet the rule above is unchanged. An English separator that appears after reply history or without a following header line is now left to reply handling.
+- **`thread_mode="structured"`** uses the same HTML wrapper classifications as latest mode and renders one section per forward, before any reply sections, in document order (outermost first for nested forwards). The separator line is dropped. When a `From:` header parses, the section heading is `## Forwarded from {sender}` with the same optional date / subject ladder, for HTML-derived text, Markdown emphasis pairs that wrap a value (`**Dave**`, `__Budget__`) unwrapped in the sender and subject and doubled angle brackets removed from the sender; plain-text values keep literal `**` and `__`; the first From, Date and Subject lines of the top header block (labels in English and the localized forms listed below, with an ASCII or full-width colon and an optional space or no-break space before it) (up to the first blank line; in Apple Mail's bold-label layout, up to the first line that is not a bold-label header) move into the heading, while `To`, `Cc`, other header lines and the body stay in the section. Otherwise the heading is `## Forwarded message`. `thread_order` reorders reply sections only. A `>`-quoted separator (Apple Mail plain text) counts as a forward only when no attribution line (a line ending in `:`) or quoted line directly precedes it, and in latest mode only for text/plain bodies. A forward nested one `>` level deeper inside a quoted forward gets its own section once the outer level is removed, up to 64 plain-text forward sections. Each nested search reads the whole body of the enclosing forward, so the characters searched across those searches are capped at four times the length of the body text or 1,000,000 characters, whichever is larger (ordinary chains split fully; only very large deeply nested bodies reach the budget); the search stops at the first forward that would pass that budget. Past either limit, the remaining nested forwards stay in the enclosing section, unchanged and in order, and no content is lost. Zone content, and so the analysis snapshot, keeps the full forwarded header block.
+- **Forwarded-header labels.** One label table in `dead_letter/core/forwarding.py` maps labels to fields. From: `From`, `De`, `Von`, `Da`, `Mittente`, `Van`, `差出人`, `送信者`, `送信元`, `发件人`, `寄件人`, `寄件者`, `從`. Date: `Date`, `Sent`, `Envoyé`, `Datum`, `Gesendet`, `Fecha`, `Enviado`, `Enviado el`, `Data`, `Inviato`, `Verzonden`, `送信日時`, `日時`, `日付`, `发送时间`, `日期`, `寄件日期`. Subject: `Subject`, `Objet`, `Sujet`, `Betreff`, `Asunto`, `Oggetto`, `Assunto`, `Onderwerp`, `件名`, `主题`, `標題`, `主旨`. To, Cc, Bcc and Reply-To labels (`À`, `Pour`, `An`, `Para`, `A`, `Aan`, `宛先`, `送信先`, `收件人`, `到`, `收件者`, `至`, `Copie à`, `Kopie`, `Kopie (CC)`, `抄送`, `副本`, `참조`, `回复给`, `回覆給`, `密送`, `密件副本`) continue the block and stay in the section. Short labels such as `A`, `An`, `Da`, `De` and `至` require a complete label and colon and are only read in the header block right after a forward separator. Sources: crisp-oss/email-forward-parser per-locale fixtures (Gmail, Apple Mail, Thunderbird, Yahoo, New Outlook), Thunderbird l10n `mime.properties`, Proton WebClients locale files, mail-parser-reply Outlook label sets, Microsoft's Exchange `MessageHeaders.xml` (Outlook/OWA labels, via an unofficial mirror; the erroneous Italian OWA `Inizio`/`Fine` row is excluded), a 2024 Gmail zh-CN forward (`发件人：`) and a 2019 Apple Mail ja forward (`転送されたメッセージ:`). Existing `送信者`, `日時`, `到` and `Pour` also cover Thunderbird/ReplyWithHeader output; they are not evidence for Outlook history. Gmail ja labels have no sample. Apple Mail zh marker and header labels, and the Korean marker, come from the current macOS MailCore string table; no raw Chinese capture is available.
+- **Outlook HTML.** A top-level `divRplyFwdMsg` boundary takes the rest of the document in order. A boundary nested inside a recognized wrapper (`gmail_quote`, `protonmail_quote`, `yahoo_quoted`) takes only the content from the boundary to the end of the nearest enclosing wrapper, keeping the intervening wrapper markup and no `<body>` markup. Content after that wrapper stays authored and is still classified. This follows talon's sibling-scoped Microsoft split and Proton's rule that an Outlook header inside another quote belongs to that quote. `message/rfc822` attachments are handled as before.
+- **Known limits, no confirmed real-client shape (#241).** An Outlook `-----Original Message-----` line followed by `From:`/`Sent:` lines inside a Gmail wrapper is not reply evidence; only the wrapper's first line is classified. A wrapper is classified by its first non-empty line even when that line belongs to a nested wrapper; ownership is enforced only during extraction.
 
 ### `ConvertResult`
 
@@ -189,7 +276,25 @@ Rules:
 - Browser requests with `Sec-Fetch-Site: cross-site` are rejected with `403`.
 - Requests with an `Origin` header that does not match the request origin are rejected with `403`.
 - CSRF failures use the standard error envelope with `code="csrf_validation_failed"`.
+- A response sent before the request body was read to the end (Host/CSRF rejections, body-limit `413`s, MBOX upload rejections) carries `Connection: close`, so the client stops sending and the server never drains the unread bytes.
 - No CORS support is provided; the same-origin local UI is the only browser client. Script clients must call `/api/session` and include the CSRF header before using mutating endpoints.
+
+#### `GET /api/about` (unreleased)
+
+Returns the running package version for the local UI's project footer.
+
+Response (`200`):
+
+```json
+{
+  "version": "string"
+}
+```
+
+Rules:
+
+- `version` is `dead_letter.__version__` of the process serving the API.
+- The route is read-only, takes no parameters, and follows the same trusted loopback `Host` rule as every other `/api/*` route.
 
 ### Workflow Settings
 
@@ -311,6 +416,375 @@ Output placement is server-owned:
 - `delete_eml=true` changes successful file handling to delete the source instead of retaining a `.eml` artifact in Cabinet.
 - Failed file jobs leave the source at its original path.
 
+### `POST /api/mbox/jobs` (0.4.10)
+
+Starts an explicit local-path archive import. Configure Inbox/Cabinet first,
+then use the same loopback Host, same-origin and CSRF protections as other
+mutating API routes.
+
+```json
+{
+  "input_path": "Downloads/Takeout/Mail/All mail.mbox",
+  "options": {"thread_mode": "structured", "timeout_seconds": 30}
+}
+```
+
+Admission and output rules:
+
+- `input_path` is relative to the server's filesystem-browser root (the OS
+  user's home directory by default). It selects one regular `.mbox` file or,
+  in unreleased source, a `.zip`, `.tgz` or `.tar.gz` archive (case-insensitive).
+  Absolute paths, root escapes, symlinks escaping the root, Cabinet sources
+  and directories are rejected.
+  The file must already be present on the server; this endpoint is not an upload.
+  To send an archive from the browser, use
+  [`POST /api/mbox/uploads`](#post-apimboxuploads-unreleased).
+- Archives larger than 16 GiB are rejected before staging; for compressed
+  input this is the container file size. The admitted
+  device/inode, size and modification/change timestamps are rechecked before
+  work and at message boundaries, with the core reader's own handle checks.
+  These are best-effort mutation checks, not a filesystem snapshot; use an
+  immutable export. A detected source change fails the job even if cancellation
+  was also requested.
+- Queued and running MBOX jobs share one slot by default, reserved before
+  output or temporary work begins. `JobManager(max_mbox_jobs=...)` can change
+  that server-side limit. EML worker concurrency is a separate setting.
+- Every job owns a new `<Cabinet>/mbox-<job-id>/` directory. Source bytes are
+  always preserved; each completed message becomes a bundle with Markdown,
+  retained attachments and `source.eml`. The create response uses the usual
+  `id`/`status` fields and adds `output_location.job_path`; `bundle_path` is null.
+  Completed bundles survive cancellation and later failures. In unreleased
+  source the job also writes the core resume journal and a job descriptor
+  there, so a stopped job can continue in the same folder
+  ([MBOX job resume](#mbox-job-resume-unreleased)).
+- Options accept the conversion flags `strip_signatures`, `strip_disclaimers`,
+  `strip_quoted_headers`, `strip_signature_images`, `strip_tracking_pixels`,
+  `embed_inline_images`, `include_all_headers`, `include_raw_html`,
+  `no_calendar_summary`, `allow_fallback_on_html_error`,
+  `allow_html_repair_on_panic`, `thread_mode` and `thread_order`, with their
+  existing defaults. `timeout_seconds` is a finite JSON number in `(0, 300]`,
+  default 30. Unreleased source also accepts optional `member`: the exact
+  `.mbox` member name, as with CLI `--mbox-member`. Web member names are
+  limited to 1024 characters and cannot contain NUL or control characters;
+  violations return `422` on both the job and upload routes. One eligible member
+  is selected automatically; several members without a selection fail before
+  conversion with `mbox_archive_multiple_mbox`. Other archive errors retain
+  their core `mbox_archive_*` codes. `member` on a flat `.mbox` returns `422`.
+  Unknown request/option fields are rejected, including `delete_eml`,
+  `dry_run`, `report`, `output`, `source_handling` and `resume`.
+- Compressed jobs (unreleased) use the core archive importer and default
+  `ArchiveLimits`. They stage one member in a private, job-owned directory
+  under `<Inbox>/mbox-uploads/`, separate from the selected source and Cabinet
+  output. Admission creates this parent folder (and the Inbox if needed) when
+  missing and checks that it is a real folder inside the Inbox before reserving
+  a slot or creating Cabinet job output. An unsafe parent returns a clear
+  `403 invalid_request` naming `mbox-uploads`. Private job staging is created
+  only when the worker starts and removed before completion, failure or
+  cancellation becomes terminal. Tasks cancelled before their first step create
+  no private staging directory. Only job-owned temporary data is removed; the source archive is always kept.
+- Jobs enforce a 1 GiB **free-space reserve**, not a total byte quota
+  (unreleased). Cabinet free space is checked before conversion and after each
+  message result. Compressed jobs also check staging-volume free space before
+  staging and at least every 64 MiB written. A low reading or inability to
+  measure free space stops the job with fatal `mbox_disk_reserve`. Completed
+  bundles and a partial report are kept, and staging is removed. Cancellation
+  takes precedence only if it was requested before the reserve failure was
+  detected. A later cancel, including during report publication, leaves the
+  reserve failure as `failed`. Report errors always take precedence over
+  cancellation, including after a reserve stop. Concurrent disk use and writes
+  within a message/check interval can still exhaust storage; space is not reserved
+  from other processes.
+- The runner uses timed, sequential message workers, default `preserve`
+  quoting, a 64 MiB stored-message cap and a 1 MiB physical-line cap. It does
+  not pre-scan for a message count. Retained job state contains counters and
+  at most 20 errors, with path/code/message lengths capped at 512/64/512
+  characters. A terminal fatal reason remains in that sample even after many
+  recoverable errors; `failures_omitted` counts errors outside the sample.
+
+Success is `202`. Admission failures use `400` for invalid input/options,
+`403` for path confinement failures, `409` for missing settings or occupied
+archive slots (`mbox_busy`), and `413` for an oversized archive
+(`mbox_too_large`). A flat-input `member`, an overlong member name or a member
+containing control characters returns `422`; other schema failures remain `400`.
+Validation and busy failures create no job output.
+
+Poll the existing `GET /api/jobs/{id}` route. MBOX snapshots have `kind="mbox"`,
+`diagnostics=null`, no retry actions, and an additive `mbox` object:
+
+```json
+{
+  "source_path": "/home/user/Downloads/Takeout/Mail/All mail.mbox",
+  "records_total": null,
+  "records_processed": 12,
+  "bytes_total": 1048576,
+  "bytes_processed": 524288,
+  "failures_omitted": 0,
+  "phase": "converting"
+}
+```
+
+Phases are `queued`, `converting`, `publishing` and `finished`. For compressed
+input, `bytes_total` initially reports the container size, then switches to
+the decompressed member size at the first message result. Member offsets and
+hashes refer to decompressed bytes. Byte progress is
+the last processed record's end offset, not a live read counter or a count of
+successful messages. It can stay still while a message is framed/converted,
+and reach the archive size before report publication finishes. Use `mbox` for
+archive progress; legacy EML `progress.total` remains zero. `summary` counts
+actual written/skipped results and errors, including archive-level failures.
+
+Ordinary message failures, timeouts and generic worker crashes permit later
+records and produce `completed_with_errors`. Archive-fatal results, source
+changes, `mbox_publish_failed`, `mbox_storage_error`, `mbox_disk_reserve` and
+report failures make the job `failed`. Error text does not include private exception tracebacks.
+The [worker contract](mbox-workers.md#errors-and-reports) explains the reserved
+storage-exhaustion outcome, including failure to write a receipt.
+
+The runner spools report rows to disk and publishes
+`<job_path>/.dead-letter-report.json`. A resumed run (unreleased) publishes
+the next free name, `.dead-letter-report-2.json` and so on, and never replaces
+an earlier report. Its schema remains 1, with MBOX provenance,
+`mbox_options` and terminal status. After the first compressed message result,
+`archive` also includes the core container/member provenance and container size.
+`archive.observed_summary` records the actual observed counts; `report.summary` counts committed report rows.
+`archive.report_complete` means all observed outcomes were appended, not that
+the whole source archive was imported. After an append failure, a completed
+bundle may exist without a committed report row; the retained prefix report
+has `report_complete=false`. A cancelled prefix can have `report_complete=true`.
+If final report writing/rename fails, the job fails with `report_path=null`.
+Report staging prevents an earlier success report from becoming canonical
+while an accepted cancellation still requires a rewritten report.
+
+`POST /api/jobs/{id}/cancel` returns `202` when accepted. The response
+acknowledges the request; the job remains queued/running while the runner stops
+the framer/worker, waits for direct-child termination and iterator cleanup, and
+publishes the partial report before terminal `cancelled` is visible. A
+fatal source/report error always takes precedence over cancellation. A cancel
+requested before a disk-reserve failure was detected takes precedence over
+that reserve stop; a later cancel does not change its failed status. Report
+finalization eventually seals cancellation; a request after that point returns `409`, even if the
+terminal snapshot has not yet been installed. Graceful server shutdown stops
+new archive admission, signals active jobs and waits for this same cleanup.
+
+The UI's **Import a local MBOX archive** action opens this path/timeout form
+and displays byte progress, processed messages, cancellation state, retained
+output and omitted errors. Its EML drag-and-drop/upload flow remains separate.
+Archive jobs use the existing bounded, in-memory history and have no automatic
+retry. In unreleased source a stopped job offers **Resume import**, and the idle
+and done panels list stopped imports from the Cabinet, including ones from an
+earlier server process ([MBOX job resume](#mbox-job-resume-unreleased)). The free-space reserve is not a total
+output/temp-disk byte quota or worker-memory cap: allow space for staging,
+bundles and the disk-backed report. Cancellation/timeouts cannot bound
+blocked OS I/O, and a hard process kill cannot guarantee a final report or cleanup.
+
+### `POST /api/mbox/uploads` (unreleased)
+
+Sends one `.mbox`, `.zip`, `.tgz` or `.tar.gz` archive from the browser, stages
+it under the Inbox and starts the same archive job as `POST /api/mbox/jobs`. Configure Inbox/Cabinet
+first; the loopback Host, same-origin and CSRF rules apply. For an archive that
+is already on the machine running dead-letter, the local-path route is faster
+and needs no second copy.
+
+The body is the raw archive bytes, not multipart form data:
+
+```http
+POST /api/mbox/uploads?options=%7B%22thread_mode%22%3A%22structured%22%7D
+Content-Type: application/octet-stream
+Content-Length: 1048576
+X-Dead-Letter-Upload-Length: 1048576
+X-Dead-Letter-Filename: All%20mail%20Including%20Spam%20and%20Trash.mbox
+X-Dead-Letter-CSRF: <csrf_token>
+```
+
+- `Content-Length` is required and chunked bodies are refused.
+  `X-Dead-Letter-Upload-Length` must repeat the same decimal byte count.
+- `X-Dead-Letter-Filename` is the percent-encoded UTF-8 file name. The server
+  keeps the part after the last `/` or `\`, requires a case-insensitive `.mbox`,
+  `.zip`, `.tgz` or `.tar.gz` suffix, replaces `<>:"|?*` with `_`, drops leading
+  dots and spaces, caps the stem at 200 UTF-8 bytes and uses `upload` for an empty stem. Invalid UTF-8
+  and control characters are rejected.
+- The optional `options` query parameter is one JSON object with the same
+  fields, defaults and validation as `options` on `POST /api/mbox/jobs`.
+
+Every check that does not need the body runs before the first body byte is
+read, in this order. Each rejection uses the error envelope, reads no body and
+closes the connection; a client that sent `Expect: 100-continue` never receives
+`100 Continue`.
+
+1. `409 invalid_request` (path `settings`): Inbox/Cabinet are not configured.
+2. `411 mbox_upload_length_required`: no `Content-Length`, or a
+   `Transfer-Encoding` header.
+3. `400 mbox_upload_length_mismatch`: the declared length is missing, either
+   length header is not a decimal byte count of at most 20 digits, or the
+   declared length differs from `Content-Length`. Longer headers are refused
+   before they are converted to a number. A `Content-Length` whose value is
+   above 16 GiB + 1 MiB gets the body-limit backstop's plain `413` instead
+   (see [HTTP Status Mapping](#http-status-mapping)).
+4. `413 mbox_too_large`: the declared length is above 16 GiB.
+5. `400 invalid_request`: the file name or `options` is invalid. A `member`
+   option for a flat `.mbox`, a member longer than 1024 characters, or a member
+   containing NUL/control characters returns `422 invalid_request`.
+6. `415 mbox_upload_unsupported_media_type`: the content type is not
+   `application/octet-stream`.
+7. `409 mbox_busy`: the archive slot is occupied. The upload reserves the same
+   single slot as `POST /api/mbox/jobs` before it reads the body, and the
+   accepted job keeps it, so a path import cannot start while bytes arrive.
+8. `403 invalid_request` (path `mbox-uploads`): `<Inbox>/mbox-uploads` is a
+   symlink, is not a folder, or resolves outside the Inbox. The server creates
+   the folder when it is missing and stages only under the checked path.
+   For compressed input, this folder check runs before the slot check in step 7.
+9. `507 mbox_upload_insufficient_storage`: the staging folder's free space,
+   less the declared length, is below 1 GiB. The 1 GiB margin leaves room for
+   the job's report spool and first bundles and for the host itself. Free space
+   cannot be reserved, so this is a check, not a quota.
+
+The body is written to `<Inbox>/mbox-uploads/.upload-<random>.part`, created
+exclusively, in writes of about 1 MiB off the event loop. The server counts the
+bytes it actually receives:
+
+- more than the declared length: `413 mbox_upload_too_long`;
+- fewer, because the body ended or the client disconnected:
+  `400 mbox_upload_incomplete`;
+- no data for 60 seconds: `408 mbox_upload_timeout`;
+- free space rechecked every 256 MiB against the bytes still to come, and
+  `ENOSPC`/`EDQUOT` while creating the staging folder or `.part` file, writing,
+  flushing or publishing: `507 mbox_upload_insufficient_storage`;
+- any other staging failure: `500 backend_error`.
+
+After the last byte the file is flushed to disk and renamed to `<stem><suffix>`,
+or `<stem>-2<suffix>`, `<stem>-3<suffix>`, and so on when the name is taken.
+Compressed suffixes are preserved, including `.tar.gz` as a double suffix;
+flat uploads retain the normalized `.mbox` suffix. The server first claims the name by creating an empty file there exclusively, so
+publication never replaces a file that existed when the name was claimed. A
+concurrent local writer that replaces the claimed name before the rename is
+out of scope. The `.part` file is removed on every failure,
+and the staged archive is removed if job admission fails after staging. Every
+failure releases the archive slot.
+
+Success is `202` with the same body as `POST /api/mbox/jobs`. The job snapshot
+has `origin="upload"`, and `mbox.source_path` is the staged archive. That
+archive is the job's immutable source: it stays in `<Inbox>/mbox-uploads/`
+after the job succeeds, fails or is cancelled, and is not deleted for you. The
+Inbox watcher ignores it because it only picks up `.eml` files. Output follows
+the local-path rules: a new `<Cabinet>/mbox-<job-id>/` of copy-only bundles,
+each with its own `source.eml`. Compressed input uses separate, private
+per-job member staging under the same upload area, with the cleanup and
+1 GiB staging/Cabinet reserve rules described above.
+
+Limits: an interrupted upload cannot be resumed and starts again from byte
+zero. Once the upload has started its job, that job can be resumed like a
+local-path job (unreleased); resume reuses the kept copy in `mbox-uploads/` and
+is refused if that copy was changed or removed. The upload's 507 check covers the
+source copy only; the job then enforces its own staging and output reserve
+with `mbox_disk_reserve`. Allow space for the decompressed member and bundles.
+The reserve is not a total output/temp-disk byte quota. Browsers
+can report an early rejection as a network error, because the server closes the
+connection while the browser is still sending.
+
+The app-wide request-body limit (see [HTTP Status Mapping](#http-status-mapping))
+is raised to 16 GiB + 1 MiB on this route, so the endpoint's own checks answer
+every request near the cap. A declared length above that limit gets the
+middleware's plain `413` instead of `mbox_too_large`.
+
+The archive form's **Upload archive** choice sends the chosen file to this
+route with upload progress and a cancel button, then shows the job's progress
+like a local-path import. Cancel is disabled once every byte is sent, because
+the server may already be creating the job.
+
+### MBOX job resume (unreleased)
+
+Web archive jobs (#272) run through the [core resume journal](mbox-resume.md)
+from their first run. Before conversion the runner probes the Cabinet for
+no-replace bundle publication; where it is unavailable, the job runs without
+resume, as before, and can never be resumed.
+
+Each job folder holds a private `.dead-letter-web-job.json` descriptor, written
+atomically (temporary file, flush, rename) when a run starts and again when it
+ends. A run holds the folder's `.dead-letter-web-job.lock` (an OS file lock,
+released when the process exits or dies) from before it writes `running` until
+after its final write, so only one server process at a time owns a job's
+descriptor. A run that cannot take that lock, or finds the descriptor changed
+since its resume request read it, fails with `mbox_resume_busy` and writes
+nothing. It records the job id, origin (`manual` or `upload`), the request's
+`input_path`, the resolved source, the source's device, inode, size and
+modification time at admission, the validated options, the last state and stop
+code, whether the job can be resumed, the count of processed records and the
+number of runs. The server reads it only from a real file (not a link) of at most
+64 KiB whose job id matches its folder, checked with `lstat` and a same-file
+check so links are refused even where the platform has no `O_NOFOLLOW`. Do not edit it; a descriptor that fails
+these checks makes the job unknown to resume.
+
+| Outcome of the last run | Can be resumed |
+| --- | --- |
+| Cancelled, with no other fatal error | Yes (`reason: "cancelled"`) |
+| Failed with only `mbox_disk_reserve` or `mbox_storage_error` | Yes (`reason: "disk_space"`) |
+| Descriptor still `running` and no process holds the job lock | Yes (`reason: "interrupted"`; server stop or crash) |
+| Succeeded or completed with errors | No |
+| Source changed, report error, `mbox_resume_conflict`, `mbox_resume_mismatch`, `mbox_resume_io_error`, archive format errors | No |
+| `mbox_resume_busy` (another server held the job, or another writer such as a CLI resume held the journal) | The earlier stop stays recorded; no report is written |
+
+If the final descriptor write fails, the folder still says `running`. This
+server process then neither lists nor resumes that job, even after it leaves
+the retained job history. After a restart it is listed as interrupted; resuming it is safe, because completed bundles are reused and a
+journal conflict stops the run again.
+
+`GET /api/mbox/resumable` returns up to 20 resumable jobs in the current
+Cabinet, newest first, whose source still has its recorded identity. It returns
+an empty list before settings are configured.
+
+```json
+{
+  "jobs": [{
+    "id": "32 hex characters",
+    "origin": "manual|upload",
+    "source_name": "Takeout.zip",
+    "member": "Takeout/Mail/All mail.mbox|null",
+    "reason": "cancelled|disk_space|interrupted",
+    "records_processed": 120,
+    "updated_at": "ISO-8601 string",
+    "job_path": "absolute MBOX job directory"
+  }]
+}
+```
+
+`records_processed` is null for an interrupted job, because the killed run never
+wrote its final count.
+
+`POST /api/mbox/jobs/{id}/resume` takes no body and applies the loopback Host,
+same-origin and CSRF rules of other mutating routes. It re-admits the source
+with the checks a new job gets: local-path jobs through the browser-root path
+rules, upload jobs through the kept copy in `<Inbox>/mbox-uploads/`. The
+resolved path and the device, inode, size and modification time must equal the
+recorded ones. The resumed job reserves the same archive slot, enforces the
+same 1 GiB reserve and, for compressed input, stages the recorded member again
+in new private staging. It keeps the original job id and `job_path`, replaces
+any retained in-memory snapshot of that id, and returns `202` with the usual
+create response. Completed bundles are verified and reused, never written twice
+or replaced; the record in progress when the job stopped is converted again.
+
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `404` | `invalid_request` | Not a job id, no such job folder, or no valid descriptor |
+| `409` | `mbox_resume_unavailable` | The job is still running (here or in another server process), its last run cannot be resumed, its stop was not recorded, or another resume changed its descriptor after this request read it |
+| `409` | `mbox_source_changed` | The source is missing, no longer admissible, or changed since the job started |
+| `409` | `mbox_busy` | Another archive job holds the slot |
+| `409` | `invalid_request` | Settings are not configured |
+
+Admission errors from the upload area keep their own status and code.
+
+While a job runs, the `mbox` object adds `resumed` (true for a resumed run) and
+`records_reused` (completed records verified and reused). `GET /api/jobs/{id}`
+adds top-level `resumable`, true for a terminal archive job that can be resumed.
+`summary.written` counts reused bundles too, as in the core resume report, and
+the report's `mbox_options` add `resume: true` and `recovery_counts`.
+
+A resumed run fails with `mbox_resume_mismatch` when the converter changed
+between runs, for example after a dead-letter upgrade, because the journal binds
+the dependency versions and source fingerprint; start a new import then. A
+server killed during compressed staging leaves that run's private
+`mbox-job-*` staging directory under `<Inbox>/mbox-uploads/`; remove it only
+when no import is running.
+
 ### `GET /api/jobs/{id}`
 
 Returns job snapshot.
@@ -321,14 +795,18 @@ Response (`200`):
 {
   "id": "string",
   "status": "queued|running|succeeded|completed_with_errors|failed|cancelled",
+  "kind": "eml|mbox",
   "origin": "manual|import|watch",
   "cancel_requested": true,
+  "resumable": false,
   "output_location": {
     "strategy": "cabinet",
     "cabinet_path": "absolute Cabinet path string",
-    "bundle_path": "absolute bundle path string|null"
+    "bundle_path": "absolute bundle path string|null",
+    "job_path": "absolute MBOX job directory string|null"
   },
   "progress": {"total": 0, "completed": 0, "failed": 0, "current": null},
+  "mbox": null,
   "summary": {"written": 0, "skipped": 0, "errors": 0},
   "errors": [{"path": "string|null", "code": "string", "message": "string", "stage": "validation|backend|core"}],
   "recovery_actions": [
@@ -342,7 +820,7 @@ Response (`200`):
     "state": "normal|degraded|review_recommended",
     "selected_body": "html|plain",
     "segmentation_path": "html|plain_fallback",
-    "client_hint": "gmail|outlook|front|generic|null",
+    "client_hint": "gmail|outlook|front|proton|yahoo|generic|null",
     "confidence": "high|medium|low",
     "fallback_used": "plain_text_reply_parser|html_failure_plain_text_fallback|html_markdown_panic_repaired|null",
     "warnings": [{"code": "string", "message": "string", "severity": "warning"}],
@@ -366,7 +844,8 @@ Directory-job variant:
 }
 ```
 
-Diagnostics semantics:
+The example's null `mbox` is the EML variant; archive snapshots use the object
+defined above. The following diagnostics/report rules describe EML jobs:
 
 - `diagnostics` is populated for `mode="file"` jobs only.
 - Directory jobs return `"diagnostics": null`.
@@ -407,7 +886,8 @@ Success response (`202` when accepted):
 
 Other responses:
 
-- `409` when job is already terminal (standard top-level `errors` envelope).
+- `409` when the job is terminal, or MBOX report finalization has sealed
+  cancellation (standard top-level `errors` envelope).
 - `404` for unknown or evicted job id.
 
 ### `POST /api/jobs/{id}/retry`
@@ -441,6 +921,9 @@ Notes:
 - `retry_with_html_fallback` forces `allow_fallback_on_html_error=true` for the new job only.
 - Does not mutate the original job snapshot or saved UI options.
 - Returns `409` when the retry action is not currently available for the referenced job.
+- MBOX jobs do not expose retry actions; starting an archive again creates a new
+  job and output directory. A stopped archive job can instead be resumed in its
+  folder ([MBOX job resume](#mbox-job-resume-unreleased), unreleased).
 
 ### `GET /api/jobs/history`
 
@@ -718,6 +1201,8 @@ Common error codes:
 
 ## Cancellation Semantics
 
+- MBOX jobs use the worker/partial-report lifecycle described under
+  `POST /api/mbox/jobs`; the following queue rules describe EML jobs.
 - Cancellation is cooperative and flag-based (`cancel_requested`).
 - New queue items are not started after workers observe `cancel_requested=True`.
 - In multi-worker mode, one or more files already in progress may still complete before terminal `cancelled`.
@@ -804,6 +1289,15 @@ From 0.4.5, `serverInfo` also carries a `title`, `description`,
 `data:` URI (no network fetch), and each tool has a human-readable `title`.
 Clients decide whether and where to display these fields.
 
+Unreleased source also returns `instructions` in the `initialize` result:
+one plain-text paragraph, under 1,000 characters, that names the task (local
+`.eml` files, `.eml` folders and flat `.mbox` archives such as a Gmail
+Takeout export, converted to Markdown with YAML front matter), states that
+tools never modify or delete sources, repeats the `convert_mbox` caps, points
+larger or compressed archives to the CLI, and marks email content as
+untrusted data. It adds no capability and changes no tool. Claude Code cuts
+server instructions at 4,096 characters, so the task words come first.
+
 From 0.4.6, each tool also declares MCP annotations.
 `get_diagnostics` is `readOnlyHint: true`. The four conversion tools are
 `readOnlyHint: false`, `destructiveHint: false` and `idempotentHint: false`:
@@ -863,6 +1357,12 @@ These differ from the CLI and the Python API:
   - `path` must be one existing, readable regular file whose name ends in
     `.mbox` (case-insensitive). Compressed archives, other suffixes and Apple
     Mail `.mbox` directories are rejected before any output is written.
+  - Paths are local to the server host and use the OS permissions of the user
+    running the MCP server. `~` is expanded and symlinks are resolved. The tool
+    can read a permitted source and write to a permitted output directory;
+    it does not enforce an Inbox/Cabinet root or an MCP client root allowlist.
+    For container deployments, the configured [mounts](containers.md) determine
+    which host paths the server can access.
   - The archive must be at most `MCP_MAX_MBOX_BYTES` (256 MiB); a larger one is
     rejected before conversion. The cap is also enforced on the bytes actually
     read: if a record ends past 256 MiB (the file grew or was swapped after
@@ -882,9 +1382,21 @@ These differ from the CLI and the Python API:
     nothing and returns `report_path: null`.
   - The source archive is opened read-only and never modified, moved or
     deleted.
-  - MCP request cancellation is **not supported**: a cancelled call keeps
-    running until it finishes or reaches a bound. Byte/message caps are not
-    a wall-clock deadline; parsing and filesystem I/O have no MCP time limit.
+  - MCP request cancellation is **not supported**. In real-stdio tests, the
+    locked Python client sends `notifications/cancelled` when its waiting
+    scope is cancelled; conversion continues while the session stays open and
+    publishes a complete report. The client stops waiting, the source stays
+    unchanged, and the same session accepts another conversion, which can
+    finish first. Closing the session ends the server process: a conversion
+    still running stops, leaves the Markdown already written, and publishes
+    no report. Byte/message caps are not a wall-clock
+    deadline; parsing and filesystem I/O have no MCP time limit.
+  - Real-stdio tests cover missing paths, directories, other suffixes, and
+    (on non-root POSIX) unreadable sources and unwritable output directories,
+    with privacy checks and a successful call in the same session after each
+    error. An unwritable output directory can fail during message writes and
+    report publication rather than before conversion; no output is left in
+    that tested case.
 
 ### Directory success-JSON contract
 
@@ -1018,10 +1530,14 @@ pinned PyPI version.
 
 - `200`: settings get/put, filesystem list, watch get/start/stop, job snapshot, open Cabinet folder
 - `202`: job create accepted, import accepted, cancel accepted
-- `400`: request rejected (schema or semantic validation)
-- `403`: untrusted API `Host`, CSRF validation failure, hostile browser-origin signal, or filesystem/watch path escaping the configured browser root
+- `400`: request rejected (schema or semantic validation), or an MBOX upload whose declared lengths disagree or whose body ended early
+- `403`: untrusted API `Host`, CSRF validation failure, hostile browser-origin signal, filesystem/watch path escaping the configured browser root, or an `<Inbox>/mbox-uploads` entry that is a symlink, not a folder, or outside the Inbox
 - `404`: unknown or evicted job id, or missing browse/watch target
-- `409`: workflow settings missing, or invalid lifecycle/watch conflict
-- `413`: import payload exceeds the 100 MB per-file limit, the 100-file batch limit, or the 100 MB aggregate batch limit
+- `408`: an MBOX upload sent no data for 60 seconds (`mbox_upload_timeout`)
+- `409`: workflow settings missing, or invalid lifecycle/watch conflict, including an occupied archive slot (`mbox_busy`)
+- `411`: an MBOX upload without `Content-Length` or with a chunked body
+- `413`: import payload exceeds the 100 MB per-file limit, the 100-file batch limit, or the 100 MB aggregate batch limit; an MBOX archive or upload exceeds 16 GiB (`mbox_too_large`) or sends more than it declared (`mbox_upload_too_long`); or any API request body exceeds the app-wide 110 MiB backstop (16 GiB + 1 MiB on `POST /api/mbox/uploads`). The backstop answers before the route reads the rest of the body, with Starlette's plain `Content Too Large` (`{"detail": "Content Too Large"}` for a body without `Content-Length`) rather than the error envelope
+- `415`: an MBOX upload that is not `application/octet-stream`
 - `422`: batch import contains non-`.eml` files (`POST /api/import-batch` rejects any upload whose filename does not end in `.eml`; clients are expected to filter or confirm-and-skip before upload)
 - `500`: unexpected backend failure
+- `507`: not enough free space to stage an MBOX upload and keep 1 GiB free, or the disk or quota filled while staging it (`mbox_upload_insufficient_storage`)

@@ -27,16 +27,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           package-manager-cache: false
       - name: Setup uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           enable-cache: false
       - name: Validate tag, source, and every version sync point before publication
@@ -66,11 +66,11 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Setup uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           enable-cache: false
       - name: Build distributions once
@@ -85,7 +85,7 @@ jobs:
             echo BUILD_CHECKSUMS
           } >> "$GITHUB_OUTPUT"
       - name: Preserve the complete build for testing and publication
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-package-${{ github.sha }}
           path: build/package/
@@ -103,15 +103,15 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Setup uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           enable-cache: false
       - name: Download the exact build
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: python-package-${{ github.sha }}
           path: build/package/
@@ -130,14 +130,14 @@ jobs:
       # This job deliberately has no source checkout, dependency installation,
       # or build step. It can only upload the already-tested distribution pair.
       - name: Download the exact tested build
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: python-package-${{ github.sha }}
           path: build/package/
       - name: Verify exact tested bytes before upload
         run: cd build/package/dist && sha256sum --check --strict ../SHA256SUMS
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           attestations: true
           packages-dir: build/package/dist/
@@ -156,7 +156,7 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Wait for both PyPI indexes to serve the release
@@ -178,16 +178,16 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           package-manager-cache: false
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Setup uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           enable-cache: false
       - name: Build the MCPB bundle or restore the published bytes
@@ -258,13 +258,25 @@ jobs:
         run: |
           v="${GITHUB_REF_NAME#v}"
           url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${v}/${BUNDLE_ASSET}"
-          jq --arg v "$v" --arg sha "$BUNDLE_SHA" --arg url "$url" '
+          curl --connect-timeout 10 --max-time 120 --retry 5 --retry-all-errors --retry-delay 10 -fsSL \
+            "https://pypi.org/pypi/dead-letter/${v}/json" -o pypi-release.json
+          cutoff=$(python3 - <<'PY'
+          import json
+          import sys
+          sys.path.insert(0, "scripts")
+          from release import registry_cutoff
+          with open("pypi-release.json", encoding="utf-8") as source:
+              print(registry_cutoff(json.load(source)))
+          PY
+          )
+          jq --arg v "$v" --arg sha "$BUNDLE_SHA" --arg url "$url" --arg cutoff "$cutoff" '
             .version = $v
             | .packages |= map(
                 if .registryType == "pypi" then
                   .version = $v
                   | .runtimeArguments |= map(
-                      if .name == "--from" then .value = ("dead-letter[mcp]==" + $v) else . end
+                      if .name == "--from" then .value = ("dead-letter[mcp]==" + $v)
+                      elif .name == "--exclude-newer" then .value = $cutoff else . end
                     )
                 elif .registryType == "mcpb" then
                   .version = $v | .identifier = $url | .fileSha256 = $sha
@@ -331,5 +343,5 @@ jobs:
             echo 'These are build evidence, not proof of publication. Preserve them in the release completion ledger before the build artifact expires.'
             echo 'A failed PyPI upload job may already have uploaded files. Inspect its steps before retrying.'
             echo 'If only install readiness failed, rerun failed jobs; do not re-upload the successful package.'
-            echo 'Still explicit: plugin tag/marketplace, core-only Homebrew update, desktop client smoke tests, and curated catalog outcomes. See docs/reference/publishing.md.'
+            echo 'Still explicit: plugin tag/marketplace, CLI/MCP Homebrew update, desktop client smoke tests, and curated catalog outcomes. See docs/reference/publishing.md.'
           } >> "$GITHUB_STEP_SUMMARY"

@@ -250,6 +250,53 @@ test("applyStatus() queues when job running", async () => {
   assert.equal(stores.job.pendingWatchJobId, "watch-job-2");
 });
 
+test("watch jobs wait for an archive and adoption clears archive-only state", async () => {
+  const { watch, stores } = await createWatchStore();
+  const job = stores.job;
+  const archiveProgress = { bytes_total: 8192, bytes_processed: 2048, records_processed: 3 };
+  const cancel = new AbortController();
+  let starts = 0;
+  let stops = 0;
+  Object.assign(job, {
+    id: "archive-1", kind: "mbox", origin: "mbox", status: "running",
+    mbox: archiveProgress, reportPath: "/tmp/archive-1/report.json",
+    outputLocation: { job_path: "/tmp/archive-1" },
+    activeCancelController: cancel, cancelRequested: true, cancelInFlight: true,
+    summary: { written: 2, skipped: 0, errors: 1 },
+    startPolling() { starts += 1; }, stopPolling() { stops += 1; },
+  });
+
+  watch.applyStatus({
+    active: true, path: "/tmp/Inbox", latest_job_id: "watch-next", latest_job_status: "queued",
+  });
+  assert.equal(job.id, "archive-1");
+  assert.equal(job.kind, "mbox");
+  assert.equal(job.mbox, archiveProgress);
+  assert.equal(job.reportPath, "/tmp/archive-1/report.json");
+  assert.equal(job.pendingWatchJobId, "watch-next");
+  assert.equal(starts, 0);
+  assert.equal(stops, 0);
+  assert.equal(cancel.signal.aborted, false);
+
+  job.status = "cancelled";
+  watch.maybeSurfaceLatestWatchJob();
+
+  assert.equal(job.id, "watch-next");
+  assert.equal(job.kind, "eml");
+  assert.equal(job.origin, "watch");
+  assert.equal(job.status, "queued");
+  assert.equal(job.mbox, null);
+  assert.equal(job.reportPath, null);
+  assert.equal(job.outputLocation, null);
+  assert.equal(job.cancelRequested, false);
+  assert.equal(job.cancelInFlight, false);
+  assert.equal(cancel.signal.aborted, true);
+  assert.deepEqual(job.summary, { written: 0, skipped: 0, errors: 0 });
+  assert.equal(job.pendingWatchJobId, "");
+  assert.equal(starts, 1);
+  assert.equal(stops, 1);
+});
+
 test("start() sends empty path when no override", async () => {
   const requests = [];
   const { watch } = await createWatchStore((url, options = {}) => {
@@ -354,4 +401,27 @@ test("poll() reports non-transient failure and stops polling", async () => {
   assert.equal(before > 0, true);
   assert.equal(watch.pollHandle, null);
   assert.deepEqual(stores.job.opErrors, ["Failed to poll watch status."]);
+});
+
+test("watch jobs wait while an archive upload has no job id yet", async () => {
+  const { watch, stores } = await createWatchStore();
+  const job = stores.job;
+  let starts = 0;
+  Object.assign(job, {
+    kind: "mbox", isSubmitting: true, upload: { name: "mail.mbox", loaded: 4, total: 10, sent: false },
+    startPolling() { starts += 1; },
+  });
+
+  watch.applyStatus({ active: true, path: "/tmp/Inbox", latest_job_id: "watch-1", latest_job_status: "queued" });
+
+  assert.equal(job.id, "");
+  assert.equal(job.kind, "mbox");
+  assert.equal(job.pendingWatchJobId, "watch-1");
+  assert.equal(starts, 0);
+
+  job.upload = null;
+  job.isSubmitting = false;
+  watch.maybeSurfaceLatestWatchJob();
+  assert.equal(job.id, "watch-1");
+  assert.equal(starts, 1);
 });

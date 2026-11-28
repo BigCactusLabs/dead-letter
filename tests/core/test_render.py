@@ -77,19 +77,68 @@ def test_render_markdown_escapes_plain_text_html_tags() -> None:
     assert "&lt;img src=x onerror=alert(2)&gt;" in rendered.body
 
 
-def test_render_markdown_preserves_plain_text_markdown_code_regions() -> None:
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("From: Vendor <vendor@example.net>", "From: Vendor <vendor@example.net>"),
+        ("<first.last+tag@sub.example.net>", "<first.last+tag@sub.example.net>"),
+        ("See <https://example.com/a?b=1>.", "See &lt;https://example.com/a?b=1&gt;."),
+        ("<httpſ://x/onmouseover=alert(1)>", "&lt;httpſ://x/onmouseover=alert(1)&gt;"),
+        ("<a@b.Ktest>", "&lt;a@b.Ktest&gt;"),
+        ("<sales%2Bvip@example.net>", "&lt;sales%2Bvip@example.net&gt;"),
+        ("<svg/onload=location=name//@x.test>", "&lt;svg/onload=location=name//@x.test&gt;"),
+        ("<a@b.test onclick=alert(1)>", "&lt;a@b.test onclick=alert(1)&gt;"),
+        ('<a@b.test"onclick=x>', '&lt;a@b.test"onclick=x&gt;'),
+        ("<javascript:alert(1)>", "&lt;javascript:alert(1)&gt;"),
+        ("<a@b.test><img src=x>", "<a@b.test>&lt;img src=x&gt;"),
+        ("<a&amp;b@c.test> & <x>", "&lt;a&amp;amp;b@c.test&gt; &amp; &lt;x&gt;"),
+    ],
+)
+def test_render_markdown_keeps_only_safe_plain_text_autolinks(text: str, expected: str) -> None:
+    threaded = ThreadedContent(zones=[Zone(kind=ZoneKind.BODY, content=text)])
+
+    assert render_markdown(_parsed_email(), threaded).body == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "`<img src=x onerror=a>``",
+        "\\`<img src=x onerror=a>`",
+        "`a\nx` <img src=x onerror=a> `",
+        "```x`\n<img src=x onerror=a>\n```",
+        "```\n    ```\n```\n<img src=x onerror=a>",
+        "- item\n  ```\n<img src=x onerror=a>",
+        "x\u2028```\n<img src=x onerror=a>",
+        "`a\n\xa0\nx` <img src=x onerror=a> `",
+        "```\n<img src=x onerror=a>",
+        "`<img src=x onerror=a> | `\n--- | ---",
+        "`<img src=x onerror=a>`\x02``x``",
+        "hello\n    <img src=x onerror=a>",
+    ],
+)
+def test_render_markdown_escapes_plain_text_regardless_of_markdown_code_syntax(text: str) -> None:
+    # Which regions a renderer treats as code depends on context this layer
+    # cannot see, so code-looking plain text gets no exemption.
+    threaded = ThreadedContent(zones=[Zone(kind=ZoneKind.BODY, content=text)])
+
+    body = render_markdown(_parsed_email(), threaded).body
+
+    assert "<" not in body
+    assert "&lt;img src=x onerror=a&gt;" in body
+
+
+def test_render_markdown_escapes_plain_text_markdown_code_regions() -> None:
     parsed = _parsed_email()
     threaded = ThreadedContent(
         zones=[
             Zone(
                 kind=ZoneKind.BODY,
                 content=(
-                    "Inline code keeps `<div>` literal.\n\n"
+                    "Inline code `<div>` is escaped too.\n\n"
                     "```html\n"
-                    "<script>alert('in code')</script>\n"
                     "<div>fixture</div>\n"
-                    "```\n\n"
-                    "Outside code is still <img src=x onerror=alert(2)>."
+                    "```"
                 ),
             ),
         ]
@@ -97,10 +146,31 @@ def test_render_markdown_preserves_plain_text_markdown_code_regions() -> None:
 
     rendered = render_markdown(parsed, threaded)
 
-    assert "`<div>`" in rendered.body
-    assert "```html\n<script>alert('in code')</script>\n<div>fixture</div>\n```" in rendered.body
-    assert "&lt;img src=x onerror=alert(2)&gt;" in rendered.body
-    assert "<img" not in rendered.body
+    assert rendered.body == (
+        "Inline code `&lt;div&gt;` is escaped too.\n\n```html\n&lt;div&gt;fixture&lt;/div&gt;\n```"
+    )
+
+
+def test_render_structured_escapes_heading_fields_before_joining() -> None:
+    threaded = ThreadedContent(
+        zones=[
+            Zone(kind=ZoneKind.BODY, content="Latest body"),
+            Zone(
+                kind=ZoneKind.QUOTED,
+                content="prior",
+                metadata={
+                    "attribution_from": "`Alice",
+                    "attribution_date": "`<img src=x onerror=a>`",
+                },
+            ),
+        ]
+    )
+
+    rendered = render_markdown(
+        _parsed_email(), threaded, options=ConvertOptions(thread_mode=ThreadMode.STRUCTURED)
+    )
+
+    assert "## From `Alice (`&lt;img src=x onerror=a&gt;`)" in rendered.body
 
 
 def test_render_structured_escapes_plain_text_thread_metadata_and_body() -> None:
@@ -206,8 +276,8 @@ def test_render_structured_emits_per_message_sections() -> None:
     )
 
     assert "Latest body" in rendered.body
-    assert "## From Alice &lt;alice@example.com&gt; (Mar 5, 2026)" in rendered.body
-    assert "## From Bob &lt;bob@example.com&gt; (Mar 4, 2026)" in rendered.body
+    assert "## From Alice <alice@example.com> (Mar 5, 2026)" in rendered.body
+    assert "## From Bob <bob@example.com> (Mar 4, 2026)" in rendered.body
     assert "prior 1 body" in rendered.body
     assert "prior 2 body" in rendered.body
     assert rendered.front_matter["thread_messages"] == 2

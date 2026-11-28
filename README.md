@@ -10,11 +10,15 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/dead-letter?label=Python&cacheSeconds=300)](https://pypi.org/project/dead-letter/)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Noncommercial-purple.svg)](https://github.com/BigCactusLabs/dead-letter/blob/main/LICENSE)
 
-**Turn `.eml` email exports into clean, local, LLM-ready Markdown.**
+**Turn `.eml` and `.mbox` email exports into clean, local, LLM-ready Markdown.**
 
-dead-letter converts `.eml` email exports into clean Markdown with YAML front matter — threads split, signatures stripped, attachments extracted, calendars parsed. One file or ten thousand.
+dead-letter converts `.eml` files and `.mbox` archives, including Gmail Takeout downloads, into clean Markdown with YAML front matter — threads split, signatures stripped, attachments extracted, calendars parsed. One file or ten thousand.
 
 Use it to build a readable email archive, move messages into Markdown-based knowledge systems, or prepare email for RAG and LLM pipelines without feeding raw MIME and base64 into your context window. No account, upload, or API key required.
+
+<p align="center">
+  <a href="https://github.com/BigCactusLabs/dead-letter/blob/main/docs/recipes/demo/README.md"><img src="https://raw.githubusercontent.com/BigCactusLabs/dead-letter/main/docs/recipes/demo/dead-letter-demo.gif" width="800" alt="dead-letter 0.4.10 converting a synthetic inbox: raw MIME input, CLI folder conversion, Markdown with YAML front matter, a copy-only Cabinet bundle with the decoded CSV attachment, and report plus diagnostics"></a>
+</p>
 
 ## ⚡ Try it
 
@@ -24,11 +28,19 @@ If you already have [`uv`](https://docs.astral.sh/uv/), run dead-letter without 
 uvx --python 3.12 dead-letter convert message.eml
 ```
 
+The same command takes a flat `.mbox` or a Gmail Takeout ZIP:
+
+```bash
+uvx --python 3.12 dead-letter convert "Takeout/Mail/All mail.mbox" --output markdown/
+```
+
+The [Takeout to Obsidian recipe](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/recipes/takeout-to-obsidian.md) walks through a full vault import.
+
 Or install with Homebrew or pip below. Agents and MCP clients can use the client-specific setup in [`llms-install.md`](https://github.com/BigCactusLabs/dead-letter/blob/main/llms-install.md).
 
 ## 🎯 Common use cases
 
-- **Email → Markdown archives** — turn exported `.eml` collections into readable, portable Markdown with structured metadata
+- **Email → Markdown archives** — turn exported `.eml` collections and `.mbox` archives into readable, portable Markdown with structured metadata
 - **RAG and LLM ingestion** — normalize message text, thread structure, links, and attachment metadata before chunking or indexing
 - **Agent workflows** — expose conversion and diagnostics directly to Claude, Codex, and other MCP clients
 - **Knowledge bases** — move email into Markdown-first systems such as Obsidian, static archives, or local search pipelines
@@ -38,13 +50,14 @@ Or install with Homebrew or pip below. Agents and MCP clients can use the client
 
 - **Full-fidelity conversion** — HTML sanitization, Gmail/Outlook thread segmentation, inline image handling, and calendar event summaries
 - **CLI** — point it at a file or a directory and go
+- **MBOX and Gmail Takeout** — convert a flat `.mbox` or a Takeout ZIP/TGZ straight to Markdown from the CLI or Python; see the [Takeout guide](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/gmail-takeout.md)
 - **Local web UI** — dark command-center interface with drag-and-drop import, watch mode, conversion grade badges, processing history, and per-job diagnostics
 - **Inbox/Cabinet workflow** — drop `.eml` files into an Inbox, let dead-letter organize the Markdown bundles into a Cabinet
 - **Install validation** — `dead-letter doctor` checks your runtime environment
 - **Conversion report** — opt-in JSON report with per-file diagnostics, including attachment referenced/retained counts for automation and audit
-- **MCP server** — integrate with Claude Desktop, Claude Code, Codex, and other MCP clients
+- **MCP server** — integrate with Claude Desktop, Claude Code, Codex, and other MCP clients; converts `.eml` files and, within fixed size limits, one flat `.mbox`
 - **Claude plugin** — marketplace install in Claude Code or Cowork with five slash commands (`/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`, `/dead-letter:mbox`)
-- **Portable Agent Skill** — teaches skill-aware agents when and how to convert `.eml` files
+- **Portable Agent Skill** — teaches skill-aware agents when and how to convert `.eml` and `.mbox` files
 - **Python API** — `from dead_letter import convert` and you're off
 
 ## 🧠 Built for LLM Pipelines
@@ -88,9 +101,9 @@ brew tap BigCactusLabs/tap
 brew install dead-letter
 ```
 
-The Homebrew formula installs the core CLI only: `dead-letter convert` and
-`dead-letter doctor`. It intentionally does not bundle the optional web UI or
-MCP server dependency stacks.
+The Homebrew formula installs the CLI (`dead-letter convert`, `dead-letter doctor`).
+Formulas for 0.4.7 and later also install the `dead-letter-mcp` server; the
+optional web UI is not included.
 
 With pip:
 
@@ -340,9 +353,9 @@ Merge the entry rather than replacing existing client settings. VS Code and othe
 
 On Claude Code 2.1.275 or later, `/plugin install dead-letter --marketplace BigCactusLabs/bigcactuslabs-plugins` does both in one step.
 
-The plugin launches the MCP server via `uvx` and adds five slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`, `/dead-letter:mbox`. Local Claude Code needs `uv` on `PATH`; see [`plugin/`](https://github.com/BigCactusLabs/dead-letter/tree/main/plugin/) for runtime-specific setup and updates. Email content is treated as untrusted data, not instructions: embedded requests for tool use, credentials, or exfiltration are not followed.
+The plugin adds five slash commands: `/dead-letter:convert`, `/dead-letter:summarize`, `/dead-letter:triage`, `/dead-letter:cabinet`, `/dead-letter:mbox`. Local Claude Code needs `uv` on `PATH`; see [`plugin/`](https://github.com/BigCactusLabs/dead-letter/tree/main/plugin/) for runtime-specific setup and updates. Email content is treated as untrusted data, not instructions: embedded requests for tool use, credentials, or exfiltration are not followed.
 
-The marketplace pins the plugin tag and commit, and its launcher pins an exact published Python package. Claude Code and Cowork keep separate installed copies; update and verify each client. The plugin also ships a `uv.lock` with hashed dependency versions for hosts that launch from a lock; plain `uvx` resolves compatible transitive versions itself.
+The marketplace pins the plugin tag and commit, and the plugin pins an exact published Python package in its uv project and lock. Plugin releases after 0.4.13 launch with `uv run --frozen --isolated` from the shipped `uv.lock`, which fixes dependency versions and checks their hashes. Plugin 0.4.13 and earlier use `uvx`, which resolves compatible transitive versions itself. Claude Code and Cowork keep separate installed copies; update and verify each client.
 
 **Claude Code (manual MCP add — alternative):**
 
@@ -358,6 +371,12 @@ codex mcp list
 ```
 
 `mcp list` confirms registration, not a successful tool call. Connect through the target client, confirm the tools below, and convert a synthetic fixture before treating the installation as verified.
+
+### Troubleshooting
+
+**Why does uv's cache keep growing?** `uvx` and uv cached environments are not
+removed automatically. Close MCP clients, then run `uv cache prune` to remove
+unused cached data. See [uv cache management](https://docs.astral.sh/uv/concepts/cache/).
 
 ### Tools
 
@@ -423,13 +442,18 @@ CI also validates plugin/skill schemas, frontend syntax, maintained Markdown lin
 
 - CLI/Python accept `.eml`, flat `.mbox` exports, and (from 0.4.5) ZIP/TGZ
   Takeout downloads; see the [Takeout guide](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/gmail-takeout.md). The web UI
-  is EML-only. From 0.4.5 the MCP server adds a bounded `convert_mbox` tool for
+  imports `.eml` files and, from 0.4.10, one flat `.mbox` by local path.
+  Unreleased source adds `.zip`, `.tgz` and `.tar.gz` input by path or browser
+  upload, with a 1 GiB staging/output free-space reserve, and resumes stopped
+  web imports in their job folder.
+  Its watch and file-import flows stay EML-only. From 0.4.5 the MCP server adds a bounded `convert_mbox` tool for
   one flat `.mbox`. PST, MSG and live-mailbox connections are unsupported.
-  An opt-in resumable MBOX import (`--mbox-resume`, CLI/Python only) is
+  An opt-in resumable MBOX import (`--mbox-resume`, CLI/Python) is
   available from 0.4.6; see the [resume contract](https://github.com/BigCactusLabs/dead-letter/blob/main/docs/reference/mbox-resume.md).
 - Local-only, single-user, single-machine; no remote server or authentication service. An MCP host may send results to its model provider.
-- In-memory job registry: state resets on restart. Retained binary attachments need a separate parser for text indexing.
+- In-memory job registry: state resets on restart. Unreleased source keeps a
+  stopped archive import resumable across restarts. Retained binary attachments need a separate parser for text indexing.
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](https://github.com/BigCactusLabs/dead-letter/blob/main/LICENSE) — free for personal, educational, and nonprofit use. Commercial use requires a separate license from [Big Cactus Labs](https://github.com/BigCactusLabs).
+[PolyForm Noncommercial 1.0.0](https://github.com/BigCactusLabs/dead-letter/blob/main/LICENSE) — free for personal, educational, and nonprofit use. Commercial use requires a separate license from [Big Cactus Labs](https://github.com/BigCactusLabs). Only 0.1.0 was MIT; every release from 0.1.1 (March 2026) uses PolyForm Noncommercial, so a listing that says MIT is out of date.

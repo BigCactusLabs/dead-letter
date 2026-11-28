@@ -29,8 +29,8 @@ from dead_letter.analysis.profiles import get_profile
 from dead_letter.analysis.responses import validate_response
 from dead_letter.analysis.providers._logging import install_filters, private_provider_logs
 
-SDK_VERSION = "0.7.1"
-ADAPTER_VERSION = "typesafe-sdk-0.7.1-v1"
+SDK_VERSION = "0.7.5"
+ADAPTER_VERSION = "typesafe-sdk-0.7.5-v1"
 SYSTEM_ONE_PATH = "/v1/systemone"
 MAX_RESPONSE_BYTES = 512_000
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,255}\Z")
@@ -227,15 +227,16 @@ def _failure_code(exc, sdk) -> str:
 class TypeSafeProvider:
     """One prepared message per call, SDK-owned retries, bounded wall-clock budget."""
 
-    def __init__(self, config: TypeSafeConfig | None = None, *, _transport=None):
+    def __init__(self, config: TypeSafeConfig | None = None, *, _transport=None, _preflight=None):
         self.config = config or TypeSafeConfig.from_environment()
+        self._preflight = _preflight
         self._transport = _transport  # Trusted Python test injection, never CLI/email data.
 
     async def evaluate(
         self, request: PreparedRequest, *, allow_remote: bool = False,
         on_disclosure: Callable[[dict], None] = emit_disclosure,
     ) -> dict:
-        preflight(allow_remote=allow_remote)
+        (self._preflight or preflight)(allow_remote=allow_remote)
         payload = _validate_request(request, self.config)
         # Fail closed if the caller's disclosure sink fails. Read no email-derived
         # URLs and never use a callback supplied by email/profile data.
@@ -271,7 +272,8 @@ class TypeSafeProvider:
                         # fallback model/provider, and no invisible environment proxy.
                         async with sdk.AsyncTypeSafeClient(
                             api_key=key, base_url=self.config.base_url, model=request.model,
-                            http_client=http_client,
+                            # Request fingerprints and fake-HTTP contracts require plain JSON.
+                            http_client=http_client, compression=False,
                             retry=sdk.RetryPolicy(max_retries=self.config.max_retries,
                                                   timeout=self.config.budget_seconds,
                                                   backoff_initial=0.25, backoff_max=2.0),
@@ -287,6 +289,14 @@ class TypeSafeProvider:
                             if isinstance(raw.get("model"), str) and key in raw["model"]:
                                 raise AnalysisError("invalid_response_metadata")
                             checked = validate_response(request, raw)
+            except asyncio.CancelledError as exc:
+                if attempts:
+                    exc.dead_letter_outcome = {
+                        "execution_status": "interrupted", "error_code": "analysis_interrupted",
+                        "attempts": attempts, "retry_count": max(0, len(attempts) - 1),
+                        "billing_status": "unknown", "sdk_version": SDK_VERSION,
+                    }
+                raise
             except sdk.TypeSafeAPITimeoutError:
                 # The SDK timeout is also a built-in TimeoutError. Catch it
                 # first so one HTTP timeout is not mislabeled as budget expiry.

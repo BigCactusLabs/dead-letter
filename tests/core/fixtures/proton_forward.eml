@@ -1,0 +1,17 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Fwd: Minutes
+Date: Thu, 05 Mar 2026 14:30:00 +0000
+Message-ID: <proton-forward-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<div>Minutes below.</div><div class="protonmail_quote"><br>
+------- Forwarded Message -------<br>
+De : Erin &lt;erin@example.fr&gt;<br>
+Date : mercredi 4 mars 2026 à 09:00<br>
+Objet : Minutes<br>
+À : Alice &lt;alice@example.com&gt;<br>
+<br>
+<blockquote class="protonmail_quote" type="cite"><div>PROTON FORWARDED BODY</div></blockquote><br>
+</div>

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import time
 from email.message import EmailMessage
 from pathlib import Path
 
 import pytest
 
-from dead_letter.core import convert
+from dead_letter.core import convert, text_conversation
 from dead_letter.core.forwarding import (
     FORWARD_MARKER_PATTERNS,
     FORWARD_MARKER_RE,
@@ -17,7 +18,8 @@ from dead_letter.core.forwarding import (
 )
 from dead_letter.core.html_conversation import segment_html_conversation
 from dead_letter.core.text_conversation import segment_text_conversation
-from dead_letter.core.types import ConvertOptions, ThreadMode, ThreadOrder, ZoneKind
+from dead_letter.core.types import ConversationZone, ConvertOptions, ThreadMode, ThreadOrder, ZoneKind
+from dead_letter.core.zone_cleanup import cleanup_zones
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKER_LINE = "---------- Forwarded message ---------"
@@ -41,6 +43,69 @@ def _positions(text: str, needles: list[str]) -> list[int]:
 # --- Shared marker constant -------------------------------------------------
 
 
+@pytest.mark.parametrize("thread_mode", ["latest", "structured"])
+@pytest.mark.parametrize("line_ending", [b"\r\n", b"\r"])
+def test_plain_forward_line_endings_strip_signatures(
+    tmp_path: Path, thread_mode: str, line_ending: bytes
+) -> None:
+    lf_source = FIXTURES / "plain_forward_signatures.eml"
+    source = tmp_path / "forward.eml"
+    crlf = (FIXTURES / "plain_forward_signatures_crlf.eml").read_bytes()
+    assert crlf == lf_source.read_bytes().replace(b"\n", b"\r\n")
+    outputs = []
+    for index, payload in enumerate((lf_source.read_bytes(), crlf.replace(b"\r\n", line_ending))):
+        source.write_bytes(payload)
+        output = tmp_path / f"forward-{index}.md"
+        result = convert(
+            source, output=output,
+            options=ConvertOptions(thread_mode=thread_mode, strip_signatures=True),
+        )
+        assert result.success, result.error
+        rendered = output.read_bytes()
+        assert b"FYI below." in rendered
+        assert b"Forwarded body." in rendered
+        assert b"Bob Sender" not in rendered
+        assert b"Carol Example" not in rendered
+        assert b"Carol Corp" not in rendered
+        assert b"\r" not in rendered
+        outputs.append(rendered)
+    assert outputs[0] == outputs[1]
+
+
+@pytest.mark.parametrize(
+    "name", ["plain_forward_signature_then_forward", "plain_apple_forward_quoted"]
+)
+def test_existing_plain_forward_crlf_matches_lf(tmp_path: Path, name: str) -> None:
+    original = (FIXTURES / f"{name}.eml").read_bytes()
+    lf_source = tmp_path / "forward-lf.eml"
+    lf_source.write_bytes(original.replace(b"\r\n", b"\n"))
+    crlf_source = FIXTURES / f"{name}_crlf.eml"
+    assert crlf_source.read_bytes() == lf_source.read_bytes().replace(b"\n", b"\r\n")
+    outputs = []
+    source = tmp_path / "forward.eml"
+    for index, payload in enumerate((lf_source.read_bytes(), crlf_source.read_bytes())):
+        source.write_bytes(payload)
+        output = tmp_path / f"forward-{index}.md"
+        result = convert(source, output=output)
+        assert result.success, result.error
+        outputs.append(output.read_bytes())
+    assert b"\r" not in outputs[1]
+    assert outputs[0] == outputs[1]
+
+
+def test_plain_crlf_signature_without_forward_still_strips(tmp_path: Path) -> None:
+    source = tmp_path / "plain.eml"
+    message = (FIXTURES / "plain_forward_signatures_crlf.eml").read_bytes()
+    source.write_bytes(message.split(b"---------- Forwarded message", 1)[0])
+    output = tmp_path / "plain.md"
+    result = convert(source, output=output, options=ConvertOptions(strip_signatures=True))
+    assert result.success, result.error
+    rendered = output.read_bytes()
+    assert b"FYI below." in rendered
+    assert b"Bob Sender" not in rendered
+    assert b"\r" not in rendered
+
+
 @pytest.mark.parametrize(
     "line",
     [
@@ -59,6 +124,11 @@ def _positions(text: str, needles: list[str]) -> list[int]:
         "-------- 转发的消息 --------",
         "Anfang der weitergeleiteten Nachricht:",
         "Début du message réexpédié :",
+        "下面是被转发的邮件：",
+        "下面是被转发的邮件:",
+        "開始轉寄郵件：",
+        "開始轉寄郵件:",
+        "전달된 메시지 시작:",
     ],
 )
 def test_forward_marker_lines_recognized(line: str) -> None:
@@ -157,22 +227,22 @@ def _kinds(html: str) -> list[ZoneKind]:
     return [zone.kind for zone in segment_html_conversation(html).zones]
 
 
-def test_gmail_attr_without_direct_blockquote_is_forward_in_any_language() -> None:
-    # Structural rule: the attribution wording plays no part.
+def test_gmail_attr_without_dashed_separator_or_attribution_is_body() -> None:
+    # A gmail_attr alone is not evidence of either a reply or a forward.
     html = (
         '<div>Note.</div><div class="gmail_quote gmail_quote_container">'
         '<div class="gmail_attr">Nachricht weitergeleitet<br>Von: A</div><div>Body.</div></div>'
     )
-    assert _kinds(html) == [ZoneKind.BODY, ZoneKind.FORWARDED_BODY]
+    assert _kinds(html) == [ZoneKind.BODY]
 
 
-def test_gmail_attr_with_direct_blockquote_is_reply() -> None:
+def test_forward_separator_precedes_direct_blockquote_reply_evidence() -> None:
     html = (
         '<div>Note.</div><div class="gmail_quote gmail_quote_container">'
         f'<div class="gmail_attr">{MARKER_LINE}<br></div>'
         '<blockquote class="gmail_quote">Old.</blockquote></div>'
     )
-    assert _kinds(html) == [ZoneKind.BODY, ZoneKind.QUOTED]
+    assert _kinds(html) == [ZoneKind.BODY, ZoneKind.FORWARDED_BODY]
 
 
 def test_legacy_gmail_forward_is_leading_separator_text() -> None:
@@ -201,9 +271,9 @@ def test_gmail_attr_ending_in_colon_is_reply(quote: str) -> None:
     assert _kinds(html) == [ZoneKind.BODY, ZoneKind.QUOTED]
 
 
-def test_gmail_quote_without_attr_or_separator_keeps_reply_handling() -> None:
+def test_gmail_quote_without_attr_or_separator_is_body() -> None:
     html = '<div>Note.</div><div class="gmail_quote"><div>Body.</div></div>'
-    assert _kinds(html) == [ZoneKind.BODY, ZoneKind.QUOTED]
+    assert _kinds(html) == [ZoneKind.BODY]
 
 
 def test_html_segmentation_splits_nested_forwards_outermost_first() -> None:
@@ -240,7 +310,7 @@ def test_html_segmentation_survives_deep_forward_nesting() -> None:
     assert "Body 300." in forwards[-1].content
 
 
-def test_html_forwards_past_cap_are_kept_once_in_order(tmp_path: Path) -> None:
+def test_html_forwards_past_cap_are_kept_once_in_body_before_sections(tmp_path: Path) -> None:
     html = "<div>Note.</div>" + "".join(
         f'<div class="gmail_quote"><div class="gmail_attr">{MARKER_LINE}<br>'
         f"From: P{n} &lt;p{n}@example.com&gt;<br></div><div>Note body from person {n}.</div></div>"
@@ -260,7 +330,9 @@ def test_html_forwards_past_cap_are_kept_once_in_order(tmp_path: Path) -> None:
         needles = [f"Note body from person {n}." for n in range(1, 71)]
         for needle in needles:
             assert body.count(needle) == 1, (mode, needle)
-        _positions(body, needles)
+        # Only the first 64 become sections; the remaining forwards stay
+        # in BODY, which renders before those sections.
+        _positions(body, needles[64:] + needles[:64])
 
 
 def test_marker_patterns_do_not_span_lines() -> None:
@@ -308,7 +380,7 @@ def test_forward_after_note_with_reply_like_lines_is_kept(
     assert "## Earlier message" not in structured
     _positions(
         structured,
-        [*note, "## Forwarded from Dave &lt;dave@example.com&gt; (Wed, Mar 4, 2026) — Budget",
+        [*note, "## Forwarded from Dave <dave@example.com> (Wed, Mar 4, 2026) — Budget",
          "To: alice@example.com", "DAVE FORWARDED BODY"],
     )
 
@@ -323,7 +395,7 @@ def test_separator_inside_outlook_history_stays_reply(name: str, tmp_path: Path)
     assert "OLD REPLY HISTORY LINE" not in latest
     assert "## Forwarded" not in structured
     assert "thread_messages: 1" in front
-    _positions(structured, ["## From Bob &lt;bob@example.com&gt;", "OLD REPLY HISTORY LINE"])
+    _positions(structured, ["## From Bob <bob@example.com>", "OLD REPLY HISTORY LINE"])
 
 
 @pytest.mark.parametrize(
@@ -387,14 +459,54 @@ def test_plain_quoted_marker_split_only_without_attribution() -> None:
 # --- End-to-end table rows ---------------------------------------------------
 
 
-def test_gmail_reply_quote_dropped_in_latest_and_sectioned_in_structured(tmp_path: Path) -> None:
+def test_gmail_no_signal_wrapper_kept_in_both_modes(tmp_path: Path) -> None:
     _, latest = _body("gmail_quote.eml", tmp_path, thread_mode="latest")
     front, structured = _body("gmail_quote.eml", tmp_path, thread_mode="structured")
 
     assert "Latest response" in latest
-    assert "On prior mail wrote" not in latest
+    assert "On prior mail wrote" in latest
+    assert "thread_messages:" not in front
+    assert "## Earlier message" not in structured
+    assert latest == structured
+
+
+def test_gmail_quote_wrapping_body_is_kept_as_body(tmp_path: Path) -> None:
+    for mode in ("latest", "structured"):
+        front, body = _body("gmail_quote_body_wrapper.eml", tmp_path, thread_mode=mode)
+        _positions(body, ["Heather,", "Thank you for applying", "WRAPPED BODY"])
+        assert "thread_messages" not in front
+        assert "## " not in body
+
+
+def test_gmail_body_wrapper_still_yields_nested_reply_quote() -> None:
+    reply = (
+        '<div class="gmail_quote"><div class="gmail_attr">On Mon, Bob wrote:<br></div>'
+        '<blockquote class="gmail_quote">Old.</blockquote></div>'
+    )
+    html = (
+        '<div>Hi,</div><div class="gmail_quote gmail_quote_container">'
+        f"<div>{'Long wrapped body text. ' * 10}</div>{reply}</div>"
+    )
+    result = segment_html_conversation(html)
+    assert [zone.kind for zone in result.zones] == [ZoneKind.BODY, ZoneKind.QUOTED]
+    assert "Long wrapped body text." in result.zones[0].content
+    assert "Old." in result.zones[1].content
+
+
+def test_owa_prefixed_gmail_forward(tmp_path: Path) -> None:
+    _, latest = _body("owa_gmail_forward.eml", tmp_path)
+    front, structured = _body("owa_gmail_forward.eml", tmp_path, thread_mode="structured")
+
+    _positions(latest, ["See the Gmail forward below.", MARKER_LINE, "OWA PREFIXED FORWARD BODY"])
     assert "thread_messages: 1" in front
-    assert "## Earlier message" in structured
+    _positions(
+        structured,
+        [
+            "See the Gmail forward below.",
+            "## Forwarded from Dave <dave@example.com> (Wed, Mar 4, 2026 at 10:00 AM) — Budget",
+            "OWA PREFIXED FORWARD BODY",
+        ],
+    )
 
 
 def test_single_gmail_forward_latest_keeps_marker_headers_and_body(tmp_path: Path) -> None:
@@ -422,7 +534,7 @@ def test_single_gmail_forward_structured_has_one_section(tmp_path: Path) -> None
     # Emphasis from <strong class="gmail_sendername"> is not carried into the
     # heading; To stays in the section content.
     assert (
-        "## Forwarded from Vendor &lt;vendor@example.net&gt; "
+        "## Forwarded from Vendor <vendor@example.net> "
         "(Thu, Mar 5, 2026 at 8:00 AM) — Vendor Note\n\n"
         "To: Alice <alice@example.com>  \n\nPlease review the attached quote."
     ) in body
@@ -433,7 +545,7 @@ def test_real_gmail_sender_markup_gives_clean_heading(tmp_path: Path) -> None:
     _, body = _body("gmail_forward_body_headers.eml", tmp_path, thread_mode="structured")
 
     assert (
-        "## Forwarded from Dave &lt;dave@example.com&gt; (Wed, Mar 4, 2026 at 10:00 AM) — Budget"
+        "## Forwarded from Dave <dave@example.com> (Wed, Mar 4, 2026 at 10:00 AM) — Budget"
     ) in body
     assert "**Dave**" not in body.split("\n\n", 2)[1]
 
@@ -462,13 +574,13 @@ def test_forward_body_header_lines_and_recipients_are_kept(tmp_path: Path) -> No
     [
         (
             "gmail_forward_empty_body.eml",
-            "## Forwarded from Dave &lt;dave@example.com&gt; (Wed, Mar 4, 2026 at 10:00 AM) — Budget",
+            "## Forwarded from Dave <dave@example.com> (Wed, Mar 4, 2026 at 10:00 AM) — Budget",
             ["To: <alice@example.com>", "Cc: Carol <carol@example.com>"],
         ),
         (
             "plain_forward_empty_body.eml",
-            "## Forwarded from Dave &lt;dave@example.com&gt; (Wed, Mar 4, 2026) — Invoice",
-            ["To: alice@example.com", "Cc: Carol &lt;carol@example.com&gt;"],
+            "## Forwarded from Dave <dave@example.com> (Wed, Mar 4, 2026) — Invoice",
+            ["To: alice@example.com", "Cc: Carol <carol@example.com>"],
         ),
     ],
 )
@@ -514,10 +626,13 @@ def test_french_gmail_forward_detected_structurally(tmp_path: Path) -> None:
     _positions(latest, ["Pour info.", MARKER_LINE, "De : **Expéditeur**", "Le programme du stage est joint."])
     assert "thread_messages: 1" in front
     assert "Forwarded message ---" not in structured
-    # The localized From label is not parsed, so the header lines stay as text.
+    # The localized From label ("De :") is parsed into the heading.
+    assert "De :" not in structured
     _positions(
         structured,
-        ["Pour info.", "## Forwarded message", "De : **Expéditeur**", "Le programme du stage est joint."],
+        ["Pour info.",
+         "## Forwarded from Expéditeur <sender@example.fr> (jeu. 5 mars 2026 à 08:00) — Stage",
+         "To: Alice", "Le programme du stage est joint."],
     )
 
 
@@ -545,7 +660,7 @@ def test_thunderbird_and_apple_forwards_kept_in_latest(
     ("name", "header", "last_line"),
     [
         ("thunderbird_forward.eml", "## Forwarded message", "Minutes from the Wednesday meeting."),
-        ("apple_mail_forward.eml", "## Forwarded from Shop &lt;shop@example.com&gt; — Receipt",
+        ("apple_mail_forward.eml", "## Forwarded from Shop <shop@example.com> — Receipt",
          "Thank you for your order."),
     ],
 )
@@ -627,11 +742,439 @@ def test_plain_text_multiple_markers(tmp_path: Path) -> None:
         structured,
         [
             "Digest of notes below.",
-            "## Forwarded from Person One &lt;one@example.com&gt; (Mon, Mar 2, 2026 at 9:00 AM) — Note one",
+            "## Forwarded from Person One <one@example.com> (Mon, Mar 2, 2026 at 9:00 AM) — Note one",
             "## Forwarded from Person Two",
-            "## Forwarded from Person Three &lt;three@example.com&gt; (March 4, 2026 at 9:00:00 AM EST)",
+            "## Forwarded from Person Three <three@example.com> (March 4, 2026 at 9:00:00 AM EST)",
         ],
     )
+
+
+# --- Issue #193 edge cases ----------------------------------------------------
+
+
+def test_plain_quoted_apple_forward_kept_in_latest(tmp_path: Path) -> None:
+    _, latest = _body("plain_apple_forward_quoted.eml", tmp_path)
+    front, structured = _body("plain_apple_forward_quoted.eml", tmp_path, thread_mode="structured")
+
+    _positions(
+        latest,
+        ["See below.", "Begin forwarded message:", "From: Shop <shop@example.com>",
+         "To: alice@example.com", "SHOP RECEIPT BODY"],
+    )
+    # The forward is unquoted one level, like its structured section.
+    assert "&gt; " not in latest
+    assert "thread_messages: 1" in front
+    _positions(
+        structured,
+        ["See below.",
+         "## Forwarded from Shop <shop@example.com> (March 4, 2026 at 9:00:00 AM EST) — Receipt",
+         "SHOP RECEIPT BODY"],
+    )
+
+
+def test_plain_quoted_forward_under_reply_attribution_stays_reply_history() -> None:
+    reply = (
+        "Thanks.\n\nOn Mon, Mar 2, 2026 at 9:00 AM Bob <b@example.com> wrote:\n"
+        "> Begin forwarded message:\n>\n> From: Shop <s@example.com>\n>\n> Old."
+    )
+    zones = segment_text_conversation(reply, quoted_forwards=True).zones
+    assert not any(zone.kind is ZoneKind.FORWARD_HEADER for zone in zones)
+    assert [zone.content for zone in zones if zone.kind is ZoneKind.BODY] == ["Thanks."]
+
+
+def test_signature_in_forward_does_not_remove_later_forward(tmp_path: Path) -> None:
+    name = "plain_forward_signature_then_forward.eml"
+    _, latest = _body(name, tmp_path, strip_signatures=True)
+    front, structured = _body(name, tmp_path, thread_mode="structured", strip_signatures=True)
+
+    _positions(latest, ["Two notes below.", "Body from person one.", "From: Person Two", "Body from person two."])
+    assert "signature line" not in latest
+    assert "thread_messages: 2" in front
+    _positions(
+        structured,
+        ["## Forwarded from Person One <one@example.com> — Note one", "Body from person one.",
+         "## Forwarded from Person Two <two@example.com> — Note two", "Body from person two."],
+    )
+    assert "signature line" not in structured
+
+
+def test_legacy_gmail_forward_with_leading_br_is_forward(tmp_path: Path) -> None:
+    html = (
+        f'<div>Note.</div><div class="gmail_quote"><br>{MARKER_LINE}<br>'
+        "From: Bob<br><div>Body.</div></div>"
+    )
+    assert _kinds(html) == [ZoneKind.BODY, ZoneKind.FORWARDED_BODY]
+
+    _, latest = _body("gmail_forward_legacy_leading_br.eml", tmp_path)
+    front, structured = _body("gmail_forward_legacy_leading_br.eml", tmp_path, thread_mode="structured")
+    _positions(latest, ["Old-style forward below.", "Forwarded message", "Dave", "LEGACY FORWARDED BODY"])
+    assert "thread_messages: 1" in front
+    _positions(
+        structured,
+        ["Old-style forward below.",
+         "## Forwarded from Dave <dave@example.com> (Wed, Mar 4, 2026 at 10:00 AM) — Budget",
+         "LEGACY FORWARDED BODY"],
+    )
+
+
+def test_nested_apple_plain_forwards_get_own_sections(tmp_path: Path) -> None:
+    _, latest = _body("plain_apple_forwards_nested.eml", tmp_path)
+    front, structured = _body("plain_apple_forwards_nested.eml", tmp_path, thread_mode="structured")
+
+    _positions(latest, ["Plan thread below.", "BOB OUTER FORWARD BODY", "CAROL INNER FORWARD BODY"])
+    assert "thread_messages: 2" in front
+    assert "Begin forwarded message" not in structured
+    assert not any(line.startswith("&gt;") for line in structured.splitlines())
+    _positions(
+        structured,
+        ["Plan thread below.",
+         "## Forwarded from Bob <bob@example.com> (March 4, 2026 at 9:00:00 AM EST) — Fwd: Plan",
+         "BOB OUTER FORWARD BODY",
+         "## Forwarded from Carol <carol@example.com> (March 3, 2026 at 9:00:00 AM EST) — Plan",
+         "CAROL INNER FORWARD BODY"],
+    )
+
+
+def test_original_message_reply_has_no_separator_only_section(tmp_path: Path) -> None:
+    front, structured = _body("plain_outlook_original_message_reply.eml", tmp_path, thread_mode="structured")
+
+    assert "thread_messages: 1" in front
+    assert "Original Message" not in structured
+    assert "## Earlier message" not in structured
+    assert structured.count("OLD REPLY HISTORY LINE") == 1
+    _positions(
+        structured,
+        ["Thanks, see you then.", "## From Bob <bob@example.com>", "OLD REPLY HISTORY LINE"],
+    )
+
+
+# --- Localized forwarded-header labels (issue #193) ---------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("De : **Expéditeur** <s@example.fr>\nDate: jeu.\nSubject: Stage\n\nBody",
+         {"from": "Expéditeur <s@example.fr>", "date": "jeu.", "subject": "Stage"}),
+        ("De : Claire\nObjet : Plan\n\nBody", {"from": "Claire", "subject": "Plan"}),
+        ("Von: Bob\nGesendet: Mittwoch\nAn: Alice\nBetreff: Plan\n\nText",
+         {"from": "Bob", "date": "Mittwoch", "subject": "Plan"}),
+        ("Mittente: Gino\nData: mer\nOggetto: Piano\nA: Alice\n\nTesto",
+         {"from": "Gino", "date": "mer", "subject": "Piano"}),
+        ("De: Ana\nFecha: miércoles\nAsunto: Plan\nPara: Alice\n\nTexto",
+         {"from": "Ana", "date": "miércoles", "subject": "Plan"}),
+        ("De: João\nEnviado: quarta\nAssunto: Plano\nPara: Alice\n\nTexto",
+         {"from": "João", "date": "quarta", "subject": "Plano"}),
+        ("发件人：Wei\n日期：2026年3月4日\n主题：报告\n收件人：Alice\n\n正文",
+         {"from": "Wei", "date": "2026年3月4日", "subject": "报告"}),
+        ("差出人: Kenji\n送信日時: 2026年3月4日\n宛先: Alice\n件名: 予定\n\n本文",
+         {"from": "Kenji", "date": "2026年3月4日", "subject": "予定"}),
+    ],
+)
+def test_localized_forward_header_labels_parse(text: str, expected: dict[str, str]) -> None:
+    parsed = parse_forward_headers(text)
+    assert parsed is not None
+    fields, rest = parsed
+    assert fields == expected
+    # To/Cc lines stay in the forwarded content.
+    for line in text.split("\n\n", 1)[0].splitlines():
+        if line.split(":")[0].split("：")[0].strip() in {"An", "A", "Para", "收件人", "宛先"}:
+            assert line in rest
+
+
+@pytest.mark.parametrize(
+    ("name", "heading", "kept", "body"),
+    [
+        ("plain_thunderbird_forward_french.eml",
+         "## Forwarded from Claire <claire@example.fr> (mer. 4 mars 2026 09:00:00 +0100) — Planning",
+         "Copie à :", "THUNDERBIRD FRENCH BODY"),
+        ("plain_apple_forward_dutch.eml",
+         "## Forwarded from Daan <daan@example.nl> (4 maart 2026 om 09:00:00 CET) — Rooster",
+         "Aan: alice@example.com", "APPLE DUTCH BODY"),
+        ("plain_apple_forward_japanese.eml",
+         "## Forwarded from Kenji <kenji@example.jp> (2026年3月4日 9:00:00 JST) — Schedule",
+         "宛先: alice@example.com", "APPLE JAPANESE BODY"),
+        ("plain_gmail_forward_chinese.eml",
+         "## Forwarded from Wei <wei@example.cn> (2026年3月4日周三 09:00) — Report",
+         "To: <alice@example.com>", "GMAIL CHINESE BODY"),
+    ],
+)
+def test_localized_plain_forwards_get_parsed_headings(
+    name: str, heading: str, kept: str, body: str, tmp_path: Path
+) -> None:
+    _, latest = _body(name, tmp_path)
+    front, structured = _body(name, tmp_path, thread_mode="structured")
+
+    assert body in latest
+    assert "thread_messages: 1" in front
+    assert "## Forwarded message" not in structured
+    _positions(structured, [heading, kept, body])
+
+
+# Synthetic Apple fixtures use exact labels from the local macOS MailCore
+# string table. The HTML shape follows the existing English Apple fixture;
+# no Chinese Apple Mail capture is available.
+@pytest.mark.parametrize(
+    ("name", "marker", "heading", "retained"),
+    [
+        (
+            "plain_apple_forward_zh_cn_i193.eml", "下面是被转发的邮件：",
+            "## Forwarded from Bob <bob@example.cn> — 计划", "reply@example.cn",
+        ),
+        (
+            "plain_apple_forward_zh_tw_i193.eml", "開始轉寄郵件：",
+            "## Forwarded from Bob <bob@example.tw> — 規劃", "reply@example.tw",
+        ),
+        (
+            "html_apple_forward_zh_cn_i193.eml", "下面是被转发的邮件：",
+            "## Forwarded from Bob <bob@example.cn> — 计划", "audit@example.cn",
+        ),
+        (
+            "html_apple_forward_zh_tw_i193.eml", "開始轉寄郵件：",
+            "## Forwarded from Bob <bob@example.tw> — 規劃", "audit@example.tw",
+        ),
+    ],
+)
+def test_chinese_apple_forwards_get_parsed_headings_in_both_modes(
+    name: str, marker: str, heading: str, retained: str, tmp_path: Path,
+) -> None:
+    _, latest = _body(name, tmp_path)
+    front, structured = _body(name, tmp_path, thread_mode="structured")
+
+    assert marker in latest
+    assert "CHINESE_APPLE_FORWARD_BODY" in latest
+    assert "thread_messages: 1" in front
+    assert "## Forwarded message" not in structured
+    _positions(structured, [heading, retained, "CHINESE_APPLE_FORWARD_BODY"])
+
+
+# Synthetic zh-CN Outlook labels follow the independent examples summarized
+# in the #193 research report (mail-parser-reply and Microsoft Q&A sources).
+@pytest.mark.parametrize("thread_mode", ["latest", "structured"])
+def test_paired_zh_cn_outlook_reply_and_true_forward_convert(
+    thread_mode: str, tmp_path: Path,
+) -> None:
+    _, reply = _body("plain_outlook_zh_cn_reply_i193.eml", tmp_path, thread_mode=thread_mode)
+    front, forward = _body(
+        "plain_outlook_zh_cn_forward_i193.eml", tmp_path, thread_mode=thread_mode,
+    )
+
+    assert "AUTHORED_PAYLOAD" in reply
+    assert ("OLD_REPLY_PAYLOAD" in reply) == (thread_mode == "structured")
+    assert "## Forwarded" not in reply
+    assert "AUTHORED_PAYLOAD" in forward
+    assert "FORWARDED_PAYLOAD" in forward
+    if thread_mode == "structured":
+        assert "thread_messages: 1" in front
+        assert "## Forwarded from Bob <bob@example.cn>" in forward
+        assert "## Forwarded message" not in forward
+
+
+def test_zh_cn_outlook_history_accepts_fullwidth_colons() -> None:
+    fixture = (FIXTURES / "plain_outlook_zh_cn_reply_i193.eml").read_text(encoding="utf-8")
+    text = fixture.split("\n\n", 1)[1]
+    for label in ("发件人", "发送时间", "收件人", "抄送", "主题"):
+        text = text.replace(f"{label}:", f"{label}：")
+
+    zones = segment_text_conversation(text).zones
+
+    assert [zone.kind for zone in zones] == [ZoneKind.BODY, ZoneKind.QUOTED]
+    assert zones[0].content == "AUTHORED_PAYLOAD"
+    assert "OLD_REPLY_PAYLOAD" in zones[1].content
+
+
+def test_chinese_header_labels_mid_sentence_are_not_headers() -> None:
+    prose_lines = [
+        f"正文中提到{label}: 值，但这一行不是邮件头。"
+        for label in ("发件人", "发送时间", "收件人", "主题", "抄送")
+    ]
+    text = f"AUTHORED_PAYLOAD\n\n{'_' * 32}\n" + "\n".join(prose_lines)
+    zones = segment_text_conversation(text).zones
+
+    assert len(zones) == 1
+    assert zones[0].kind is ZoneKind.BODY
+    assert zones[0].content == text.replace(f"{'_' * 32}\n", "")
+    assert parse_forward_headers("普通正文提到了主题和发件人: Bob，但不是邮件头。") is None
+
+
+def test_fullwidth_colon_header_line_follows_separator() -> None:
+    text = f"FYI\n\n{MARKER_LINE}\n发件人： Wei <wei@example.cn>\nSubject: Report\n\nBody"
+    zones = segment_text_conversation(text).zones
+    assert [zone.kind for zone in zones] == [
+        ZoneKind.BODY, ZoneKind.FORWARD_HEADER, ZoneKind.FORWARDED_BODY,
+    ]
+
+
+# --- Section cap and cleanup boundaries (issue #193) --------------------------
+
+
+def _inline(content: str, tmp_path: Path, *, html: bool = False, **options: object) -> tuple[str, str]:
+    message = EmailMessage()
+    message["From"] = "Alice <alice@example.com>"
+    message["To"] = "Bob <bob@example.com>"
+    message["Subject"] = "Fwd: Inline"
+    message["Date"] = "Mon, 28 Sep 2026 10:00:00 +0000"
+    message.set_content(content, subtype="html" if html else "plain")
+    name = "-".join(f"{key}-{value}" for key, value in sorted(options.items())) or "default"
+    source = tmp_path / f"{name}.eml"
+    source.write_bytes(bytes(message))
+    output = tmp_path / f"{name}.md"
+    result = convert(source, output=output, options=ConvertOptions(**options))
+    assert result.success, result.error
+    _, front_matter, body = output.read_text(encoding="utf-8").split("---\n", 2)
+    return front_matter, body
+
+
+def test_sibling_nested_plain_forwards_respect_section_cap(tmp_path: Path) -> None:
+    text = "FYI\n> Begin forwarded message:\n> From: Outer\n>\n> OUTER\n"
+    for index in range(70):
+        text += (
+            f"> Note {index}.\n"
+            ">> Begin forwarded message:\n"
+            f">> From: Inner {index}\n"
+            f">>\n>> PAYLOAD {index}\n"
+        )
+    front, structured = _inline(text, tmp_path, thread_mode="structured")
+
+    assert "thread_messages: 64" in front
+    assert structured.count("## Forwarded") == 64
+    _positions(structured, ["OUTER", *(f"PAYLOAD {index}\n" for index in range(70))])
+
+
+def _deep_apple_chain(depth: int, filler_lines: int) -> str:
+    """Apple Mail plain-text forwards nested ``depth`` levels, one ``>`` per level."""
+    text = "FYI\n"
+    for level in range(1, depth + 1):
+        quote = ">" * level
+        text += (
+            f"{quote} Begin forwarded message:\n{quote} From: Level {level}\n{quote}\n"
+            f"{quote} PAYLOAD {level} END\n"
+            + f"{quote} {'x' * 60}\n" * filler_lines
+        )
+    return text
+
+
+def test_deep_nested_plain_forwards_split_in_linear_time() -> None:
+    text = _deep_apple_chain(200, 100)  # about 3.3 MB
+
+    started = time.perf_counter()
+    zones = segment_text_conversation(text, split_forwards=True).zones
+    elapsed = time.perf_counter() - started
+
+    content = "\n".join(zone.content for zone in zones)
+    assert all(content.count(f"PAYLOAD {level} END") == 1 for level in range(1, 201))
+    assert elapsed < 2
+
+
+def test_ordinary_nested_plain_forward_chain_splits_fully(tmp_path: Path) -> None:
+    depth = 10
+    text = _deep_apple_chain(depth, 30)  # about 2 KB per level, under the budget floor
+    front, structured = _inline(text, tmp_path, thread_mode="structured")
+
+    assert f"thread_messages: {depth}" in front
+    assert "Begin forwarded message" not in structured
+    _positions(
+        structured,
+        [needle
+         for level in range(1, depth + 1)
+         for needle in (f"## Forwarded from Level {level}", f"PAYLOAD {level} END")],
+    )
+    assert all(structured.count(f"PAYLOAD {level} END") == 1 for level in range(1, depth + 1))
+
+
+def test_nested_split_scan_budget_keeps_every_payload_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Drop the floor so this small chain reaches the 4x-length budget, as a
+    # multi-megabyte chain would.
+    monkeypatch.setattr(text_conversation, "_NESTED_SCAN_BUDGET_FLOOR", 0)
+    depth = 20
+    front, structured = _inline(_deep_apple_chain(depth, 20), tmp_path, thread_mode="structured")
+
+    sections = structured.count("## Forwarded from Level")
+    # The scan budget stops the split before the depth or the section cap.
+    assert 1 < sections < depth
+    assert f"thread_messages: {sections}" in front
+    _positions(
+        structured,
+        [*(f"## Forwarded from Level {level}" for level in range(1, sections + 1)),
+         *(f"PAYLOAD {level} END" for level in range(sections, depth + 1))],
+    )
+    assert all(structured.count(f"PAYLOAD {level} END") == 1 for level in range(1, depth + 1))
+    # Forwards past the budget stay in the last section's text, in order.
+    _positions(structured, [f"From: Level {level}" for level in range(sections + 1, depth + 1)])
+    assert structured.count("Begin forwarded message:") == depth - sections
+
+
+@pytest.mark.parametrize(
+    ("text", "option"),
+    [
+        (
+            "Hello.\n-- \nSignature\nBegin forwarded message:\nThis is prose, not a header.\n",
+            "strip_signatures",
+        ),
+        (
+            f"Hello.\nDisclaimer: Legal terms.\n{MARKER_LINE}\nThis is not a header.\n",
+            "strip_disclaimers",
+        ),
+    ],
+)
+def test_cleanup_ignores_markers_without_header_lines(text: str, option: str, tmp_path: Path) -> None:
+    _, body = _inline(text, tmp_path, **{option: True})
+
+    assert body.strip() == "Hello."
+
+
+def test_cleanup_keeps_nested_forward_after_colon_signature_line(tmp_path: Path) -> None:
+    html = (
+        "<div>FYI.</div>\n"
+        '<div class="gmail_quote">\n<div class="gmail_attr">\n'
+        f"{MARKER_LINE}<br>From: Bob<br>\n</div>\n"
+        "<div>OUTER BODY<br>-- <br>Contact:</div>\n"
+        "<blockquote>\nBegin forwarded message:<br>\nFrom: Carol<br><br>\nKEEP INNER FORWARD.\n</blockquote>\n"
+        "</div>"
+    )
+    for mode in ("latest", "structured"):
+        _, body = _inline(html, tmp_path, html=True, thread_mode=mode, strip_signatures=True)
+
+        _positions(body, ["FYI.", "OUTER BODY", "From: Carol", "KEEP INNER FORWARD."])
+        assert "Contact:" not in body
+
+
+@pytest.mark.parametrize(
+    "options",
+    [{}, {"strip_signatures": True, "strip_disclaimers": True}],
+    ids=["no-cleanup", "cleanup"],
+)
+def test_many_forward_markers_convert_in_linear_time(options: dict[str, bool], tmp_path: Path) -> None:
+    html = (
+        '<div>FYI.</div><div class="gmail_quote">'
+        '<div class="gmail_attr">'
+        f"{MARKER_LINE}<br>From: Outer<br>"
+        "</div><div>"
+        + f"{MARKER_LINE}<br>From: Bob<br><br>PAYLOAD<br>" * 8000
+        + "</div></div>"
+    )
+
+    started = time.perf_counter()
+    _, body = _inline(html, tmp_path, html=True, **options)
+    elapsed = time.perf_counter() - started
+
+    assert body.count("PAYLOAD") == 8000
+    assert elapsed < 2
+
+
+def test_cleanup_boundaries_scale_linearly() -> None:
+    content = "FYI.\n\n" + f"{MARKER_LINE}\n\nFrom: Bob\n\nPAYLOAD\n-- \nSig\n\n" * 16000
+    zone = ConversationZone(kind=ZoneKind.FORWARDED_BODY, content=content, source_kind="plain")
+
+    started = time.perf_counter()
+    cleaned = cleanup_zones([zone], ConvertOptions(strip_signatures=True))
+    elapsed = time.perf_counter() - started
+
+    assert cleaned[0].content.count("PAYLOAD") == 16000
+    assert "Sig" not in cleaned[0].content
+    assert elapsed < 2
 
 
 # --- Byte identity for output that must not change ---------------------------
@@ -657,6 +1200,11 @@ _GOLDEN = json.loads((FIXTURES / "pre_forward_fix_golden.json").read_text(encodi
 def test_output_that_must_not_change_is_byte_identical(key: str, tmp_path: Path) -> None:
     """Goldens were captured from main before forward handling changed.
 
+    The gmail_quote fixture was updated for #233: no positive evidence means
+    current body. Safe plain-text autolinks such as ``<a@example.com>`` were
+    later unescaped from ``&lt;...&gt;``; that was the only change to the
+    other entries' bytes.
+
     Covers every fixture without a forward (including reply markup that must
     not be mistaken for a forward, and separators inside reply history or
     prose), a reply quote that contains a forward, and latest-mode output for
@@ -673,3 +1221,35 @@ def test_output_that_must_not_change_is_byte_identical(key: str, tmp_path: Path)
     )
     assert result.success, result.error
     assert output.read_text(encoding="utf-8") == _GOLDEN[key]
+
+
+@pytest.mark.parametrize("date_label,to_label", [
+    ("Enviado el", "Para"),
+    ("寄件日期", "收件者"),
+    ("寄件日期", "至"),
+])
+@pytest.mark.parametrize("colon", [":", "："])
+def test_missing_forward_date_and_recipient_labels_continue_header_block(
+    date_label: str, to_label: str, colon: str,
+) -> None:
+    recipient = f"{to_label}{colon} Alice <alice@example.com>"
+    text = f"From: Bob\n{date_label}{colon} Wednesday\n{recipient}\nSubject: Plan\n\nBODY"
+    parsed = parse_forward_headers(text, markdown=False)
+    assert parsed is not None
+    fields, rest = parsed
+    assert fields == {"from": "Bob", "date": "Wednesday", "subject": "Plan"}
+    assert rest == f"{recipient}\n\nBODY"
+
+
+def test_korean_cc_label_continues_forward_header_block() -> None:
+    text = "From: Bob\n참조: Eve\nSubject: Plan\n\nBODY"
+    parsed = parse_forward_headers(text, markdown=False)
+    assert parsed == ({"from": "Bob", "subject": "Plan"}, "참조: Eve\n\nBODY")
+
+
+@pytest.mark.parametrize("line", ["至今仍保留正文", "至 Alice", "至今: ordinary prose"])
+def test_single_character_forward_label_requires_complete_header_label(line: str) -> None:
+    text = f"From: Bob\n{line}\nSubject: authored body text\n\nBODY"
+    parsed = parse_forward_headers(text, markdown=False)
+    assert parsed == ({"from": "Bob"}, f"{line}\nSubject: authored body text\n\nBODY")
+    assert parse_forward_headers(f"{line}\nSubject: text\n\nBODY", markdown=False) is None

@@ -27,6 +27,12 @@ class AttributionMatch:
 
 
 _WHITESPACE_RE = re.compile(r"\s+")
+# Some patterns backtrack on ambiguous whitespace. Bound their input centrally,
+# including callers that pass an entire quoted body, not just an HTML line.
+_MAX_ATTRIBUTION_CHARS = 1000
+# The Outlook block is linear (possessive per-line fields), so it gets a wider
+# window: long To:/Cc: recipient lists routinely exceed the 1000-char budget.
+_MAX_OUTLOOK_BLOCK_CHARS = 64 * 1024
 
 
 # Apple Mail: "On Mar 5, 2026, at 10:23 AM, Alice <alice@example.com> wrote:"
@@ -48,13 +54,14 @@ _GMAIL_SHORT = re.compile(
 # Outlook block — supports plain and markdown-bold projections. The label part
 # of each line is wrapped in \*{0,2} so html_to_markdown's bold variant matches
 # too. Allows up to 8 intermediate header lines (Cc:, Bcc:, Attachments:, etc.)
-# between To: and Subject:.
+# between To: and Subject:. Field values are possessive and never cross a line,
+# so matching is linear; _normalize_field trims the captured values.
 _OUTLOOK_BLOCK = re.compile(
-    r"^\*{0,2}From:\*{0,2}\s*(?P<from_>[^\n]+?)\s*\n"
-    r"\*{0,2}Sent:\*{0,2}\s*(?P<date>[^\n]+?)\s*\n"
-    r"\*{0,2}To:\*{0,2}\s*[^\n]+\n"
-    r"(?:\*{0,2}[A-Z][A-Za-z-]+:\*{0,2}\s*[^\n]*\n){0,8}?"
-    r"\*{0,2}Subject:\*{0,2}\s*(?P<subject>[^\n]+?)\s*\n",
+    r"^\*{0,2}From:\*{0,2}[ \t]*+(?P<from_>[^\n]*+)\s*\n"
+    r"\*{0,2}Sent:\*{0,2}[ \t]*+(?P<date>[^\n]*+)\s*\n"
+    r"\*{0,2}To:\*{0,2}[^\n]*+\s*\n"
+    r"(?:\*{0,2}[A-Z][A-Za-z-]++:\*{0,2}[^\n]*+\s*\n){0,8}?"
+    r"\*{0,2}Subject:\*{0,2}[ \t]*+(?P<subject>[^\n]*+)\s*\n",
     re.MULTILINE,
 )
 
@@ -101,12 +108,37 @@ def _normalize_field(value: str | None) -> str | None:
     return collapsed or None
 
 
+def _complete_lines_within(text: str, limit: int) -> str:
+    """Return ``text`` if it fits ``limit``, else its complete leading lines."""
+    if len(text) <= limit:
+        return text
+    return text[: text.rfind("\n", 0, limit) + 1]
+
+
 def parse_attribution_line(text: str) -> AttributionMatch | None:
-    """Parse the leading attribution line(s) of a quoted reply."""
+    """Parse complete leading attribution lines within a bounded window.
+
+    Single-line patterns see 1000 characters; the linear Outlook block sees
+    64 KiB. Each budget includes line endings. A large following body does not
+    disqualify a short header, but an incomplete line at the cutoff cannot
+    become a false end-of-input match. Returned offsets address the original
+    text; skipping following blank lines remains a separate linear scan.
+    """
     if not text:
         return None
+    windows = {
+        limit: _complete_lines_within(text, limit)
+        for limit in (_MAX_ATTRIBUTION_CHARS, _MAX_OUTLOOK_BLOCK_CHARS)
+    }
+    if not windows[_MAX_OUTLOOK_BLOCK_CHARS]:
+        _LOGGER.debug("attribution: no complete leading line within character budget")
+        return None
     for pattern in _PATTERNS:
-        match = pattern.match(text)
+        limit = _MAX_OUTLOOK_BLOCK_CHARS if pattern is _OUTLOOK_BLOCK else _MAX_ATTRIBUTION_CHARS
+        candidate = windows[limit]
+        if not candidate:
+            continue
+        match = pattern.match(candidate)
         if match is None:
             continue
         groups = match.groupdict()

@@ -47,6 +47,27 @@ SHIPPED_TOOLS = {
         "convert_mbox",
         "get_diagnostics",
     ],
+    "0.4.9": [
+        "convert_eml",
+        "convert_eml_to_bundle",
+        "convert_directory",
+        "convert_mbox",
+        "get_diagnostics",
+    ],
+    "0.4.10": [
+        "convert_eml",
+        "convert_eml_to_bundle",
+        "convert_directory",
+        "convert_mbox",
+        "get_diagnostics",
+    ],
+    "0.4.11": [
+        "convert_eml",
+        "convert_eml_to_bundle",
+        "convert_directory",
+        "convert_mbox",
+        "get_diagnostics",
+    ],
 }
 # Tools on main but not yet in any release. A new tool is listed here until
 # the release that ships it moves it into SHIPPED_TOOLS and mcpb/manifest.json.

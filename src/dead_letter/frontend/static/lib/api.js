@@ -1,4 +1,4 @@
-const CSRF_HEADER_NAME = "X-Dead-Letter-CSRF";
+export const CSRF_HEADER_NAME = "X-Dead-Letter-CSRF";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 let csrfTokenPromise = null;
@@ -20,7 +20,7 @@ function mergeCsrfHeader(headers, csrfToken) {
   return { ...(headers || {}), [CSRF_HEADER_NAME]: csrfToken };
 }
 
-function clearCachedCsrfToken() {
+export function clearCachedCsrfToken() {
   csrfTokenPromise = null;
 }
 
@@ -46,14 +46,17 @@ export async function getCsrfToken() {
   return csrfTokenPromise;
 }
 
+export function isCsrfFailurePayload(payload) {
+  const errors = Array.isArray(payload?.errors) ? payload.errors : [];
+  return errors.some((err) => err?.code === "csrf_validation_failed");
+}
+
 async function isCsrfValidationFailure(response) {
   if (response.status !== 403) {
     return false;
   }
   try {
-    const payload = await response.clone().json();
-    const errors = Array.isArray(payload?.errors) ? payload.errors : [];
-    return errors.some((err) => err?.code === "csrf_validation_failed");
+    return isCsrfFailurePayload(await response.clone().json());
   } catch {
     return false;
   }

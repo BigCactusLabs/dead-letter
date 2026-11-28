@@ -4,12 +4,31 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import asynccontextmanager
+from contextvars import copy_context
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
+from dead_letter.backend.mbox_jobs import (
+    MboxAdmission,
+    MboxBusyError,
+    MboxJobDescriptor,
+    MboxJobOutcome,
+    MboxJobRunner,
+    MboxMemberError,
+    MboxResumeSourceChangedError,
+    MboxResumeUnavailableError,
+    admit_mbox_source,
+    admit_staged_mbox_source,
+    job_owner_active,
+    mbox_job_folder,
+    read_job_descriptor,
+    resume_identity,
+    scan_resumable_jobs,
+)
 from dead_letter.backend.schemas import (
     AggregateTotals,
     ErrorItem,
@@ -18,6 +37,8 @@ from dead_letter.backend.schemas import (
     JobCreateResponse,
     JobStatus,
     JobStatusResponse,
+    MboxJobCreateRequest,
+    MboxResumableJob,
     OutputLocation,
     Progress,
     QualityDiagnostics,
@@ -61,7 +82,7 @@ def _report_filename_for_job(job_id: str) -> str:
 @dataclass(slots=True)
 class _JobRecord:
     id: str
-    request: JobCreateRequest
+    request: JobCreateRequest | MboxJobCreateRequest
     files: list[Path]
     cabinet_root: Path
     output_location: OutputLocation
@@ -78,6 +99,19 @@ class _JobRecord:
     finished_at: datetime | None = None
     origin: str = "manual"
     cancel_requested: bool = False
+    mbox_runner: MboxJobRunner | None = None
+    mbox_slot_held: bool = False
+
+
+@dataclass(slots=True)
+class MboxSlotReservation:
+    """An archive slot reserved before a job exists, such as during an upload.
+
+    Creating the job transfers the slot to it; otherwise the holder releases it
+    with ``JobManager.release_mbox_slot``, which is idempotent.
+    """
+
+    held: bool = True
 
 
 def bundle_result_to_error(result: BundleResult) -> ErrorItem:
@@ -131,15 +165,23 @@ class JobManager:
         *,
         worker_count: int = 8,
         max_retained_terminal_jobs: int = 2000,
+        max_mbox_jobs: int = 1,
         inbox_root: str | Path | None = None,
         cabinet_root: str | Path | None = None,
     ) -> None:
         self._worker_count = max(1, int(worker_count))
         self._max_retained_terminal_jobs = max(1, int(max_retained_terminal_jobs))
+        self._max_mbox_jobs = max(1, int(max_mbox_jobs))
+        self._active_mbox_jobs = 0
+        # Jobs whose final descriptor write failed; kept apart from the pruned
+        # job history so their stale "running" state is never offered.
+        self._unrecorded_mbox_jobs: set[str] = set()
+        self._mbox_shutting_down = False
         self._inbox_root = Path(inbox_root or (Path.home() / "Inbox")).expanduser().resolve()
         self._cabinet_root = Path(cabinet_root or (Path.home() / "Cabinet")).expanduser().resolve()
         self._jobs: dict[str, _JobRecord] = {}
         self._tasks: set[asyncio.Task[None]] = set()
+        self._mbox_tasks: set[asyncio.Task[None]] = set()
         self._lock = asyncio.Lock()
 
     def update_roots(self, *, inbox_root: str | Path, cabinet_root: str | Path) -> None:
@@ -165,10 +207,225 @@ class JobManager:
             self._jobs[job_id] = record
 
         task = asyncio.create_task(self._run_job(job_id))
+        self._track_task(task, job_id)
+        return JobCreateResponse(
+            id=job_id,
+            status=record.status,
+            output_location=record.output_location.model_copy(deep=True),
+        )
+
+    async def create_mbox_job(
+        self, request: MboxJobCreateRequest, *, source_root: str | Path,
+    ) -> JobCreateResponse:
+        cabinet_root = self._cabinet_root
+        admission = admit_mbox_source(
+            request.input_path, source_root=Path(source_root), cabinet_root=cabinet_root,
+        )
+        return await self._start_mbox_job(request, admission, cabinet_root=cabinet_root)
+
+    async def create_staged_mbox_job(
+        self,
+        request: MboxJobCreateRequest,
+        *,
+        staging_root: str | Path,
+        reservation: MboxSlotReservation,
+    ) -> JobCreateResponse:
+        """Start a job for a server-staged upload, holding its reserved slot.
+
+        On any exception the reservation stays with the caller to release.
+        """
+        cabinet_root = self._cabinet_root
+        admission = admit_staged_mbox_source(
+            Path(request.input_path), staging_root=Path(staging_root), cabinet_root=cabinet_root,
+        )
+        return await self._start_mbox_job(
+            request, admission, cabinet_root=cabinet_root, reservation=reservation, origin="upload",
+        )
+
+    async def resume_mbox_job(self, job_id: str, *, source_root: str | Path) -> JobCreateResponse:
+        """Continue a stopped job in its original folder through the core resume journal.
+
+        The source is admitted again with the checks a new job gets, then must
+        still have the device, inode, size and mtime recorded when it started.
+        """
+        cabinet_root = self._cabinet_root
+        folder = mbox_job_folder(cabinet_root, job_id)
+        async with self._lock:
+            self._refuse_active_mbox_job_locked(job_id)
+        descriptor = await asyncio.to_thread(read_job_descriptor, folder)
+        if descriptor is None:
+            # No folder, or one this server did not start as a resumable web job.
+            raise KeyError(job_id)
+        if descriptor.state == "running" and await asyncio.to_thread(job_owner_active, folder):
+            raise MboxResumeUnavailableError("This archive import is still running")
+        if descriptor.resume_reason() is None:
+            raise MboxResumeUnavailableError(
+                "This archive import cannot be resumed; start a new import instead"
+            )
+        admission = self._readmit_mbox_source(descriptor, source_root=Path(source_root), cabinet_root=cabinet_root)
+        request = MboxJobCreateRequest(input_path=descriptor.input_path, options=descriptor.options)
+        return await self._start_mbox_job(
+            request, admission, cabinet_root=cabinet_root, origin=descriptor.origin, resume_of=descriptor,
+        )
+
+    def _readmit_mbox_source(
+        self, descriptor: MboxJobDescriptor, *, source_root: Path, cabinet_root: Path,
+    ) -> MboxAdmission:
+        try:
+            if descriptor.origin == "upload":
+                from dead_letter.backend.uploads import prepare_staging_dir
+
+                admission = admit_staged_mbox_source(
+                    Path(descriptor.source),
+                    staging_root=prepare_staging_dir(self._inbox_root),
+                    cabinet_root=cabinet_root,
+                )
+            else:
+                admission = admit_mbox_source(
+                    descriptor.input_path, source_root=source_root, cabinet_root=cabinet_root,
+                )
+        except (OSError, ValueError) as exc:
+            raise MboxResumeSourceChangedError(
+                "The original MBOX source is missing or no longer allowed; start a new import"
+            ) from exc
+        if (
+            str(admission.source) != descriptor.source
+            or resume_identity(admission.identity) != descriptor.identity
+        ):
+            raise MboxResumeSourceChangedError(
+                "The original MBOX source changed after this import started; start a new import"
+            )
+        return admission
+
+    def _refuse_active_mbox_job_locked(self, job_id: str) -> None:
+        existing = self._jobs.get(job_id)
+        if existing is not None and existing.status not in TERMINAL_STATUSES:
+            raise MboxResumeUnavailableError("This archive import is still running")
+        if job_id in self._unrecorded_mbox_jobs:
+            raise MboxResumeUnavailableError(
+                "This archive import's stop could not be recorded; start a new import instead"
+            )
+
+    async def list_resumable_mbox_jobs(self) -> list[MboxResumableJob]:
+        """Stopped jobs in the current Cabinet, including ones from an earlier server process."""
+        async with self._lock:
+            # Running jobs, and stopped ones whose final state never reached disk.
+            active = {
+                job_id for job_id, record in self._jobs.items()
+                if record.mbox_runner is not None and record.status not in TERMINAL_STATUSES
+            } | self._unrecorded_mbox_jobs
+        return await asyncio.to_thread(scan_resumable_jobs, self._cabinet_root, active=active)
+
+    async def reserve_mbox_slot(self) -> MboxSlotReservation:
+        """Reserve the archive slot that queued and running MBOX jobs share."""
+        async with self._lock:
+            self._reserve_mbox_slot_locked()
+        return MboxSlotReservation()
+
+    def release_mbox_slot(self, reservation: MboxSlotReservation) -> None:
+        """Release a reservation that no job took over; later calls do nothing."""
+        if reservation.held:
+            reservation.held = False
+            self._active_mbox_jobs -= 1
+
+    def _reserve_mbox_slot_locked(self) -> None:
+        if self._mbox_shutting_down:
+            raise MboxBusyError("MBOX jobs are unavailable while the server is shutting down")
+        if self._active_mbox_jobs >= self._max_mbox_jobs:
+            raise MboxBusyError("All MBOX job slots are in use; wait for an archive job to finish")
+        self._active_mbox_jobs += 1
+
+    async def _start_mbox_job(
+        self,
+        request: MboxJobCreateRequest,
+        admission: MboxAdmission,
+        *,
+        cabinet_root: Path,
+        reservation: MboxSlotReservation | None = None,
+        origin: Literal["manual", "upload"] = "manual",
+        resume_of: MboxJobDescriptor | None = None,
+    ) -> JobCreateResponse:
+        if request.options.member is not None and admission.source.suffix.lower() == ".mbox":
+            raise MboxMemberError("member is only supported for compressed MBOX archives")
+        if admission.source.suffix.lower() != ".mbox":
+            from dead_letter.backend.uploads import prepare_staging_dir
+
+            prepare_staging_dir(self._inbox_root)
+        # A resumed job keeps its id, so it keeps its Cabinet/mbox-<id> folder.
+        job_id = resume_of.job_id if resume_of is not None else uuid4().hex
+        runner = MboxJobRunner(
+            admission=admission, cabinet_root=cabinet_root, job_id=job_id, options=request.options,
+            inbox_root=self._inbox_root, origin=origin, input_path=request.input_path, resume_of=resume_of,
+        )
+        record = _JobRecord(
+            id=job_id, request=request.model_copy(deep=True), files=[], cabinet_root=cabinet_root,
+            output_location=OutputLocation(
+                strategy="cabinet", cabinet_path=str(cabinet_root), job_path=str(runner.output),
+            ),
+            origin=origin,
+            mbox_runner=runner,
+        )
+        previous: _JobRecord | None = None
+        async with self._lock:
+            if resume_of is not None:
+                self._refuse_active_mbox_job_locked(job_id)
+                # A concurrent resume may have run since this request read the
+                # descriptor; act only on the stop it saw.
+                if await asyncio.to_thread(read_job_descriptor, runner.output) != resume_of:
+                    raise MboxResumeUnavailableError(
+                        "This archive import changed while resuming; reload and try again"
+                    )
+                previous = self._jobs.get(job_id)
+            if reservation is None:
+                # Reserve before the worker can create an output directory or spool.
+                self._reserve_mbox_slot_locked()
+            elif not reservation.held:
+                raise RuntimeError("MBOX slot reservation was already released")
+            elif self._mbox_shutting_down:
+                raise MboxBusyError("MBOX jobs are unavailable while the server is shutting down")
+            else:
+                # Transfer the caller's slot; no await separates these steps.
+                reservation.held = False
+            record.mbox_slot_held = True
+            self._jobs[job_id] = record
+        work = self._run_mbox_job(job_id)
+        task: asyncio.Task[None] | None = None
+        try:
+            task = asyncio.create_task(work)
+            self._track_task(task, job_id, mbox_record=record)
+        except BaseException:
+            # Without a tracked task nothing would settle this record, so undo
+            # the admission here; the slot flag makes the release exactly once.
+            if task is None:
+                work.close()
+            else:
+                task.cancel()
+                self._tasks.discard(task)
+                self._mbox_tasks.discard(task)
+            if previous is None:
+                self._jobs.pop(job_id, None)
+            else:
+                self._jobs[job_id] = previous
+            self._release_mbox_slot(record)
+            runner.close_unstarted()
+            raise
+        return JobCreateResponse(
+            id=job_id, status=record.status,
+            output_location=record.output_location.model_copy(deep=True),
+        )
+
+    def _track_task(
+        self, task: asyncio.Task[None], job_id: str, *, mbox_record: _JobRecord | None = None,
+    ) -> None:
         self._tasks.add(task)
+        if mbox_record is not None:
+            self._mbox_tasks.add(task)
 
         def _on_task_done(done_task: asyncio.Task[None]) -> None:
             self._tasks.discard(done_task)
+            self._mbox_tasks.discard(done_task)
+            if mbox_record is not None:
+                self._settle_mbox_job(mbox_record, cancelled=done_task.cancelled())
             if done_task.cancelled():
                 return
             if (exc := done_task.exception()) is not None:
@@ -179,11 +436,46 @@ class JobManager:
                 )
 
         task.add_done_callback(_on_task_done)
-        return JobCreateResponse(
-            id=job_id,
-            status=record.status,
-            output_location=record.output_location.model_copy(deep=True),
-        )
+
+    def _release_mbox_slot(self, record: _JobRecord) -> None:
+        if record.mbox_slot_held:
+            record.mbox_slot_held = False
+            self._active_mbox_jobs -= 1
+
+    def _settle_mbox_job(self, record: _JobRecord, *, cancelled: bool) -> None:
+        """Release the slot and end the job if its task exited without committing.
+
+        A Task cancelled before its first step never runs ``_run_mbox_job``. This
+        runs synchronously on the loop, and no locked section awaits while it
+        changes job state; after a normal commit it finds nothing left to do.
+        """
+        self._release_mbox_slot(record)
+        if record.status in TERMINAL_STATUSES:
+            return
+        runner = record.mbox_runner
+        assert runner is not None
+        if cancelled and record.status == "queued":
+            # No worker started, so no output folder or report exists.
+            runner.close_unstarted()
+            record.cancel_requested = True
+            self._transition(record, "cancelled")
+            return
+        runner.fail_unexpected()
+        if record.status == "queued":
+            self._transition(record, "running")
+        self._transition(record, "failed")
+
+    async def shutdown_mbox_jobs(self) -> None:
+        """Stop admission, signal cancellation and wait for archive workers/reports."""
+        async with self._lock:
+            self._mbox_shutting_down = True
+            for record in self._jobs.values():
+                if record.mbox_runner is not None and record.status not in TERMINAL_STATUSES:
+                    if record.mbox_runner.request_cancel():
+                        record.cancel_requested = True
+            tasks = list(self._mbox_tasks)
+        if tasks:
+            await asyncio.gather(*(asyncio.shield(task) for task in tasks), return_exceptions=True)
 
     async def get_job(self, job_id: str) -> JobStatusResponse | None:
         async with self._lock:
@@ -230,6 +522,12 @@ class JobManager:
             if record.status in TERMINAL_STATUSES:
                 return JobCancelResponse(id=job_id, status=record.status, accepted=False)
 
+            if record.mbox_runner is not None:
+                accepted = record.mbox_runner.request_cancel()
+                if accepted:
+                    record.cancel_requested = True
+                return JobCancelResponse(id=job_id, status=record.status, accepted=accepted)
+
             record.cancel_requested = True
             if record.status == "queued":
                 self._transition(record, "cancelled")
@@ -243,6 +541,8 @@ class JobManager:
                 raise KeyError(job_id)
             if record.status not in TERMINAL_STATUSES:
                 raise RuntimeError("job is not terminal")
+            if record.mbox_runner is not None:
+                raise RuntimeError("MBOX jobs do not use EML retry actions; create a new archive job")
             if action not in {_RETRY_WITH_HTML_REPAIR, _RETRY_WITH_HTML_FALLBACK}:
                 raise ValueError(f"unsupported retry action: {action}")
             if not any(item.get("kind") == action for item in record.recovery_actions):
@@ -354,15 +654,25 @@ class JobManager:
             self._jobs.pop(record.id, None)
 
     def _to_response(self, record: _JobRecord) -> JobStatusResponse:
+        mbox = None
+        summary = record.summary.model_copy(deep=True)
+        errors = [item.model_copy(deep=True) for item in record.errors]
+        resumable = False
+        if record.mbox_runner is not None:
+            mbox, summary, errors = record.mbox_runner.snapshot()
+            resumable = record.status in TERMINAL_STATUSES and record.mbox_runner.resumable
         return JobStatusResponse(
             id=record.id,
             status=record.status,
+            kind="mbox" if mbox is not None else "eml",
             origin=record.origin,
             output_location=record.output_location.model_copy(deep=True),
             cancel_requested=record.cancel_requested,
             progress=record.progress.model_copy(deep=True),
-            summary=record.summary.model_copy(deep=True),
-            errors=[item.model_copy(deep=True) for item in record.errors],
+            mbox=mbox,
+            resumable=resumable,
+            summary=summary,
+            errors=errors,
             recovery_actions=[dict(item) for item in record.recovery_actions],
             diagnostics=None if record.diagnostics is None else record.diagnostics.model_copy(deep=True),
             report_path=record.report_path,
@@ -370,6 +680,55 @@ class JobManager:
             started_at=record.started_at,
             finished_at=record.finished_at,
         )
+
+    async def _run_mbox_job(self, job_id: str) -> None:
+        record = self._jobs[job_id]
+        runner = record.mbox_runner
+        assert runner is not None
+
+        def request_cancel() -> None:
+            if runner.request_cancel():
+                record.cancel_requested = True
+
+        @asynccontextmanager
+        async def locked():
+            # A direct Task.cancel during a lock wait must not strand a queued
+            # job or skip committing an already-finished worker's real outcome.
+            while True:
+                try:
+                    await self._lock.acquire()
+                    break
+                except asyncio.CancelledError:
+                    request_cancel()
+            try:
+                yield
+            finally:
+                self._lock.release()
+
+        try:
+            async with locked():
+                self._transition(record, "running")
+            # An executor Future is not an independently cancellable asyncio Task
+            # during loop shutdown. Shielding it preserves the completion handle.
+            worker = asyncio.get_running_loop().run_in_executor(None, copy_context().run, runner.run)
+            while True:
+                try:
+                    # Cancelling this await must never orphan the conversion thread.
+                    outcome = await asyncio.shield(worker)
+                    break
+                except asyncio.CancelledError:
+                    request_cancel()
+        except Exception as exc:
+            logger.error("MBOX job %s failed unexpectedly", job_id, exc_info=(type(exc), exc, exc.__traceback__))
+            runner.fail_unexpected()
+            outcome = MboxJobOutcome("failed", None)
+        async with locked():
+            _, record.summary, _ = runner.snapshot()
+            record.report_path = outcome.report_path
+            if runner.descriptor_unrecorded:
+                self._unrecorded_mbox_jobs.add(job_id)
+            self._release_mbox_slot(record)
+            self._transition(record, outcome.status)
 
     async def _record_run_failure(
         self,

@@ -90,6 +90,15 @@ def test_mcp_entry_points_at_server_json():
     )
 
 
+def test_mcp_registry_link_uses_the_versioned_registry_api():
+    """The unversioned `v0/servers/<name>` path returns 404 (checked 2026-11-10)."""
+    registry = _entry_by_suffix(":mcp-server")["metadata"]["registry"]
+    assert registry == (
+        "https://registry.modelcontextprotocol.io/v0.1/servers/"
+        "io.github.BigCactusLabs%2Fdead-letter/versions/latest"
+    )
+
+
 @pytest.mark.parametrize("index", [0, 1])
 def test_entry_version_matches_server_json(index):
     """ard.json is a version sync point; a release bumps both entries."""

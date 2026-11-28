@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import runpy
+
+import nh3
+import pytest
+
+from dead_letter.core import sanitize as sanitize_module
 from dead_letter.core.sanitize import sanitize_html
 
 
@@ -36,3 +42,146 @@ def test_sanitize_html_allows_cid_and_mailto_links() -> None:
 
     assert 'href="mailto:person@example.com"' in cleaned
     assert 'src="cid:image1"' in cleaned
+
+
+@pytest.mark.parametrize("tag", [
+    "address", "article", "aside", "center", "dd", "details", "dialog", "dl", "dt",
+    "fieldset", "figcaption", "figure", "footer", "form", "header", "legend",
+    "main", "menu", "nav", "section", "summary",
+])
+def test_sanitize_html_preserves_stripped_block_boundaries(tag) -> None:
+    html = f'Before<{tag} class="gmail_quote" onclick="alert(1)">Inside</{tag}>After'
+
+    assert sanitize_html(html) == "Before<div>Inside</div>After"
+
+
+def test_sanitize_html_preserves_caption_boundary() -> None:
+    assert sanitize_html("<table><caption>Caption</caption></table>") == "<div>Caption</div><table></table>"
+
+
+def test_sanitize_html_keeps_inline_tags_inline() -> None:
+    assert sanitize_html("Be<small>fore</small><wbr>After") == "BeforeAfter"
+
+
+def test_sanitize_html_cleans_unsafe_content_inside_stripped_blocks() -> None:
+    html = (
+        '<center id="divRplyFwdMsg" onclick="alert(1)">Safe'
+        '<details><summary>Summary</summary><script>alert(1)</script>'
+        '<a href="javascript:alert(1)">bad</a><img src="file:///etc/passwd">'
+        '</details></center>'
+    )
+
+    cleaned = sanitize_html(html)
+
+    assert "Safe<div><div>Summary</div>" in cleaned
+    for unsafe in ("divRplyFwdMsg", "onclick", "<script", "alert(1)", "javascript:", "file:///"):
+        assert unsafe not in cleaned
+
+
+def test_sanitize_html_does_not_rewrite_block_names_in_attributes_or_text() -> None:
+    html = '<a title="<center>literal</center>">Link</a><center>&lt;details&gt;</center>'
+
+    cleaned = sanitize_html(html)
+
+    assert 'title="&lt;center&gt;literal&lt;/center&gt;"' in cleaned
+    assert "<div>&lt;details&gt;</div>" in cleaned
+    assert sanitize_html(cleaned) == cleaned
+
+
+@pytest.mark.parametrize("namespace", ["svg", "math"])
+@pytest.mark.parametrize("tag", ["style", "script", "iframe", "xmp", "noembed", "noframes"])
+def test_sanitize_html_does_not_activate_foreign_raw_text(namespace, tag) -> None:
+    payload = (
+        '&lt;img src="https://tracker.example/p.gif?u=victim"&gt;'
+        '&lt;p&gt;&lt;a href="https://evil.example/login"&gt;Reset your password&lt;/a&gt;&lt;/p&gt;'
+    )
+    html = f'<p>Hello</p><!-- <center> --><{namespace}><{tag}>{payload}</{tag}></{namespace}>'
+
+    cleaned = sanitize_html(html)
+
+    assert cleaned == "<p>Hello</p>"
+    assert "<img" not in cleaned and "<a " not in cleaned
+
+
+def test_sanitize_html_plaintext_does_not_gain_document_closing_tags() -> None:
+    assert sanitize_html("<!-- <center> --><plaintext><b>p") == "&lt;b&gt;p"
+
+
+def test_sanitize_html_strips_form_attributes_before_normalization() -> None:
+    html = (
+        '<form id="divRplyFwdMsg" class="gmail_quote" action="https://evil.example/" '
+        'onsubmit="alert(1)">Text</form>'
+    )
+
+    assert sanitize_html(html) == "<div>Text</div>"
+
+
+@pytest.mark.parametrize("tag", [
+    "address", "article", "aside", "caption", "center", "dd", "details", "dialog",
+    "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form", "header",
+    "legend", "main", "menu", "nav", "section", "summary",
+])
+@pytest.mark.parametrize("attributes", [
+    'title="t"', 'lang="en"', 'title="t" lang="en"', "title lang",
+])
+def test_sanitize_html_removes_generic_attributes_from_stripped_blocks(tag, attributes) -> None:
+    block = f"<{tag} {attributes}>Inside</{tag}>"
+    if tag == "caption":
+        block = f"<table>{block}</table>"
+
+    cleaned = sanitize_html(f"Before{block}After")
+
+    assert f"<{tag}" not in cleaned and f"</{tag}>" not in cleaned
+    assert "title=" not in cleaned and "lang=" not in cleaned
+    expected = "Before<div>Inside</div>" + ("<table></table>" if tag == "caption" else "") + "After"
+    assert cleaned == expected
+    assert sanitize_html(cleaned) == cleaned
+
+
+def test_sanitize_html_keeps_generic_attributes_on_existing_allowed_tags() -> None:
+    html = '<p title="paragraph" lang="en">Text <a href="https://example.test/" title="link">Link</a></p>'
+
+    assert sanitize_html(html) == (
+        '<p title="paragraph" lang="en">Text '
+        '<a href="https://example.test/" title="link" rel="noopener noreferrer">Link</a></p>'
+    )
+
+
+@pytest.mark.parametrize("html", [
+    '<P TITLE="a &amp; b" LANG="en" class="drop" id="drop">Text</P>',
+    '<a href="https://example.test/?x=1&amp;y=2" title="Link" lang="en" class="drop" onclick="alert(1)">Link</a>',
+    '<a href="mailto:a@example.test" title="Mail">Mail</a><a href="javascript:alert(1)">Bad</a>',
+    '<img src="cid:logo" alt="Logo &amp; text" title="Image" lang="en" id="drop" width="10">',
+    '<table title="T" lang="en"><thead><tr><th colspan="2" rowspan="1" title="H">Head</th></tr></thead><tbody><tr><td colspan="2" rowspan="3" lang="en">Cell</td></tr></tbody></table>',
+    '<div class="gmail_quote" id="quote" title="D" lang="en"><blockquote class="gmail_quote" id="q" type="cite" title="Q"><span id="s" title="S">Text</span></blockquote></div><hr style="border-top:1px solid #b5c4df" title="H">',
+    '<ol title="List" lang="en"><li title="Item">One<ul lang="en"><li>Two</li></ul></li></ol>',
+] + [
+    f'<{tag} title="Title" lang="en" class="class" id="id" href="https://example.test/" src="cid:x" alt="Alt" colspan="2" rowspan="3" type="cite" style="border-top:1px solid #b5c4df" dir="rtl" data-x="drop">Text</{tag}>'
+    for tag in sorted(sanitize_module._ALLOWED_TAGS)
+])
+def test_sanitize_html_matches_base_policy_without_transient_tags(html) -> None:
+    expected = nh3.clean(
+        html,
+        tags=sanitize_module._ALLOWED_TAGS,
+        attributes=sanitize_module._ALLOWED_ATTRIBUTES,
+        url_schemes=sanitize_module._ALLOWED_URL_SCHEMES,
+        strip_comments=True,
+    )
+
+    assert sanitize_html(html) == expected
+
+
+def test_sanitizer_cleaner_is_constructed_without_attribute_filter(monkeypatch) -> None:
+    cleaner = nh3.Cleaner
+    calls = []
+
+    def checked_cleaner(**kwargs):
+        assert "attribute_filter" not in kwargs
+        calls.append(kwargs)
+        return cleaner(**kwargs)
+
+    monkeypatch.setattr(nh3, "Cleaner", checked_cleaner)
+
+    runpy.run_path(sanitize_module.__file__)
+
+    assert len(calls) == 1

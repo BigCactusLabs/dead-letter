@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Synthetic analysis evaluation review revision",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "artifact_type": {
+      "const": "analysis_label_review"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "\\S",
+      "maxLength": 128
+    },
+    "prelabels_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]+$"
+          },
+          "source_sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Exact immutable original case metadata; validated against the bound pre-label revision."
+          },
+          "labels": {
+            "type": "object",
+            "properties": {
+              "action_deadline_present": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "expressed_urgency": {
+                "enum": [
+                  0,
+                  1,
+                  2,
+                  null
+                ]
+              },
+              "non_reply_action_request_present": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "reply_request_present": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "sender_commitment_present": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "response_expectation": {
+                "enum": [
+                  "both",
+                  "insufficient_context",
+                  "non_reply_action_only",
+                  "none",
+                  "reply_only"
+                ]
+              }
+            },
+            "required": [
+              "action_deadline_present",
+              "expressed_urgency",
+              "non_reply_action_request_present",
+              "reply_request_present",
+              "sender_commitment_present",
+              "response_expectation"
+            ],
+            "additionalProperties": false
+          },
+          "ambiguity_notes": {
+            "type": "object",
+            "propertyNames": {
+              "enum": [
+                "action_deadline_present",
+                "expressed_urgency",
+                "non_reply_action_request_present",
+                "reply_request_present",
+                "sender_commitment_present",
+                "response_expectation"
+              ]
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "review": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "enum": [
+                  "pending",
+                  "reviewed",
+                  "adjudicated"
+                ]
+              },
+              "reviewers": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "\\S"
+                }
+              },
+              "reviewed_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$",
+                "format": "date-time"
+              },
+              "adjudicator": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "\\S"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "note": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "reviewers",
+              "reviewed_at",
+              "adjudicator",
+              "note"
+            ],
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "pending"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "reviewers": {
+                      "maxItems": 0
+                    },
+                    "reviewed_at": {
+                      "type": "null"
+                    },
+                    "adjudicator": {
+                      "type": "null"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "reviewed"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "reviewers": {
+                      "minItems": 1
+                    },
+                    "reviewed_at": {
+                      "type": "string"
+                    },
+                    "adjudicator": {
+                      "type": "null"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "adjudicated"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "reviewers": {
+                      "minItems": 2
+                    },
+                    "reviewed_at": {
+                      "type": "string"
+                    },
+                    "adjudicator": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    },
+                    "note": {
+                      "type": "string",
+                      "pattern": "\\S"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "required": [
+          "case_id",
+          "source_sha256",
+          "metadata",
+          "labels",
+          "ambiguity_notes",
+          "review"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "artifact_type",
+    "revision",
+    "prelabels_sha256",
+    "cases"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

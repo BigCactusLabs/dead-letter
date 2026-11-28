@@ -2,8 +2,13 @@
 
 **Availability: 0.4.6 and later (#139).** Opt-in CLI/Python
 resume supports one immutable, flat `.mbox` export with either Markdown files
-or Cabinet-style bundles. Compressed input, dry runs, MCP and web/UI resume are
-not supported. Ordinary conversion keeps its existing behavior.
+or Cabinet-style bundles. Ordinary conversion keeps its existing behavior.
+
+**Unreleased (#272):** Python resume also accepts cooperative cancellation and
+compressed `.zip`/`.tgz`/`.tar.gz` input through `convert_mbox_archive(...,
+resume=True)`, and web/UI archive jobs resume in their original job folder
+([web jobs](#web-jobs)). The CLI's `--mbox-resume` still takes a flat `.mbox`
+only. Dry runs and MCP resume are not supported.
 
 ## Use
 
@@ -46,6 +51,31 @@ dead-letter convert archive.mbox --output Cabinet/ --mbox-resume --mbox-bundles 
 See [worker limits](mbox-workers.md) before choosing a timeout or resource budget.
 The example value is not a performance recommendation. Worker crashes/timeouts
 remain per-record failures; a later resume retries failed records.
+
+### Cancellation and compressed input (unreleased)
+
+`convert_mbox(..., resume=True, cancel_requested=callable)` checks the callable
+before the source is fingerprinted, after each 1 MiB of fingerprinting and
+between records, then raises `MboxCancelled`. A cancel before or during
+fingerprinting leaves no output or journal.
+Completed records keep their receipts; the record in progress is retried by the
+next run.
+
+```python
+from dead_letter.core import convert_mbox_archive
+
+results = convert_mbox_archive(
+    "Takeout.zip", member="Takeout/Mail/All mail.mbox", staging_dir="staging",
+    output="Cabinet", bundles=True, resume=True,
+)
+```
+
+Each run stages the selected member again to a new private path. The journal
+binds the resolved archive path, the member name and its archive metadata, and
+the staged member's SHA-256, never the random staging path, so a rerun of the
+same archive and member reuses completed bundles. A different member, or the
+same archive renamed or moved, is `mbox_resume_mismatch`. Provenance and output
+bytes match a non-resumed import of the same member.
 
 ## Source and conversion identity
 
@@ -197,6 +227,19 @@ combinations are rejected before conversion. The bundle-publication probe runs
 before the journal records its layout, so a failed probe leaves only the state
 directory and its lock file, no converted message output, and the same output
 can still be used for a flat resume.
+
+## Web jobs
+
+**Unreleased (#272).** Archive jobs started from the web UI or API use this
+journal from their first run, in their own `Cabinet/mbox-<job-id>` folder. A
+job that was cancelled, stopped for disk space, or left unfinished by a server
+stop can be resumed in that folder with the same job id. The server re-admits
+the source with the checks a new job gets and refuses the resume when the
+source's device, inode, size or modification time changed. Each run writes a
+new collision-safe report; earlier reports stay. A Cabinet whose filesystem
+cannot publish bundles without replacement runs new jobs without resume. See
+the [runtime contract](v4-runtime-contracts.md#mbox-job-resume-unreleased) for the
+endpoints, the job descriptor and which outcomes can be resumed.
 
 ## Concurrency, durability and limits
 

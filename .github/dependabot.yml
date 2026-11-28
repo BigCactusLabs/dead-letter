@@ -5,6 +5,12 @@ updates:
     schedule:
       interval: "daily"
     open-pull-requests-limit: 5
+    # setuptools and wheel appear only in [build-system] requires, not in
+    # uv.lock, so Dependabot's uv updater fails with "Expected lockfile to
+    # change!". Their image pins live in docker/build-constraints.txt.
+    ignore:
+      - dependency-name: "setuptools"
+      - dependency-name: "wheel"
     groups:
       uv-dependencies:
         patterns:

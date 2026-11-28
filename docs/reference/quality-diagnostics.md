@@ -25,7 +25,7 @@ This summary is intended for operator review. It is not the raw internal convers
 - `segmentation_path`: `html | plain_fallback`
   - `html` means the selected HTML body stayed on an HTML rendering path.
   - `plain_fallback` means the final zoning path was plain text. This can be a normal outcome for plain-text mail, not just an error fallback.
-- `client_hint`: `gmail | outlook | front | generic | null`
+- `client_hint`: `gmail | outlook | front | proton | yahoo | generic | null`
 - `confidence`: `high | medium | low`
 - `fallback_used`: `plain_text_reply_parser | html_failure_plain_text_fallback | html_markdown_panic_repaired | null`
   - `plain_text_reply_parser` means the plain-text conversation parser was used for the final zoning step.
@@ -59,7 +59,7 @@ This summary is intended for operator review. It is not the raw internal convers
 
 - `high`
   - Strong structure signals were available.
-  - Example: Gmail, Outlook, or supported Front quote boundaries were recognized directly.
+  - Example: Gmail, Outlook, Proton, Yahoo, or supported Front quote boundaries were recognized directly.
 - `medium`
   - Conversion succeeded on a standard path without strong provider-specific evidence.
 - `low`
@@ -234,4 +234,4 @@ images may be absent from rendered Markdown and bundle attachment artifacts.
 
 ## Thread Mode
 
-- `thread_mode="structured"` adds per-message section headers for prior replies and forwarded messages. Gmail HTML forwards and unquoted plain-text forward separators are kept in latest mode as well; `>`-quoted plain-text forwards are not. See [Runtime Contracts](v4-runtime-contracts.md) for the exact rules. No new diagnostic codes; attribution-parse failures emit `logging.DEBUG` on logger `dead_letter.core.attribution`.
+- `thread_mode="structured"` adds per-message section headers for prior replies and forwarded messages. Gmail HTML forwards and plain-text forward separators are kept in latest mode as well, including a `>`-quoted text/plain forward that opens a quote block outside reply history. See [Runtime Contracts](v4-runtime-contracts.md) for the exact rules. No new diagnostic codes; attribution-parse failures emit `logging.DEBUG` on logger `dead_letter.core.attribution`.

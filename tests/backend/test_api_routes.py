@@ -361,3 +361,25 @@ async def test_history_endpoint_respects_limit(tmp_path: Path) -> None:
         body = history.json()
         assert len(body["jobs"]) == 2
         assert body["totals"]["jobs_completed"] == 3
+
+
+@pytest.mark.anyio
+async def test_about_reports_running_package_version() -> None:
+    from dead_letter import __version__
+
+    app = create_app(worker_count=1)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8765") as client:
+        response = await client.get("/api/about")
+
+    assert response.status_code == 200
+    assert response.json() == {"version": __version__}
+
+
+@pytest.mark.anyio
+async def test_about_rejects_untrusted_host() -> None:
+    app = create_app(worker_count=1)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://attacker.example:8765") as client:
+        response = await client.get("/api/about")
+
+    assert response.status_code == 403
+    assert "version" not in response.json()

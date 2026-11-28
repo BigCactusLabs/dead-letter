@@ -81,6 +81,170 @@ export function buildPayload(mode, inputPath, options) {
   };
 }
 
+const MBOX_OPTION_KEYS = [
+  "strip_signatures", "strip_disclaimers", "strip_quoted_headers",
+  "strip_signature_images", "strip_tracking_pixels", "embed_inline_images",
+  "include_all_headers", "include_raw_html", "no_calendar_summary",
+  "allow_fallback_on_html_error", "allow_html_repair_on_panic",
+  "thread_mode", "thread_order",
+];
+
+export const MBOX_UPLOAD_MAX_BYTES = 16 * 1024 ** 3;
+
+export function isCompressedMbox(source) {
+  return /\.(zip|tgz|tar\.gz)$/i.test(String(source || "").trim());
+}
+
+export function buildMboxOptions(options, timeoutSeconds = 30, member = "") {
+  const selected = Object.fromEntries(
+    MBOX_OPTION_KEYS.filter((key) => key in options).map((key) => [key, options[key]])
+  );
+  return { ...selected, timeout_seconds: timeoutSeconds, ...(member ? { member } : {}) };
+}
+
+export function buildMboxPayload(inputPath, options, timeoutSeconds = 30, member = "") {
+  return {
+    input_path: inputPath.trim().replace(/\\/g, "/"),
+    options: buildMboxOptions(options, timeoutSeconds, isCompressedMbox(inputPath) ? member : ""),
+  };
+}
+
+function mboxTimeoutErrors(timeoutSeconds) {
+  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0 || timeoutSeconds > 300) {
+    return ["The per-message time limit must be greater than 0 and at most 300 seconds."];
+  }
+  return [];
+}
+
+export function validateMboxForm({ inputPath, timeoutSeconds = 30 }) {
+  const path = inputPath.trim().replace(/\\/g, "/");
+  const errors = [];
+  if (!path) errors.push("MBOX path is required.");
+  else if (!path.toLowerCase().endsWith(".mbox") && !isCompressedMbox(path)) errors.push("Choose one .mbox, .zip, .tgz or .tar.gz file.");
+  if (/^(\/|[a-z]:|~\/)/i.test(path) || path.split("/").includes("..")) {
+    errors.push("Use a path within the file browser root, such as Downloads/Takeout.mbox.");
+  }
+  return [...errors, ...mboxTimeoutErrors(timeoutSeconds)];
+}
+
+export function validateMboxUpload({ file, timeoutSeconds = 30 }) {
+  const errors = [];
+  if (!file) errors.push("Choose an archive to upload.");
+  else if (!String(file.name || "").toLowerCase().endsWith(".mbox") && !isCompressedMbox(file.name)) {
+    errors.push("Choose one .mbox, .zip, .tgz or .tar.gz file.");
+  } else if (file.size > MBOX_UPLOAD_MAX_BYTES) {
+    errors.push("Archives larger than 16 GiB cannot be uploaded.");
+  }
+  return [...errors, ...mboxTimeoutErrors(timeoutSeconds)];
+}
+
+export function mboxUploadUrl(options) {
+  return "/api/mbox/uploads?options=" + encodeURIComponent(JSON.stringify(options));
+}
+
+// Status 0 means the connection closed without a response. The server answers
+// an early rejection and then closes, which some browsers report as a network error.
+// Once every byte is sent (`sent`), the job may have started, so the outcome is unknown.
+export function mboxUploadErrorMessage(status, payload, { sent = false } = {}) {
+  const code = normalizeErrors(payload)[0]?.code || "";
+  switch (status) {
+    case 0:
+      if (sent) {
+        return "The connection closed after the whole archive was sent, so the import may have started. Check History before uploading again; while that import runs, a new upload is refused as busy.";
+      }
+      return "The connection closed before the server replied. The server may have refused the upload (another import running, or low disk space). Nothing was imported.";
+    case 400:
+      if (code === "mbox_upload_incomplete") return "The upload ended before the whole file arrived. Nothing was imported.";
+      return firstErrorMessage(payload, "The server rejected this upload.");
+    case 408:
+      return "The upload stalled and the server stopped waiting. Nothing was imported.";
+    case 409:
+      if (code === "mbox_busy") return "Another archive import is running. Wait for it to finish, then upload again.";
+      return firstErrorMessage(payload, "The server cannot accept an upload right now.");
+    case 411:
+      return "The browser sent the file without a length. Import the archive by path instead.";
+    case 413:
+      if (code === "mbox_upload_too_long") return "The browser sent more data than the file size. Nothing was imported.";
+      return "Archives larger than 16 GiB cannot be uploaded.";
+    case 415:
+      return "The archive was not sent as raw bytes. Reload the page and try again.";
+    case 507:
+      return "Not enough free space in the Inbox for this archive; 1 GiB must stay free after the copy. Free some space or import the archive by path.";
+    default:
+      return firstErrorMessage(payload, "The server could not store this upload.");
+  }
+}
+
+// Resume refusals name the job id as their path, which means nothing to the reader.
+export function mboxResumeErrorMessage(status, payload) {
+  const first = normalizeErrors(payload)[0];
+  const code = first?.code || "";
+  if (status === 404) return "This stopped import is no longer in the Cabinet. Start a new import.";
+  if (code === "mbox_source_changed") {
+    return "The source archive changed, moved or was removed after this import started, so it cannot be resumed. Start a new import.";
+  }
+  if (code === "mbox_busy") return "Another archive import is running. Wait for it to finish, then resume.";
+  if (status === 507) return "Not enough free space to resume; 1 GiB must stay free. Free some space, then resume.";
+  return first?.message || "The server could not resume this import.";
+}
+
+const MBOX_RESUME_REASONS = Object.freeze({
+  cancelled: "Cancelled",
+  disk_space: "Stopped for disk space",
+  interrupted: "Interrupted by a server stop",
+});
+
+export function mboxResumableView(item) {
+  const records = item?.records_processed;
+  const name = String(item?.source_name || "archive");
+  return {
+    name: item?.member ? name + " \u203a " + item.member : name,
+    meta: [
+      MBOX_RESUME_REASONS[item?.reason] || "Stopped",
+      Number.isInteger(records) ? records + (records === 1 ? " message processed" : " messages processed") : "",
+      relativeTime(item?.updated_at),
+    ].filter(Boolean).join(" \u00b7 "),
+  };
+}
+
+export function formatBytes(value) {
+  if (value < 1024) return value + " B";
+  const unit = Math.min(3, Math.floor(Math.log(value) / Math.log(1024)));
+  return (value / 1024 ** unit).toFixed(1) + " " + ["B", "KiB", "MiB", "GiB"][unit];
+}
+
+export function jobProgressView(job) {
+  if (job.upload) {
+    const total = Math.max(0, Number(job.upload.total || 0));
+    const value = Math.min(total, Math.max(0, Number(job.upload.loaded || 0)));
+    const fraction = total ? value / total : 0;
+    return {
+      value, max: total || 1, fraction,
+      label: Math.floor(fraction * 100) + "% uploaded",
+      detail: job.upload.sent ? "Upload complete. Waiting for the server to start the import."
+        : formatBytes(value) + " of " + formatBytes(total) + " sent",
+    };
+  }
+  if (job.kind === "mbox") {
+    const total = Math.max(0, Number(job.mbox?.bytes_total || 0));
+    const value = Math.min(total, Math.max(0, Number(job.mbox?.bytes_processed || 0)));
+    const records = Number(job.mbox?.records_processed || 0);
+    const reused = Number(job.mbox?.records_reused || 0);
+    const bytes = formatBytes(value) + " of " + formatBytes(total) + " archive bytes processed";
+    return {
+      value, max: total || 1, fraction: total ? value / total : 0,
+      label: records + (records === 1 ? " message processed" : " messages processed"),
+      detail: !job.mbox ? "Waiting for archive metadata"
+        : reused ? bytes + ", " + reused + " kept from the earlier run" : bytes,
+    };
+  }
+  const progress = job.progress || {};
+  const total = Math.max(0, Number(progress.total || 0));
+  const done = Number(progress.completed || 0) + Number(progress.failed || 0);
+  const value = Math.min(total, done);
+  return { value, max: total || 1, fraction: value / (total || 1), label: done + " / " + total, detail: "" };
+}
+
 export const OPTION_ENUM_VALIDATORS = {
   thread_mode: (v) => v === "latest" || v === "structured",
   thread_order: (v) => v === "oldest-first" || v === "latest-first",
@@ -131,7 +295,7 @@ export function relativeTime(isoString) {
 
 export function jobDisplayName(outputLocation) {
   if (!outputLocation) return "\u2014";
-  const path = outputLocation.bundle_path || outputLocation.cabinet_path || "";
+  const path = outputLocation.job_path || outputLocation.bundle_path || outputLocation.cabinet_path || "";
   const parts = path.replace(/\\/g, "/").split("/");
   const basename = parts[parts.length - 1] || "\u2014";
   const dot = basename.lastIndexOf(".");

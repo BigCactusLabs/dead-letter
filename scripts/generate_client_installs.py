@@ -34,7 +34,7 @@ def public_launcher(server: dict) -> dict:
     ):
         raise ValueError("unsupported server identity or local launch contract")
     runtime = package["runtimeArguments"]
-    if [a.get("name") for a in runtime] != ["--python", "--from"]:
+    if [a.get("name") for a in runtime] not in (["--python", "--from"], ["--python", "--from", "--exclude-newer"]):
         raise ValueError("review changes to the canonical runtime arguments")
     if any(a.get("type") != "named" or a.get("variables") for a in runtime):
         raise ValueError("runtime arguments must have fixed named values")
@@ -49,6 +49,8 @@ def public_launcher(server: dict) -> dict:
     binary = package["packageArguments"]
     if len(binary) != 1 or binary[0].get("type") != "positional" or binary[0].get("value") != "dead-letter-mcp":
         raise ValueError("unexpected MCP entrypoint")
+    # Public launchers follow published releases; a cutoff would freeze the
+    # deliberately unpinned package forever. Keep it only in the registry.
     return {
         "command": package["runtimeHint"],
         "args": ["--python", runtime[0]["value"], "--from", pinned.split("==", 1)[0], binary[0]["value"]],
@@ -91,12 +93,14 @@ def artifacts(root: Path = ROOT) -> dict[str, str]:
         "name": server["title"],
         "tagline": server["description"],
         "description": (
-            "Convert local .eml email exports to Markdown with YAML front matter, "
+            "Convert local .eml exports and bounded flat .mbox archives to Markdown with YAML front matter, "
             "retain attachments in bundles, and inspect conversion diagnostics. "
-            "Four stdio tools: convert_eml, convert_eml_to_bundle, convert_directory, "
-            "and get_diagnostics. No live mailbox access, account, API key, or hosted "
+            "Five stdio tools: convert_eml, convert_eml_to_bundle, convert_directory, "
+            "convert_mbox, and get_diagnostics. No live mailbox access, account, API key, or hosted "
             "email-processing service. MCP bundle conversion is copy-only; directory "
             "calls require explicit output and accept at most 50 .eml files. "
+            "MBOX calls require explicit output, accept archives up to 256 MiB, "
+            "and stop after 1000 messages with a truncation flag. "
             "The MCP host may send returned text to its model provider. "
             "PolyForm Noncommercial 1.0.0; commercial use requires separate permission."
         ),

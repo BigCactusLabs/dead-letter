@@ -92,7 +92,7 @@ def _html_markdown_panic_fixture() -> str:
     )
 
 
-def test_convert_gmail_quote_keeps_latest_reply_only(tmp_path: Path) -> None:
+def test_convert_gmail_no_signal_quote_keeps_current_body(tmp_path: Path) -> None:
     result = convert(FIXTURES / "gmail_quote.eml", output=tmp_path)
 
     assert result.success is True
@@ -100,7 +100,7 @@ def test_convert_gmail_quote_keeps_latest_reply_only(tmp_path: Path) -> None:
 
     body = result.output.read_text(encoding="utf-8")
     assert "Latest response" in body
-    assert "On prior mail wrote" not in body
+    assert "On prior mail wrote" in body
 
 
 def test_large_prose_html_default_conversion_avoids_quote_regex_backtracking(tmp_path: Path) -> None:
@@ -166,7 +166,7 @@ def test_convert_forwarded_email_preserves_forwarded_message_content(tmp_path: P
     assert result.output is not None
 
     body = result.output.read_text(encoding="utf-8")
-    assert "Vendor &lt;vendor@example.net&gt;" in body
+    assert "Vendor <vendor@example.net>" in body
     assert "Please review the attached quote." in body
 
 
@@ -186,7 +186,7 @@ def test_convert_gmail_html_path_preserves_markdown_formatting(tmp_path: Path) -
     assert "**Hello**" in body
     assert "- One" in body
     assert "- Two" in body
-    assert "Quoted" not in body
+    assert "Quoted" in body
 
 
 def test_plain_text_path_reports_plain_text_reply_fallback() -> None:
@@ -217,11 +217,11 @@ def test_plain_text_conversion_escapes_html_like_payloads(tmp_path: Path) -> Non
     assert "&lt;img src=x onerror=alert(2)&gt;" in text
 
 
-def test_plain_text_conversion_preserves_markdown_code_regions(tmp_path: Path) -> None:
+def test_plain_text_conversion_escapes_markdown_code_regions(tmp_path: Path) -> None:
     source = _write_plain_email(
         tmp_path / "plain_code_payload.eml",
         (
-            "Inline `<div>` stays literal.\n\n"
+            "Inline `<div>` is escaped too.\n\n"
             "```html\n"
             "<script>alert('in code')</script>\n"
             "<div>fixture</div>\n"
@@ -235,9 +235,14 @@ def test_plain_text_conversion_preserves_markdown_code_regions(tmp_path: Path) -
     assert result.success is True
     assert result.output is not None
     text = result.output.read_text(encoding="utf-8")
-    assert "`<div>`" in text
-    assert "```html\n<script>alert('in code')</script>\n<div>fixture</div>\n```" in text
+    assert "`&lt;div&gt;`" in text
+    assert (
+        "```html\n&lt;script&gt;alert('in code')&lt;/script&gt;\n&lt;div&gt;fixture&lt;/div&gt;\n```"
+        in text
+    )
     assert "&lt;img src=x onerror=alert(2)&gt;" in text
+    assert "<script" not in text
+    assert "<div" not in text
     assert "<img" not in text
 
 

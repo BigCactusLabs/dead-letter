@@ -1,4 +1,4 @@
-"""dead-letter: Convert .eml email exports to Markdown with YAML front matter."""
+"""dead-letter: Convert .eml and .mbox email to Markdown with YAML front matter."""
 
 from dead_letter.core import (
     BundleResult,
@@ -22,4 +22,4 @@ __all__ = [
     "convert_dir",
     "convert_to_bundle",
 ]
-__version__ = "0.4.8"
+__version__ = "0.4.11"

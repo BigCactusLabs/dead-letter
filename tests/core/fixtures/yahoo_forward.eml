@@ -1,0 +1,15 @@
+From: Alice <alice@example.com>
+To: Bob <bob@example.com>
+Subject: Fw: Invoice
+Date: Thu, 05 Mar 2026 14:20:00 +0000
+Message-ID: <yahoo-forward-1@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<html><body><div class="yahoo-style-wrap"><div dir="ltr">Invoice below.</div></div>
+<div id="ydp1a2b3c4dyahoo_quoted_1234567890" class="ydp1a2b3c4dyahoo_quoted">
+<div style="font-family:Helvetica, Arial, sans-serif;font-size:13px;">
+<div>----- Forwarded Message -----</div>
+<div><b>From:</b> Vendor &lt;vendor@example.net&gt;</div><div><b>To:</b> Alice &lt;alice@example.com&gt;</div>
+<div><b>Sent:</b> Wednesday, March 4, 2026 at 09:00:00 AM PST</div><div><b>Subject:</b> Invoice</div><div><br></div>
+<div><div id="ydp1a2b3c4dyiv0000000001">YAHOO FORWARDED BODY</div></div></div></div></body></html>

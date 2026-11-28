@@ -5,10 +5,12 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import re
+import tomllib
 from urllib.parse import quote
 
 from release_evidence import (API, IMAGE, MARKETPLACE, REPO, SERVER, TAP, Client, Conflict,
                               Missing, Unavailable, digest, formula, object_json, pypi_files, stable)
+from release import PLUGIN_LAUNCHER, launcher_pin
 
 STATES = ("verified", "missing", "deferred", "conflicting", "unable-to-verify")
 REGISTRY = "https://registry.modelcontextprotocol.io/v0.1/servers/" + quote(SERVER, safe="") + "/versions/"
@@ -208,16 +210,24 @@ def plugin(client: Client, version: str) -> dict:
     if manifest.get("version") != asset_version:
         raise Conflict("plugin manifest version disagrees with marketplace")
     launcher = object_json(client.file(REPO, "plugin/.mcp.json", sha))
-    args = launcher["mcpServers"]["dead-letter"]["args"]
-    pins = [args[i + 1] for i, arg in enumerate(args[:-1]) if arg == "--from"]
-    # Plugin releases before 0.4.9 pinned the `[mcp]` extra; later ones pin
-    # the bare package so Claude's locked launch accepts them.
-    prefixes = [p for p in ("dead-letter==", "dead-letter[mcp]==") if isinstance(pins[0], str) and pins[0].startswith(p)] if len(pins) == 1 else []
-    if not prefixes:
-        raise Conflict("plugin runtime is not exactly pinned")
+    runtime = launcher["mcpServers"]["dead-letter"]
     try:
-        pin = stable(pins[0].removeprefix(prefixes[0]))
-    except ValueError:
+        if runtime.get("command") == "uv":
+            if runtime.get("args") != PLUGIN_LAUNCHER["args"]:
+                raise Conflict("plugin launcher does not run the shipped lock in isolation")
+            project = tomllib.loads(client.file(REPO, "plugin/pyproject.toml", sha))
+            pin = launcher_pin(project)
+        else:
+            # Historical uvx releases pinned either the bare package or [mcp].
+            args = runtime["args"]
+            pins = [args[i + 1] for i, arg in enumerate(args[:-1]) if arg == "--from"]
+            prefixes = [p for p in ("dead-letter==", "dead-letter[mcp]==") if isinstance(pins[0], str) and pins[0].startswith(p)] if len(pins) == 1 else []
+            if runtime.get("command") != "uvx" or not prefixes:
+                raise Conflict("plugin runtime is not exactly pinned")
+            pin = stable(pins[0].removeprefix(prefixes[0]))
+    except (Conflict, Unavailable):
+        raise
+    except (ValueError, KeyError, TypeError):
         raise Conflict("plugin runtime is not a supported exact stable pin") from None
     try:
         available = pypi_files(client.json(f"https://pypi.org/pypi/dead-letter/{pin}/json"), pin)

@@ -1,0 +1,29 @@
+# Opt-in staged-file checks. Ruff comes from the repository's locked dev venv.
+exclude: '(^tests/.*fixtures/|\.(eml|mbox)$|^(build|dist)/)'
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: Ruff lint (locked dev environment)
+        entry: .venv/bin/ruff check
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: Ruff format check (manual)
+        entry: .venv/bin/ruff format --check
+        language: system
+        types: [python]
+        stages: [manual]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
+    hooks:
+      - id: check-merge-conflict
+        args: [--assume-in-merge]
+      - id: check-toml
+      - id: check-yaml
+      - id: check-json
+      # Restrict fixers to Python code; preserve docs, manifests and mail bytes.
+      - id: trailing-whitespace
+        files: '^(src|scripts|tests)/.*\.py$'
+      - id: end-of-file-fixer
+        files: '^(src|scripts|tests)/.*\.py$'

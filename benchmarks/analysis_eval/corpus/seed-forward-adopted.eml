@@ -1,0 +1,17 @@
+From: Oren Vale <oren@example.test>
+To: Alex <alex@example.test>, Sam <sam@example.test>
+Cc: Niko Reed <niko@example.test>
+Date: Tue, 02 Jan 2001 10:30:00 -0500
+Message-ID: <seed-forward-adopted@example.test>
+Subject: Seed forwarded request
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Please handle the request below.
+
+---------- Forwarded message ----------
+From: Prior <prior@example.test>
+Subject: Earlier request
+
+Please investigate the outage.

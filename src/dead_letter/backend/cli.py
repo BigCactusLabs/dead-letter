@@ -72,11 +72,11 @@ def _add_convert_flags(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--mbox-memory-mib", type=int, default=None, metavar="MIB",
-        help="MBOX worker mode: address-space limit per worker in MiB (Linux only).",
+        help="MBOX worker mode: memory limit in MiB; address space on Linux, committed memory on Windows (not RSS).",
     )
     parser.add_argument(
         "--mbox-cpu-seconds", type=int, default=None, metavar="SECONDS",
-        help="MBOX worker mode: CPU-time limit per worker (Linux, macOS).",
+        help="MBOX worker mode: CPU-time limit (Linux, macOS); user-mode CPU time on Windows.",
     )
     parser.add_argument(
         "--mbox-max-output-mib", type=int, default=None, metavar="MIB",

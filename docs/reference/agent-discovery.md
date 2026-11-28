@@ -121,7 +121,10 @@ a result covers only the host and version it names.
 - `urn:air:github.com:bigcactuslabs:dead-letter:mcp-server`, type
   `application/mcp-server-card+json`, pointing at source `server.json`.
 - `urn:air:github.com:bigcactuslabs:dead-letter:skill`, type
-  `application/ai-skill+md`, pointing at the portable `SKILL.md`.
+  `application/agent-skills+md`, pointing at the portable `SKILL.md`. This is
+  the ARD v0.91 standard skill type (ard-spec `cbe4bbf`, 2026-10-11); the entry
+  used `application/ai-skill+md` before 2026-11-04. See the
+  [November 4 refresh](../project/2026-11-04-distribution-refresh.md#ard-media-type-159).
 
 Representative queries cover exported email conversion, reading `.eml`, RAG
 preparation, and local archives. These are discovery intents, not measured
@@ -144,11 +147,14 @@ https://raw.githubusercontent.com/BigCactusLabs/dead-letter/main/.well-known/ard
 That is not a well-known discovery endpoint. In ARD v0.91, domain anchoring
 applies to the URN publisher segment (here `github.com`) and to any
 `trustManifest` identity; the spec does not require the serving host to match
-that segment or to be an organization apex domain. Serving it from
-`bigcactuslabs.xyz` is the chosen endpoint (#159) but is not live. A hosted
-copy should reference released artifacts, such as the tag-pinned `SKILL.md`
-and the resolved `dead-letter-server-X.Y.Z.json` release asset, not this
-source template. Do not enable GitHub Pages or claim crawler discovery as
+that segment or to be an organization apex domain. A hosted copy
+is served from `https://bigcactuslabs.xyz/.well-known/ard.json` (#159, live
+since 2026-11-10) and is maintained in the site repository, not here. It
+references released artifacts, the tag-pinned `SKILL.md` and the resolved
+`dead-letter-server-X.Y.Z.json` release asset, not this source template, so
+it needs a site change after each package release. The host rejects the
+default `Python-urllib` user agent with HTTP 403 (Cloudflare error 1010);
+other clients tested receive the catalog. Do not enable GitHub Pages or claim crawler discovery as
 part of publishing this source file.
 
 **Release note.** Both entry versions follow the package version and are
@@ -173,6 +179,10 @@ publication alone is not evidence that a named client query returns
 dead-letter; record the actual catalog/client result. The
 [Agent Finder search page](https://github.com/agentfinder) accepts
 natural-language queries for retrieval checks once an entry is listed.
+The catalog's `CONTRIBUTING.md` was revised on 2026-10-13. `sourceSet` and
+`repoPath` are required for GitHub-file references, which this skill entry is.
+Validation now needs `python3 -m pip install -r requirements.txt` before the
+generator runs.
 
 The prepared skill-entry shape below follows the catalog's own `urn:ai:`
 identifier and `application/ai-skill` media type, not ARD's `urn:air:` scheme:
@@ -191,17 +201,21 @@ identifier and `application/ai-skill` media type, not ARD's `urn:air:` scheme:
 
 This shape matches the required fields in the catalog's `CONTRIBUTING.md` at
 [`666cf8a`](https://github.com/github/agentfinder-catalog/blob/666cf8a51e2329d577e73d6e3c00fa5eae55ce2c/CONTRIBUTING.md)
-and still passes the generator and `--check` at
+and passes the generator and `--check` at
 [`abb4a13`](https://github.com/github/agentfinder-catalog/tree/abb4a13e3c27e46e66ee6a103cc3ca2ae370cbd8)
-(September 30, 2026).
+(September 30, 2026) and again, unchanged, at
+[`3286bfd`](https://github.com/github/agentfinder-catalog/tree/3286bfd843a3831b52a8a72b0ff6f3eb0f730d7f)
+(November 10, 2026; 1,843 generated entries with it added).
 The catalog's generator enforces fewer fields than that guide, so a generator
 pass is not proof of a complete entry. In a fork of that catalog, add
 `catalog/bigcactuslabs/dead-letter.json`, check it with `python -m json.tool`,
-and run `python3 scripts/generate_ai_catalog.py` and its `--check` mode; the
+run `python3 -m pip install -r requirements.txt`, then
+`python3 scripts/generate_ai_catalog.py` and its `--check` mode; the
 generator fetches GitHub's live MCP catalog. Fork workflows validate but
 cannot push the regenerated `ai-catalog.json`; upstream regenerates it after
-merge. Review whether the catalog permits a released commit URL instead of the
-moving `main` example; do not invent acceptance of either update policy.
+merge. The guide's skill example uses a `blob/main` URL; its 40-hex
+commit-pin rule covers reviewed icon assets, not skill URLs. Do not invent
+acceptance of a released commit URL for skills.
 Record submission URL, source revision, license review, and eventual outcome.
 A prepared entry or submitted PR is not an accepted listing.
 

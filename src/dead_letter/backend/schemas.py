@@ -5,7 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic_core import PydanticCustomError
 
 from dead_letter.core.types import ThreadMode, ThreadOrder
 
@@ -22,7 +23,7 @@ ErrorStage = Literal["validation", "backend", "core"]
 DiagnosticState = Literal["normal", "degraded", "review_recommended"]
 SelectedBody = Literal["html", "plain"]
 SegmentationPath = Literal["html", "plain_fallback"]
-ClientHint = Literal["gmail", "outlook", "front", "generic"] | None
+ClientHint = Literal["gmail", "outlook", "front", "proton", "yahoo", "generic"] | None
 ConfidenceLevel = Literal["high", "medium", "low"]
 WarningSeverity = Literal["warning"]
 
@@ -109,10 +110,93 @@ class JobCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class MboxJobOptions(BaseModel):
+    """Copy-only archive options; source deletion and output paths are not inputs."""
+
+    strip_signatures: bool = False
+    strip_disclaimers: bool = False
+    strip_quoted_headers: bool = False
+    strip_signature_images: bool = False
+    strip_tracking_pixels: bool = False
+    embed_inline_images: bool = False
+    include_all_headers: bool = False
+    include_raw_html: bool = False
+    no_calendar_summary: bool = False
+    allow_fallback_on_html_error: bool = False
+    allow_html_repair_on_panic: bool = False
+    thread_mode: ThreadMode = ThreadMode.LATEST
+    thread_order: ThreadOrder = ThreadOrder.OLDEST_FIRST
+    member: str | None = Field(default=None, max_length=1024)
+    timeout_seconds: float = Field(default=30.0, gt=0, le=300, allow_inf_nan=False, strict=True)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("member", mode="before")
+    @classmethod
+    def validate_member_name(cls, value):
+        if isinstance(value, str) and (
+            len(value) > 1024 or any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in value)
+        ):
+            raise PydanticCustomError(
+                "mbox_invalid_member",
+                "member must be at most 1024 characters and contain no control characters",
+            )
+        return value
+
+
+class MboxJobCreateRequest(BaseModel):
+    input_path: str = Field(min_length=1, max_length=4096)
+    options: MboxJobOptions = Field(default_factory=MboxJobOptions)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_member(self) -> MboxJobCreateRequest:
+        if self.options.member is not None and self.input_path.lower().endswith(".mbox"):
+            raise PydanticCustomError(
+                "mbox_member_requires_archive",
+                "member is only supported for compressed MBOX archives",
+            )
+        return self
+
+
+class MboxProgress(BaseModel):
+    """Bytes cover completed records; the record total is never pre-scanned."""
+
+    source_path: str
+    records_total: None = None
+    records_processed: int = Field(default=0, ge=0)
+    bytes_total: int = Field(ge=0)
+    bytes_processed: int = Field(default=0, ge=0)
+    failures_omitted: int = Field(default=0, ge=0)
+    phase: Literal["queued", "converting", "publishing", "finished"] = "queued"
+    # A resumed job re-verifies completed bundles; those count as reused.
+    resumed: bool = False
+    records_reused: int = Field(default=0, ge=0)
+
+
+class MboxResumableJob(BaseModel):
+    """A stopped web MBOX job whose source still has its admitted identity."""
+
+    id: str
+    origin: Literal["manual", "upload"]
+    source_name: str
+    member: str | None = None
+    reason: Literal["cancelled", "disk_space", "interrupted"]
+    records_processed: int | None = None
+    updated_at: datetime
+    job_path: str
+
+
+class MboxResumableJobsResponse(BaseModel):
+    jobs: list[MboxResumableJob]
+
+
 class OutputLocation(BaseModel):
     strategy: Literal["cabinet"]
     cabinet_path: str
     bundle_path: str | None = None
+    job_path: str | None = None
 
 
 class JobCreateResponse(BaseModel):
@@ -130,10 +214,13 @@ class JobRetryRequest(BaseModel):
 class JobStatusResponse(BaseModel):
     id: str
     status: JobStatus
+    kind: Literal["eml", "mbox"] = "eml"
     origin: str = "manual"
     output_location: OutputLocation
     cancel_requested: bool
     progress: Progress
+    mbox: MboxProgress | None = None
+    resumable: bool = False
     summary: Summary
     errors: list[ErrorItem]
     recovery_actions: list[dict[str, str]] = Field(default_factory=list)

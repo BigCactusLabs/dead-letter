@@ -1,7 +1,10 @@
-import { apiFetch } from "../lib/api.js";
+import { CSRF_HEADER_NAME, apiFetch, clearCachedCsrfToken, getCsrfToken, isCsrfFailurePayload } from "../lib/api.js";
 import {
   firstErrorMessage,
   isTerminalStatus,
+  mboxResumeErrorMessage,
+  mboxUploadErrorMessage,
+  mboxUploadUrl,
   normalizeDiagnostics,
   normalizeErrors,
   normalizeRecoveryActions,
@@ -18,6 +21,8 @@ export function registerJobStore(Alpine) {
   Alpine.store("job", {
     id: "",
     origin: "",
+    kind: "eml",
+    mbox: null,
     status: "",
     outputLocation: null,
     diagnostics: null,
@@ -25,6 +30,14 @@ export function registerJobStore(Alpine) {
     diagnosticsOpen: false,
     reportPath: null,
     cancelRequested: false,
+    // The current archive job stopped in a way the server can continue in its original folder.
+    resumable: false,
+    // Stopped archive imports in the Cabinet, including ones from an earlier server process.
+    resumableImports: [],
+    resumeError: "",
+    resumeErrorId: "",
+    // Set when this page resumed the job, before the first poll reports mbox.resumed.
+    resumedRun: false,
     progress: { total: 0, completed: 0, failed: 0, current: null },
     summary: { written: 0, skipped: 0, errors: 0 },
     errors: [],
@@ -41,6 +54,11 @@ export function registerJobStore(Alpine) {
     opInfo: [],
     pendingWatchJobId: "",
     pendingWatchJobStatus: "",
+    // An archive upload in flight: { name, loaded, total, sent }. No job exists until the server accepts it.
+    upload: null,
+    activeUpload: null,
+    // Set by cancelUpload() for the whole upload, including the CSRF token fetches before any request exists.
+    uploadCancelled: false,
 
     applyOutputLocation(outputLocation) {
       if (
@@ -53,6 +71,9 @@ export function registerJobStore(Alpine) {
           cabinet_path: outputLocation.cabinet_path,
           bundle_path: typeof outputLocation.bundle_path === "string" ? outputLocation.bundle_path : null,
         };
+        if (typeof outputLocation.job_path === "string") {
+          this.outputLocation.job_path = outputLocation.job_path;
+        }
         return;
       }
       this.outputLocation = null;
@@ -80,6 +101,8 @@ export function registerJobStore(Alpine) {
       this.clearOpMessages();
       this.id = "";
       this.origin = "";
+      this.kind = "eml";
+      this.mbox = null;
       this.status = "";
       this.outputLocation = null;
       this.diagnostics = null;
@@ -87,6 +110,10 @@ export function registerJobStore(Alpine) {
       this.diagnosticsOpen = false;
       this.reportPath = null;
       this.cancelRequested = false;
+      this.resumable = false;
+      this.resumeError = "";
+      this.resumeErrorId = "";
+      this.resumedRun = false;
       this.progress = { total: 0, completed: 0, failed: 0, current: null };
       this.summary = { written: 0, skipped: 0, errors: 0 };
       this.errors = [];
@@ -103,6 +130,8 @@ export function registerJobStore(Alpine) {
 
       this.id = payload.id;
       this.origin = origin;
+      this.kind = payload.kind === "mbox" || origin === "mbox" || origin === "upload" ? "mbox" : "eml";
+      this.mbox = payload.mbox || null;
       this.status = payload.status;
       this.applyOutputLocation(payload.output_location);
       this.diagnostics = normalizeDiagnostics(payload.diagnostics);
@@ -122,7 +151,8 @@ export function registerJobStore(Alpine) {
       this.stopPolling();
     },
 
-    async start(payload) {
+    async start(payload, kind = "eml") {
+      if (this.keepActiveArchive()) return { ok: false };
       if (this.isSubmitting) {
         return { ok: false };
       }
@@ -131,9 +161,10 @@ export function registerJobStore(Alpine) {
       this.stopPolling();
       this.resetState();
       this.isSubmitting = true;
+      this.kind = kind;
 
       try {
-        const response = await apiFetch("/api/jobs", {
+        const response = await apiFetch(kind === "mbox" ? "/api/mbox/jobs" : "/api/jobs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -144,7 +175,7 @@ export function registerJobStore(Alpine) {
         }
 
         const body = await response.json();
-        if (this.applyStarted(body, "Backend returned an invalid create-job response.", "manual")) {
+        if (this.applyStarted(body, "Backend returned an invalid create-job response.", kind === "mbox" ? "mbox" : "manual")) {
           return { ok: true };
         }
         return { ok: false };
@@ -154,6 +185,103 @@ export function registerJobStore(Alpine) {
       } finally {
         this.isSubmitting = false;
       }
+    },
+
+    async startMbox(payload) {
+      if (this.id && !isTerminalStatus(this.status)) {
+        this.setOpError("Wait for the current job to finish, or cancel it, before starting an archive import.");
+        return { ok: false };
+      }
+      return this.start(payload, "mbox");
+    },
+
+    async uploadMbox(file, options) {
+      if (this.keepActiveArchive() || this.isSubmitting || !file) return { ok: false };
+      if (this.id && !isTerminalStatus(this.status)) {
+        this.setOpError("Wait for the current job to finish, or cancel it, before starting an archive import.");
+        return { ok: false };
+      }
+
+      this.clearOpMessages();
+      this.stopPolling();
+      this.resetState();
+      this.isSubmitting = true;
+      this.kind = "mbox";
+      this.upload = { name: file.name, loaded: 0, total: file.size, sent: false };
+      this.uploadCancelled = false;
+
+      try {
+        const token = await getCsrfToken();
+        if (this.uploadCancelled) return { ok: false, cancelled: true };
+        let result = await this.sendUpload(file, options, token);
+        if (result.status === 403 && isCsrfFailurePayload(result.payload)) {
+          // Token likely rotated (e.g., backend restarted). Refresh once and retry.
+          clearCachedCsrfToken();
+          const refreshed = await getCsrfToken();
+          if (this.uploadCancelled) return { ok: false, cancelled: true };
+          if (refreshed !== token) {
+            this.upload = { ...this.upload, loaded: 0, sent: false };
+            result = await this.sendUpload(file, options, refreshed);
+          }
+        }
+        if (result.aborted) return { ok: false, cancelled: true };
+        if (result.status === 202) {
+          return { ok: this.applyStarted(result.payload, "Backend returned an invalid upload response.", "upload") };
+        }
+        return { ok: false, formErrors: [mboxUploadErrorMessage(result.status, result.payload, { sent: result.sent })] };
+      } catch (_err) {
+        return { ok: false, formErrors: ["Could not reach the local server to start the upload."] };
+      } finally {
+        this.upload = null;
+        this.activeUpload = null;
+        this.uploadCancelled = false;
+        this.isSubmitting = false;
+      }
+    },
+
+    sendUpload(file, options, token) {
+      return new Promise((resolve) => {
+        const xhr = new XMLHttpRequest();
+        this.activeUpload = xhr;
+        xhr.open("POST", mboxUploadUrl(options));
+        xhr.setRequestHeader("Content-Type", "application/octet-stream");
+        xhr.setRequestHeader(CSRF_HEADER_NAME, token);
+        xhr.setRequestHeader("X-Dead-Letter-Filename", encodeURIComponent(file.name));
+        xhr.setRequestHeader("X-Dead-Letter-Upload-Length", String(file.size));
+        xhr.upload.onprogress = (event) => {
+          if (!this.upload) return;
+          this.upload = { ...this.upload, loaded: event.loaded, total: event.lengthComputable ? event.total : file.size };
+        };
+        xhr.upload.onload = () => {
+          // Every byte is sent; from here the server may already be starting the job.
+          if (this.upload) this.upload = { ...this.upload, loaded: this.upload.total, sent: true };
+        };
+        xhr.onload = () => {
+          let payload = null;
+          try {
+            payload = JSON.parse(xhr.responseText);
+          } catch {
+            payload = null;
+          }
+          resolve({ status: xhr.status, payload });
+        };
+        // After the last byte, a lost connection says nothing about whether the server started the job.
+        xhr.onerror = () => resolve({ status: 0, payload: null, sent: Boolean(this.upload?.sent) });
+        xhr.onabort = () => resolve({ status: 0, payload: null, aborted: true });
+        xhr.send(file);
+      });
+    },
+
+    cancelUpload() {
+      if (!this.upload || this.upload.sent) return;
+      this.uploadCancelled = true;
+      this.activeUpload?.abort();
+    },
+
+    keepActiveArchive() {
+      if (this.kind !== "mbox" || !this.id || isTerminalStatus(this.status)) return false;
+      this.setOpError("Wait for the archive import to finish, or cancel it, before starting another job.");
+      return true;
     },
 
     async handleStartFailure(response) {
@@ -254,7 +382,10 @@ export function registerJobStore(Alpine) {
         }
 
         this.status = payload.status;
+        this.kind = payload.kind === "mbox" ? "mbox" : "eml";
+        this.mbox = this.kind === "mbox" && payload.mbox ? payload.mbox : null;
         this.cancelRequested = Boolean(payload.cancel_requested);
+        this.resumable = this.kind === "mbox" && Boolean(payload.resumable);
         this.applyOutputLocation(payload.output_location);
         this.progress = {
           total: Number(payload.progress.total || 0),
@@ -283,6 +414,7 @@ export function registerJobStore(Alpine) {
         if (isTerminalStatus(this.status)) {
           this.stopPolling();
           Alpine.store("history")?.load?.();
+          if (this.kind === "mbox") this.loadResumable();
           if (this.pendingWatchJobId && this.pendingWatchJobId !== this.id) {
             Alpine.store("watch")?.adoptWatchJob?.(this.pendingWatchJobId, this.pendingWatchJobStatus);
           }
@@ -306,6 +438,7 @@ export function registerJobStore(Alpine) {
     },
 
     async importFile(file, options) {
+      if (this.keepActiveArchive()) return null;
       if (!file || this.isSubmitting) {
         return null;
       }
@@ -348,6 +481,7 @@ export function registerJobStore(Alpine) {
     },
 
     async importBatch(files, options) {
+      if (this.keepActiveArchive()) return null;
       if (!files || !files.length || this.isSubmitting) {
         return null;
       }
@@ -432,6 +566,64 @@ export function registerJobStore(Alpine) {
       }
     },
 
+    async loadResumable() {
+      try {
+        const response = await fetch("/api/mbox/resumable");
+        if (!response.ok) return;
+        const payload = await response.json();
+        this.resumableImports = Array.isArray(payload?.jobs)
+          ? payload.jobs.filter((item) => item && typeof item.id === "string")
+          : [];
+      } catch (_err) {
+        // The list is advisory; a failed refresh keeps the previous one.
+      }
+    },
+
+    // Continue a stopped archive import under the same job id and folder.
+    async resumeMbox(jobId) {
+      if (!jobId || this.isSubmitting || this.keepActiveArchive()) return { ok: false };
+      if (this.id && !isTerminalStatus(this.status)) {
+        this.setResumeError(jobId, "Wait for the current job to finish, or cancel it, before resuming an archive import.");
+        return { ok: false };
+      }
+      const listed = this.resumableImports.find((item) => item.id === jobId);
+      const origin = listed?.origin === "upload" || (!listed && this.id === jobId && this.origin === "upload")
+        ? "upload" : "mbox";
+
+      this.clearOpMessages();
+      this.setResumeError("", "");
+      this.isSubmitting = true;
+      try {
+        const response = await apiFetch(`/api/mbox/jobs/${encodeURIComponent(jobId)}/resume`, { method: "POST" });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          this.setResumeError(jobId, mboxResumeErrorMessage(response.status, payload));
+          if (response.status === 404 || response.status === 409) {
+            if (this.id === jobId) this.resumable = false;
+            this.loadResumable();
+          }
+          return { ok: false };
+        }
+        const payload = await response.json();
+        this.stopPolling();
+        this.resetState();
+        if (!this.applyStarted(payload, "Backend returned an invalid resume response.", origin)) return { ok: false };
+        this.resumedRun = true;
+        this.resumableImports = this.resumableImports.filter((item) => item.id !== jobId);
+        return { ok: true };
+      } catch (_err) {
+        this.setResumeError(jobId, "Network error while resuming the archive import.");
+        return { ok: false };
+      } finally {
+        this.isSubmitting = false;
+      }
+    },
+
+    setResumeError(jobId, message) {
+      this.resumeErrorId = jobId;
+      this.resumeError = message;
+    },
+
     async cancel() {
       if (!this.id || this.cancelInFlight) {
         return;
@@ -470,17 +662,23 @@ export function registerJobStore(Alpine) {
         }
 
         const payload = await response.json();
-        if (this.id !== requestedJobId) {
+        // Polling may already have recorded the final state; a late reply must not reopen it.
+        if (this.id !== requestedJobId || isTerminalStatus(this.status)) {
           return;
         }
 
         this.status = payload.status;
         if (payload.accepted && !isTerminalStatus(this.status)) {
           this.cancelRequested = true;
-          this.setOpInfo("Cancellation requested. In-progress files may still complete before the job becomes cancelled.");
+          this.setOpInfo(this.kind === "mbox"
+            ? "Cancellation requested. Waiting for the message worker to stop and the partial report to finish. Completed bundles are kept."
+            : "Cancellation requested. In-progress files may still complete before the job becomes cancelled.");
         }
         if (isTerminalStatus(this.status)) {
           this.stopPolling();
+        } else if (!this.pollHandle) {
+          // Only polling can report the final state, so restart it if it had stopped.
+          this.startPolling();
         }
       } catch (err) {
         if (err && err.name === "AbortError") {

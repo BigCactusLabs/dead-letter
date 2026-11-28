@@ -33,6 +33,18 @@ def test_public_launcher_is_published_package_not_staged_pin(server):
     assert server == original
 
 
+@pytest.mark.parametrize("cutoff", [None, "2026-10-29T21:00:00Z", "2027-01-01T00:00:00Z"])
+def test_registry_cutoff_is_accepted_and_dropped_from_public_launcher(server, cutoff):
+    pypi = next(p for p in server["packages"] if p["registryType"] == "pypi")
+    pypi["runtimeArguments"] = [a for a in pypi["runtimeArguments"] if a["name"] != "--exclude-newer"]
+    if cutoff is not None:
+        pypi["runtimeArguments"].append({"type": "named", "name": "--exclude-newer", "value": cutoff})
+    original = copy.deepcopy(server)
+    launcher = generator.public_launcher(server)
+    assert launcher["args"] == ["--python", "3.12", "--from", "dead-letter[mcp]", "dead-letter-mcp"]
+    assert server == original
+
+
 def test_future_release_preparation_does_not_advance_public_links(server):
     before = generator.public_launcher(server)
     server["version"] = "99.0.0"

@@ -45,7 +45,7 @@ def setup(tmp_path, monkeypatch):
             ],
             "retry_count": 0,
             "billing_status": "unknown",
-            "sdk_version": "0.7.1",
+            "sdk_version": "0.7.5",
             "response": response_for(request),
         }
 
@@ -131,7 +131,7 @@ def test_non_success_only_writes_separate_attempts(setup, monkeypatch, status):
                 "attempts": [],
                 "retry_count": 0,
                 "billing_status": "not_attempted",
-                "sdk_version": "0.7.1",
+                "sdk_version": "0.7.5",
             }
 
         monkeypatch.setattr(TypeSafeProvider, "evaluate", fail)
@@ -576,7 +576,7 @@ def test_cli_non_success_records_attempt_with_existing_exit(
                 "attempts": [],
                 "retry_count": 0,
                 "billing_status": "not_attempted",
-                "sdk_version": "0.7.1",
+                "sdk_version": "0.7.5",
             }
 
         monkeypatch.setattr(TypeSafeProvider, "evaluate", fail)

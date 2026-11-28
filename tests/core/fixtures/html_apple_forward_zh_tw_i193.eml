@@ -1,0 +1,15 @@
+From: Alice <alice@example.tw>
+To: Bob <bob@example.tw>
+Subject: Synthetic Apple zh-TW HTML forward
+Date: Thu, 05 Mar 2026 12:15:00 +0000
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<html><body style="line-break:after-white-space">請看以下內容。<br id="lineBreakAtBeginningOfMessage"><div><br>
+<blockquote type="cite"><div>開始轉寄郵件：</div><br class="Apple-interchange-newline">
+<div style="margin:0px"><span><b>寄件人： </b></span><span>Bob &lt;bob@example.tw&gt;<br></span></div>
+<div style="margin:0px"><span><b>回覆給： </b></span><span>reply@example.tw<br></span></div>
+<div style="margin:0px"><span><b>密件副本： </b></span><span>audit@example.tw<br></span></div>
+<div style="margin:0px"><span><b>收件人： </b></span><span>Alice &lt;alice@example.tw&gt;<br></span></div>
+<div style="margin:0px"><span><b>標題： </b></span><span><b>規劃</b><br></span></div>
+<br><div>CHINESE_APPLE_FORWARD_BODY</div></blockquote></div></body></html>

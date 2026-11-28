@@ -143,10 +143,14 @@ Linux exposes two separate process-lifetime high-water marks:
 reported separately and never added into a fictitious measured process-tree
 peak. The importer high-water mark includes imports, corpus generation and audit
 work, not just conversion. Worker high-water is the largest reaped child, not a
-sum across workers. On macOS, importer RSS uses `RUSAGE_SELF.ru_maxrss` in
-bytes, as specified by the [current Apple XNU contract](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/man/man2/getrusage.2).
-The macOS child metric and both Windows metrics are **null**, not zero; no
-unverified child aggregation or unit conversion is applied.
+sum across workers. On macOS, both values use `ru_maxrss` in bytes, as
+specified by the [current Apple XNU contract](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/man/man2/getrusage.2):
+`RUSAGE_SELF` for the importer and `RUSAGE_CHILDREN` for the largest reaped
+worker. On macOS 27.2.1 a child that touched 600 MiB reported 646,348,800
+bytes, and a later 200 MiB child left the value unchanged, so XNU keeps the
+maximum rather than a sum. Summaries written before November 27, 2026 have a
+null macOS child value. Direct mode reaps no worker and reports zero on Linux
+and macOS. Both Windows metrics are **null**, not zero.
 
 `--trace-allocations` optionally adds `traced_importer_peak_bytes` for allocations
 traced during the loop. It excludes pre-existing allocations and worker heaps,
@@ -205,8 +209,10 @@ The extra metrics have deliberately narrow meanings:
 Corpus bytes are reported separately. Source, staging and final output use the
 selected filesystem (`TMPDIR` is set for each trial). Temporary staging overlaps
 with growing final output; do not add independently observed maxima and call the
-sum a measured whole-run peak. Importer RSS includes imports and auditing;
-macOS worker RSS and simultaneous process-tree RSS remain unavailable. File
+sum a measured whole-run peak. Importer RSS includes imports and auditing.
+Each trial process now reports its largest reaped worker on macOS too; the
+September record predates that and has null values. Simultaneous process-tree
+RSS remains unavailable. File
 hashing warms caches, and the host is not tuned or isolated from other work.
 Private-function timing hooks exist only in the helper; runtime code, timeout
 behavior and receipt validation remain unchanged.
@@ -260,6 +266,104 @@ recovery journal or durable resume implementation. Opt-in resume is a separate
 mode, available from 0.4.6 (see
 [resumable MBOX imports](mbox-resume.md)); this helper does
 not use it. See [worker limits](mbox-workers.md).
+
+## Synthetic multi-GB record (2026-11-27)
+
+This record is **synthetic supporting evidence only**. It does not establish
+real-mailbox fidelity and does not satisfy
+[#138](https://github.com/BigCactusLabs/dead-letter/issues/138), which needs an
+authorized real Gmail Takeout export with independent counts. The corpus is
+`synthetic_mixed_v1` from the helper above: four repeating record shapes,
+with an 8 MiB binary attachment on every fourth message. It is far more
+attachment-heavy and has far fewer messages per GiB than typical mail.
+
+Host: Apple M5 Max, 18 logical CPUs, 64 GiB RAM, internal APFS SSD, macOS
+27.2.1 (build 26B8132), arm64. Python 3.14.9 (Clang 23.1.3); dead-letter
+source 0.4.10 with html-to-markdown 3.22.2 and mail-parser 4.11.0. Checkout:
+`30c58a7` plus the macOS child-RSS change in `0f99ee5` (helper SHA-256
+`4bf4c26fb6513c29538712fe0ebfb0ea87d0c0bcea437390bba0e64287d41bc8`).
+Runs were sequential on November 27, 2026 (20:33–21:10 local, 01:33–02:10 UTC
+November 28). Other agents were using the machine, so timing has noise. Each
+cell is one fresh-process run.
+
+Each run used `--work-dir` and `TMPDIR` set to fresh, separate directories
+under the user temporary directory, and ran under `/usr/bin/time -l`:
+
+```bash
+uv run --locked --no-sync python scripts/benchmark_mbox_import.py \
+  --mode direct --messages 936 --attachment-kib 8192 --bundles \
+  --work-dir "$RUN/work" > s25-direct.json   # TMPDIR="$RUN/tmp"
+# also: --mode worker --messages 936; --mode worker --messages 1688;
+# --mode direct --messages 1688 (run in that order)
+uv run --locked --no-sync python scripts/benchmark_mbox_import.py \
+  --compare s25-direct.json s25-worker.json
+```
+
+Archive size is linear in groups of four messages: each group adds
+11,488,175 bytes at `--attachment-kib 8192` (367,753 bytes at the default
+256). 936 messages give 2,688,238,236 bytes (2.50 GiB), past the 2 GiB signed
+32-bit offset; 1,688 messages give 4,848,021,712 bytes (4.52 GiB), past 4 GiB.
+The worker timeout was the default 30 seconds per message; reports were on.
+
+| Archive | Mode | Exit | Records / written / errors / archive errors | Command elapsed s | Conversion s | Records per conversion s | Importer peak RSS MiB | Largest worker peak RSS MiB | 1-min load before |
+| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2.50 GiB, 936 msgs | direct | 0 | 936 / 936 / 0 / 0 | 96.6 | 70.3 | 13.31 | 806.7 | 0 (no workers) | 2.26 |
+| 2.50 GiB, 936 msgs | worker | 0 | 936 / 936 / 0 / 0 | 244.2 | 219.2 | 4.27 | 776.4 | 171.7 | 3.17 |
+| 4.52 GiB, 1,688 msgs | worker | 0 | 1,688 / 1,688 / 0 / 0 | 417.2 | 369.2 | 4.57 | 771.5 | 171.7 | 8.16 |
+| 4.52 GiB, 1,688 msgs | direct | 0 | 1,688 / 1,688 / 0 / 0 | 175.1 | 127.3 | 13.25 | 820.9 | 0 (no workers) | 2.70 |
+
+Every range and every bundle `source.eml` copy was verified (936 and 1,688
+respectively). Both `--compare` runs exited 0 with `compatible`, `parity`
+and `clean` all true. The single-run worker/direct conversion ratios were
+3.12 (2.50 GiB) and 2.90 (4.52 GiB). Command elapsed time is `/usr/bin/time`
+real time, including corpus generation, hashing and cleanup.
+
+Disk use, given as direct / worker:
+
+| Archive | Final output, logical bytes | Peak sampled work directory | Peak sampled `TMPDIR` |
+| --- | ---: | ---: | ---: |
+| 2.50 GiB | 4,653,592,363 (4.33 GiB) | 6.75 / 6.85 GiB | 11.1 / 30.1 MiB |
+| 4.52 GiB | 8,392,381,636 (7.82 GiB) | 12.34 / 12.31 GiB | 11.1 / 30.1 MiB |
+
+Final output is `artifact_bytes + report_bytes`. It is the same in both modes
+except that the 2.50 GiB worker report is one byte longer; bundles hold 1.73
+times the archive size. The work
+directory holds the archive and the output. Its peak and the `TMPDIR` peak come
+from `du -sk` (allocated KiB) sampled every 3 seconds, so they are lower
+bounds. `TMPDIR` holds one staged EML in direct mode and that EML plus the
+private worker workspace in worker mode; most of those short-lived states were
+not sampled.
+
+**Parent memory.** The importer peak in these four runs is dominated by the
+helper's own in-process corpus generation, not by the importer. It was 349,
+570, 748 and 822 MiB for direct runs with 40, 100, 200 and 400 generated
+messages, and between 771 and 821 MiB in the four runs above. A 400-message
+worker run with `--trace-allocations` traced at most 1.7 MiB of Python
+allocations in the conversion loop while its RSS high-water mark was 772 MiB.
+The same 400-message corpus generated in a separate process and passed with
+`--archive` gave a worker-mode parent peak of 49.7 MiB. To measure the
+importer itself at the larger size, the 4.52 GiB corpus was generated in a
+separate process (identical SHA-256) and both modes were run with `--archive`:
+
+| Mode | Exit | Records / errors | Command elapsed s | Conversion s | Importer peak RSS MiB | Largest worker peak RSS MiB | 1-min load before |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| direct | 0 | 1,688 / 0 | 162.2 | 150.6 | 415.4 | 0 (no workers) | 3.08 |
+| worker | 0 | 1,688 / 0 | 395.8 | 384.8 | 47.8 | 171.6 | 4.12 |
+
+Their `--compare` exited 0 with parity (ratio 2.56). The worker-mode parent
+stayed under 50 MiB at 4.52 GiB, and no parent memory growth with archive size
+was observed. Each worker peaked at about 172 MiB on a message with an 8 MiB
+attachment, the same at 936 and 1,688 messages; this matches the 104.7 MiB
+measured for a 4 MiB attachment in
+[the amplification table](mbox-workers.md#measured-synthetic-amplification-2026-11-02).
+No run approached the host's 64 GiB. These figures do not show a need for the
+macOS watchdog in [#220](https://github.com/BigCactusLabs/dead-letter/issues/220),
+but they cover one uniform synthetic shape; real attachments, HTML and
+malformed MIME can peak differently.
+
+Limits: synthetic content only, one host, one run per cell, an uncontrolled
+host with concurrent work, warm caches (the helper hashes the archive first),
+and no real-export count comparison. Linux and Windows were not measured here.
 
 ## Practitioner sources applied
 

@@ -1,21 +1,28 @@
 import Alpine from "/static/vendor/alpine.esm.js";
 import { apiFetch } from "/static/lib/api.js";
-import { applyStoredOptions, buildPayload, computeGrade, firstErrorMessage, isTerminalStatus, jobDisplayName, jobStatusColor, relativeTime, validateForm } from "/static/lib/helpers.js";
+import { isCompressedMbox, applyStoredOptions, buildPayload, buildMboxOptions, buildMboxPayload, computeGrade, firstErrorMessage, formatBytes, isTerminalStatus, jobDisplayName, jobProgressView, jobStatusColor, mboxResumableView, relativeTime, validateForm, validateMboxForm, validateMboxUpload } from "/static/lib/helpers.js";
 import { registerJobStore } from "/static/stores/job.js";
 import { registerSettingsStore } from "/static/stores/settings.js";
 import { registerWatchStore } from "/static/stores/watch.js";
 import { registerHistoryStore } from "/static/stores/history.js";
+import { registerAboutStore } from "/static/stores/about.js";
 
 registerSettingsStore(Alpine);
 registerJobStore(Alpine);
 registerWatchStore(Alpine);
 registerHistoryStore(Alpine);
+registerAboutStore(Alpine);
 
 const SIZE_WARNING_BYTES = 100 * 1024 * 1024;
 
 Alpine.data("deadLetterApp", () => ({
   mode: "file",
   inputPath: "",
+  mboxTimeout: 30,
+  mboxMember: "",
+  mboxSource: "path",
+  mboxFile: null,
+  mboxUploadNotice: "",
   options: {
     strip_signatures: false,
     strip_disclaimers: false,
@@ -51,15 +58,21 @@ Alpine.data("deadLetterApp", () => ({
     this.$store.settings.load();
     this.$store.watch.poll();
     this.$store.history.load();
+    this.$store.job.loadResumable();
+    this.$store.about.load();
+    this.$watch("$store.settings.configured", (configured) => {
+      if (configured) this.$store.job.loadResumable();
+    });
 
     this.$watch("workspaceState", (state) => {
       const job = this.$store.job;
       if (state === "converting") {
-        this.liveAnnouncement = `Converting 0 of ${job.progress.total || 0}`;
+        this.liveAnnouncement = job.upload ? "Uploading archive"
+          : job.kind === "mbox" ? "Starting archive import" : `Converting 0 of ${job.progress.total || 0}`;
         this.errorsExpanded = false;
         job.diagnosticsOpen = false;
       } else if (state === "done") {
-        this.liveAnnouncement = `Complete - ${job.summary.written} written`;
+        this.liveAnnouncement = `${this.doneTitle} - ${job.summary.written} written`;
         this.errorsExpanded = job.summary.errors > 0 || job.errors.length > 0 || job.opInfo.length > 0;
         // Auto-expand diagnostics for Review grade
         if (this.conversionGrade === "review") {
@@ -78,7 +91,21 @@ Alpine.data("deadLetterApp", () => ({
       }
       const done = Number(progress?.completed || 0) + Number(progress?.failed || 0);
       const total = Number(progress?.total || 0);
-      const msg = `Converting ${done} of ${total}`;
+      const msg = this.$store.job.kind === "mbox"
+        ? this.progressCountLabel + ". " + this.progressView.detail
+        : `Converting ${done} of ${total}`;
+      if (msg !== this.liveAnnouncement) this.liveAnnouncement = msg;
+    });
+    this.$watch("$store.job.mbox", () => {
+      if (this.workspaceState === "converting" && this.$store.job.kind === "mbox") {
+        this.liveAnnouncement = this.progressCountLabel + ". " + this.progressView.detail;
+      }
+    });
+    // Upload progress fires many times a second; announce it in tenths.
+    this.$watch("$store.job.upload", (upload) => {
+      if (!upload || this.workspaceState !== "converting") return;
+      const msg = upload.sent ? this.progressView.detail
+        : `${Math.floor(this.progressPercent * 10) * 10}% uploaded`;
       if (msg !== this.liveAnnouncement) this.liveAnnouncement = msg;
     });
   },
@@ -96,11 +123,12 @@ Alpine.data("deadLetterApp", () => ({
     this.dragItemCount = 0;
   },
 
+  get progressView() {
+    return jobProgressView(this.$store.job);
+  },
+
   get progressPercent() {
-    const progress = this.$store.job.progress;
-    const total = Math.max(progress.total || 0, 1);
-    const done = Math.min(total, (progress.completed || 0) + (progress.failed || 0));
-    return done / total;
+    return this.progressView.fraction;
   },
 
   get workspaceState() {
@@ -112,14 +140,43 @@ Alpine.data("deadLetterApp", () => ({
   },
 
   get progressCountLabel() {
-    const progress = this.$store.job.progress;
-    const done = (progress.completed || 0) + (progress.failed || 0);
-    return `${done} / ${progress.total || 0}`;
+    return this.progressView.label;
+  },
+
+  get mboxNotice() {
+    const job = this.$store.job;
+    if (job.kind !== "mbox") return "";
+    if (job.upload) return "Keep this page open until the upload finishes. The copy is saved in the Inbox, then imported.";
+    if (job.cancelRequested && !isTerminalStatus(job.status)) {
+      return "Stopping the message worker and finishing the partial report. Completed bundles are kept.";
+    }
+    if (job.mbox?.phase === "publishing") return "Finishing the import report.";
+    if (!isTerminalStatus(job.status) && (job.resumedRun || job.mbox?.resumed)) {
+      return "Resuming in the original job folder. Completed bundles are checked and kept; only unfinished messages are converted.";
+    }
+    if (job.status === "failed") {
+      const failure = job.errors.find((error) => error.code === "mbox_disk_reserve" || error.code?.startsWith("mbox_archive_"));
+      if (failure) return `${failure.message} Completed bundles are kept.${job.resumable ? " Free some space, then resume." : ""}`;
+      if (job.errors.some((error) => error.code === "mbox_resume_mismatch")) {
+        return "This import cannot continue: the archive, its import options or the dead-letter version differ from the run that started it. Completed bundles are kept. Start a new import for a fresh job folder.";
+      }
+      if (job.errors.some((error) => error.code === "mbox_resume_conflict")) {
+        return "This job folder holds files the resume record does not account for, so the import stopped without changing them. Start a new import for a fresh job folder.";
+      }
+    }
+    if (job.status === "failed" || job.status === "cancelled") {
+      return "The import stopped. Completed bundles stay in this job's output folder.";
+    }
+    if (job.status === "completed_with_errors") {
+      return "Some messages could not be converted. Completed bundles and the report are kept in the job folder.";
+    }
+    return "The source archive is kept. Each message is written to its own bundle.";
   },
 
   get inboxStatLabel() {
     const progress = this.$store.job.progress;
     if (this.workspaceState === "converting") {
+      if (this.$store.job.kind === "mbox") return `${this.$store.job.mbox?.records_processed || 0} processed`;
       const remaining = Math.max(0, (progress.total || 0) - (progress.completed || 0) - (progress.failed || 0));
       return `${remaining} files`;
     }
@@ -138,18 +195,21 @@ Alpine.data("deadLetterApp", () => ({
   },
 
   get doneWrittenCount() {
+    if (this.$store.job.kind === "mbox") return this.$store.job.summary.written;
     const hist = this.$store.history.totals;
     if (hist.jobs_completed > 0) return hist.total_written;
     return this.$store.job.summary.written;
   },
 
   get doneSkippedCount() {
+    if (this.$store.job.kind === "mbox") return this.$store.job.summary.skipped;
     const hist = this.$store.history.totals;
     if (hist.jobs_completed > 0) return hist.total_skipped;
     return this.$store.job.summary.skipped;
   },
 
   get doneErrorsCount() {
+    if (this.$store.job.kind === "mbox") return this.$store.job.summary.errors;
     const hist = this.$store.history.totals;
     if (hist.jobs_completed > 0) return hist.total_errors;
     return this.$store.job.summary.errors;
@@ -167,7 +227,7 @@ Alpine.data("deadLetterApp", () => ({
   get outputCabinetPath() {
     const outputLocation = this.$store.job.outputLocation;
     if (!outputLocation) return "Cabinet bundle assigned when job starts";
-    return outputLocation.cabinet_path;
+    return outputLocation.job_path || outputLocation.cabinet_path;
   },
 
   get doneTitle() {
@@ -401,22 +461,80 @@ Alpine.data("deadLetterApp", () => ({
     return true;
   },
 
+  get mboxIsCompressed() {
+    return isCompressedMbox(this.mboxSource === "upload" ? this.mboxFile?.name : this.inputPath);
+  },
+
+  get mboxFileLabel() {
+    const file = this.mboxFile;
+    return file ? `${file.name} · ${formatBytes(file.size || 0)}` : "";
+  },
+
+  chooseMboxFile(event) {
+    this.mboxFile = event?.target?.files?.[0] || null;
+    this.mboxUploadNotice = "";
+    this.formErrors = [];
+  },
+
+  openMboxImport() {
+    if (!this.ensureSettingsConfigured("Save Inbox and Cabinet before importing an archive.")) return;
+    if (this.mode !== "mbox") this.inputPath = "";
+    this.mode = "mbox";
+    this.formErrors = [];
+    this.settingsOpen = true;
+    const target = this.mboxSource === "upload" ? "mbox-upload-file" : "settings-manual-path";
+    this.$nextTick(() => document.getElementById(target)?.focus());
+  },
+
   async submitJob(overrides = null) {
     this.formErrors = [];
     this.$store.job.clearOpMessages();
     if (!this.ensureSettingsConfigured("Save Inbox and Cabinet before starting manual jobs.")) return;
-    const errors = validateForm({ mode: this.mode, inputPath: this.inputPath });
+    const isMbox = this.mode === "mbox";
+    if ((isMbox || this.$store.job.kind === "mbox") && this.$store.job.id && !isTerminalStatus(this.$store.job.status)) {
+      this.formErrors = ["Wait for the current job to finish, or cancel it, before starting another job."];
+      return;
+    }
+    if (isMbox && this.mboxSource === "upload") {
+      await this.submitMboxUpload();
+      return;
+    }
+    const errors = isMbox
+      ? validateMboxForm({ inputPath: this.inputPath, timeoutSeconds: this.mboxTimeout })
+      : validateForm({ mode: this.mode, inputPath: this.inputPath });
     if (errors.length) {
       this.formErrors = errors;
       return;
     }
     this.applyDryRunSafety();
     this._saveOptions();
-    const payload = buildPayload(this.mode, this.inputPath, { ...this.options, ...(overrides || {}) });
+    const payload = isMbox
+      ? buildMboxPayload(this.inputPath, this.options, this.mboxTimeout, this.mboxMember)
+      : buildPayload(this.mode, this.inputPath, { ...this.options, ...(overrides || {}) });
     this.settingsOpen = false;
-    const result = await this.$store.job.start(payload);
+    const result = await (isMbox ? this.$store.job.startMbox(payload) : this.$store.job.start(payload));
     if (result?.formErrors) {
       this.formErrors = result.formErrors;
+      this.settingsOpen = true;
+    }
+  },
+
+  async submitMboxUpload() {
+    this.mboxUploadNotice = "";
+    const errors = validateMboxUpload({ file: this.mboxFile, timeoutSeconds: this.mboxTimeout });
+    if (errors.length) {
+      this.formErrors = errors;
+      return;
+    }
+    this.applyDryRunSafety();
+    this._saveOptions();
+    this.settingsOpen = false;
+    const result = await this.$store.job.uploadMbox(this.mboxFile, buildMboxOptions(this.options, this.mboxTimeout, this.mboxIsCompressed ? this.mboxMember : ""));
+    if (result?.formErrors || result?.cancelled) {
+      // Reopen the form with the chosen file so the user can retry or switch to a path.
+      this.formErrors = result.formErrors || [];
+      this.mboxUploadNotice = result.cancelled ? "Upload cancelled. Nothing was imported." : "";
+      this.settingsOpen = true;
     }
   },
 
@@ -596,6 +714,16 @@ Alpine.data("deadLetterApp", () => ({
 
   jobDisplayName(outputLocation) {
     return jobDisplayName(outputLocation);
+  },
+
+  // Stopped imports other than the one the done panel already offers to resume.
+  get otherResumableImports() {
+    const job = this.$store.job;
+    return job.resumableImports.filter((item) => !(job.resumable && item.id === job.id));
+  },
+
+  resumableView(item) {
+    return mboxResumableView(item);
   },
 
   relativeTime(isoString) {

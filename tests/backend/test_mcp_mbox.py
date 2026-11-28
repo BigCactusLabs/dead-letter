@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 from mcp.server.mcpserver.exceptions import ToolError
 
@@ -275,6 +276,11 @@ async def test_real_stdio_round_trip(tmp_path):
     write_mbox(source, 3, empty_at=2)
     before = digest(source)
     out = tmp_path / "out"
+    oversized = tmp_path / "oversized.mbox"
+    # Exercise the shipped byte cap without writing 256 MiB of fixture data.
+    with oversized.open("wb") as handle:
+        handle.truncate(mcp_server.MCP_MAX_MBOX_BYTES + 1)
+    oversized_out = tmp_path / "oversized-out"
     params = StdioServerParameters(
         command=sys.executable,
         args=["-c", "from dead_letter.backend.mcp_server import main; main()"],
@@ -287,6 +293,9 @@ async def test_real_stdio_round_trip(tmp_path):
         rejected = await client.call_tool(
             "convert_mbox", {"path": str(tmp_path / "mail.zip"), "output_directory": str(out)},
         )
+        oversized_result = await client.call_tool(
+            "convert_mbox", {"path": str(oversized), "output_directory": str(oversized_out)},
+        )
 
     assert names == {"convert_eml", "convert_eml_to_bundle", "convert_directory",
                      "get_diagnostics", "convert_mbox"}
@@ -296,6 +305,63 @@ async def test_real_stdio_round_trip(tmp_path):
     assert json.loads(Path(payload["report_path"]).read_text())["summary"]["total"] == 3
     assert rejected.is_error is True
     assert "only a flat .mbox file" in rejected.content[0].text
+    assert oversized_result.is_error is True
+    assert "archives up to 256 MiB" in oversized_result.content[0].text
+    assert "Use the dead-letter CLI" in oversized_result.content[0].text
+    assert not oversized_out.exists()
+    assert oversized.stat().st_size == mcp_server.MCP_MAX_MBOX_BYTES + 1
+    assert digest(source) == before
+
+
+@pytest.mark.anyio
+async def test_real_stdio_message_cap_preserves_gmail_metadata(tmp_path):
+    """Exercise the shipped cap without mocking the server or rendering 1000 mails."""
+    from mcp import Client
+    from mcp.client.stdio import StdioServerParameters
+
+    cap = mcp_server.MCP_MAX_MBOX_MESSAGES
+    source = tmp_path / "mail.mbox"
+    labelled = (
+        b"X-Gmail-Labels: Inbox,Important,Projects/MCP acceptance\n"
+        b"X-GM-THRID: 1669160939957813740\n" + message(1)
+    )
+    # One real message and empty records fill the actual production cap. A
+    # final valid message must stay unconverted; there is no reduced test cap.
+    source.write_bytes(POSTMARK + labelled + POSTMARK * (cap - 1)
+                       + POSTMARK + message(cap + 1))
+    before = digest(source)
+    out = tmp_path / "out"
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-c", "from dead_letter.backend.mcp_server import main; main()"],
+    )
+    async with Client(params) as client:
+        result = await client.call_tool(
+            "convert_mbox",
+            {"path": str(source), "output_directory": str(out), "bundles": True},
+        )
+
+    assert result.is_error is False
+    response = result.content[0].text
+    payload = json.loads(response)
+    assert (payload["processed"], payload["converted"], payload["failed"]) == (cap, 1, cap - 1)
+    assert payload["truncated"] is True
+    assert len(payload["failures"]) == mcp_server.MCP_MAX_MBOX_FAILURES_RETURNED
+    assert payload["failures_omitted"] == cap - 1 - len(payload["failures"])
+    assert len(response) < 8192
+    assert "Body number" not in response and "Projects/MCP acceptance" not in response
+
+    report = json.loads(Path(payload["report_path"]).read_text())
+    assert report["summary"] == {"total": cap, "written": 1, "skipped": 0, "errors": cap - 1}
+    assert report["mbox_options"]["truncated"] is True
+    assert [row["mbox"]["index"] for row in report["results"]] == list(range(1, cap + 1))
+    outputs = list(out.glob("*/message.md"))
+    assert len(outputs) == 1
+    metadata = yaml.safe_load(outputs[0].read_text(encoding="utf-8").split("---", 2)[1])
+    assert metadata["gmail_labels"] == "Inbox,Important,Projects/MCP acceptance"
+    assert str(metadata["gmail_thread_id"]) == "1669160939957813740"
+    assert metadata["source_mbox"] == report["results"][0]["mbox"]
+    assert (outputs[0].parent / "source.eml").read_bytes() == labelled
     assert digest(source) == before
 
 

@@ -1,0 +1,45 @@
+X-GM-THRID: 1843002176537310123
+X-Gmail-Labels: Sent,Clients/Cedar Works
+From: Northstar Operations <ops@northstar.example>
+To: Mara Chen <mara@cedarworks.example>
+Date: Tue, 15 Sep 2026 11:10:00 -0400
+Subject: Re: Cedar Works order 4821 - revised delivery
+Message-ID: <order-4821-confirm@northstar.example>
+In-Reply-To: <order-4821@cedarworks.example>
+References: <order-4821@cedarworks.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="northstar-4821"
+
+--northstar-4821
+Content-Type: text/plain; charset="utf-8"
+
+Hi Mara,
+
+Confirmed: order 4821 arrives Thursday, 17 September, in the 08:00-10:00
+loading window at Dock 3. The dock map is attached.
+
+Thanks,
+Northstar Operations
+
+On Tue, 15 Sep 2026 at 09:20, Mara Chen <mara@cedarworks.example> wrote:
+> Please move order 4821 to Thursday, 17 September. The revised quantities are
+> in the attached CSV.
+
+--northstar-4821
+Content-Type: application/pdf; name="dock-3-map.pdf"
+Content-Disposition: attachment; filename="dock-3-map.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2Jq
+CjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2Jq
+CjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIg
+NzkyXSAvUmVzb3VyY2VzIDw8IC9Gb250IDw8IC9GMSA0IDAgUiA+PiA+PiAvQ29udGVudHMgNSAw
+IFIgPj4KZW5kb2JqCjQgMCBvYmoKPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNl
+Rm9udCAvSGVsdmV0aWNhID4+CmVuZG9iago1IDAgb2JqCjw8IC9MZW5ndGggNjQgPj4Kc3RyZWFt
+CkJUIC9GMSAxOCBUZiA3MiA3MjAgVGQgKERvY2sgMyB1bmxvYWRpbmcgYmF5IC0gbm9ydGggZ2F0
+ZSkgVGogRVQKZW5kc3RyZWFtCmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAw
+MDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4g
+CjAwMDAwMDAyNDEgMDAwMDAgbiAKMDAwMDAwMDMxMSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXpl
+IDYgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjQyNQolJUVPRgo=
+--northstar-4821--
+

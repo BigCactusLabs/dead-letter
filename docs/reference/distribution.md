@@ -10,7 +10,7 @@ second email converter.
 | You need | Route | What it includes | Instructions |
 | --- | --- | --- | --- |
 | Convert a file or folder | `uvx`, pip, or pipx | Core converter and CLI | [README](../../README.md#-install) |
-| A Homebrew-managed CLI | `BigCactusLabs/tap` | Core CLI only; no UI or MCP extras | [README](../../README.md#-install) |
+| A Homebrew-managed CLI and MCP server | `BigCactusLabs/tap` | CLI, plus the MCP server for 0.4.7+; no UI/watch extras | [README](../../README.md#-install) |
 | Drag-and-drop and Inbox/Cabinet | `dead-letter[ui]` | Local UI, API, and watch dependencies | [Quick Start](../../README.md#-quick-start) |
 | Tools in an MCP client | `dead-letter[mcp]` via `uvx` or pipx | Local stdio server and its MCP tools | [Agent install guide](../../llms-install.md) |
 | Claude Desktop extension | Release `.mcpb` plus its checksum | Managed uv launcher with an exact package pin | [MCP setup](../../README.md#-mcp-server) |
@@ -18,10 +18,10 @@ second email converter.
 | Container-isolated MCP | GHCR version or digest | Non-root stdio server; explicit input/output mounts | [Containers](containers.md) |
 | A portable task skill | `skills/dead-letter/` | Instructions for an existing MCP server or CLI | [Agent Discovery](agent-discovery.md) |
 
-Normal installs do not require Docker. Homebrew's formula intentionally does
-not install the optional Python dependency stacks. Installing a skill does
-not install the Claude plugin; installing the plugin does not install the
-portable skill.
+Normal installs do not require Docker. Homebrew formulas for 0.4.7 and later
+include the MCP server; optional UI/watch dependencies are not included.
+Installing a skill does not install the Claude plugin; installing the plugin
+does not install the portable skill.
 
 The CLI and Python API routes above can also convert a Gmail Takeout `.mbox`
 export, not only `.eml` files or folders; see
@@ -39,8 +39,9 @@ import: [#146](https://github.com/BigCactusLabs/dead-letter/issues/146)).
 | PyPI | Python distributions, including optional extras | Stable `vX.Y.Z` GitHub release |
 | GitHub release assets | MCPB, checksum, and (for releases using the refreshed workflow) resolved registry manifest | Same package release |
 | GHCR | Tested multi-platform OCI image | Same package release; version and digest, no `latest` alias |
-| Homebrew tap | Separate core-only formula | Maintainer update after PyPI |
+| Homebrew tap | Separate CLI/MCP formula | Maintainer update after PyPI |
 | BCL plugin marketplace | Versioned plugin source pointer | Separate `plugin-vX.Y.Z` tag and marketplace PR |
+| Claude directory | Anthropic-reviewed plugin listing for Claude Code and Cowork | Tracks the `release` branch; each version is reviewed, then published ([runbook](publishing.md#claude-directory-listing)) |
 | Official MCP Registry | Discovery metadata for existing packages and artifacts | After PyPI, MCPB, and OCI verification |
 | Portable skill / ARD | Repository-hosted task instructions and discovery metadata | Reviewed source tag/commit; package version in ARD |
 | Docker Catalog, Agent Finder, other curated directories | Third-party discovery and review | Separate submission, acceptance, and client validation |
@@ -49,6 +50,12 @@ A repository file is **implemented**. An accessible release artifact is
 **published**. A catalog PR is **submitted**, not **accepted**. A successful
 CLI/MCP smoke test is not a GUI **client-tested** result. Record the version,
 commit or digest, date, platform/client, and evidence with each status.
+
+Claude directory: plugin 0.4.13 (`release` at `fb8f48a`, pin `dead-letter==0.4.10`)
+was **submitted** on 2026-10-29 and **refused by directory policy** on
+2026-11-18: local MCP servers and non-text plugin files are accepted only
+from Verified organizations. It is not listed
+([runbook](publishing.md#claude-directory-listing)).
 
 The first public GHCR image is recorded as `0.3.1`; the failed `0.3.0` attempt
 must not be advertised as an available container. See the dated
@@ -72,8 +79,11 @@ A full commit pin is also supported. The pin attaches to the **skill name**.
 See the [official CLI manual](https://cli.github.com/manual/gh_skill_install).
 
 An exact `dead-letter[mcp]==X.Y.Z` pin freezes the top-level package, not all
-transitive dependencies. Use an inspected lockfile or artifact digest when
-that distinction matters. A checksum identifies downloaded bytes; it does
+transitive dependencies. For a pinned stdio launcher, use the absolute UTC
+`--exclude-newer` cutoff in the [agent install guide](../../llms-install.md#mcp-server)
+to keep later uploads out of resolution. For exact dependency versions and
+hashes, use an inspected lockfile or artifact digest. Plugin launcher and
+registry cutoff preparation are covered in [Publishing](publishing.md). A checksum identifies downloaded bytes; it does
 not prove publisher trust or that every client/platform has been tested.
 
 ## Privacy and source safety

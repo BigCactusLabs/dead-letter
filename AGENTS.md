@@ -19,7 +19,7 @@ capability in user-facing docs.
 ## Repo map
 
 - `src/dead_letter/core/` — MIME parse → sanitize → thread/zone → Markdown render; `mbox*.py` and `stream_report.py` stream `.mbox` imports through the same pipeline; `snapshot.py` exposes a read-only parsed snapshot for analysis
-- `src/dead_letter/analysis/` — experimental BYOK semantic analysis (released in 0.4.5): normalized evidence, profiles, result envelopes, and the opt-in TypeSafe provider; see [Experimental analysis](docs/reference/experimental-analysis.md) before widening it
+- `src/dead_letter/analysis/` — experimental BYOK semantic analysis (single-message analysis released in 0.4.5; directory execution, #165, in 0.4.9): normalized evidence, profiles, result envelopes, and the opt-in TypeSafe provider; see [Experimental analysis](docs/reference/experimental-analysis.md) before widening it
 - `src/dead_letter/backend/` — CLI (`mbox_cli.py` for MBOX, `analysis_cli.py` for `analyze`), FastAPI API, job runner, watch, MCP, doctor
 - `src/dead_letter/frontend/` — static Alpine.js ES modules; no build step
 - `plugin/` — Claude manifest, commands, context skill, exact MCP launcher pin
@@ -41,6 +41,11 @@ capability in user-facing docs.
 - `scripts/verify.py` — shared quick/full/packaging checks with JSON outcomes
 - `scripts/{package_artifacts,smoke_package,package_probe}.py` — built metadata,
   checksum evidence, and isolated noneditable wheel/sdist probes
+- `scripts/render_demo.py` — regenerates the `docs/recipes/demo/` capture from
+  the released PyPI package; manual only, never run in CI or tests
+- `scripts/render_takeout_sample.py` — regenerates the synthetic Takeout ZIP
+  and expected Obsidian vault in `docs/recipes/takeout-sample/` from the
+  released PyPI package; manual only, never run in CI or tests
 - `tests/{core,backend,plugin,frontend}/` — suites split by module; synthetic
   `.eml` fixtures under `tests/core/fixtures/`
 - `docs/reference/` — durable public contracts and runbooks

@@ -18,7 +18,7 @@ from contextlib import ExitStack, closing, contextmanager
 from dataclasses import asdict
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 MAX_RECEIPT_BYTES = 1024 * 1024
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
@@ -67,7 +67,9 @@ def _sync_directory(path: Path) -> None:
             os.close(fd)
 
 
-def _digest(path: Path, *, sync: bool = False) -> tuple[int, str]:
+def _digest(
+    path: Path, *, sync: bool = False, check: Callable[[], None] | None = None,
+) -> tuple[int, str]:
     flags = (os.O_RDWR if sync else os.O_RDONLY) | getattr(os, "O_NOFOLLOW", 0)
     flags |= getattr(os, "O_NONBLOCK", 0)
     before = path.lstat()
@@ -78,7 +80,15 @@ def _digest(path: Path, *, sync: bool = False) -> tuple[int, str]:
         opened = os.fstat(stream.fileno())
         if not stat.S_ISREG(opened.st_mode) or not os.path.samestat(before, opened):
             raise _conflict("Resume artifact changed while opening")
-        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        if check is None:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        else:
+            # A whole-archive pass can take minutes; stop between chunks.
+            hasher = hashlib.sha256()
+            while chunk := stream.read(1 << 20):
+                check()
+                hasher.update(chunk)
+            digest = hasher.hexdigest()
         if sync:
             os.fsync(stream.fileno())
         if _signature(opened) != _signature(os.fstat(stream.fileno())):
@@ -183,6 +193,19 @@ def _probe_bundle_publication(state: Path) -> None:
                 raise MboxResumeError("mbox_resume_unsupported", "Filesystem did not publish the probe directory")
     except OSError as exc:
         raise MboxResumeError("mbox_resume_unsupported", "Filesystem cannot provide exclusive bundle publication") from exc
+
+
+def supports_bundle_resume(directory: Path) -> bool:
+    """Whether ``directory``'s filesystem provides exclusive bundle publication.
+
+    Leaves no files behind. Callers that cannot resume may still run an
+    ordinary import; the journal repeats this probe before binding a layout.
+    """
+    try:
+        _probe_bundle_publication(directory)
+    except MboxResumeError:
+        return False
+    return True
 
 
 def _bundle_files(bundle: Path, *, complete: bool = True, bounded: bool = True) -> tuple[bool, list[Path]]:
@@ -596,35 +619,65 @@ def _engine_fingerprint() -> dict[str, Any]:
 def convert_mbox_resumable(
     source: Path, root: Path, options: Any, limits: Any, *, unescape: str,
     timeout_seconds: float | None, budgets: Any, bundles: bool = False,
+    archive: dict[str, Any] | None = None, container: Path | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> Iterator[Any]:
-    """Implementation behind convert_mbox(resume=True); flat, immutable MBOX only."""
-    from dead_letter.core.mbox import MboxFormatError, iter_mbox
+    """Implementation behind convert_mbox(resume=True); immutable MBOX only.
+
+    For a compressed import ``source`` is the privately staged member, which a
+    rerun stages again at a new path. The contract then binds the resolved
+    ``container`` path and the member metadata instead of the staging path; the
+    member's SHA-256 still binds its bytes. ``cancel_requested`` raises
+    ``MboxCancelled`` between bounded reads or while a worker runs; the record
+    in progress stays unprepared and is retried by the next run.
+    """
+    from dead_letter.core.mbox import MboxFormatError, _raise_if_cancelled, iter_mbox
     from dead_letter.core.mbox_import import MboxConversion, _convert_record
     from dead_letter.core.mbox_isolation import MboxBudgetError, convert_record_isolated
 
+    if (archive is None) != (container is None):
+        raise ValueError("MBOX resume archive metadata and container must be given together")
+    label = Path(archive["member_name"]) if archive is not None else source
+    archive_options = {"archive": archive} if archive is not None else {}
+    cancel_options = {"cancel_requested": cancel_requested} if cancel_requested is not None else {}
+
+    def provenance(record: Any) -> dict[str, Any]:
+        # Same provenance as a non-resumed import of this source or member.
+        value = {**record.provenance(label), "unescape": unescape}
+        if archive is not None:
+            value["archive"] = archive["container_basename"]
+            value["container"] = dict(archive)
+        return value
+
     try:
+        _raise_if_cancelled(cancel_requested)
         before = _signature(source.stat())
-        size, digest = _digest(source)
+        size, digest = _digest(source, check=lambda: _raise_if_cancelled(cancel_requested))
         if _signature(source.stat()) != before:
             raise _conflict("MBOX changed while fingerprinting")
         conversion = asdict(options)
         conversion.pop("report", None)  # A report can be added/rebuilt without reconversion.
-        contract = dict(schema=1, source=str(source), bytes=size, sha256=digest, output=str(root),
+        contract = dict(schema=1, source=str(container or source), bytes=size, sha256=digest, output=str(root),
                         options=conversion, limits=asdict(limits), unescape=unescape,
                         timeout_seconds=timeout_seconds, budgets=asdict(budgets) if budgets else None,
                         engine=_engine_fingerprint())
+        if archive is not None:
+            contract["archive"] = dict(archive)
         with ResumeJournal(root, contract, bundles=bundles) as journal:
             if _signature(source.stat()) != before:
                 raise _conflict("MBOX changed before framing")
-            with closing(iter_mbox(source, limits=limits, unescape=unescape)) as records:
+            with closing(iter_mbox(source, limits=limits, unescape=unescape, **cancel_options)) as records:
                 for record in records:
+                    _raise_if_cancelled(cancel_requested)
+                    # The staged member name is fixed, so the journal identity
+                    # is stable across reruns that stage it again.
                     identity = record.provenance(source)
+                    locator = f"{label.name}#message-{record.index:08d}"
                     cached = journal.recover(identity)
                     if cached is not None:
                         output, receipt, outcome, attempt = cached
                         result = MboxConversion(
-                            f"{source.name}#message-{record.index:08d}", output, True,
-                            {**identity, "unescape": unescape}, receipt["diagnostics"],
+                            locator, output, True, provenance(record), receipt["diagnostics"],
                         )
                     else:
                         retained = journal.retained_limit(identity)
@@ -633,18 +686,18 @@ def convert_mbox_resumable(
                         if retained is not None:
                             journal.failed(identity, retained)
                             result = MboxConversion(
-                                f"{source.name}#message-{record.index:08d}", None, False,
-                                {**identity, "unescape": unescape}, error=retained,
+                                locator, None, False, provenance(record), error=retained,
                             )
                         elif timeout_seconds is not None and record.path is not None:
                             result = convert_record_isolated(
-                                record, source, journal.stage(identity), options, bundles=bundles,
+                                record, label, journal.stage(identity), options, bundles=bundles,
                                 unescape=unescape, timeout=timeout_seconds, budgets=budgets,
+                                **archive_options, **cancel_options,
                             )
                         else:
                             result = _convert_record(
-                                record, source, journal.stage(identity), options,
-                                bundles=bundles, unescape=unescape,
+                                record, label, journal.stage(identity), options,
+                                bundles=bundles, unescape=unescape, **archive_options,
                             )
                         if result.success:
                             expected = journal.stage(identity) / journal.name(identity)
@@ -673,13 +726,16 @@ def convert_mbox_resumable(
             if _signature(source.stat()) != before:
                 raise _conflict("MBOX changed during resumed import")
     except (MboxResumeError, MboxBudgetError) as exc:
-        yield MboxConversion(source.name, None, False, error={
+        yield MboxConversion(label.name, None, False, error={
             "code": exc.code, "message": exc.message, "stage": "resume",
         })
     except MboxFormatError as exc:
         # Fixed framing text, reported as the non-resume path does.
-        yield MboxConversion(source.name, None, False, error={
-            "code": "mbox_archive_error", "message": str(exc).replace(str(source), source.name), "stage": "mbox",
+        message = str(exc).replace(str(source), label.name)
+        if archive is not None:
+            message = json.dumps(message[:512], ensure_ascii=True)
+        yield MboxConversion(label.name, None, False, error={
+            "code": "mbox_archive_error", "message": message, "stage": "mbox",
         })
     except (OSError, sqlite3.Error) as exc:
         # Name only a known errno/SQLite code; never paths, strerror or parser text.
@@ -690,7 +746,7 @@ def convert_mbox_resumable(
             name = getattr(exc, "sqlite_errorname", None)
             reason = name if isinstance(name, str) and re.fullmatch(r"SQLITE_[A-Z_]+", name) else None
         detail = f" ({reason})" if reason else ""
-        yield MboxConversion(source.name, None, False, error={
+        yield MboxConversion(label.name, None, False, error={
             "code": "mbox_resume_io_error", "message": f"Resume import failed{detail}; journal and outputs retained",
             "stage": "resume",
         })

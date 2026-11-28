@@ -1,0 +1,18 @@
+From: Alice <alice@example.tw>
+To: Bob <bob@example.tw>
+Subject: Synthetic Apple zh-TW forward
+Date: Thu, 05 Mar 2026 12:15:00 +0000
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+
+請看以下內容。
+
+開始轉寄郵件：
+寄件人：Bob <bob@example.tw>
+回覆給：reply@example.tw
+密件副本：audit@example.tw
+收件人：Alice <alice@example.tw>
+標題：規劃
+
+CHINESE_APPLE_FORWARD_BODY

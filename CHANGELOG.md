@@ -9,6 +9,300 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The MBOX import benchmark helper reports the largest reaped worker's peak
+  RSS on macOS, and the validation guide has a dated synthetic 2.5 GiB and
+  4.5 GiB record for macOS. Real-export validation is still open (#138).
+
+## [0.4.11] - 2026-11-27
+
+### Added
+
+- The local web UI has a project footer under the paths strip with the running
+  package version and links to the documentation, the GitHub repository, and
+  issue reporting, each opening in a new tab. The version comes from a new
+  read-only `GET /api/about` route. Converted Markdown is unchanged.
+- Web MBOX imports can resume. Jobs record the core resume journal and a job
+  descriptor in their `Cabinet/mbox-<job-id>` folder from the first run. A job
+  that was cancelled, stopped by the free-space reserve, or cut off by a server
+  stop or crash continues in the same folder with **Resume import** or
+  `POST /api/mbox/jobs/{id}/resume`, after its source passes admission again
+  and still has the recorded device, inode, size and modification time.
+  Completed bundles are verified and kept, never duplicated or overwritten, and
+  each run writes a new collision-safe report. `GET /api/mbox/resumable` and the
+  UI list stopped imports, including ones from an earlier server run. Job
+  snapshots add `resumable`, and MBOX progress adds `resumed` and
+  `records_reused`. Cabinets without no-replace bundle publication run jobs
+  without resume (#272).
+- Python MBOX resume accepts `cancel_requested`, and `convert_mbox_archive()`
+  accepts `resume=True` for compressed Takeout input, binding the journal to the
+  archive and member instead of the temporary staging path. The CLI's
+  `--mbox-resume` still takes a flat `.mbox` only (#272).
+- Web MBOX jobs and browser uploads accept Takeout `.zip`, `.tgz` and
+  `.tar.gz` archives with optional exact member selection (up to 1024
+  characters, without control characters). Staging folders are validated at
+  admission, and private member staging is cleaned up after every terminal
+  outcome. Jobs enforce a 1 GiB free-space reserve on staging and Cabinet
+  volumes, retaining completed bundles and a partial report on a reserve stop
+  (#146).
+- Opt-in synthetic MBOX worker amplification benchmark
+  (`scripts/measure_mbox_amplification.py`) that records per-worker CPU time,
+  peak RSS, output bytes and a temporary-storage checkpoint for the timed
+  worker path, with dated macOS measurements in the worker guide (#140).
+- Real-stdio tests for MCP `convert_mbox` path errors, error privacy,
+  same-session recovery and client cancellation (#145).
+- Web UI **Upload archive** option and `POST /api/mbox/uploads`: the browser
+  sends one flat `.mbox` file (up to 16 GiB) as a raw body, which is staged in
+  `<Inbox>/mbox-uploads/` (a real folder inside the Inbox, not a symlink),
+  kept there as the job's source, and imported like a local-path archive.
+  Length, name, options, archive slot and free space
+  (1 GiB must stay free) are checked before the body is read; actual bytes,
+  idle time (60 seconds) and free space are checked while it arrives. The UI
+  shows upload progress and can cancel before the last byte. An interrupted
+  upload starts again from the beginning (#146).
+- App-wide request-body limit (110 MiB; 16 GiB + 1 MiB for MBOX uploads), and
+  `Connection: close` on responses sent before the request body was read.
+  `starlette>=1.6.0` is now a declared `ui` dependency (#146).
+
+### Changed
+
+- The MCP server returns `instructions` at initialization: a short plain-text
+  note that names the task (`.eml` files, `.eml` folders and flat `.mbox`
+  archives such as a Gmail Takeout export, converted to Markdown), the local,
+  copy-only behavior, the `convert_mbox` caps, and that email content is
+  untrusted data. Clients that defer tool loading, such as Claude Code's tool
+  search, show it before any tool schema. Tools and results are unchanged.
+- Package, skill and catalog descriptions name `.mbox` and Gmail Takeout
+  alongside `.eml`. The PyPI summary and keywords previously described `.eml`
+  only, and directories that copy them reported that dead-letter has no MBOX
+  support. The portable and plugin skill descriptions also cover Obsidian and
+  Markdown-notes workflows and say the skill is not for live mailboxes.
+- The README headline, introduction, quick start, use cases and feature list
+  name `.mbox` and Gmail Takeout conversion, which the README previously
+  mentioned only under Known Limitations. The license section says that only
+  0.1.0 was MIT. A root `context7.json` gives Context7 a title, description,
+  indexed folders and usage rules; it has no effect until the repository is
+  submitted there.
+- MCP `convert_mbox` contract states the observed cancellation behavior:
+  cancelling stops the client's wait, but conversion continues while the
+  session stays open and publishes a complete report; closing the session
+  stops it without a report. The source is unchanged (#145).
+- Claude plugin launcher uses the shipped `uv.lock` and Python 3.12 through frozen, isolated
+  `uv run`, with dependency hash checks and no writes to the plugin directory.
+  MCP Registry entries constrain transitive resolution with an absolute UTC
+  `--exclude-newer` cutoff set from PyPI upload times (#263).
+- Claude plugin 0.4.12 pins package 0.4.10 (`dead-letter==0.4.10`) and relocks
+  `plugin/uv.lock`. Plugin users get the 0.4.10 bounded attribution parsing and
+  the distinct MBOX storage-exhaustion outcome.
+- Claude plugin 0.4.13 keeps the 0.4.10 pin. Its README links synthetic
+  sample mail for trying each command and lists the shell helpers that the
+  `triage` and `mbox` commands ask Claude to run.
+- The ARD catalog's skill entry now uses the standard `application/agent-skills+md`
+  media type from ARD v0.91, previously `application/ai-skill+md` (#159).
+- `mail-parser` is now required at 4.10.0 or later, up from 4.2.0. Version 4.9.0
+  fixes a regular-expression denial of service in `Received` header parsing,
+  and 4.10.0 parses those headers for every message. A Subject encoded word
+  with an unknown charset now adds a `mime_defect` warning, so the message's
+  diagnostics report `degraded` quality. The converted subject text is
+  unchanged.
+
+### Fixed
+
+- A `text/calendar` part whose whole body is one line naming a local path no
+  longer makes conversion read that file. With icalendar 7.0.2 through 7.3.0,
+  such a part was opened as a file, and if the file held a valid calendar its
+  event summaries and dates appeared in the converted Markdown. Calendar parts
+  are now always parsed as message data, and `icalendar` is required at
+  7.3.1 or later, up from 6.1.1.
+- The ARD catalog's MCP entry linked to a `registry.modelcontextprotocol.io/v0/servers/...`
+  URL that returns 404. It now links to the working `v0.1` latest-version URL
+  for `io.github.BigCactusLabs/dead-letter`, still not pinned to a version.
+- Long `On …` lines, header lines with long runs of asterisks, repeated
+  disclaimer keywords and long blank runs no longer make reply parsing take
+  seconds during conversion. Conversion output is unchanged (#268).
+- HTML history extraction keeps words on separate lines inside preformatted
+  text and preserves paragraph boundaries when current-message quote wrappers
+  are removed. Deeply nested HTML keeps all text and reports
+  `html_depth_flattened` when its nesting is reduced. Blockquote nesting has a
+  separate limit to bound Markdown quote prefixes. If a renderer content
+  limit is reached, conversion keeps the text with reduced formatting and
+  reports a diagnostics warning (#268).
+- The web UI's **Import archive** button is no longer disabled when the MBOX
+  form is opened before any job has run in the page.
+- Windows MBOX workers now verify job membership after a clean exit and use
+  job CPU accounting to identify CPU-limit failures when the process exits
+  before the job is signaled. Missing membership or failed accounting checks
+  abort the import with `mbox_budget_apply_failed` (#254, #255).
+- HTML reply-quote extraction keeps word boundaries when a quote sits inside
+  inline formatting, without adding breaks inside preformatted text or beside
+  existing breaks. Stripped HTML block elements (`center`, `details`,
+  `summary` and others) keep paragraph boundaries, including elements with
+  `title` or `lang` attributes, so attribution lines stay detectable (#241).
+- HTML reply history: an Outlook `divRplyFwdMsg` boundary nested inside a
+  Gmail, Proton or Yahoo wrapper now ends with that wrapper, so text after it
+  stays in the current message and the history carries no `<body>` markup.
+  Outlook ids with OWA `x_` prefixes (`x_divRplyFwdMsg`) are recognized.
+  Second and later plain blockquotes in a reply wrapper move to history while
+  text between them stays. Proton's `------- Original Message -------` label
+  moves with its attribution, also when it sits in its own `<div>`; other
+  dashed lines before an attribution stay in the current message (#241).
+- Plain-text Outlook history splits into separate messages at column-0
+  separator and header blocks in English, German, French, Spanish, Dutch,
+  Italian and Japanese. Separator lines are consumed, nested `On … wrote:`
+  replies inside a block still split, and indented examples stay in the body
+  (#193).
+- Plain-text reply parsing skips mail-parser-reply when a message's long
+  whitespace runs exceed a shared per-message budget, keeping the full text
+  instead of hanging on pathological input (#193).
+- Plain-text forwarding recognizes Apple Mail Simplified and Traditional Chinese
+  markers and labels, plus the verified Korean marker. Outlook reply-history
+  splitting supports Simplified Chinese labels (#193).
+- Forwarded-header detection recognizes the Spanish `Enviado el`, Traditional
+  Chinese `寄件日期`/`收件者`/`至` and Korean `참조` labels (#193).
+
+## [0.4.10] - 2026-10-29
+
+### Added
+
+- Local-path MBOX web/API jobs, with one active archive import by default,
+  browser-root path confinement, a 16 GiB admission cap, copy-only bundles in
+  a job-owned Cabinet folder, streamed reports, byte progress and a capped
+  failure summary. The UI exposes per-message timeouts and cancellation that
+  waits for worker cleanup and a partial report. Uploads, compressed web input
+  and web-job resume remain separate work (#146).
+- Optional cooperative cancellation for non-resumed flat Python MBOX imports
+  and framing. Timed workers are killed and reaped before cancellation returns;
+  completed results remain valid. Existing callers retain their behavior.
+- Windows CPU-time and committed-memory budgets for timed MBOX workers, including
+  ZIP/TGZ input, using a verified parent-owned Job Object and a stdlib-only
+  pre-parser join. Setup failures abort rather than running unenforced; exhausted
+  records withhold partial output and later records continue. CPU attribution
+  uses the job signal, not an ambiguous native exit code. Windows output-size
+  limits remain unsupported. No new dependency or
+  default-conversion change; these are resource controls, not a security sandbox.
+  See [MBOX worker budgets](docs/reference/mbox-workers.md#optional-resource-budgets)
+  (#188). macOS memory stays unsupported because it cannot be enforced; an
+  optional soft watchdog is tracked in #220.
+- Offline review artifacts for the synthetic analysis benchmark, with explicit
+  scorer selection, corpus and source bindings, reviewer provenance, and strict
+  coverage checks. Review templates leave every case pending; model pre-labels
+  remain unchanged, and no human-reviewed quality result is implied (#166).
+
+### Changed
+
+- Claude plugin 0.4.11 pins package 0.4.9 (`dead-letter==0.4.9`) and relocks
+  `plugin/uv.lock`. Plugin users get the 0.4.9 forward and wrapper fixes and
+  the stricter plain-text HTML escaping.
+
+### Fixed
+
+- MBOX conversion preserves a distinct storage-exhaustion outcome for
+  `ENOSPC`/`EDQUOT`, including a reserved worker exit status when writing the
+  failure receipt is itself impossible. Web imports stop on that outcome and
+  retain completed bundles instead of repeatedly attempting later messages.
+- Attribution parsing bounds regex input, using only complete leading lines when
+  the message is longer: 1,000 characters for single-line attributions and
+  64 KiB for Outlook From/Sent/To/Subject blocks, whose matching is now linear.
+  Malformed long attribution lines no longer trigger excessive regex work in
+  structured history. Gmail headers and Outlook headers with long recipient
+  lists still parse before large bodies; over-budget or unrecognized candidates
+  keep their text through the existing fallback (#241).
+
+## [0.4.9] - 2026-10-22
+
+### Added
+
+- Experimental BYOK directory analysis with required `--output-dir`, bounded
+  `--jobs` (default 4, range 1–16), mirrored no-clobber sidecars and keyless reuse.
+  Independent per-message execution preserves completed results and safe
+  interrupted attempts, stops on provider failure thresholds, and reports a JSON
+  summary of this run's fresh work. Destinations that resolve outside
+  `--output-dir` through a symlink are refused per item as
+  `analysis_output_outside_root`. Python consumers can use async
+  `analyze_directory` (#165). Single-message `--output` also preserves a safe
+  interrupted attempt record after HTTP starts, with billing status unknown;
+  cancellation and outer timeout behavior are preserved.
+
+### Fixed
+
+- Plain-text bodies and thread headings keep plain email addresses such as
+  `Vendor <vendor@example.net>` as written instead of escaping them to
+  `&lt;vendor@example.net&gt;`. Every other angle bracket, including URLs and
+  address-like text carrying attributes, is still escaped.
+- Plain-text HTML escaping no longer exempts text that looks like Markdown
+  code. Renderers disagree about which regions are code (fence indentation,
+  list containers, tables, Unicode line separators, joined heading fields), and
+  several of these let raw HTML through. Backtick spans and fences in plain-text
+  mail are now escaped like the rest of the text, so `<div>` inside them reads
+  `&lt;div&gt;`.
+- HTML forwards and replies now classify the unchanged tree before extraction,
+  preserving gogcli-style forwards, Proton containers, OWA `x_` classes and
+  Yahoo wrappers without losing current text between history blocks (#233).
+  A structural reply takes only the first direct-child blockquote and at most
+  one immediately preceding attribution unit; text before that unit and after
+  the blockquote stays authored. Nested wrappers keep ownership of their own
+  attribution lines. Attribution history moves as HTML with its links and
+  original characters; authored text outside that unit stays in the body.
+  Forwards past the section cap keep their own text in the body; reply,
+  Outlook and Front history inside or after them is still extracted. A message
+  that is only reply history keeps its quoted provenance and is rendered
+  through the existing quote-only fallback. Dashed separators in Gmail
+  attribution elements require non-empty text between the dashes; wrapped
+  attribution detection reads only the element's own first two lines, and
+  lines longer than 1000 characters are never parsed as attributions.
+  Quality diagnostics accept the new `proton` and `yahoo` client hints, so
+  file-mode jobs for those messages no longer fail schema validation.
+
+- Plain-text forwards normalize CRLF and bare CR line endings before segmentation,
+  so signature and disclaimer cleanup works and Markdown has no stray carriage
+  returns (#232).
+- Directory analysis collision detection now keys destinations by filesystem
+  identity, so NFC/NFD aliases of one output directory (for example two
+  in-root symlinks on APFS) are refused as `analysis_output_collision` before
+  any provider request (#235).
+- Experimental analysis no longer rejects valid TypeSafe answers as
+  `inconsistent_score_distribution` or `invalid_probability_sum` when the
+  provider's two-decimal precision makes a Score or probability sum differ
+  slightly from the exact value.
+- Homebrew preparation includes the core MCP dependency graph and retains
+  `dead-letter-mcp`; the generated formula's test block asserts that
+  entrypoint exists instead of refuting it, and evidence checks reject a
+  formula that still refutes it. The test block reads `doctor --json` with
+  `pipe_output`, since `doctor` exits 1 when the UI extra or inbox paths are
+  absent, as they are in the formula sandbox. Formula evidence checks still exclude
+  optional UI/watch dependencies and require removal of `dead-letter-ui`.
+  Adoption in the tap remains a separate maintainer update (#213).
+- Forwarded-content edge cases from #193:
+  - Latest mode keeps a text/plain Apple Mail forward quoted with `>` when it
+    opens its own quote block. A quoted forward under an `On … wrote:`
+    attribution is still reply history.
+  - Structured mode gives a forward nested one `>` level deeper its own
+    section instead of leaving its separator inside the outer section.
+  - `strip_signatures` and `strip_disclaimers` no longer remove a later
+    forwarded message that follows a `-- ` or disclaimer line.
+  - Legacy Gmail forwards whose `gmail_quote` block opens with `<br>` before
+    the separator are detected.
+  - Structured output no longer ends `-----Original Message-----` replies
+    with a section that holds only the separator line.
+  - Forwarded header blocks with localized labels (French, German, Spanish,
+    Italian, Portuguese, Dutch, Japanese and Chinese, for example `De :`,
+    `Von:`, `Betreff:`, `差出人:`, `发件人：`) now give `## Forwarded from …`
+    headings in structured mode instead of `## Forwarded message`, and
+    plain-text forwards whose first header uses a full-width colon (Chinese
+    Gmail) are detected. Apple Mail's Japanese `転送されたメッセージ:`
+    introduction is recognized.
+
+### Changed
+
+- HTML div quote wrappers with no positive reply or forward evidence now remain
+  current body in both thread modes. This changes output for messages whose
+  unmarked `gmail_quote` content was previously treated as reply history (#233).
+
+- Experimental analysis now pins TypeSafe SDK 0.7.5 with adapter version
+  `typesafe-sdk-0.7.5-v1`, with SDK compression disabled to keep request bodies
+  as uncompressed JSON. Existing analysis sidecars are invalidated because
+  the SDK and adapter versions bind the reuse key: rerunning against an
+  occupied output path is refused with `analysis_output_mismatch` and makes
+  no provider request, so remove the sidecar or use a new output path.
 - Claude plugin 0.4.10 pins package 0.4.8 (`dead-letter==0.4.8`) and
   relocks `plugin/uv.lock`, which moves selectolax to 1.0.0. Plugin users get
   the 0.4.8 fixes, including `strip_signatures` on HTML emails with
