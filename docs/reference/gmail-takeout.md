@@ -353,6 +353,11 @@ control is refused before conversion. Budgets apply to ZIP/TGZ input as well
 (Python `convert_mbox_archive` accepts the same `memory_limit_mib`,
 `cpu_seconds` and `max_output_mib`). These are resource limits, not filesystem
 or network isolation; see [optional resource budgets](mbox-workers.md#optional-resource-budgets).
+Unreleased source adds `--mbox-memory-watch-mib` (Python `memory_watch_mib`),
+a macOS-only soft memory watch: the parent samples each worker's footprint and
+stops a worker seen over the threshold. It is not a hard cap and does not
+prevent a spike between samples; see
+[macOS soft memory watch](mbox-workers.md#macos-soft-memory-watch-unreleased).
 
 ## Dialects: do not guess away quoting
 

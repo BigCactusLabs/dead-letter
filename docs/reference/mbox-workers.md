@@ -151,7 +151,7 @@ The wall-clock timeout remains the universal backstop on every platform.
 | --- | --- | --- | --- | --- | --- |
 | Memory | `--mbox-memory-mib` / `memory_limit_mib` | Supported | **Unavailable** | Supported | MiB of virtual address space with Linux `RLIMIT_AS`; MiB of committed memory with Windows `JOB_OBJECT_LIMIT_PROCESS_MEMORY`. Neither is an RSS ceiling. Linux counts interpreter/native-library mappings and reservations; Windows denies commits over its limit. The same numeric value does not mean the same accounting on both platforms. |
 | CPU time | `--mbox-cpu-seconds` / `cpu_seconds` | Supported | Supported | Supported | POSIX `RLIMIT_CPU`: `SIGXCPU` at the limit, with the hard limit one second later. Windows `JOB_OBJECT_LIMIT_JOB_TIME`: user-mode CPU seconds, checked periodically by the OS, so termination may overshoot. Neither bounds blocked time; the wall timeout does. |
-| Memory watch (soft) | `--mbox-memory-watch-mib` / `memory_watch_mib` | **Unavailable** | Supported (unreleased) | **Unavailable** | Not a budget or cap: the parent samples the worker's physical footprint every 10 ms and stops a worker seen over the threshold. See [macOS soft memory watch](#macos-soft-memory-watch-unreleased). |
+| Memory watch (soft) | `--mbox-memory-watch-mib` / `memory_watch_mib` | **Unavailable** | Supported (unreleased) | **Unavailable** | Not a budget or cap: the parent samples the worker's physical footprint about every 10 ms (a target, not a guarantee) and stops a worker seen over the threshold. See [macOS soft memory watch](#macos-soft-memory-watch-unreleased). |
 | Output size | `--mbox-max-output-mib` / `max_output_mib` | Supported | Supported | **Unavailable** | MiB **per file**, not total output or free disk. `RLIMIT_FSIZE` / `SIGXFSZ` bounds each Markdown file, attachment and bundle `source.eml` copy. A bundle whose source message exceeds the limit fails. |
 
 The parent decides this matrix before the first message and never silently
@@ -282,15 +282,17 @@ unlike RSS. Only the worker process itself is counted. A process that the
 worker started would not be counted; the conversion pipeline starts none. The
 tests check that the sampled PID is the interpreter that runs the conversion.
 
-**Sampling.** The parent samples every 10 ms, on the same thread that waits
-for the worker. A sample over the threshold stops the worker with `SIGKILL`
+**Sampling.** The parent targets one sample every 10 ms, on the same thread
+that waits for the worker. A sample over the threshold stops the worker with `SIGKILL`
 and records `mbox_message_memory_watch` for that message: the workspace and
 any partial artifacts are discarded unpublished, as for a timeout, and later
-records continue. This is a **soft limit**. A worker can allocate for up to
-one interval, plus the time termination takes, before it is stopped, so its
-footprint can go well past the threshold; the overshoot is roughly the
-allocation rate multiplied by 10 ms. The watch neither prevents an allocation
-nor bounds host memory use.
+records continue. This is a **soft limit**. The 10 ms interval is a target,
+not a bound on how long a worker can stay over the threshold: the parent can
+be descheduled (for example under memory pressure), a Python caller's
+cancellation callback can delay the next sample, and termination takes time.
+Meanwhile the worker keeps allocating, so its footprint can go well past the
+threshold. Do not size memory headroom from the interval. The watch neither
+prevents an allocation nor bounds host memory use.
 
 **Spikes between samples.** When a worker exits on its own, the parent reads
 its lifetime peak footprint (`ri_lifetime_max_phys_footprint`) before reaping
@@ -303,8 +305,10 @@ the spike was not prevented, and the message is not counted as a failure.
 **Process identity.** The kernel does not reuse the PID of a child that its
 parent has not reaped, whether it is running or a zombie. The supervisor
 checks for exit with `waitid(..., WEXITED | WNOHANG | WNOWAIT)`, which does not
-reap, samples, and reaps only after a sample has seen the exit, all on one
-thread. A sample therefore cannot reach a different process. As a second
+reap, samples, and reaps only after `waitid` reports the exit, all on one
+thread. The kernel can publish a worker's exit statistics before `waitid`
+reports it; the parent then records the peak and keeps polling, with the
+deadline and cancellation checks still running, until `waitid` confirms. A sample therefore cannot reach a different process. As a second
 guard, the process start time from the same call must be identical on every
 sample. This relies on nothing else in the importing process reaping its
 children (for example a `SIGCHLD` handler that calls `waitpid(-1)`); such a
@@ -320,7 +324,7 @@ therefore stops the import before conversion.
 
 **Interaction with other limits.** The wall timeout still applies: a blocked
 worker under the threshold ends as `mbox_message_timeout`. Cooperative
-cancellation is checked every 10 ms while the watch runs, and the worker is
+cancellation is checked before each sample while the watch runs, and the worker is
 killed and reaped before `MboxCancelled` is raised. The watch adds no thread
 and no worker argument.
 

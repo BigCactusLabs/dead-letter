@@ -82,7 +82,8 @@ bundle output and reports, and [workers](mbox-workers.md) for process limits.
 **Unreleased (#220):** `convert_mbox()` and `convert_mbox_archive()` accept
 `memory_watch_mib` (CLI `--mbox-memory-watch-mib`), a macOS-only soft memory
 watch for timed workers. The parent samples each worker's physical footprint
-every 10 ms and stops a worker seen over the threshold with the per-message
+about every 10 ms (a target, not a bound on overshoot) and stops a worker
+seen over the threshold with the per-message
 error `mbox_message_memory_watch`. It is not a memory cap: a spike between
 samples is detected afterwards from the worker's lifetime peak and recorded in
 that result's `diagnostics.memory_watch` (`mbox_memory_watch_overshoot`), with
@@ -1365,9 +1366,9 @@ These differ from the CLI and the Python API:
 - **`convert_mbox` is bounded (0.4.5 and later, #145).** It reuses the CLI's MBOX
   importer with the default `preserve` unescape mode and default per-message
   limits. It exposes only `bundles` plus the conversion options above
-  (including `dry_run`); unescape modes, worker timeouts, resource budgets, the
-  macOS soft memory watch and the per-message size override are
-  CLI/Python-only.
+  (including `dry_run`); unescape modes, worker timeouts, resource budgets and the
+  per-message size override are CLI/Python-only, as is the macOS soft memory
+  watch in unreleased source.
   - `path` must be one existing, readable regular file whose name ends in
     `.mbox` (case-insensitive). Compressed archives, other suffixes and Apple
     Mail `.mbox` directories are rejected before any output is written.
