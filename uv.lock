@@ -521,7 +521,7 @@ requires-dist = [
     { name = "html-to-markdown", specifier = ">=3.1.0,<4.0" },
     { name = "httpx", marker = "extra == 'ui'", specifier = ">=0.28.0" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.100" },
-    { name = "icalendar", specifier = ">=6.1.1" },
+    { name = "icalendar", specifier = ">=7.3.1" },
     { name = "mail-parser", specifier = ">=4.10.0" },
     { name = "mail-parser-reply", specifier = ">=1.36,<1.37" },
     { name = "mcp", specifier = ">=2.1,<3" },

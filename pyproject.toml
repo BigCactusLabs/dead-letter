@@ -50,7 +50,7 @@ classifiers = [
   "Topic :: Text Processing :: Markup :: Markdown",
 ]
 dependencies = [
-  "icalendar>=6.1.1",
+  "icalendar>=7.3.1",
   "mail-parser>=4.10.0",
   "mail-parser-reply>=1.36,<1.37",
   "nh3>=0.2.20",
