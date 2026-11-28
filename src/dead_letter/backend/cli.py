@@ -82,6 +82,12 @@ def _add_convert_flags(parser: argparse.ArgumentParser) -> None:
         "--mbox-max-output-mib", type=int, default=None, metavar="MIB",
         help="MBOX worker mode: maximum size of each file a worker writes, in MiB (Linux, macOS).",
     )
+    parser.add_argument(
+        "--mbox-memory-watch-mib", type=int, default=None, metavar="MIB",
+        help="MBOX worker mode, macOS only: soft memory watchdog. The parent samples each worker's "
+             "physical footprint about every 10 ms and stops a worker seen above MIB. Not a hard cap: "
+             "a spike between samples is reported afterwards, not prevented.",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -226,11 +232,13 @@ def _run_convert(args: argparse.Namespace) -> int:
             max_message_mib=args.max_message_mib, unescape=args.mbox_unescape,
             bundles=args.mbox_bundles, timeout_seconds=args.mbox_timeout,
             memory_limit_mib=args.mbox_memory_mib, cpu_seconds=args.mbox_cpu_seconds,
-            max_output_mib=args.mbox_max_output_mib, resume=args.mbox_resume,
+            max_output_mib=args.mbox_max_output_mib, memory_watch_mib=args.mbox_memory_watch_mib,
+            resume=args.mbox_resume,
         )
     if (args.mbox_bundles or args.mbox_resume or args.mbox_unescape != "preserve" or args.max_message_mib != 64
             or args.mbox_timeout is not None or args.mbox_memory_mib is not None
             or args.mbox_cpu_seconds is not None or args.mbox_max_output_mib is not None
+            or args.mbox_memory_watch_mib is not None
             or args.mbox_member is not None or args.mbox_staging_dir is not None):
         print("MBOX-specific options require a .mbox or ZIP/TGZ input file", file=sys.stderr)
         return 1

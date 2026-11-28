@@ -79,6 +79,20 @@ it under `contextlib.closing`, without collecting the archive in a list. See
 the [Takeout contract](gmail-takeout.md) for source preservation, framing,
 bundle output and reports, and [workers](mbox-workers.md) for process limits.
 
+**Unreleased (#220):** `convert_mbox()` and `convert_mbox_archive()` accept
+`memory_watch_mib` (CLI `--mbox-memory-watch-mib`), a macOS-only soft memory
+watch for timed workers. The parent samples each worker's physical footprint
+about every 10 ms (a target, not a bound on overshoot) and stops a worker
+seen over the threshold with the per-message
+error `mbox_message_memory_watch`. It is not a memory cap: a spike between
+samples is detected afterwards from the worker's lifetime peak and recorded in
+that result's `diagnostics.memory_watch` (`mbox_memory_watch_overshoot`), with
+the output kept, but it is not prevented. A footprint that cannot be read
+aborts the import with `mbox_budget_apply_failed`. Other platforms reject it
+with `mbox_budget_unsupported` before conversion. The option is CLI/Python
+only: MCP `convert_mbox`, the web UI and the web API do not accept it. See
+[macOS soft memory watch](mbox-workers.md#macos-soft-memory-watch-unreleased).
+
 **0.4.10 and later:** non-resumed flat imports and the lower-level `iter_mbox()`
 accept `cancel_requested`, a thread-safe zero-argument callback such as
 `threading.Event.is_set`. A true result raises
@@ -1352,8 +1366,9 @@ These differ from the CLI and the Python API:
 - **`convert_mbox` is bounded (0.4.5 and later, #145).** It reuses the CLI's MBOX
   importer with the default `preserve` unescape mode and default per-message
   limits. It exposes only `bundles` plus the conversion options above
-  (including `dry_run`); unescape modes, worker timeouts and the per-message
-  size override are CLI/Python-only.
+  (including `dry_run`); unescape modes, worker timeouts, resource budgets and the
+  per-message size override are CLI/Python-only, as is the macOS soft memory
+  watch in unreleased source.
   - `path` must be one existing, readable regular file whose name ends in
     `.mbox` (case-insensitive). Compressed archives, other suffixes and Apple
     Mail `.mbox` directories are rejected before any output is written.

@@ -40,6 +40,7 @@ def run_mbox(
     memory_limit_mib: int | None = None,
     cpu_seconds: int | None = None,
     max_output_mib: int | None = None,
+    memory_watch_mib: int | None = None,
     archive_input: bool = False,
     member: str | None = None,
     staging_dir: str | None = None,
@@ -69,7 +70,7 @@ def run_mbox(
                 source, output=root, options=options, limits=limits,
                 unescape=unescape, bundles=bundles, timeout_seconds=timeout_seconds,
                 memory_limit_mib=memory_limit_mib, cpu_seconds=cpu_seconds, max_output_mib=max_output_mib,
-                **archive_options,
+                memory_watch_mib=memory_watch_mib, **archive_options,
             )) as results:
                 for item in results:
                     total += 1
@@ -82,6 +83,16 @@ def run_mbox(
                         entry["mbox"] = item.mbox
                     if item.diagnostics is not None:
                         entry["diagnostics"] = item.diagnostics
+                        # Written only by the parent: worker receipts carrying
+                        # this key are rejected as invalid results.
+                        overshoot = item.diagnostics.get("memory_watch")
+                        if overshoot is not None:
+                            label = json.dumps(item.source, ensure_ascii=True) if archive_input else item.source
+                            kept = "; output kept" if item.output is not None else ""
+                            print(f"{label}: {overshoot['code']}: worker peak footprint "
+                                  f"{overshoot['peak_bytes'] / 1048576:.1f} MiB went over the "
+                                  f"{overshoot['limit_mib']} MiB soft memory watch between samples{kept}",
+                                  file=sys.stderr)
                     recovery = getattr(item, "recovery", None)
                     if recovery is not None:
                         entry["recovery"] = recovery
@@ -106,7 +117,8 @@ def run_mbox(
                                   "timeout_seconds": timeout_seconds,
                                   "memory_limit_mib": memory_limit_mib,
                                   "cpu_seconds": cpu_seconds,
-                                  "max_output_mib": max_output_mib}
+                                  "max_output_mib": max_output_mib,
+                                  "memory_watch_mib": memory_watch_mib}
                 if resume:
                     import_options.update(resume=True, recovery_counts=recovery_counts)
                 report_path = _finish_report(
