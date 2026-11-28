@@ -76,6 +76,9 @@ lives in [Gmail Takeout / MBOX](reference/gmail-takeout.md) and
 records what #117, #195, #237 and #238 landed for issue #110 and what remains. The
 [issue #166 evaluation design](project/2026-09-28-issue-166-evaluation-design.md)
 describes the synthetic triage corpus, split and scorer merged in #195. The
+[DocETL research spike](project/2026-10-11-docetl-spike.md) evaluates a separate
+archive-analysis worker and records an offline compatibility probe; it is not
+a shipped integration. The
 [issue #109 discovery evidence](project/2026-09-24-issue-109-discovery-evidence.md)
 records portable-skill runtime, install, ARD, and Agent Finder checks. The
 [docs and release audit](project/docs-release-audit.md) records this refresh,

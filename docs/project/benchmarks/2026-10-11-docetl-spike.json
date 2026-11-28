@@ -1,0 +1,101 @@
+{
+  "date": "2026-10-11",
+  "dead_letter_commit": "f86daf80f41afc904b485f66af52405fd8aafd83",
+  "docetl_commit": "4bb086253767e2fd5a708776f9a1db1bdf79a2e0",
+  "python": "3.12.14",
+  "platform": "Linux",
+  "dead_letter_lock_sha256": "1e81ee07c1b6cb8d8f26ee2d0d23f07764513b0198dc9b3680fb60bd72d1e99a",
+  "docetl_lock_sha256": "d31cfa40c3c669d34f9000c97dd65bfe1d5b9287134328891930977aa7319a8a",
+  "export": {
+    "phase": "export",
+    "dead_letter_version": "0.4.8",
+    "rows": 14,
+    "source_bytes": 520396,
+    "export_bytes": 32072,
+    "dataset_sha256": "d34afa2c3acb3d967af78159c1b7b2174e8b876d9213a2ef1e9ee3dff010325a",
+    "with_context": 8,
+    "without_authored_text": 1,
+    "with_attachments": 3,
+    "sources_unchanged": true,
+    "sources": [
+      {
+        "fixture": "benchmarks/fixtures/attachment__logo-proofs.eml",
+        "sha256": "3af8f8bfea1a2965ad100946cb9aca1ed4befe26b11f6a90daf7ee963713460a"
+      },
+      {
+        "fixture": "benchmarks/fixtures/attachment__sow-pdf-large.eml",
+        "sha256": "fa3462aeb6525d320a65f6412cc2097281fd37b2ae0a9ee4b8d0b4f5aa619519"
+      },
+      {
+        "fixture": "benchmarks/fixtures/attachment__sow-pdf-small.eml",
+        "sha256": "8d044f3ae49f8e6c3124fea09a71e4d0c7d5ab1d6686134c066458146a60e56d"
+      },
+      {
+        "fixture": "benchmarks/fixtures/gmail-html__webhook-thread-3.eml",
+        "sha256": "c74c4660f5c2450251a0bf3e9638bde3d1cd4a28bd85c3e9356cfbc36bd29061"
+      },
+      {
+        "fixture": "benchmarks/fixtures/gmail-html__webhook-thread-4.eml",
+        "sha256": "2730eec5006ea3e10f517fcba3111191ae9f719e596e902c5aa2f56d01718e33"
+      },
+      {
+        "fixture": "benchmarks/fixtures/html-only__ci-alert.eml",
+        "sha256": "105eb51803b04d58147e25f88b27b06af8ffb9cf698adc06881c6345f4e9fde7"
+      },
+      {
+        "fixture": "benchmarks/fixtures/newsletter__acme-weekly.eml",
+        "sha256": "229b15caac5f861a461f84a4b87862dda047cdc44c8044a6b96f0aa783bcb8fc"
+      },
+      {
+        "fixture": "benchmarks/fixtures/outlook-html__sow-thread-3.eml",
+        "sha256": "52483a400dfb91f210027aaa34266689d753e2b71c07605cca4a2c83ae5ae681"
+      },
+      {
+        "fixture": "benchmarks/fixtures/outlook-html__sow-thread-5.eml",
+        "sha256": "225f3ff53ff9a1e750bc9f5521cbc2062cea384a299f91462a05fe2c159237b7"
+      },
+      {
+        "fixture": "benchmarks/fixtures/plaintext__parking-notice.eml",
+        "sha256": "b46318c55bed7b89a437fb9289dc467ff3548f108f13c6989fac6e80eec0c538"
+      },
+      {
+        "fixture": "benchmarks/fixtures/plaintext__standup-thread.eml",
+        "sha256": "c7c682d0d9ee8d432e71cb8667587a9fa0b4a56ec4260711328332c31e9185ef"
+      },
+      {
+        "fixture": "tests/core/fixtures/gmail_forward_with_reply_quote.eml",
+        "sha256": "07e166ff7ed8ffd71d4da0a4d7d32760c084a94d76d410d5a8778c4b567f1304"
+      },
+      {
+        "fixture": "tests/core/fixtures/multilingual_thread.eml",
+        "sha256": "c67e995d81ec1d651167a424564b6dbe3c1a2c9804d030723b61fe87a4fc0c26"
+      },
+      {
+        "fixture": "tests/core/fixtures/malformed_empty.eml",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ]
+  },
+  "check": {
+    "phase": "check",
+    "docetl_version": "0.3.0",
+    "openai_agents_version": "0.17.5",
+    "rows": 14,
+    "dataset_sha256": "d34afa2c3acb3d967af78159c1b7b2174e8b876d9213a2ef1e9ee3dff010325a",
+    "ids_and_nested_state_preserved": true,
+    "jsonl_rejected": true,
+    "semantic_map_syntax_validated": true,
+    "semantic_inference_executed": false,
+    "optimizer_executed": false,
+    "pipeline_cost_usd": 0.0
+  },
+  "coinstall": {
+    "result": "unsatisfiable",
+    "dead_letter_mcp_requirement": ">=2.1,<3",
+    "openai_agents_version": "0.17.5",
+    "openai_agents_mcp_requirement": ">=1.19.0,<2",
+    "method": "uv pip install --dry-run with local projects and explicit openai-agents==0.17.5"
+  },
+  "inference_executed": false,
+  "private_mail_used": false
+}
